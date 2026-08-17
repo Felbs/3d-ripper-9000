@@ -1,0 +1,275 @@
+"""gcrip command line.
+
+gcrip info <disc.iso>                       header summary
+gcrip tree <disc.iso | manifest.json>       print the directory tree
+gcrip manifest <disc.iso> [-o out.json]     write disc_manifest.json
+gcrip extract <disc.iso> <outdir>           dump every file (archives expanded)
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+from pathlib import Path
+
+from gcrip.disc.fst import APPLOADER_OFFSET, parse_header
+from gcrip.disc.image import DiscImage, UnsupportedImageError
+from gcrip.manifest import Manifest, ManifestEntry, build_manifest
+from gcrip.tree import render_summary, render_tree
+
+
+def _progress_printer(quiet: bool):
+    if quiet:
+        return None
+    state = {"t": 0.0}
+
+    def report(path: str, i: int, n: int) -> None:
+        now = time.monotonic()
+        if now - state["t"] > 0.25 or i == n - 1:
+            state["t"] = now
+            msg = f"\r[{i + 1}/{n}] {path[:70]:<70}"
+            sys.stderr.write(msg)
+            sys.stderr.flush()
+
+    return report
+
+
+def _end_progress(quiet: bool) -> None:
+    if not quiet:
+        sys.stderr.write("\r" + " " * 90 + "\r")
+        sys.stderr.flush()
+
+
+def _load_manifest_json(path: Path) -> Manifest:
+    d = json.loads(path.read_text(encoding="utf-8"))
+    m = Manifest(
+        game=d["game"], image=d["image"], dirs=d.get("dirs", []), errors=d.get("errors", [])
+    )
+    for f in d["files"]:
+        m.files.append(ManifestEntry(**f))
+    return m
+
+
+def _open_or_manifest(path: Path, args: argparse.Namespace) -> Manifest:
+    if path.suffix.lower() == ".json":
+        return _load_manifest_json(path)
+    with DiscImage(path) as img:
+        m = build_manifest(
+            img,
+            recurse=not args.no_archives,
+            hash_files=not args.no_hash,
+            progress=_progress_printer(args.quiet),
+        )
+    _end_progress(args.quiet)
+    return m
+
+
+def cmd_info(args: argparse.Namespace) -> int:
+    with DiscImage(args.image) as img:
+        hdr = parse_header(img.read(0, APPLOADER_OFFSET + 0x20))
+    print(f"Game ID:        {hdr.game_id}")
+    print(f"Title:          {hdr.title}")
+    print(f"Maker:          {hdr.maker_code}")
+    print(f"Region:         {hdr.region} ({hdr.region_char})")
+    print(f"Disc/rev:       {hdr.disc_number} / {hdr.revision}")
+    print(f"Apploader:      {hdr.apploader_date}")
+    print(f"Audio stream:   {hdr.audio_streaming} (buffer {hdr.stream_buffer_size})")
+    print(f"main.dol:       0x{hdr.dol_offset:08X}")
+    print(f"FST:            0x{hdr.fst_offset:08X} size 0x{hdr.fst_size:X}")
+    print(f"FST max size:   0x{hdr.fst_max_size:X}")
+    print(f"User area:      0x{hdr.user_position:08X} len 0x{hdr.user_length:X}")
+    print(f"Image size:     {img.size} bytes")
+    return 0
+
+
+def cmd_tree(args: argparse.Namespace) -> int:
+    m = _open_or_manifest(Path(args.image), args)
+    kinds = set(args.kinds.split(",")) if args.kinds else None
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+    except Exception:  # noqa: BLE001
+        args.ascii = True
+    for line in render_tree(
+        m, ascii_only=args.ascii, max_depth=args.depth, show_hash=args.hashes, kinds=kinds
+    ):
+        print(line)
+    print()
+    for line in render_summary(m):
+        print(line)
+    return 0
+
+
+def cmd_manifest(args: argparse.Namespace) -> int:
+    m = _open_or_manifest(Path(args.image), args)
+    out = Path(args.output) if args.output else Path(f"disc_manifest_{m.game['id']}.json")
+    out.write_text(json.dumps(m.to_dict(), indent=1, ensure_ascii=False), encoding="utf-8")
+    for line in render_summary(m):
+        print(line)
+    print(f"wrote {out}")
+    return 0
+
+
+def cmd_extract(args: argparse.Namespace) -> int:
+    from gcrip.formats import rarc, yay0, yaz0
+
+    outdir = Path(args.outdir)
+    with DiscImage(args.image) as img:
+        m = build_manifest(
+            img, recurse=True, hash_files=False, progress=_progress_printer(args.quiet)
+        )
+        _end_progress(args.quiet)
+        # Top-level entries: read from disc; nested: re-derive from parents.
+        # Simple approach: re-walk, writing as we go.
+        written = 0
+
+        def write(path: str, data: bytes) -> None:
+            nonlocal written
+            p = outdir / path
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_bytes(data)
+            written += 1
+
+        def expand(path: str, data: bytes, depth: int) -> None:
+            if yaz0.is_yaz0(data):
+                data = yaz0.decompress(data)
+            elif yay0.is_yay0(data):
+                data = yay0.decompress(data)
+            if rarc.is_rarc(data) and depth < 8:
+                arc = rarc.parse(data)
+                for f in arc.files:
+                    expand(f"{path}/{f.path}", data[f.offset : f.offset + f.size], depth + 1)
+                if not args.keep_archives:
+                    return
+            write(path, data)
+
+        for e in m.files:
+            if e.depth != 0:
+                continue
+            data = img.read(e.disc_offset, e.size)
+            if e.path.startswith("sys/") or args.raw:
+                write(e.path, data)
+            else:
+                expand(e.path, data, 0)
+    print(f"extracted {written} files to {outdir}")
+    return 0
+
+
+def cmd_rip(args: argparse.Namespace) -> int:
+    from gcrip.rip import rip
+
+    res = rip(
+        Path(args.image),
+        Path(args.outdir),
+        thumbnails=not args.no_thumbs,
+        dedupe=not args.keep_duplicates,
+        textures=not args.no_textures,
+        quiet=args.quiet,
+        limit=args.limit,
+        path_filter=args.filter,
+        animations=not args.no_anims,
+        bone_names=args.bone_names,
+        fps=args.fps,
+        anim_map=dict(kv.split("=", 1) for kv in (args.anim_map or [])),
+        max_anims=args.max_anims,
+    )
+    ok = sum(1 for m in res.models if m.out_rel)
+    dup = sum(1 for m in res.models if m.duplicate_of)
+    err = [m for m in res.models if m.error]
+    print(f"{res.game_id} {res.title}")
+    print(f"models: {ok} exported, {dup} duplicates skipped, {len(err)} failed")
+    print(f"textures: {sum(1 for t in res.textures if t.out_rel)} standalone PNGs")
+    n_anim = sum(len(m.animations) for m in res.models)
+    n_expr = sum(1 for m in res.models if m.expressions)
+    print(
+        f"animations: {n_anim} clips on {sum(1 for m in res.models if m.animations)} models, "
+        f"{n_expr} models with expression switches"
+    )
+    print(f"time: {res.seconds:.0f}s")
+    print(f"report: {res.out_dir / 'report.html'}")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(prog="gcrip", description="GameCube asset extractor")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+
+    p = sub.add_parser("info", help="print disc header")
+    p.add_argument("image")
+    p.set_defaults(fn=cmd_info)
+
+    def add_walk_opts(p: argparse.ArgumentParser) -> None:
+        p.add_argument("--no-archives", action="store_true", help="don't descend into archives")
+        p.add_argument("--no-hash", action="store_true", help="skip content hashing (faster)")
+        p.add_argument("-q", "--quiet", action="store_true")
+
+    p = sub.add_parser("tree", help="print directory tree")
+    p.add_argument("image", help="disc image, or a previously written manifest .json")
+    p.add_argument("--ascii", action="store_true", help="ASCII box drawing")
+    p.add_argument("--depth", type=int, default=None, help="max depth to print")
+    p.add_argument("--hashes", action="store_true", help="show hash prefixes")
+    p.add_argument("--kinds", help="comma-separated kinds to show, e.g. model,texture")
+    add_walk_opts(p)
+    p.set_defaults(fn=cmd_tree)
+
+    p = sub.add_parser("manifest", help="write disc_manifest.json")
+    p.add_argument("image")
+    p.add_argument("-o", "--output")
+    add_walk_opts(p)
+    p.set_defaults(fn=cmd_manifest)
+
+    p = sub.add_parser("extract", help="extract all files (archives expanded, decompressed)")
+    p.add_argument("image")
+    p.add_argument("outdir")
+    p.add_argument("--raw", action="store_true", help="don't decompress or expand archives")
+    p.add_argument("--keep-archives", action="store_true", help="also write expanded archives")
+    p.add_argument("-q", "--quiet", action="store_true")
+    p.set_defaults(fn=cmd_extract)
+
+    p = sub.add_parser("rip", help="disc image -> glTF models + PNG textures + report.html")
+    p.add_argument("image")
+    p.add_argument("outdir", nargs="?", default="out")
+    p.add_argument("--filter", help="only rip paths containing this substring")
+    p.add_argument("--limit", type=int, help="stop after N models (for testing)")
+    p.add_argument("--no-thumbs", action="store_true", help="skip thumbnail rendering")
+    p.add_argument("--no-textures", action="store_true", help="skip standalone BTI/TPL textures")
+    p.add_argument("--keep-duplicates", action="store_true", help="export identical models again")
+    p.add_argument("--no-anims", action="store_true", help="skip BCK animations / BTP expressions")
+    p.add_argument(
+        "--bone-names",
+        choices=["original", "mixamo"],
+        default="original",
+        help="rename recognised humanoid joints to Mixamo names (mixamorig:Hips ...) for "
+        "retargeting; 'original' keeps J3D names and stores the Mixamo name in node extras",
+    )
+    p.add_argument("--fps", type=float, default=30.0, help="frame rate of BCK clips (default 30)")
+    p.add_argument(
+        "--max-anims",
+        type=int,
+        metavar="N",
+        help="keep at most N clips per model (own archive first); default unlimited",
+    )
+    p.add_argument(
+        "--anim-map",
+        action="append",
+        metavar="ANIMARC=MODELARC",
+        help="attach an animation-only archive to a model archive, e.g. LkAnm=Link (repeatable)",
+    )
+    p.add_argument("--debug", action="store_true", help="print tracebacks for failed models")
+    p.add_argument("-q", "--quiet", action="store_true")
+    p.set_defaults(fn=cmd_rip)
+
+    args = ap.parse_args(argv)
+    try:
+        return args.fn(args)
+    except UnsupportedImageError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    except FileNotFoundError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

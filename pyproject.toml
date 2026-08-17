@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gcrip"
+version = "0.0.1"
+description = "GameCube asset extractor: disc filesystem walker, format parsers, and exporters (offline tooling for a Dolphin capture fork)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["numpy>=1.24"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.5"]
+
+[project.scripts]
+gcrip = "gcrip.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["gcrip*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+ignore = ["SIM108"]
+
+[tool.ruff.lint.per-file-ignores]
+"gcrip/rip.py" = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

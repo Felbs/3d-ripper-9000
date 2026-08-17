@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+out/
+# never commit game data
+*.iso
+*.gcm
+*.rvz
+*.gcz
+*.wia
+*.ciso
+disc_manifest*.json
+roms/
