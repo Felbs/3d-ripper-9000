@@ -139,6 +139,10 @@ name-based retargeter). Fingers, hair, clothing and weapon bones keep their orig
   report's "from ..." note and use `--anim-map` if a guess is wrong. BTK (UV scroll), BRK
   (color) and BVA (visibility) clips are not exported.
 
+See [docs/PIPELINE.md](docs/PIPELINE.md) for diagrams of the whole pipeline (disc walk → J3D → glTF →
+animation matching → Blender) and the list of heuristics with where to look when one is wrong.
+`tools/reel/make_reel.py` rebuilds the demo reel from a rip with Blender headless.
+
 ## Install
 
 ```
