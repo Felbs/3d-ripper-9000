@@ -187,6 +187,8 @@ gcrip rip game.iso out/ --bone-names mixamo    # name humanoid bones mixamorig:*
 gcrip rip game.iso out/ --anim-map LkAnm=Link  # force an animation archive onto a model archive
 gcrip rip game.iso out/ --max-anims 100        # lighter files: at most 100 clips per model
 gcrip rip game.iso out/ --no-anims             # static models only
+gcrip survey D:/roms/gamecube -o out/survey    # whole library: which engine each disc uses (~2 s/disc)
+gcrip batch D:/roms/gamecube --survey out/survey/survey.jsonl --out out/rip   # rip every J3D disc, matrix
 gcrip serve out/GZLE01                         # report with Open-in-Blender buttons
 gcrip blend out/GZLE01                         # .blend asset library (needs Blender)
 ```

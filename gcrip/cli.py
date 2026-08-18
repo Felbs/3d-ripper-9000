@@ -247,6 +247,40 @@ def cmd_pack(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_survey(args: argparse.Namespace) -> int:
+    from gcrip.survey import survey
+
+    done = survey(
+        Path(args.folder), Path(args.output), limit=args.limit, deep=args.deep, quiet=args.quiet
+    )
+    j3d = sum(1 for d in done.values() if d["engine"] == "J3D")
+    md = Path(args.output) / "survey.md"
+    print(f"{len(done)} discs surveyed, {j3d} look like J3D games -> {md}")
+    return 0
+
+
+def cmd_batch(args: argparse.Namespace) -> int:
+    from gcrip.batch import batch
+
+    rows = batch(
+        Path(args.folder),
+        Path(args.out),
+        survey_path=Path(args.survey) if args.survey else None,
+        engine=None if args.engine == "any" else args.engine,
+        limit=args.limit,
+        only=args.only,
+        thumbnails=not args.no_thumbs,
+        animations=not args.no_anims,
+        quiet=args.quiet,
+    )
+    ok = [r for r in rows if not r.get("error")]
+    print(
+        f"{len(ok)} games ripped, {sum(r['exported'] for r in ok):,} models, "
+        f"{sum(r['clips'] for r in ok):,} clips -> {Path(args.out) / 'batch_matrix.md'}"
+    )
+    return 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     from gcrip.serve import serve
 
@@ -338,6 +372,30 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--filter", help="only models whose disc path contains this")
     p.add_argument("-q", "--quiet", action="store_true")
     p.set_defaults(fn=cmd_pack)
+
+    p = sub.add_parser("survey", help="scan a folder of discs: which engine/format each game uses")
+    p.add_argument("folder", help="folder of .iso/.gcm images")
+    p.add_argument("-o", "--output", default="out/survey")
+    p.add_argument("--limit", type=int)
+    p.add_argument("--deep", type=int, default=24, help="archives to peek inside per disc")
+    p.add_argument("-q", "--quiet", action="store_true")
+    p.set_defaults(fn=cmd_survey)
+
+    p = sub.add_parser(
+        "batch", help="rip many discs (all J3D games from a survey) into one out folder"
+    )
+    p.add_argument("folder", help="folder of .iso/.gcm images")
+    p.add_argument("--survey", help="survey.jsonl from `gcrip survey` (selects discs by engine)")
+    p.add_argument(
+        "--engine", default="J3D", help="engine label to select from the survey, or 'any'"
+    )
+    p.add_argument("--out", default="out/rip")
+    p.add_argument("--only", nargs="*", help="only discs whose file name contains one of these")
+    p.add_argument("--limit", type=int)
+    p.add_argument("--no-thumbs", action="store_true")
+    p.add_argument("--no-anims", action="store_true")
+    p.add_argument("-q", "--quiet", action="store_true")
+    p.set_defaults(fn=cmd_batch)
 
     p = sub.add_parser("serve", help="open report.html locally with 'Open in Blender' buttons")
     p.add_argument("ripdir", help="out/rip/<GameID>")
