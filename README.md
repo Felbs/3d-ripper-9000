@@ -1,16 +1,19 @@
-# GCRip
+# 3D Ripper 9000
 
-Extract 3D models, textures, and audio from GameCube games, with the output
-organized and named the way the developers organized it on the disc.
+Give it a game disc, get back every 3D model - textured, rigged, animated - as glTF you can
+open in Blender. Output is organised and named the way the developers laid it out on the disc.
 
-GCRip has two halves:
+**gc-ripper** (`gcrip` on the command line) is the first module: GameCube. Later modules are
+planned for other consoles (N64, PlayStation ...); each will be its own package under this
+project, sharing the same idea - one command, disc in, models out - and the same output layout,
+report and Blender add-on.
 
-| Part | Language | License | Purpose |
-|------|----------|---------|---------|
-| `gcrip` (this repo) | Python | MIT | Offline tooling: disc filesystem walker, format parsers, name correlation, glTF/PNG/WAV export |
-| Dolphin fork (separate repo, planned) | C++ | GPLv2 | Runtime capture of object-space geometry, texture hashes, and DVD reads |
-
-The Python side reads Dolphin's dump output; it does not link against Dolphin.
+| Module | Status | Language | License | What it does |
+|--------|--------|----------|---------|--------------|
+| `gcrip` - GameCube | **working** (Wind Waker, Twilight Princess verified) | Python | MIT | disc walker, J3D model/animation parsers, GX texture decode, glTF export, Blender add-on |
+| Dolphin capture fork (for non-J3D GameCube games) | planned | C++ | GPLv2 | runtime capture of object-space geometry for games with custom formats |
+| N64 module | idea | - | - | - |
+| PlayStation module | idea | - | - | - |
 
 ## Legal position
 

@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "gcrip"
 version = "0.0.1"
-description = "GameCube asset extractor: disc filesystem walker, format parsers, and exporters (offline tooling for a Dolphin capture fork)"
+description = "gc-ripper: the GameCube module of 3D Ripper 9000 - disc image in, textured/rigged/animated glTF out"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
