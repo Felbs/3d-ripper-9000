@@ -39,6 +39,7 @@ out/<GameID>/<disc path>/<model>.gltf        glTF 2.0: mesh + materials + skelet
 out/<GameID>/<disc path>/<model>.bin         geometry buffer
 out/<GameID>/<disc path>/<model>_tex/*.png   the model's textures (all GC formats incl. CMPR decoded)
 out/<GameID>/<disc path>/<model>_thumb.png   preview thumbnail
+out/<GameID>/<disc path>/<model>.blend       (after `gcrip blend`) Blender asset file
 out/<GameID>/<disc path>/<texture>.png       standalone BTI/TPL textures
 out/<GameID>/report.html                     browsable index with thumbnails, joint names, filter box
 out/<GameID>/disc_manifest.json              every file on the disc with hashes and formats
@@ -46,6 +47,17 @@ out/<GameID>/disc_manifest.json              every file on the disc with hashes 
 
 In Blender the default *Solid* viewport shading hides textures - press **Z > Material Preview**
 (or set Solid shading's Color to Texture) to see them.
+
+### Browse and open models
+
+- `gcrip serve out/rip/GZLE01` opens the report in your browser with an **Open in Blender**
+  and **Show file** button on every card (Blender is auto-detected; `--blender PATH` otherwise).
+- `gcrip blend out/rip/GZLE01` writes one `.blend` next to every model, marked as a Blender
+  **asset** (thumbnail, catalog = disc folder, tags). Register `out/rip` as an Asset Library
+  (Preferences > File Paths, or the GCRip panel's *Add rip folder as asset library* button)
+  and every model shows up in Blender's Asset Browser: search, drag into any scene, or open
+  the `.blend` to edit that model on its own. Roughly 1-3 s per model; rerun to resume
+  (existing files are skipped, `--force` rewrites).
 
 **Recommended:** install `blender/gcrip_blender.py` (Edit > Preferences > Add-ons > Install
 from Disk) and use **File > Import > GCRip glTF**. It runs the normal glTF importer and then
@@ -175,6 +187,8 @@ gcrip rip game.iso out/ --bone-names mixamo    # name humanoid bones mixamorig:*
 gcrip rip game.iso out/ --anim-map LkAnm=Link  # force an animation archive onto a model archive
 gcrip rip game.iso out/ --max-anims 100        # lighter files: at most 100 clips per model
 gcrip rip game.iso out/ --no-anims             # static models only
+gcrip serve out/GZLE01                         # report with Open-in-Blender buttons
+gcrip blend out/GZLE01                         # .blend asset library (needs Blender)
 ```
 
 ### Manifest layout

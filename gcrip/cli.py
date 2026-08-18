@@ -191,6 +191,35 @@ def cmd_rip(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_blend(args: argparse.Namespace) -> int:
+    from gcrip.blend import blend
+
+    res = blend(
+        Path(args.ripdir),
+        blender=args.blender,
+        path_filter=args.filter,
+        limit=args.limit,
+        force=args.force,
+        quiet=args.quiet,
+    )
+    print(
+        f".blend files: {res.done} written, {res.skipped} already existed, {len(res.failed)} failed"
+    )
+    for f in res.failed[:20]:
+        print("  !", f)
+    print(f"time: {res.seconds:.0f}s")
+    print(f"asset library root: {res.library_root}  (add it in Blender > Preferences > File Paths)")
+    return 0 if not res.failed else 1
+
+
+def cmd_serve(args: argparse.Namespace) -> int:
+    from gcrip.serve import serve
+
+    return serve(
+        Path(args.ripdir), port=args.port, blender=args.blender, open_browser=not args.no_browser
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="gcrip", description="GameCube asset extractor")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -259,6 +288,22 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--debug", action="store_true", help="print tracebacks for failed models")
     p.add_argument("-q", "--quiet", action="store_true")
     p.set_defaults(fn=cmd_rip)
+
+    p = sub.add_parser("blend", help="rip folder -> one .blend per model, marked as Blender assets")
+    p.add_argument("ripdir", help="out/rip/<GameID> (the folder with rip_results.json)")
+    p.add_argument("--blender", help="blender executable (default: auto-detect / $BLENDER)")
+    p.add_argument("--filter", help="only models whose disc path contains this")
+    p.add_argument("--limit", type=int)
+    p.add_argument("--force", action="store_true", help="rewrite .blend files that already exist")
+    p.add_argument("-q", "--quiet", action="store_true")
+    p.set_defaults(fn=cmd_blend)
+
+    p = sub.add_parser("serve", help="open report.html locally with 'Open in Blender' buttons")
+    p.add_argument("ripdir", help="out/rip/<GameID>")
+    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--blender", help="blender executable (default: auto-detect / $BLENDER)")
+    p.add_argument("--no-browser", action="store_true")
+    p.set_defaults(fn=cmd_serve)
 
     args = ap.parse_args(argv)
     try:

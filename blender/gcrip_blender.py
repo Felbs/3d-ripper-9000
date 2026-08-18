@@ -14,6 +14,8 @@ What it adds
       switch between the textures the game's BTP animations use
     - Bones: rename recognised humanoid bones to Mixamo names and back
     - Fix visibility / fps buttons for files imported with the stock importer
+    - "Add rip folder as asset library": after `gcrip blend`, browse every ripped model
+      in Blender's Asset Browser and drag it into any scene
 
 The add-on only uses the custom properties gcrip writes into the glTF
 (gcrip_variant_of, gcrip_texture, gcrip_std_bone, gcrip_joint), so it works on
@@ -232,6 +234,37 @@ class GCRIP_OT_set_fps(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class GCRIP_OT_add_library(bpy.types.Operator):
+    """Register a gcrip rip folder (the one holding <GameID>/ folders and
+    blender_assets.cats.txt, made by `gcrip blend`) as a Blender Asset Library so every
+    model shows up in the Asset Browser with its thumbnail"""
+
+    bl_idname = "gcrip.add_asset_library"
+    bl_label = "Add rip folder as asset library"
+    directory: StringProperty(subtype="DIR_PATH")
+    name: StringProperty(default="GCRip")
+
+    def invoke(self, context, event):
+        context.window_manager.fileselect_add(self)
+        return {"RUNNING_MODAL"}
+
+    def execute(self, context):
+        libs = context.preferences.filepaths.asset_libraries
+        for lib in libs:
+            if bpy.path.abspath(lib.path).rstrip("\\/") == self.directory.rstrip("\\/"):
+                self.report({"INFO"}, f"already registered as '{lib.name}'")
+                return {"FINISHED"}
+        try:
+            bpy.ops.preferences.asset_library_add(directory=self.directory)
+            lib = libs[-1]
+            lib.name = self.name
+        except Exception as e:  # noqa: BLE001
+            self.report({"ERROR"}, str(e))
+            return {"CANCELLED"}
+        self.report({"INFO"}, f"asset library '{self.name}' added - open an Asset Browser editor")
+        return {"FINISHED"}
+
+
 # ------------------------------------------------------------------- panel
 
 
@@ -279,6 +312,7 @@ class GCRIP_PT_panel(bpy.types.Panel):
         row = lay.row(align=True)
         row.operator("gcrip.hide_variants", icon="HIDE_ON")
         row.operator("gcrip.set_fps", icon="TIME")
+        lay.operator("gcrip.add_asset_library", icon="ASSET_MANAGER")
 
 
 def _menu_import(self, context):
@@ -291,6 +325,7 @@ CLASSES = (
     GCRIP_OT_rename_bones,
     GCRIP_OT_set_expression,
     GCRIP_OT_set_fps,
+    GCRIP_OT_add_library,
     GCRIP_PT_panel,
 )
 

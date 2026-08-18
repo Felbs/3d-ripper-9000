@@ -47,6 +47,7 @@ class ModelResult:
     anim_sources: list[str] = field(default_factory=list)  # archives the clips came from
     expressions: list[str] = field(default_factory=list)
     std_bones: dict[str, str] = field(default_factory=dict)
+    blend_rel: str | None = None  # set by `gcrip blend`
     seconds: float = 0.0
 
 
@@ -498,6 +499,16 @@ def _affinity(anim_stem: str, model_stem: str) -> int:
     return n if n >= 3 else 0
 
 
+def load_results(game_dir: Path) -> RipResult:
+    """Rebuild a RipResult from out/<GameID>/rip_results.json (for re-rendering the report)."""
+    d = json.loads((Path(game_dir) / "rip_results.json").read_text(encoding="utf-8"))
+    res = RipResult(game_id=d["game_id"], title=d.get("title", ""), out_dir=Path(game_dir))
+    res.seconds = d.get("seconds", 0.0)
+    res.models = [ModelResult(**m) for m in d.get("models", [])]
+    res.textures = [TextureResult(**t) for t in d.get("textures", [])]
+    return res
+
+
 def _merge_previous(result: RipResult, results_json: Path) -> None:
     """A partial (--filter/--limit) run keeps earlier results for everything it didn't touch."""
     if not results_json.exists():
@@ -584,12 +595,26 @@ input#q{width:100%;max-width:40rem;padding:.5rem .7rem;border-radius:6px;border:
 a{color:#8ab4f8;text-decoration:none}a:hover{text-decoration:underline}
 details{margin:.4rem 0}summary{cursor:pointer;color:#9a9aa6}
 summary .src{color:#6f6f7c;font-size:.7rem}
+.act{display:none;gap:.3rem;margin-top:.35rem}body.served .act{display:flex}
+.act button{flex:1;background:#2b2b34;color:#dfe3ff;border:1px solid #3a3a46;border-radius:5px;padding:.3rem .4rem;font-size:.72rem;cursor:pointer}
+.act button:hover{background:#3a3a48}.act button:disabled{opacity:.6}
+.hint{color:#8f8f9c;font-size:.8rem;margin:-.5rem 0 1rem}body.served .hint{display:none}
 .sub code,.sub i{color:#c9c9d4}
 """
 
 _JS = """
 const q=document.getElementById('q');q.addEventListener('input',()=>{const s=q.value.toLowerCase();
 document.querySelectorAll('.card').forEach(c=>{c.style.display=c.dataset.k.includes(s)?'':'none'})});
+// "Open in Blender" only works when served by `gcrip serve` (needs a local endpoint)
+const served=location.protocol.startsWith('http');
+document.body.classList.toggle('served',served);
+document.querySelectorAll('.act button').forEach(b=>b.addEventListener('click',async e=>{
+  const path=b.parentElement.dataset.path;const kind=b.classList.contains('open')?'open':'reveal';
+  b.disabled=true;const old=b.textContent;b.textContent=kind==='open'?'Launching...':'...';
+  try{const r=await fetch(`/${kind}?path=${encodeURIComponent(path)}`);const j=await r.json();
+    b.textContent=j.error?('! '+j.error):(kind==='open'?'Opened':'Shown');}
+  catch(err){b.textContent='! '+err;}
+  setTimeout(()=>{b.textContent=old;b.disabled=false;},2500);}));
 """
 
 
@@ -617,6 +642,10 @@ def write_report(res: RipResult) -> Path:
         "(toggle visibility). Humanoid rigs carry Mixamo bone names in bone custom properties "
         "(<i>gcrip_std_bone</i>) or use <code>--bone-names mixamo</code>.</div>",
         "<input id='q' placeholder='filter by name / path / joint name...'>",
+        "<div class='hint'>Tip: run <code>gcrip serve "
+        + html.escape(str(res.out_dir))
+        + "</code> to get <b>Open in Blender</b> buttons on every card, and "
+        "<code>gcrip blend ...</code> to make .blend asset files.</div>",
         "<h2>Models</h2><div class='grid'>",
     ]
     for m in res.models:
@@ -640,7 +669,15 @@ def write_report(res: RipResult) -> Path:
         else:
             parts.append(
                 f"<div class='m'>{m.triangles:,} tris · {m.joints} joints · {m.textures} tex"
-                f"{' · skinned' if m.skinned else ''} · <a href='{html.escape(m.out_rel or '')}'>gltf</a></div>"
+                f"{' · skinned' if m.skinned else ''} · <a href='{html.escape(m.out_rel or '')}'>gltf</a>"
+                + (f" · <a href='{html.escape(m.blend_rel)}'>blend</a>" if m.blend_rel else "")
+                + "</div>"
+            )
+            target = m.blend_rel or m.out_rel or ""
+            parts.append(
+                f"<div class='act' data-path='{html.escape(target, quote=True)}'>"
+                "<button class='open'>Open in Blender</button>"
+                "<button class='reveal'>Show file</button></div>"
             )
             if m.texture_files:
                 parts.append("<div class='tex'>")
