@@ -532,9 +532,9 @@ def _thumbnail(st: gltf.ExportStats, model: j3d.Model, out_base: Path, rel: Path
         color = (0.75, 0.75, 0.75)
         tex_index = -1
         uv_set = 0
-        if mat is not None and mat < len(model.materials):
-            d = model.materials[mat].diffuse()
-            if d is not None and d[0] < len(st.texture_colors):
+        if mat is not None and mat < len(st.material_tex):
+            d = st.material_tex[mat]
+            if 0 <= d[0] < len(st.texture_colors):
                 color = st.texture_colors[d[0]]
                 tex_index, uv_set = d
         col_list.append(np.tile(np.array(color, dtype=np.float64), (len(tris), 1)))

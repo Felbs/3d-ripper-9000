@@ -129,8 +129,10 @@ name-based retargeter). Fingers, hair, clothing and weapon bones keep their orig
 ### Known limitations of the static rip
 
 - Materials are simplified to one base-color texture per material (chosen as the first TEV
-  stage that samples through a real UV set). GameCube TEV multi-texturing, env maps and
-  toon ramps are not reproduced.
+  stage that samples through a real UV set). One common two-layer case is baked: a second
+  texture sampled through the same UV set (Wind Waker's eye-white shape x pupil texture,
+  through its SRT texture matrix) is multiplied into a `<base>_x_<detail>.png` composite so
+  eyes come out right. Other TEV multi-texturing, env maps and toon ramps are not reproduced.
 - Old `bmd2` files with a `MAT2` section export geometry and textures with placeholder materials.
 - Only mip level 0 is exported. Vertex colors are exported as COLOR_0.
 - Animation-only archives are matched to models heuristically (see Animations); check the

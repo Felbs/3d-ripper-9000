@@ -175,3 +175,34 @@ def test_real_disc_rip_subset(tmp_path):
     res = rip(Path(REAL_ISO), tmp_path, quiet=True, limit=20)
     assert any(m.out_rel for m in res.models)
     assert not [m for m in res.models if m.error and not m.error.startswith("skipped")]
+
+
+def test_detail_layer_is_baked_into_one_texture(tmp_path):
+    """Base x detail textures in the same UV space (Wind Waker eye white x pupil)
+    are multiplied into a single baked PNG used as the material's base color."""
+    import dataclasses
+
+    model = _model()
+    white = _tex("eyewhite")
+    white.data = bytes([0xFF]) * 32  # RGB565 all-white 4x4
+    pupil = _tex("pupil")
+    pupil.data = bytes([0x00]) * 32  # black
+    model.textures = [white, pupil]
+    m = model.materials[0]
+    model.materials = [
+        dataclasses.replace(
+            m,
+            tex_slots=[0, 1] + [-1] * 6,
+            tev_orders=[j3d.TevOrder(1, 1, 0), j3d.TevOrder(0, 0, 0)],
+            texgens=[j3d.TexGen(1, 4, 60), j3d.TexGen(1, 4, 33)],
+            tex_matrices=[None, j3d.TexMtx((0.5, 0.5), (1, 1), 0.0, (0.1, 0.0))] + [None] * 8,
+        )
+    ]
+    assert model.materials[0].detail()[0] == 1
+    st = gltf.export(model, tmp_path / "e")
+    g = json.loads((tmp_path / "e.gltf").read_text())
+    idx = g["materials"][0]["pbrMetallicRoughness"]["baseColorTexture"]["index"]
+    assert g["textures"][idx]["name"] == "eyewhite_x_pupil"
+    assert (tmp_path / "e_tex" / "eyewhite_x_pupil.png").exists()
+    assert g["materials"][0]["extras"]["gcrip_composite"] == ["eyewhite", "pupil"]
+    assert st.texture_images[-1][..., :3].max() == 0  # white * black = black

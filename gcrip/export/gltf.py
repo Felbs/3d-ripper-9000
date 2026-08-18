@@ -62,6 +62,7 @@ class ExportStats:
     animations: list[str] = field(default_factory=list)
     expressions: list[str] = field(default_factory=list)  # KHR_materials_variants names
     std_bones: dict[str, str] = field(default_factory=dict)  # joint name -> standard bone
+    material_tex: list[tuple[int, int]] = field(default_factory=list)  # (glTF tex, uv set)
 
 
 class _BufferBuilder:
@@ -205,21 +206,83 @@ def _write_textures(model: j3d.Model, tex_dir: Path, rel_prefix: str, stats: Exp
     return images, samplers, textures
 
 
-def _material(m: j3d.Material, model: j3d.Model) -> dict:
+class _Composites:
+    """Bakes two-layer materials (base x detail in the same UV space, e.g. Wind Waker's
+    eye-white shape x pupil texture) into one PNG so the eyes are not blank in glTF."""
+
+    def __init__(self, model, tex_dir, rel_prefix, images, samplers, textures, stats):
+        self.model, self.tex_dir, self.rel = model, tex_dir, rel_prefix
+        self.images, self.samplers, self.textures, self.stats = images, samplers, textures, stats
+        self.cache: dict[tuple, int | None] = {}
+
+    def bake(self, base: int, detail: int, mtx) -> int | None:
+        mk = None if mtx is None else (mtx.center, mtx.scale, mtx.rotation, mtx.translation)
+        key = (base, detail, mk)
+        if key in self.cache:
+            return self.cache[key]
+        imgs = self.stats.texture_images
+        a = imgs[base] if base < len(imgs) else None
+        b = imgs[detail] if detail < len(imgs) else None
+        out_idx = None
+        if a is not None and b is not None and (min(b.shape[:2]) > 8 or b.shape == a.shape):
+            h, w = max(a.shape[0], b.shape[0]), max(a.shape[1], b.shape[1])
+            v, u = np.mgrid[0:h, 0:w]
+            uv = np.stack([(u + 0.5) / w, (v + 0.5) / h], axis=-1).reshape(-1, 2)
+            uv2 = mtx.apply(uv) if mtx is not None else uv
+            ta, tb = self.model.textures[base], self.model.textures[detail]
+
+            def sample(img, uvs, wrap_s, wrap_t):
+                ih, iw = img.shape[:2]
+                x = uvs[:, 0] * iw
+                y = uvs[:, 1] * ih
+                x = np.mod(x, iw) if wrap_s == 1 else np.clip(x, 0, iw - 1)
+                y = np.mod(y, ih) if wrap_t == 1 else np.clip(y, 0, ih - 1)
+                return img[np.clip(y.astype(int), 0, ih - 1), np.clip(x.astype(int), 0, iw - 1)]
+
+            pa = sample(a, uv, ta.wrap_s, ta.wrap_t).astype(np.float32) / 255
+            pb = sample(b, uv2, tb.wrap_s, tb.wrap_t).astype(np.float32) / 255
+            out = (pa * pb * 255 + 0.5).astype(np.uint8).reshape(h, w, 4)
+            name = _safe(f"{ta.name}_x_{tb.name}")
+            fname = f"{name}.png"
+            png.write_rgba(self.tex_dir / fname, out)
+            self.images.append({"uri": f"{self.rel}/{fname}", "name": name})
+            self.samplers.append(self.samplers[base])
+            self.textures.append(
+                {"source": len(self.images) - 1, "sampler": len(self.samplers) - 1, "name": name}
+            )
+            self.stats.texture_images.append(out)
+            mean = out[..., :3].mean(axis=(0, 1)) / 255.0
+            self.stats.texture_colors.append(tuple(float(x) for x in mean))
+            self.stats.texture_files.append(f"{self.rel}/{fname}")
+            self.stats.textures = len(self.textures)
+            out_idx = len(self.textures) - 1
+        self.cache[key] = out_idx
+        return out_idx
+
+
+def _material(m: j3d.Material, model: j3d.Model, comps: _Composites | None = None) -> dict:
     mat: dict = {
         "name": m.name,
         "pbrMetallicRoughness": {"metallicFactor": 0.0, "roughnessFactor": 1.0},
         "doubleSided": m.cull_mode == 0,
     }
-    d = m.diffuse()
+    d = m.diffuse(model.textures)
     tex_alpha = False
     if d is not None and d[0] < len(model.textures):
         tex, uv = d
+        det = m.detail(model.textures) if comps is not None else None
+        if det is not None:
+            baked = comps.bake(tex, det[0], det[2])
+            if baked is not None:
+                names = [model.textures[tex].name, model.textures[det[0]].name]
+                mat["extras"] = {"gcrip_composite": names}
+                tex_alpha = model.textures[tex].has_alpha or model.textures[det[0]].has_alpha
+                tex = baked
         info: dict = {"index": tex}
         if uv:
             info["texCoord"] = uv
         mat["pbrMetallicRoughness"]["baseColorTexture"] = info
-        tex_alpha = model.textures[tex].has_alpha
+        tex_alpha = tex_alpha or (tex < len(model.textures) and model.textures[tex].has_alpha)
     if m.blend_type in (1, 3):
         mat["alphaMode"] = "BLEND"
     elif m.alpha_comp0 != 7 or m.alpha_comp1 != 7:
@@ -258,8 +321,15 @@ def export(
     images, samplers, textures = _write_textures(
         model, out_dir / f"{stem}_tex", f"{stem}_tex", stats
     )
-    materials = [_material(m, model) for m in model.materials]
+    comps = _Composites(
+        model, out_dir / f"{stem}_tex", f"{stem}_tex", images, samplers, textures, stats
+    )
+    materials = [_material(m, model, comps) for m in model.materials]
     stats.materials = len(materials)
+    for mat in materials:
+        bct = mat["pbrMetallicRoughness"].get("baseColorTexture")
+        tc = (-1, 0) if bct is None else (bct["index"], bct.get("texCoord", 0))
+        stats.material_tex.append(tc)
 
     buf = _BufferBuilder()
     joints = model.joints
@@ -483,7 +553,7 @@ def export(
     used_names: dict[str, int] = {}
     root_children: list[int] = []
     variant_children: list[int] = []
-    face = _FaceSwitches(model, materials, patterns or [], stats)
+    face = _FaceSwitches(model, materials, patterns or [], stats, comps)
     for shape, prim in primitives:
         mat_name = (
             model.materials[shape.material].name
@@ -627,9 +697,9 @@ def _natural(name: str) -> list:
     return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", name)]
 
 
-def _diffuse_slot(m: j3d.Material) -> int | None:
+def _diffuse_slot(m: j3d.Material, textures: list) -> int | None:
     """Which of the 8 texture slots the exported base-color texture came from."""
-    d = m.diffuse()
+    d = m.diffuse(textures)
     if d is None:
         return None
     for slot, t in enumerate(m.tex_slots):
@@ -651,12 +721,13 @@ class _FaceSwitches:
         (e.g. "link_freez", "talk#4") as KHR_materials_variants.
     """
 
-    def __init__(self, model, materials, patterns, stats):
+    def __init__(self, model, materials, patterns, stats, comps=None):
         self.model = model
         self.materials = materials
         self.stats = stats
+        self.comps = comps
         self.mat_index = {m.name: m.index for m in model.materials}
-        self.slot_of = {m.index: _diffuse_slot(m) for m in model.materials}
+        self.slot_of = {m.index: _diffuse_slot(m, model.textures) for m in model.materials}
         self.alt_mat: dict[tuple[int, int], int] = {}  # (base material, tex) -> material
         self.by_material: dict[int, list[int]] = {}  # base material -> textures (ordered)
         self.states: list[tuple[str, dict[int, int]]] = []
@@ -715,7 +786,17 @@ class _FaceSwitches:
         if k not in self.alt_mat:
             m = json.loads(json.dumps(self.materials[mi]))
             m["name"] = f"{self.model.materials[mi].name}@{self.model.textures[tex].name}"
-            m["pbrMetallicRoughness"]["baseColorTexture"]["index"] = tex
+            gl_tex = tex
+            det = (
+                self.model.materials[mi].detail(self.model.textures)
+                if self.comps is not None
+                else None
+            )
+            if det is not None:
+                baked = self.comps.bake(tex, det[0], det[2])
+                if baked is not None:
+                    gl_tex = baked
+            m["pbrMetallicRoughness"]["baseColorTexture"]["index"] = gl_tex
             self.materials.append(m)
             self.alt_mat[k] = len(self.materials) - 1
         return self.alt_mat[k]

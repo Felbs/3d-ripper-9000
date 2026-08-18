@@ -137,6 +137,33 @@ class TexGen:
 
 
 @dataclass
+class TexMtx:
+    """J3D texture matrix (SRT form). uv' = S*R*(uv - center) + center + trans."""
+
+    center: tuple[float, float]
+    scale: tuple[float, float]
+    rotation: float  # degrees
+    translation: tuple[float, float]
+
+    @property
+    def identity(self) -> bool:
+        return (
+            abs(self.scale[0] - 1) < 1e-6
+            and abs(self.scale[1] - 1) < 1e-6
+            and abs(self.rotation) < 1e-6
+            and abs(self.translation[0]) < 1e-6
+            and abs(self.translation[1]) < 1e-6
+        )
+
+    def apply(self, uv: np.ndarray) -> np.ndarray:
+        c = np.array(self.center, np.float64)
+        r = np.radians(self.rotation)
+        cs, sn = np.cos(r), np.sin(r)
+        m = np.array([[cs, -sn], [sn, cs]]) * np.array(self.scale)[None, :]
+        return (uv - c) @ m.T + c + np.array(self.translation)
+
+
+@dataclass
 class Material:
     index: int
     name: str
@@ -154,13 +181,44 @@ class Material:
     alpha_ref1: int
     zwrite: bool
     material_color: tuple[float, float, float, float]
+    tex_matrices: list = field(default_factory=lambda: [None] * 10)  # TexMtx per slot
 
-    def diffuse(self) -> tuple[int, int] | None:
+    def texgen_matrix(self, g: TexGen) -> TexMtx | None:
+        """The SRT matrix a texgen uses (None for identity / non-SRT matrices)."""
+        if 30 <= g.matrix < 60 and (g.matrix - 30) % 3 == 0:
+            k = (g.matrix - 30) // 3
+            if k < len(self.tex_matrices):
+                return self.tex_matrices[k]
+        return None
+
+    def detail(self, textures: list | None = None) -> tuple[int, int, TexMtx | None] | None:
+        """A second texture layer multiplied over the base color in the same UV space
+        (Wind Waker eyes: eye-white shape x pupil): (TEX1 index, uv set, texmatrix)."""
+        d = self.diffuse(textures)
+        if d is None:
+            return None
+        base_tex, base_uv = d
+        for o in self.tev_orders:
+            if not (0 <= o.texmap < 8) or self.tex_slots[o.texmap] < 0:
+                continue
+            tex = self.tex_slots[o.texmap]
+            if tex == base_tex or not (0 <= o.texcoord < len(self.texgens)):
+                continue
+            g = self.texgens[o.texcoord]
+            if g.uv_set != base_uv:
+                continue
+            if g.matrix != 60 and self.texgen_matrix(g) is None:
+                continue  # projection / non-SRT matrix: can't bake
+            return tex, base_uv, self.texgen_matrix(g)
+        return None
+
+    def diffuse(self, textures: list | None = None) -> tuple[int, int] | None:
         """(TEX1 texture index, uv set) for the best "base color" texture: a TEV
         stage sampling a texture through a real vertex-UV texgen, preferring an
         identity texture matrix (animated/scrolling layers like pupils use a
-        matrix) and then TEV stage order. Falls back to the first bound texture."""
-        best: tuple[tuple[int, int], int, int] | None = None  # (rank, tex, uv)
+        matrix), then colour over intensity-only formats (highlight/shade layers),
+        then TEV stage order. Falls back to the first bound texture."""
+        best: tuple[tuple[int, int, int], int, int] | None = None  # (rank, tex, uv)
         for stage, o in enumerate(self.tev_orders):
             if not (0 <= o.texmap < 8) or self.tex_slots[o.texmap] < 0:
                 continue
@@ -169,9 +227,15 @@ class Material:
                 uv = g.uv_set
                 if uv is None:
                     continue
-                rank = (0 if g.matrix == 60 else 1, stage)
+                tm = self.texgen_matrix(g)
+                ident = g.matrix == 60 or (tm is not None and tm.identity)
+                tex = self.tex_slots[o.texmap]
+                gray = 1
+                if textures is not None and tex < len(textures):
+                    gray = 1 if textures[tex].fmt in (0, 1, 2, 3) else 0
+                rank = (0 if ident else 1, gray, stage)
                 if best is None or rank < best[0]:
-                    best = (rank, self.tex_slots[o.texmap], uv)
+                    best = (rank, tex, uv)
         if best is not None:
             return best[1], best[2]
         for o in self.tev_orders:
@@ -569,7 +633,7 @@ def _parse_mat3(data: bytes, off: int) -> list[Material]:
         _ntexgen_off,
         texgen_off,
         _posttexgen_off,
-        _texmtx_off,
+        texmtx_off,
         _posttexmtx_off,
         texidx_off,
         tevorder_off,
@@ -614,6 +678,17 @@ def _parse_mat3(data: bytes, off: int) -> list[Material]:
                 continue
             gt, gs, gm = struct.unpack_from(">BBB", data, off + texgen_off + gi * 4)
             texgens.append(TexGen(gt, gs, gm))
+        texmtx_idx = struct.unpack_from(">10H", data, p + 0x48)
+        tex_matrices: list = []
+        for mi in texmtx_idx:
+            if mi == 0xFFFF or not texmtx_off:
+                tex_matrices.append(None)
+                continue
+            q = off + texmtx_off + mi * 0x64
+            cx, cy, _cz, sx, sy = struct.unpack_from(">5f", data, q + 4)
+            (rot,) = struct.unpack_from(">h", data, q + 24)
+            tx, ty = struct.unpack_from(">2f", data, q + 28)
+            tex_matrices.append(TexMtx((cx, cy), (sx, sy), rot * 180.0 / 32768.0, (tx, ty)))
         orders = []
         for oi in tevorder_idx:
             if oi == 0xFFFF or not tevorder_off:
@@ -657,6 +732,7 @@ def _parse_mat3(data: bytes, off: int) -> list[Material]:
                 alpha_ref1=r1,
                 zwrite=zwrite,
                 material_color=mcol,
+                tex_matrices=tex_matrices,
             )
         )
     return mats
