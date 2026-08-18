@@ -39,7 +39,9 @@ if cfg.get("addon"):
 
 def import_model(path):
     if addon is not None:
-        bpy.ops.gcrip.import_gltf(filepath=path, mixamo=False)
+        # controls=False: timers never fire in batch mode, so add the drivers directly
+        bpy.ops.gcrip.import_gltf(filepath=path, mixamo=False, controls=False)
+        addon.add_expression_controls(list(bpy.data.objects))
     else:
         bpy.ops.import_scene.gltf(filepath=path)
         for o in bpy.data.objects:
@@ -75,7 +77,9 @@ def one(job):
                 bpy.ops.ed.lib_id_load_custom_preview(filepath=job["thumb"])
         except Exception as e:  # noqa: BLE001
             print("PREVIEW_FAIL", e)
-    # keep textures external but relative to the .blend
+    # pack textures so the .blend is self-contained (moves/downloads keep working)
+    if job.get("pack", True):
+        bpy.ops.file.pack_all()
     bpy.ops.wm.save_as_mainfile(filepath=job["blend"], compress=True, relative_remap=True)
 
 

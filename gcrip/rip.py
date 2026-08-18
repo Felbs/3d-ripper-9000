@@ -48,6 +48,7 @@ class ModelResult:
     expressions: list[str] = field(default_factory=list)
     std_bones: dict[str, str] = field(default_factory=dict)
     blend_rel: str | None = None  # set by `gcrip blend`
+    glb_rel: str | None = None  # set by `gcrip pack`
     seconds: float = 0.0
 
 
@@ -595,6 +596,7 @@ input#q{width:100%;max-width:40rem;padding:.5rem .7rem;border-radius:6px;border:
 a{color:#8ab4f8;text-decoration:none}a:hover{text-decoration:underline}
 details{margin:.4rem 0}summary{cursor:pointer;color:#9a9aa6}
 summary .src{color:#6f6f7c;font-size:.7rem}
+.dl{color:#8f8f9c;margin-top:.25rem}.dl a{margin:0 .1rem}
 .act{display:none;gap:.3rem;margin-top:.35rem}body.served .act{display:flex}
 .act button{flex:1;background:#2b2b34;color:#dfe3ff;border:1px solid #3a3a46;border-radius:5px;padding:.3rem .4rem;font-size:.72rem;cursor:pointer}
 .act button:hover{background:#3a3a48}.act button:disabled{opacity:.6}
@@ -608,6 +610,12 @@ document.querySelectorAll('.card').forEach(c=>{c.style.display=c.dataset.k.inclu
 // "Open in Blender" only works when served by `gcrip serve` (needs a local endpoint)
 const served=location.protocol.startsWith('http');
 document.body.classList.toggle('served',served);
+// served: the glb link packs gltf+bin+textures on the fly; on disk it needs `gcrip pack` first
+document.querySelectorAll('a.glb').forEach(a=>{
+  if(served){a.href='/glb?path='+encodeURIComponent(a.getAttribute('href'));}
+  else{a.addEventListener('click',e=>{e.preventDefault();
+    alert('Run `gcrip pack <ripdir>` once to write .glb files, or `gcrip serve <ripdir>` to download them from here.');});}
+});
 document.querySelectorAll('.act button').forEach(b=>b.addEventListener('click',async e=>{
   const path=b.parentElement.dataset.path;const kind=b.classList.contains('open')?'open':'reveal';
   b.disabled=true;const old=b.textContent;b.textContent=kind==='open'?'Launching...':'...';
@@ -669,10 +677,19 @@ def write_report(res: RipResult) -> Path:
         else:
             parts.append(
                 f"<div class='m'>{m.triangles:,} tris · {m.joints} joints · {m.textures} tex"
-                f"{' · skinned' if m.skinned else ''} · <a href='{html.escape(m.out_rel or '')}'>gltf</a>"
-                + (f" · <a href='{html.escape(m.blend_rel)}'>blend</a>" if m.blend_rel else "")
-                + "</div>"
+                f"{' · skinned' if m.skinned else ''}</div>"
             )
+            # downloads: .glb is the only single-file form (gltf needs its .bin + _tex folder)
+            gltf_rel = html.escape(m.out_rel or "", quote=True)
+            dl = [f"<a class='glb' href='{gltf_rel}' title='one file, textures embedded'>glb</a>"]
+            if m.glb_rel:
+                dl = [f"<a href='{html.escape(m.glb_rel, quote=True)}' download>glb</a>"]
+            if m.blend_rel:
+                dl.append(f"<a href='{html.escape(m.blend_rel, quote=True)}' download>blend</a>")
+            dl.append(
+                f"<a href='{gltf_rel}' title='needs the .bin and _tex folder next to it'>gltf</a>"
+            )
+            parts.append("<div class='dl'>download: " + " · ".join(dl) + "</div>")
             target = m.blend_rel or m.out_rel or ""
             parts.append(
                 f"<div class='act' data-path='{html.escape(target, quote=True)}'>"

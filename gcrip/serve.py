@@ -8,6 +8,7 @@ tiny endpoints let the page act on your machine:
     /open?path=<rel .blend or .gltf>   launch Blender on that file (imports the glTF
                                         through the add-on if no .blend exists yet)
     /reveal?path=<rel>                  show the file in Explorer / Finder
+    /glb?path=<rel .gltf>               download the model as one self-contained .glb
 
 Only paths inside the served folder are accepted; the server binds to localhost.
 """
@@ -26,6 +27,7 @@ import webbrowser
 from pathlib import Path
 
 from gcrip.blend import addon_path, find_blender
+from gcrip.export import glb as glbmod
 
 
 def _open_blender(exe: str, path: Path) -> None:
@@ -101,6 +103,23 @@ def make_handler(root: Path, blender: str | None):
                     return self._json(200, {"opened": str(p)})
                 _reveal(p)
                 return self._json(200, {"revealed": str(p)})
+            if u.path == "/glb":
+                # self-contained download: pack .gltf + .bin + textures on the fly
+                q = urllib.parse.parse_qs(u.query)
+                p = self._target(q)
+                if p is None or p.suffix != ".gltf":
+                    return self._json(404, {"error": "no such .gltf inside the rip folder"})
+                try:
+                    data = glbmod.pack(p)
+                except Exception as e:  # noqa: BLE001
+                    return self._json(500, {"error": f"pack failed: {e}"})
+                self.send_response(200)
+                self.send_header("Content-Type", "model/gltf-binary")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Content-Disposition", f'attachment; filename="{p.stem}.glb"')
+                self.end_headers()
+                self.wfile.write(data)
+                return None
             if u.path == "/status":
                 return self._json(200, {"blender": blender, "root": str(root)})
             return super().do_GET()

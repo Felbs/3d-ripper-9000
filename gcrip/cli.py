@@ -212,6 +212,41 @@ def cmd_blend(args: argparse.Namespace) -> int:
     return 0 if not res.failed else 1
 
 
+def cmd_pack(args: argparse.Namespace) -> int:
+    """Write a self-contained .glb next to every model of a rip."""
+    from gcrip.export.glb import write_glb
+    from gcrip.rip import load_results, write_report
+
+    game_dir = Path(args.ripdir)
+    res = load_results(game_dir)
+    n = 0
+    for m in res.models:
+        if not m.out_rel or (args.filter and args.filter not in m.path):
+            continue
+        out = write_glb(game_dir / m.out_rel)
+        m.glb_rel = str(Path(m.out_rel).with_suffix(".glb").as_posix())
+        n += 1
+        if not args.quiet and n % 100 == 0:
+            print(f"  {n} packed", flush=True)
+    (game_dir / "rip_results.json").write_text(
+        json.dumps(
+            {
+                "game_id": res.game_id,
+                "title": res.title,
+                "seconds": res.seconds,
+                "models": [m.__dict__ for m in res.models],
+                "textures": [t.__dict__ for t in res.textures],
+            },
+            indent=1,
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    write_report(res)
+    print(f"{n} .glb files written (last: {out if n else '-'})")
+    return 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     from gcrip.serve import serve
 
@@ -297,6 +332,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--force", action="store_true", help="rewrite .blend files that already exist")
     p.add_argument("-q", "--quiet", action="store_true")
     p.set_defaults(fn=cmd_blend)
+
+    p = sub.add_parser("pack", help="write a self-contained .glb next to every model")
+    p.add_argument("ripdir", help="out/rip/<GameID>")
+    p.add_argument("--filter", help="only models whose disc path contains this")
+    p.add_argument("-q", "--quiet", action="store_true")
+    p.set_defaults(fn=cmd_pack)
 
     p = sub.add_parser("serve", help="open report.html locally with 'Open in Blender' buttons")
     p.add_argument("ripdir", help="out/rip/<GameID>")

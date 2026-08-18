@@ -10,8 +10,9 @@ What it adds
     - sets the scene frame rate to the clips' rate (30 fps)
     - optionally renames humanoid bones to Mixamo names (mixamorig:Hips ...)
 * Sidebar (N panel) > GCRip tab:
-    - Expressions: one row of buttons per face material (eyes, mouth, brows...) to
-      switch between the textures the game's BTP animations use
+    - Expressions: a slider per face part (eyes, mouth, brows...) - an integer
+      property on the armature that drives which texture variant is visible, so it
+      can be keyframed like a shape key - plus one button per texture
     - Bones: rename recognised humanoid bones to Mixamo names and back
     - Fix visibility / fps buttons for files imported with the stock importer
     - "Add rip folder as asset library": after `gcrip blend`, browse every ripped model
@@ -136,6 +137,55 @@ def _natural(s):
     return [int(t) if t.isdigit() else t for t in re.split(r"(\d+)", s)]
 
 
+def add_expression_controls(objects):
+    """Put an integer property per face part on the model's armature (or root) and drive
+    the visibility of the base mesh and its texture clones from it: 0 = the model's
+    default texture, 1..N = the alternates, in name order. Scrub it in
+    Object Properties > Custom Properties like a shape key, or keyframe it."""
+    groups = expression_groups(objects)
+    if not groups:
+        return 0
+    arms = _armatures(objects)
+    host = arms[0] if arms else _root(objects[0])
+    # freshly imported objects must be known to the depsgraph before drivers reference
+    # them, otherwise the first evaluation fails and the drivers stay flagged invalid
+    bpy.context.view_layer.update()
+    n = 0
+    for base, (base_obj, clones) in sorted(groups.items()):
+        prop = f"expr_{base}"
+        options = ([base_obj] if base_obj else []) + [o for _t, o in clones]
+        names = (["default"] if base_obj else []) + [t for t, _o in clones]
+        host[prop] = 0
+        try:
+            ui = host.id_properties_ui(prop)
+            ui.update(
+                min=0,
+                max=len(options) - 1,
+                soft_min=0,
+                soft_max=len(options) - 1,
+                description=", ".join(f"{i}={nm}" for i, nm in enumerate(names)),
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        for i, o in enumerate(options):
+            for path in ("hide_viewport", "hide_render"):
+                o.driver_remove(path)
+                fc = o.driver_add(path)
+                drv = fc.driver
+                drv.type = "SCRIPTED"
+                v = drv.variables.new()
+                v.name = "ex"
+                v.type = "SINGLE_PROP"
+                v.targets[0].id = host
+                v.targets[0].data_path = f'["{prop}"]'
+                drv.expression = f"ex != {i}"
+                drv.is_valid = True  # clear the "invalid" flag from the pre-variable evaluation
+            with contextlib.suppress(RuntimeError):
+                o.hide_set(False)  # the eye icon must not fight the driven monitor icon
+        n += 1
+    return n
+
+
 def set_expression(objects, base, texture):
     """Show the clone of `base` that uses `texture` ("" = the model's default) and hide
     the other alternatives."""
@@ -143,6 +193,15 @@ def set_expression(objects, base, texture):
     if base not in groups:
         return
     base_obj, clones = groups[base]
+    arms = _armatures(objects)
+    host = arms[0] if arms else _root(objects[0])
+    prop = f"expr_{base}"
+    if prop in host:  # driven: just move the property
+        names = ([""] if base_obj else []) + [t for t, _o in clones]
+        if texture in names:
+            host[prop] = names.index(texture)
+            host.update_tag()
+            return
     if base_obj is not None:
         _set_hidden(base_obj, texture != "")
     for tex, o in clones:
@@ -167,12 +226,31 @@ class GCRIP_OT_import(bpy.types.Operator, ImportHelper):
     )
     fps: FloatProperty(name="Scene FPS", default=30.0, min=1, max=240)
     hide: BoolProperty(name="Hide expression/alternate meshes", default=True)
+    controls: BoolProperty(
+        name="Expression sliders",
+        description="Add a driven expr_<part> property per face part on the armature",
+        default=True,
+    )
 
     def execute(self, context):
         before = set(bpy.data.objects)
         bpy.ops.import_scene.gltf(filepath=self.filepath)
         new = [o for o in bpy.data.objects if o not in before]
         n_hidden = hide_variants(new) if self.hide else 0
+        n_ctl = 0
+        if self.controls:
+            # Drivers created while an operator is running come out permanently flagged
+            # invalid (observed in 5.1), so build them right after this operator returns.
+            n_ctl = len(expression_groups(new))
+            names = [o.name for o in new]
+
+            def _later():
+                objs = [bpy.data.objects[n] for n in names if n in bpy.data.objects]
+                with contextlib.suppress(Exception):
+                    add_expression_controls(objs)
+                return None
+
+            bpy.app.timers.register(_later, first_interval=0.0)
         context.scene.render.fps = int(round(self.fps))
         context.scene.render.fps_base = 1.0
         n_ren = 0
@@ -182,8 +260,8 @@ class GCRIP_OT_import(bpy.types.Operator, ImportHelper):
         acts = sum(1 for o in new if o.animation_data and o.animation_data.nla_tracks)
         self.report(
             {"INFO"},
-            f"gcrip: {len(new)} objects, {n_hidden} alternates hidden, "
-            f"{n_ren} bones renamed, animations on {acts} objects",
+            f"gcrip: {len(new)} objects, {n_hidden} alternates hidden, {n_ctl} expression "
+            f"controls, {n_ren} bones renamed, animations on {acts} objects",
         )
         return {"FINISHED"}
 
@@ -286,17 +364,25 @@ class GCRIP_PT_panel(bpy.types.Panel):
         box.label(text="Expressions", icon="MONKEY")
         if not groups:
             box.label(text="(no texture switches in this model)")
+        arms = _armatures(fam)
+        host = arms[0] if arms else _root(obj)
         for base, (base_obj, clones) in sorted(groups.items()):
             col = box.column(align=True)
-            col.label(text=base)
+            prop = f"expr_{base}"
+            if prop in host:
+                col.prop(host, f'["{prop}"]', text=base, slider=True)
+            else:
+                col.label(text=base)
+            cur = host.get(prop, None)
             row = col.row(align=True)
-            shown = bool(base_obj and not base_obj.hide_get())
+            shown = cur == 0 if cur is not None else bool(base_obj and not base_obj.hide_get())
             op = row.operator("gcrip.set_expression", text="default", depress=shown)
             op.base, op.texture = base, ""
             for i, (tex, o) in enumerate(clones):
                 if i and i % 4 == 0:
                     row = col.row(align=True)
-                op = row.operator("gcrip.set_expression", text=tex, depress=not o.hide_get())
+                on = (cur == i + 1) if cur is not None else not o.hide_get()
+                op = row.operator("gcrip.set_expression", text=tex, depress=on)
                 op.base, op.texture = base, tex
         box = lay.box()
         box.label(text="Rig", icon="ARMATURE_DATA")
