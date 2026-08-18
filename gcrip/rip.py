@@ -377,11 +377,19 @@ class _AnimIndex:
                 self._cache[e.path] = None
         return self._cache[e.path]
 
-    def _match(self, entries, model: j3d.Model):
+    def _match(self, entries, model: j3d.Model, seen: set[str] | None = None):
+        """Clips/patterns among `entries` that fit `model`. `seen` (per model) drops
+        byte-identical clips that recur in many archives - Sunshine ships every NPC's
+        animations inside every level's .szs, which would attach thousands of copies."""
         clips: list[ja.Bck] = []
         pats: list[ja.Btp] = []
         mat_names = {m.name for m in model.materials}
         for e in entries:
+            h = e.sha1_decompressed or e.sha1
+            if seen is not None and h:
+                if h in seen:
+                    continue
+                seen.add(h)
             a = self._load(e)
             if a is None:
                 continue
@@ -399,13 +407,24 @@ class _AnimIndex:
         clips: list[ja.Bck] = []
         pats: list[ja.Btp] = []
         sources: list[str] = []
+        seen: set[str] = set()
         for c in self.containers_of(e):
-            cl, pa = self._match(self.by_container.get(c, []), model)
+            cl, pa = self._match(self.by_container.get(c, []), model, seen)
             if cl or pa:
                 clips += cl
                 pats += pa
                 sources.append(c)
         return clips, pats, sources
+
+    def _own_hashes(self, e: ManifestEntry) -> set[str]:
+        """Content hashes of the clips in a model's own archives (already attached)."""
+        out: set[str] = set()
+        for c in self.containers_of(e):
+            for f in self.by_container.get(c, []):
+                h = f.sha1_decompressed or f.sha1
+                if h:
+                    out.add(h)
+        return out
 
     def orphan_targets(self, exported):
         """Clips that no model in their own archive can use (animation-only archives like
@@ -415,6 +434,7 @@ class _AnimIndex:
         name affinity (Kolin.arc <- Kolin1.arc) and detail. Small skeletons need name or
         BTP evidence so coincidental joint counts don't attract clips."""
         out: dict[int, tuple[list, list, list]] = {}
+        seen_by_idx: dict[int, set[str]] = {}
         # what each exported model can absorb, by container
         local_counts: dict[str, set[int]] = {}
         local_mats: dict[str, set[str]] = {}
@@ -448,7 +468,7 @@ class _AnimIndex:
                 if mapped is not None:
                     if mapped not in {_arc_stem(h) for h in homes}:
                         continue
-                elif str(Path(me.container).parent) != parent:
+                elif all(str(Path(h).parent) != parent for h in homes):
                     continue
                 n = len(model.joints)
                 mats = {m.name for m in model.materials}
@@ -479,7 +499,8 @@ class _AnimIndex:
                     targets.add(j)
             for idx in sorted(targets):
                 me, r, model = exported[idx]
-                clips, pats = self._match(entries, model)
+                seen = seen_by_idx.setdefault(idx, self._own_hashes(exported[idx][0]))
+                clips, pats = self._match(entries, model, seen)
                 clips = [c for c in clips if c.joint_count in counts]
                 pats = [p for p in pats if p in orphan_btps]
                 if not clips and not pats:
