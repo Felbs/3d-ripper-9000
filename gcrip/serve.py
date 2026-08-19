@@ -129,6 +129,11 @@ def make_handler(root: Path, blender: str | None):
 
 def serve(game_dir: Path, *, port: int = 8765, blender: str | None = None, open_browser=True):
     root = Path(game_dir).resolve()
+    if not (root / "report.html").exists():
+        raise SystemExit(
+            f"{root} has no report.html - pass the out/rip/<GameID> folder of a finished rip "
+            f"(paths are relative to the current directory: {Path.cwd()})"
+        )
     exe = find_blender(blender)
     handler = make_handler(root, exe)
     httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
