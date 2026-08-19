@@ -22,6 +22,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 import urllib.parse
 import webbrowser
 from pathlib import Path
@@ -29,25 +30,55 @@ from pathlib import Path
 from gcrip.blend import addon_path, find_blender
 from gcrip.export import glb as glbmod
 
+_OPEN_SCRIPT = """
+import bpy, importlib.util, traceback, time
+LOG = {log!r}
+def log(msg):
+    with open(LOG, "a", encoding="utf-8") as fh:
+        fh.write(time.strftime("%H:%M:%S ") + msg + chr(10))
+try:
+    bpy.ops.wm.read_homefile(use_empty=True)
+    p = {addon!r}
+    if p:
+        s = importlib.util.spec_from_file_location("gcrip_blender", p)
+        m = importlib.util.module_from_spec(s)
+        s.loader.exec_module(m)
+        m.register()
+        bpy.ops.gcrip.import_gltf(filepath={path!r})
+    else:
+        bpy.ops.import_scene.gltf(filepath={path!r})
+    bpy.context.scene.render.fps = 30
+    n = len([o for o in bpy.data.objects if o.type == "MESH"])
+    log("opened " + {path!r} + f" ({{n}} meshes)")
+    for a in bpy.context.screen.areas:
+        if a.type == "VIEW_3D":
+            reg = next(r for r in a.regions if r.type == "WINDOW")
+            with bpy.context.temp_override(area=a, region=reg):
+                bpy.ops.view3d.view_all()
+except Exception:
+    log("FAILED " + {path!r} + chr(10) + traceback.format_exc())
+    def _popup(self, context):
+        self.layout.label(text="gcrip import failed - see " + LOG)
+    bpy.context.window_manager.popup_menu(_popup, title="GCRip", icon="ERROR")
+"""
 
-def _open_blender(exe: str, path: Path) -> None:
+
+def _open_blender(exe: str, path: Path, root: Path) -> None:
     if path.suffix == ".blend":
         subprocess.Popen([exe, str(path)])
         return
-    # no .blend yet: start Blender and import the glTF via the add-on's importer
+    # no .blend yet: start Blender with a script that imports the glTF via the add-on,
+    # frames it, and logs success/failure to <root>/_gcrip_open.log
     addon = addon_path()
-    expr = (
-        "import bpy,importlib.util,sys\n"
-        f"p={str(addon)!r}\n"
-        "if p and p!='None':\n"
-        "    s=importlib.util.spec_from_file_location('gcrip_blender',p);m=importlib.util."
-        "module_from_spec(s);s.loader.exec_module(m);m.register()\n"
-        f"    bpy.ops.gcrip.import_gltf(filepath={str(path)!r})\n"
-        "else:\n"
-        f"    bpy.ops.import_scene.gltf(filepath={str(path)!r})\n"
-        "bpy.context.scene.render.fps=30\n"
+    script = root / f"_gcrip_open_{os.getpid()}_{int(time.time() * 1000)}.py"
+    script.write_text(
+        _OPEN_SCRIPT.format(
+            log=str(root / "_gcrip_open.log"), addon=str(addon) if addon else "", path=str(path)
+        ),
+        encoding="utf-8",
     )
-    subprocess.Popen([exe, "--python-expr", expr])
+    subprocess.Popen([exe, "--python", str(script)])
+    threading.Timer(60, lambda: script.unlink(missing_ok=True)).start()
 
 
 def _reveal(path: Path) -> None:
@@ -99,7 +130,9 @@ def make_handler(root: Path, blender: str | None):
                     if not blender:
                         msg = "Blender not found; restart with --blender PATH"
                         return self._json(500, {"error": msg})
-                    threading.Thread(target=_open_blender, args=(blender, p), daemon=True).start()
+                    threading.Thread(
+                        target=_open_blender, args=(blender, p, root), daemon=True
+                    ).start()
                     return self._json(200, {"opened": str(p)})
                 _reveal(p)
                 return self._json(200, {"revealed": str(p)})
