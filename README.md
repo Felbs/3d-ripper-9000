@@ -70,6 +70,29 @@ Wind Waker (USA): 2,759 models -> 1,856 unique glTFs, 4,406 animation clips, 1,8
 Twilight Princess (USA): 3,626 models -> 2,489 unique glTFs, 14,362 clips in ~10 minutes.
 Blender imports Link with all 594 clips in about 10 seconds.
 
+### Level recompilation (Wind Waker)
+
+```
+gcrip stage out/rip/GZLE01 --list           # what's on the disc (156 stages)
+gcrip stage out/rip/GZLE01 M_NewD2          # one stage -> stages/M_NewD2/M_NewD2.gltf
+gcrip stage out/rip/GZLE01 sea --rooms 44   # just Outset Island
+gcrip stage out/rip/GZLE01 --all            # every stage + stages/stage_matrix.md
+```
+
+`gcrip stage` reads the game's own placement files (`stage.dzs` / `room.dzr`) from the disc,
+places the room geometry with the MULT room table, resolves every placed actor
+(ACTR/SCOB/DOOR/TRES... chunks) to a model the rip already exported, and merges everything
+into **one level glTF**: instances share meshes, node transforms are baked flat (no
+armatures - the whole Great Sea imports into Blender in ~30 s; pass `--rigs` to keep
+skeletons instead), treasure chests pick the right box variant from their parameters, and
+doors come from the stage's own archive. Import it straight into Blender (or drop the
+packed `.glb` into Godot/Unity/Unreal). Actor names map to archives via
+a table mined from [noclip.website](https://noclip.website)'s Wind Waker code (which credits
+Winditor's ActorDatabase); vegetation drawn from display lists inside the game executable and
+invisible logic actors (switches, tags, triggers) are skipped and counted in the per-stage
+report. Whole-disc numbers: **156/156 stages build, 8,428 actors placed, ~3% unresolved**.
+The entire Great Sea - all 49 islands with their props - comes out as a single 28 MB scene.
+
 ## Status
 
 - **Phase 0 - disc filesystem walker: done.** `.iso`/`.gcm` parsing, FST tree,
@@ -194,6 +217,8 @@ gcrip survey D:/roms/gamecube -o out/survey    # whole library: which engine eac
 gcrip batch D:/roms/gamecube --survey out/survey/survey.jsonl --out out/rip   # rip every J3D disc, matrix
 gcrip serve out/GZLE01                         # report with Open-in-Blender buttons
 gcrip blend out/GZLE01                         # .blend asset library (needs Blender)
+gcrip stage out/GZLE01 M_NewD2                 # recompile a Wind Waker level into one glTF
+gcrip stage out/GZLE01 --all                   # every stage + stage_matrix.md
 ```
 
 ### Manifest layout

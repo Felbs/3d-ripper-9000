@@ -36,6 +36,31 @@ LOG = {log!r}
 def log(msg):
     with open(LOG, "a", encoding="utf-8") as fh:
         fh.write(time.strftime("%H:%M:%S ") + msg + chr(10))
+def frame_later():
+    # At --python startup there is no screen/window context yet; a timer fires once
+    # the UI is running, so the viewport can be framed and its clip range raised.
+    try:
+        radius = 0.0
+        for o in bpy.data.objects:
+            if o.type != "MESH":
+                continue
+            for c in o.bound_box:
+                w = o.matrix_world @ __import__("mathutils").Vector(c)
+                radius = max(radius, abs(w.x), abs(w.y), abs(w.z))
+        for window in bpy.context.window_manager.windows:
+            for a in window.screen.areas:
+                if a.type != "VIEW_3D":
+                    continue
+                for sp in a.spaces:
+                    if sp.type == "VIEW_3D" and radius > 900:
+                        sp.clip_end = max(sp.clip_end, radius * 8)
+                reg = next((r for r in a.regions if r.type == "WINDOW"), None)
+                if reg is not None:
+                    with bpy.context.temp_override(window=window, area=a, region=reg):
+                        bpy.ops.view3d.view_all()
+    except Exception:
+        log("frame failed" + chr(10) + traceback.format_exc())
+    return None
 try:
     bpy.ops.wm.read_homefile(use_empty=True)
     p = {addon!r}
@@ -50,11 +75,7 @@ try:
     bpy.context.scene.render.fps = 30
     n = len([o for o in bpy.data.objects if o.type == "MESH"])
     log("opened " + {path!r} + f" ({{n}} meshes)")
-    for a in bpy.context.screen.areas:
-        if a.type == "VIEW_3D":
-            reg = next(r for r in a.regions if r.type == "WINDOW")
-            with bpy.context.temp_override(area=a, region=reg):
-                bpy.ops.view3d.view_all()
+    bpy.app.timers.register(frame_later, first_interval=0.5)
 except Exception:
     log("FAILED " + {path!r} + chr(10) + traceback.format_exc())
     def _popup(self, context):
@@ -90,10 +111,17 @@ def _reveal(path: Path) -> None:
         subprocess.Popen(["xdg-open", str(path.parent)])
 
 
-def make_handler(root: Path, blender: str | None):
+def make_handler(root: Path, blender: str | None, game: str | None = None):
     class Handler(http.server.SimpleHTTPRequestHandler):
         def __init__(self, *a, **kw):
             super().__init__(*a, directory=str(root), **kw)
+
+        def end_headers(self):
+            # Without this, browsers heuristically cache report.html; serving a different
+            # game later on the same port then shows the OLD game's report and every
+            # button 404s against the new server.
+            self.send_header("Cache-Control", "no-store")
+            super().end_headers()
 
         def handle(self):
             # browser closed the connection early; not our problem
@@ -121,6 +149,14 @@ def make_handler(root: Path, blender: str | None):
 
         def do_GET(self):
             u = urllib.parse.urlparse(self.path)
+            if u.path == "/":
+                # A unique URL every time: the browser may hold a heuristically-cached
+                # report.html from a previous game served on this port, and it reuses
+                # that cache entry without ever contacting us. 302s are not cached.
+                self.send_response(302)
+                self.send_header("Location", f"/report.html?fresh={int(time.time() * 1000)}")
+                self.end_headers()
+                return None
             if u.path in ("/open", "/reveal"):
                 q = urllib.parse.parse_qs(u.query)
                 p = self._target(q)
@@ -154,7 +190,7 @@ def make_handler(root: Path, blender: str | None):
                 self.wfile.write(data)
                 return None
             if u.path == "/status":
-                return self._json(200, {"blender": blender, "root": str(root)})
+                return self._json(200, {"blender": blender, "root": str(root), "game": game})
             return super().do_GET()
 
     return Handler
@@ -167,14 +203,24 @@ def serve(game_dir: Path, *, port: int = 8765, blender: str | None = None, open_
             f"{root} has no report.html - pass the out/rip/<GameID> folder of a finished rip "
             f"(paths are relative to the current directory: {Path.cwd()})"
         )
+    # re-render the report so levels built since the rip (gcrip stage) show up
+    game = None
+    if (root / "rip_results.json").exists():
+        with contextlib.suppress(Exception):
+            from gcrip.rip import load_results, write_report
+
+            res = load_results(root)
+            write_report(res)
+            game = res.game_id
     exe = find_blender(blender)
-    handler = make_handler(root, exe)
+    handler = make_handler(root, exe, game)
     httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
-    url = f"http://127.0.0.1:{port}/report.html"
+    url = f"http://127.0.0.1:{port}/"
     print(f"serving {root}\n  {url}\n  Blender: {exe or 'NOT FOUND (pass --blender)'}")
     print("Ctrl+C to stop")
     if open_browser:
-        webbrowser.open(url)
+        # never open the bare report URL: a stale cache entry for it would win
+        webbrowser.open(f"{url}report.html?fresh={int(time.time() * 1000)}")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

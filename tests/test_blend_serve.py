@@ -53,3 +53,56 @@ def test_serve_endpoints_guard_paths(tmp_path):
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+def test_serve_no_store_and_game_in_status(tmp_path):
+    (tmp_path / "report.html").write_text("<p>hi</p>")
+    handler = serve.make_handler(tmp_path, blender=None, game="GTST01")
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    port = httpd.server_address[1]
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        base = f"http://127.0.0.1:{port}"
+        r = urllib.request.urlopen(base + "/report.html")
+        assert r.headers["Cache-Control"] == "no-store"
+        st = json.load(urllib.request.urlopen(base + "/status"))
+        assert st["game"] == "GTST01"
+    finally:
+        httpd.shutdown()
+
+
+def test_report_lists_stages(tmp_path):
+    from gcrip.rip import RipResult, write_report
+
+    res = RipResult(game_id="GTST01", title="Test", out_dir=tmp_path)
+    d = tmp_path / "stages" / "M_Test"
+    d.mkdir(parents=True)
+    (d / "M_Test.gltf").write_text("{}")
+    (d / "M_Test_report.json").write_text(json.dumps(
+        {"stage": "M_Test", "rooms": [0, 1], "room_models": 3, "placed": 42,
+         "triangles": 1234, "unresolved": 1}
+    ))
+    out = write_report(res)
+    html_text = out.read_text(encoding="utf-8")
+    assert "Levels" in html_text
+    assert "stages/M_Test/M_Test.gltf" in html_text
+    assert "42 actors" in html_text
+    assert "GCRIP_GAME=\"GTST01\"" in html_text or "GCRIP_GAME=" in html_text
+
+
+def test_serve_root_redirects_cache_busted(tmp_path):
+    (tmp_path / "report.html").write_text("<p>hi</p>")
+    handler = serve.make_handler(tmp_path, blender=None)
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    port = httpd.server_address[1]
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        import http.client
+
+        conn = http.client.HTTPConnection("127.0.0.1", port)
+        conn.request("GET", "/")
+        r = conn.getresponse()
+        assert r.status == 302
+        assert r.getheader("Location").startswith("/report.html?fresh=")
+    finally:
+        httpd.shutdown()

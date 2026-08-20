@@ -39,6 +39,7 @@ import contextlib  # noqa: E402
 import bpy  # noqa: E402
 from bpy.props import BoolProperty, FloatProperty, StringProperty  # noqa: E402
 from bpy_extras.io_utils import ImportHelper  # noqa: E402
+from mathutils import Vector  # noqa: E402
 
 VARIANT_KEY = "gcrip_variant_of"
 TEXTURE_KEY = "gcrip_texture"
@@ -211,6 +212,36 @@ def set_expression(objects, base, texture):
 # ---------------------------------------------------------------- operators
 
 
+def fit_viewports(objs) -> None:
+    """Big scene? Raise every 3D viewport's clip range and frame the import.
+
+    A recompiled level spans hundreds of thousands of units; Blender's default
+    clip end (1000) culls all of it, which looks like an empty, unclickable file."""
+    radius = 0.0
+    for o in objs:
+        if o.type != "MESH":
+            continue
+        for c in o.bound_box:
+            w = o.matrix_world @ Vector(c)
+            radius = max(radius, abs(w.x), abs(w.y), abs(w.z))
+    if radius < 900:  # default clip range already fits
+        return
+    for window in bpy.context.window_manager.windows:
+        for area in window.screen.areas:
+            if area.type != "VIEW_3D":
+                continue
+            for space in area.spaces:
+                if space.type == "VIEW_3D":
+                    space.clip_end = max(space.clip_end, radius * 8)
+                    space.clip_start = max(space.clip_start, radius / 1e5)
+            region = next((r for r in area.regions if r.type == "WINDOW"), None)
+            if region is not None:
+                with contextlib.suppress(Exception), bpy.context.temp_override(
+                    window=window, area=area, region=region
+                ):
+                    bpy.ops.view3d.view_all()
+
+
 class GCRIP_OT_import(bpy.types.Operator, ImportHelper):
     bl_idname = "gcrip.import_gltf"
     bl_label = "GCRip glTF (.gltf)"
@@ -253,6 +284,7 @@ class GCRIP_OT_import(bpy.types.Operator, ImportHelper):
             bpy.app.timers.register(_later, first_interval=0.0)
         context.scene.render.fps = int(round(self.fps))
         context.scene.render.fps_base = 1.0
+        fit_viewports(new)
         n_ren = 0
         if self.mixamo:
             for arm in _armatures(new):

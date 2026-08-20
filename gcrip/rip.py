@@ -8,6 +8,7 @@ out/<GameID>/disc_manifest.json
 
 from __future__ import annotations
 
+import contextlib
 import html
 import json
 import sys
@@ -626,11 +627,20 @@ summary .src{color:#6f6f7c;font-size:.7rem}
 """
 
 _JS = """
-const q=document.getElementById('q');q.addEventListener('input',()=>{const s=q.value.toLowerCase();
-document.querySelectorAll('.card').forEach(c=>{c.style.display=c.dataset.k.includes(s)?'':'none'})});
+// filter is debounced: with thousands of cards, filtering on every keystroke froze the tab
+const q=document.getElementById('q');const cards=[...document.querySelectorAll('.card')];
+let qt=null;q.addEventListener('input',()=>{clearTimeout(qt);qt=setTimeout(()=>{
+const s=q.value.toLowerCase();
+cards.forEach(c=>{const show=c.dataset.k.includes(s)?'':'none';
+if(c.style.display!==show)c.style.display=show;});},200);});
 // "Open in Blender" only works when served by `gcrip serve` (needs a local endpoint)
 const served=location.protocol.startsWith('http');
 document.body.classList.toggle('served',served);
+// A browser may show a cached report from a DIFFERENT game served earlier on this port;
+// every click would then 404. Ask the server which game it serves and reload if they differ.
+if(served&&typeof GCRIP_GAME!=='undefined'){fetch('/status').then(r=>r.json()).then(j=>{
+  if(j.game&&j.game!==GCRIP_GAME&&!location.search.includes('fresh')){
+    location.replace('/report.html?fresh='+Date.now());}}).catch(()=>{});}
 // served: the glb link packs gltf+bin+textures on the fly; on disk it needs `gcrip pack` first
 document.querySelectorAll('a.glb').forEach(a=>{
   if(served){a.href='/glb?path='+encodeURIComponent(a.getAttribute('href'));}
@@ -645,6 +655,65 @@ document.querySelectorAll('.act button').forEach(b=>b.addEventListener('click',a
   catch(err){b.textContent='! '+err;}
   setTimeout(()=>{b.textContent=old;b.disabled=false;},2500);}));
 """
+
+
+def _scan_stages(out_dir: Path) -> list[dict]:
+    """Levels written by `gcrip stage` under <out_dir>/stages/<name>/<name>.gltf."""
+    stages_dir = Path(out_dir) / "stages"
+    if not stages_dir.is_dir():
+        return []
+    found = []
+    for d in sorted(stages_dir.iterdir(), key=lambda p: p.name.lower()):
+        if not d.is_dir():
+            continue
+        for g in sorted(d.glob("*.gltf")):
+            info = {"name": d.name, "rel": f"stages/{d.name}/{g.name}"}
+            rep = d / f"{g.stem}_report.json"
+            if rep.exists():
+                with contextlib.suppress(OSError, ValueError):
+                    info.update(json.loads(rep.read_text(encoding="utf-8")))
+            found.append(info)
+    return found
+
+
+def _stage_cards(res: RipResult) -> list[str]:
+    stages = _scan_stages(res.out_dir)
+    if not stages:
+        return []
+    parts = [f"<h2>Levels <small>({len(stages)} recompiled stages)</small></h2>"]
+    if (res.out_dir / "stages" / "stage_matrix.md").exists():
+        parts.append(
+            "<div class='sub'>Whole levels: room geometry + every placed actor, one glTF each "
+            "(<code>gcrip stage</code>). Details: <a href='stages/stage_matrix.md'>"
+            "stage_matrix.md</a></div>"
+        )
+    parts.append("<div class='grid'>")
+    for s in stages:
+        rel = html.escape(s["rel"], quote=True)
+        key = html.escape(f"level stage {s['name']} {s.get('stage', '')}".lower(), quote=True)
+        parts.append(f"<div class='card' data-k=\"{key}\">")
+        parts.append(f"<div class='n'>{html.escape(s['name'])}</div>")
+        if "placed" in s:
+            parts.append(
+                f"<div class='m'>{len(s.get('rooms', []))} rooms · "
+                f"{s.get('room_models', 0)} room models · {s.get('placed', 0)} actors · "
+                f"{s.get('triangles', 0):,} tris"
+                + (f" · {s['unresolved']} unresolved" if s.get("unresolved") else "")
+                + "</div>"
+            )
+        parts.append(
+            f"<div class='dl'>download: <a class='glb' href='{rel}' "
+            f"title='one file, textures embedded'>glb</a> · "
+            f"<a href='{rel}' title='needs the .bin next to it'>gltf</a></div>"
+        )
+        parts.append(
+            f"<div class='act' data-path='{rel}'>"
+            "<button class='open'>Open in Blender</button>"
+            "<button class='reveal'>Show file</button></div>"
+        )
+        parts.append("</div>")
+    parts.append("</div>")
+    return parts
 
 
 def write_report(res: RipResult) -> Path:
@@ -675,6 +744,9 @@ def write_report(res: RipResult) -> Path:
         + html.escape(str(res.out_dir))
         + "</code> to get <b>Open in Blender</b> buttons on every card, and "
         "<code>gcrip blend ...</code> to make .blend asset files.</div>",
+    ]
+    parts += _stage_cards(res)
+    parts += [
         "<h2>Models</h2><div class='grid'>",
     ]
     for m in res.models:
@@ -771,7 +843,7 @@ def write_report(res: RipResult) -> Path:
                 f"<div class='m'>{html.escape(t.error or f'{t.fmt} {t.width}x{t.height}')}</div></div>"
             )
         parts.append("</div>")
-    parts.append(f"<script>{_JS}</script>")
+    parts.append(f"<script>const GCRIP_GAME={json.dumps(res.game_id)};{_JS}</script>")
     out = res.out_dir / "report.html"
     out.write_text("\n".join(parts), encoding="utf-8")
     return out

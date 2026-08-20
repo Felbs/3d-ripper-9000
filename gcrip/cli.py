@@ -281,6 +281,39 @@ def cmd_batch(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_stage(args: argparse.Namespace) -> int:
+    from gcrip.stage import build_all, build_stage, list_stages
+
+    if args.all:
+        build_all(
+            Path(args.ripdir),
+            iso=Path(args.iso) if args.iso else None,
+            layers=args.layers,
+            spawns=args.spawns,
+            rigs=args.rigs,
+            world=args.world,
+        )
+        return 0
+    if args.list or not args.stage:
+        list_stages(Path(args.ripdir), iso=Path(args.iso) if args.iso else None)
+        return 0
+    rooms = [int(r) for r in args.rooms.split(",")] if args.rooms else None
+    for name in args.stage:
+        build_stage(
+            Path(args.ripdir),
+            name,
+            iso=Path(args.iso) if args.iso else None,
+            rooms=rooms,
+            layers=args.layers,
+            spawns=args.spawns,
+            rigs=args.rigs,
+            world=args.world,
+            out_dir=Path(args.out) if args.out else None,
+            quiet=args.quiet,
+        )
+    return 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     from gcrip.serve import serve
 
@@ -396,6 +429,32 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-anims", action="store_true")
     p.add_argument("-q", "--quiet", action="store_true")
     p.set_defaults(fn=cmd_batch)
+
+    p = sub.add_parser(
+        "stage", help="recompile a Wind Waker stage into one level glTF (rooms + placed actors)"
+    )
+    p.add_argument("ripdir", help="finished rip folder, e.g. out/rip/GZLE01")
+    p.add_argument("stage", nargs="*", help="stage name(s), e.g. M_NewD2 sea Atorizk")
+    p.add_argument("--list", action="store_true", help="list stages on the disc and exit")
+    p.add_argument("--all", action="store_true", help="build every stage + stages/stage_matrix.md")
+    p.add_argument("--iso", default=None, help="disc image (default: found via disc_manifest)")
+    p.add_argument("--rooms", default=None, help="only these room numbers, e.g. 0,1,2")
+    p.add_argument("--layers", action="store_true", help="also place conditional-layer actors")
+    p.add_argument("--spawns", action="store_true", help="place a Link model at every spawn point")
+    p.add_argument(
+        "--world",
+        action="store_true",
+        help="keep the game's world coordinates (default recentres the level at the origin)",
+    )
+    p.add_argument(
+        "--rigs",
+        action="store_true",
+        help="keep armatures/skins and full node trees (default bakes everything flat; "
+        "flat imports far faster)",
+    )
+    p.add_argument("-o", "--out", default=None, help="output dir (default <ripdir>/stages/<stage>)")
+    p.add_argument("-q", "--quiet", action="store_true")
+    p.set_defaults(fn=cmd_stage)
 
     p = sub.add_parser("serve", help="open report.html locally with 'Open in Blender' buttons")
     p.add_argument("ripdir", help="out/rip/<GameID>")

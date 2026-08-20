@@ -118,6 +118,37 @@ sequenceDiagram
     U->>S: pick an action (walk, dash…) or retarget a Mixamo clip by bone name
 ```
 
+## 6. Level recompilation (`gcrip stage`, Wind Waker)
+
+```mermaid
+flowchart LR
+    subgraph disc [game.iso]
+        DZS["Stage.arc › stage.dzs<br/>(MULT room table, stage actors)"]
+        DZR["RoomN.arc › room.dzr<br/>(ACTR/SCOB/DOOR/TRES per room)"]
+    end
+    subgraph rip [out/rip/GameID - already ripped]
+        ROOMS["RoomN.arc/*.gltf<br/>room geometry"]
+        OBJ["res/Object/*.arc/*.gltf<br/>actor models"]
+    end
+    DZS -->|"parse chunk table<br/>(formats/dzs.py)"| P[placements]
+    DZR --> P
+    P -->|"name → archive<br/>data/ww_actors.py table<br/>(mined from noclip.website)"| R{resolve}
+    R -->|chests| BOX["Dalways boxa-d<br/>by params bits 20-23"]
+    R -->|"KNOB*, door10…"| DOOR2["Knob.arc / the stage's own bdl"]
+    R -->|"tags, switches, agb*"| SKIP1[skip: logic - no model]
+    R -->|"kusa, flowers, trees"| SKIP2[skip: display lists in the DOL]
+    ROOMS -->|"MULT translate+rotY"| M
+    OBJ --> M
+    BOX --> M
+    DOOR2 --> M
+    M["gltf_merge.LevelBuilder<br/>meshes imported once,<br/>every placement = node instance<br/>(skinned: own joints+skin, shared IBMs)"]
+    M --> OUT["stages/name/name.gltf + .bin<br/>+ _report.json (counts, unresolved)"]
+```
+
+Actor positions are world-space; MULT moves only room geometry (verified against the game:
+Outset's actors sit at the island's world slot, X≈-200k Z≈+300k). Rotation uses only the
+Y angle (x/z fields usually carry parameters), s16 angle units, 0x8000 = 180°.
+
 ## What is heuristic (and where to look when it's wrong)
 
 | step | assumption | if wrong |
