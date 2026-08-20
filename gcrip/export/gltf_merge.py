@@ -386,6 +386,49 @@ class LevelBuilder:
             scene.append(gi)
         self.doc["nodes"][gi]["children"].append(node_idx)
 
+    def add_mesh(
+        self,
+        name: str,
+        positions: np.ndarray,
+        indices: np.ndarray,
+        *,
+        translation: tuple[float, float, float] = (0.0, 0.0, 0.0),
+        group: str | None = None,
+        extras: dict | None = None,
+    ) -> int | None:
+        """Add raw geometry (e.g. a collision mesh) as one node. positions (N,3),
+        indices (M,3). Returns the node index."""
+        if not len(indices):
+            return None
+        pos_acc = self._push_vec3(np.asarray(positions), with_bounds=True)
+        idx = np.ascontiguousarray(np.asarray(indices).reshape(-1), dtype="<u4")
+        while len(self.bin) % 4:
+            self.bin.append(0)
+        off = len(self.bin)
+        self.bin += idx.tobytes()
+        bv = len(self.doc["bufferViews"])
+        self.doc["bufferViews"].append(
+            {"buffer": 0, "byteOffset": off, "byteLength": idx.nbytes, "target": 34963}
+        )
+        idx_acc = len(self.doc["accessors"])
+        self.doc["accessors"].append(
+            {"bufferView": bv, "componentType": 5125, "count": len(idx), "type": "SCALAR"}
+        )
+        mesh_idx = len(self.doc["meshes"])
+        self.doc["meshes"].append(
+            {"primitives": [{"attributes": {"POSITION": pos_acc}, "indices": idx_acc}]}
+        )
+        node: dict = {"name": name, "mesh": mesh_idx}
+        if any(translation):
+            node["translation"] = list(translation)
+        if extras:
+            node["extras"] = extras
+        node_idx = len(self.doc["nodes"])
+        self.doc["nodes"].append(node)
+        self._attach(node_idx, group)
+        self.stats.triangles += len(indices)
+        return node_idx
+
     # -- output ----------------------------------------------------------------
 
     def recenter(self, anchor: list[int] | None = None) -> tuple[float, float, float]:

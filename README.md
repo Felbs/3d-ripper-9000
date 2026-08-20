@@ -99,13 +99,19 @@ The entire Great Sea - all 49 islands with their props - comes out as a single 2
 gcrip godot out/rip/GZLE01 M_NewD2 sea_r44   # -> out/rip/GZLE01/godot/
 ```
 
-Generates a ready-to-open **Godot 4** project from the recompiled stages: each stage is a
-scene with the level packed as a self-contained `.glb`, static trimesh collision on the room
-geometry, a sun + sky, and a third-person controller standing on the game's own player spawn
-point. Open the folder with Godot (godotengine.org, free/open source), press **F5**, and walk
-around Dragon Roost or Outset Island - WASD + mouse, Space to jump, Shift to sprint. This is
-the seed of the engine-recompiler direction: assets and placement come from your disc; game
-behaviour (enemies, items, puzzles) is yours to script on top.
+Generates a ready-to-open **Godot 4** project from the recompiled stages. Each stage scene
+has: the level as a self-contained `.glb`; **the game's own collision** (`room.dzb` parsed
+per surface class - you walk on floors, not on lava, because lava/water/poison groups are
+excluded from the solid mesh); **a playable, animated Link** (his real model with his real
+`wait`/`walk`/`dash`/jump clips driving a third-person controller, trimmed from 594 clips to
+a 0.5 MB player glb); and **working doors** - walk into a house door on Outset and the
+interior stage loads with Link on its arrival spawn. Door destinations are not guessed: every
+interior's own exit table names the spawn it returns to, and that spawn stands in front of
+its door, so the graph is inverted from the game's own data (`SCLS` chunks). Open the folder
+with Godot (godotengine.org, free/open source), press **F5** - WASD + mouse, Space to jump,
+Shift to sprint. This is the engine-recompiler direction growing up: assets, placement,
+collision and connectivity come from your disc; game behaviour (enemies, items, puzzles) is
+original code layered on top.
 
 ## Status
 

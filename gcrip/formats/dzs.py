@@ -54,10 +54,19 @@ class RoomTransform:  # MULT entry
 
 
 @dataclass
+class Exit:  # SCLS entry: where a door/exit leads
+    dest_stage: str
+    spawn: int
+    room: int
+    fade: int
+
+
+@dataclass
 class Dzs:
     chunks: dict[str, tuple[int, int]] = field(default_factory=dict)  # fourcc -> (n, offset)
     placements: list[Placement] = field(default_factory=list)
     mult: dict[int, RoomTransform] = field(default_factory=dict)  # room_no -> transform
+    scls: list[Exit] = field(default_factory=list)  # exit table (doors index into it)
 
 
 def _canonical(fourcc: str) -> tuple[str, int]:
@@ -97,4 +106,10 @@ def parse(data: bytes) -> Dzs:
                 tx, tz, ry, room, wave = struct.unpack_from(">ffHBb", data, off + k * 12)
                 ry = ry - 0x10000 if ry >= 0x8000 else ry
                 out.mult[room] = RoomTransform(tx, tz, ry, room, wave)
+        elif fourcc == "SCLS":
+            for k in range(n):
+                base = off + k * 0x0C
+                dest = data[base : base + 8].split(b"\0")[0].decode("latin-1", "replace")
+                spawn, room, fade = struct.unpack_from(">3B", data, base + 8)
+                out.scls.append(Exit(dest, spawn, room, fade))
     return out

@@ -220,3 +220,51 @@ def test_flatten_bakes_transforms_and_drops_rigs(tmp_path: Path):
     assert doc["nodes"][[i for i, n in enumerate(doc["nodes"]) if n.get("name") == "a.1"][0]][
         "translation"
     ] == [100.0, 0.0, 0.0]
+
+
+def scls_entry(dest: bytes, spawn=0, room=0, fade=0):
+    return struct.pack(">8s3Bb", dest, spawn, room, fade, -1)
+
+
+def test_dzs_parse_scls():
+    data = build_dz([(b"SCLS", [scls_entry(b"Ojhous", 3, 44), scls_entry(b"sea", 1, 2)])])
+    d = dzs.parse(data)
+    assert len(d.scls) == 2
+    assert d.scls[0].dest_stage == "Ojhous"
+    assert (d.scls[0].spawn, d.scls[0].room) == (3, 44)
+    assert d.scls[1].dest_stage == "sea"
+
+
+def test_bind_exits_by_arrival_inversion():
+    from gcrip.formats.dzs import Exit
+    from gcrip.stage import _bind_exits
+
+    class FakeDisc:
+        def all_scls(self):
+            return {
+                "Ojhous": [Exit("sea", 3, 44, 0)],   # interior returns to sea r44 spawn 3
+                "Omasao": [Exit("sea", 5, 44, 0)],
+                "Nowhere": [Exit("sea", 9, 40, 0)],  # returns to a different island
+            }
+
+        def incoming_exits(self, stage_name):
+            out = set()
+            for other, entries in self.all_scls().items():
+                for e in entries:
+                    if e.dest_stage == stage_name:
+                        out.add((other, e.room, e.spawn))
+            return sorted(out)
+
+    own = [Exit("Ojhous", 0, 0, 0), Exit("Omasao", 0, 0, 0)]  # sea's exit table
+    doors = [
+        {"room": 44, "pos": [100.0, 0.0, 100.0], "rot": 0.0},
+        {"room": 44, "pos": [900.0, 0.0, 900.0], "rot": 90.0},
+    ]
+    spawns = [
+        {"room": 44, "id": 3, "pos": [150.0, 0.0, 100.0], "rot_y_deg": 0.0},
+        {"room": 44, "id": 5, "pos": [900.0, 0.0, 850.0], "rot_y_deg": 0.0},
+        {"room": 40, "id": 9, "pos": [99999.0, 0.0, 0.0], "rot_y_deg": 0.0},
+    ]
+    exits = _bind_exits(FakeDisc(), "sea", own, doors, spawns)
+    got = {e["dest_stage"]: e["pos"] for e in exits}
+    assert got == {"Ojhous": [100.0, 0.0, 100.0], "Omasao": [900.0, 0.0, 900.0]}

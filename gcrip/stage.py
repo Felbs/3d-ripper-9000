@@ -17,6 +17,7 @@ What doesn't end up in the level (all counted in <stage>_report.json):
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 import time
@@ -34,6 +35,7 @@ from gcrip.data.ww_actors import (
 from gcrip.disc.fst import parse_fst, parse_header
 from gcrip.disc.image import DiscImage
 from gcrip.export.gltf_merge import LevelBuilder
+from gcrip.formats import dzb as dzb_mod
 from gcrip.formats import dzs as dzs_mod
 from gcrip.formats import rarc, yay0, yaz0
 
@@ -129,6 +131,34 @@ class _Disc:
                 return arc.read(blob, f)
         return None
 
+    def all_scls(self) -> dict[str, list]:
+        """stage name -> its exit entries (stage.dzs + every room.dzr), file order."""
+        if not hasattr(self, "_scls_cache"):
+            cache: dict[str, list] = {}
+            for name, arcs in self.stages().items():
+                entries = []
+                for arc in sorted(arcs):
+                    suffix = "stage.dzs" if arc == "Stage.arc" else "room.dzr"
+                    raw = self.read_inner(f"res/Stage/{name}/{arc}", suffix)
+                    if raw:
+                        with contextlib.suppress(ValueError, IndexError):
+                            entries += dzs_mod.parse(raw).scls
+                cache[name] = entries
+            self._scls_cache = cache
+        return self._scls_cache
+
+    def incoming_exits(self, stage_name: str) -> list[tuple[str, int, int]]:
+        """[(other_stage, room, spawn_id), ...]: every exit on the disc that ARRIVES in
+        stage_name. A door near that arrival spawn leads back into other_stage."""
+        out = set()
+        for other, entries in self.all_scls().items():
+            if other == stage_name:
+                continue
+            for e in entries:
+                if e.dest_stage == stage_name:
+                    out.add((other, e.room, e.spawn))
+        return sorted(out)
+
     def close(self):
         self.img.close()
 
@@ -208,16 +238,20 @@ def _build(
     out_dir = Path(out_dir)
     builder = LevelBuilder(out_dir / f"{stage_name}.gltf", flatten=not rigs)
 
-    # ---- placement data
+    # ---- placement data (each placement carries its exit table: room SCLS, else stage's)
     stage_arcs = stages[stage_name]
     mult: dict[int, dzs_mod.RoomTransform] = {}
-    placements: list[tuple[int | None, dzs_mod.Placement]] = []  # (room_no, placement)
+    placements: list[tuple[int | None, dzs_mod.Placement, list]] = []
+    stage_scls: list = []
+    own_scls: list = []
     if "Stage.arc" in stage_arcs:
         raw = disc.read_inner(f"res/Stage/{stage_name}/Stage.arc", "stage.dzs")
         if raw:
             d = dzs_mod.parse(raw)
             mult = d.mult
-            placements += [(None, p) for p in d.placements]
+            stage_scls = d.scls
+            own_scls += d.scls
+            placements += [(None, p, stage_scls) for p in d.placements]
     room_nos = []
     for arc_name in sorted(stage_arcs):
         m = _ROOM_RE.match(arc_name)
@@ -229,7 +263,10 @@ def _build(
         room_nos.append(room_no)
         raw = disc.read_inner(f"res/Stage/{stage_name}/{arc_name}", "room.dzr")
         if raw:
-            placements += [(room_no, p) for p in dzs_mod.parse(raw).placements]
+            d = dzs_mod.parse(raw)
+            own_scls += d.scls
+            scls = d.scls or stage_scls
+            placements += [(room_no, p, scls) for p in d.placements]
 
     # ---- room geometry (already ripped; MULT places it)
     room_models = 0
@@ -255,7 +292,8 @@ def _build(
     spawn_pts = []  # PLYR entries: where the game can place the player
     unresolved = Counter()
     skipped_names = Counter()
-    for room_no, p in placements:
+    door_pts: list[dict] = []
+    for room_no, p, _scls in placements:
         if rooms is not None and room_no is None:
             # a --rooms build wants just those rooms; stage-wide actors (sea: ships,
             # salvage points...) live all over the map
@@ -264,9 +302,17 @@ def _build(
         if p.layer >= 0 and not layers:
             counts["layered_skipped"] += 1
             continue
+        if p.chunk in ("DOOR", "TGDR") or p.name.upper().startswith("KNOB"):
+            door_pts.append({"room": room_no, "pos": list(p.pos), "rot": round(p.rot_y_deg, 2)})
         if p.chunk == "PLYR":
             spawn_pts.append(
-                {"room": room_no, "pos": list(p.pos), "rot_y_deg": round(p.rot_y_deg, 2)}
+                {
+                    # stage-wide spawns name their room in params bits 0-5
+                    "room": room_no if room_no is not None else p.params & 0x3F,
+                    "id": p.rot[2] & 0xFF,  # PLYR spawn id lives in z_rot's low byte
+                    "pos": list(p.pos),
+                    "rot_y_deg": round(p.rot_y_deg, 2),
+                }
             )
             if not spawns:
                 counts["spawns_skipped"] += 1
@@ -311,8 +357,10 @@ def _build(
         )
         counts["placed" if idx is not None else "empty_model"] += 1
 
+    exits = _bind_exits(disc, stage_name, own_scls, door_pts, spawn_pts)
     offset = (0.0, 0.0, 0.0) if world else builder.recenter(anchor=room_node_ids)
     out_path = builder.save()
+    collision = _build_collision(disc, stage_name, room_nos, out_dir, offset)
     try:  # put the level on report.html (its Levels section scans stages/)
         from gcrip.rip import load_results, write_report
 
@@ -336,6 +384,11 @@ def _build(
         "instances": builder.stats.instances,
         "triangles": builder.stats.triangles,
         "world_offset": list(offset),
+        "collision": collision,
+        "exits": [
+            {**e, "pos": [e["pos"][0] - offset[0], e["pos"][1], e["pos"][2] - offset[2]]}
+            for e in exits
+        ],
         # room-local spawns first: with --rooms, stage-wide PLYR entries can sit on
         # other islands and would drop the player in the middle of the ocean
         "spawns": [
@@ -361,6 +414,94 @@ def _build(
             print(f"  unresolved names: {top}")
         print(f"  -> {out_path}")
     return report
+
+
+def _bind_exits(disc, stage_name, own, door_pts, spawn_pts) -> list[dict]:
+    """Doors don't store which exit they use, but every destination's OWN exit table
+    points back to an arrival spawn here - and that spawn stands right in front of the
+    door. Invert that: arrival spawn -> nearest door -> that door leads to the arriving
+    stage. Destination spawn/room comes from this stage's exit entries for that stage
+    (paired in file order when a stage is entered through several doors)."""
+    own_by_dest: dict[str, list] = {}
+    for e in own:
+        if e.dest_stage != stage_name:
+            own_by_dest.setdefault(e.dest_stage, []).append(e)
+    spawn_by_key = {}
+    for sp in spawn_pts:
+        spawn_by_key.setdefault((sp["room"], sp["id"]), sp)
+    exits = []
+    used_doors: set[int] = set()
+    seen_from: dict[str, int] = {}
+    for other, room, spawn_id in sorted(disc.incoming_exits(stage_name)):
+        if other not in own_by_dest:
+            continue  # one-way arrival (cutscene warp); no door leads back
+        sp = spawn_by_key.get((room, spawn_id))
+        if sp is None:
+            continue
+        best, best_d2 = None, 600.0**2
+        for i, dp in enumerate(door_pts):
+            if i in used_doors:
+                continue
+            dx = dp["pos"][0] - sp["pos"][0]
+            dy = dp["pos"][1] - sp["pos"][1]
+            dz = dp["pos"][2] - sp["pos"][2]
+            d2 = dx * dx + dy * dy * 4 + dz * dz
+            if d2 < best_d2:
+                best, best_d2 = i, d2
+        if best is None:
+            continue
+        used_doors.add(best)
+        k = seen_from.get(other, 0)
+        seen_from[other] = k + 1
+        entries = own_by_dest[other]
+        e = entries[min(k, len(entries) - 1)]
+        dp = door_pts[best]
+        exits.append(
+            {
+                "pos": list(dp["pos"]),
+                "rot_y_deg": dp["rot"],
+                "dest_stage": other,
+                "spawn": e.spawn,
+                "room": e.room,
+            }
+        )
+    return exits
+
+
+def _build_collision(disc, stage_name, room_nos, out_dir, offset) -> dict:
+    """Write <stage>_col.gltf: the game's own .dzb collision, split by surface class.
+    dzb vertices are stored pre-transformed in world space (verified: they match the
+    MULT-placed visual geometry exactly), so only the recentre offset is applied."""
+    from gcrip.export.gltf_merge import LevelBuilder
+
+    col = LevelBuilder(out_dir / f"{stage_name}_col.gltf")
+    shift = (-offset[0], 0.0, -offset[2])
+    stats: Counter = Counter()
+    for room_no in room_nos:
+        raw = disc.read_inner(f"res/Stage/{stage_name}/Room{room_no}.arc", "room.dzb")
+        if not raw:
+            continue
+        try:
+            d = dzb_mod.parse(raw)
+        except (ValueError, IndexError) as e:
+            stats[f"error_room{room_no}"] = str(e)
+            continue
+        for surface in ("solid", "water", "lava", "poison"):
+            verts, tris = d.mesh(surface)
+            if not len(tris):
+                continue
+            col.add_mesh(
+                f"Room{room_no}_{surface}",
+                verts,
+                tris,
+                translation=shift,
+                group=f"Room{room_no}_col",
+                extras={"gcrip_surface": surface},
+            )
+            stats[surface] += len(tris)
+    if col.stats.triangles:
+        col.save()
+    return dict(stats)
 
 
 def build_all(
