@@ -233,29 +233,41 @@ def _build(
 
     # ---- room geometry (already ripped; MULT places it)
     room_models = 0
+    room_node_ids: list[int] = []  # recentring anchors: rooms, not far-flung actors
     for room_no in room_nos:
         t = mult.get(room_no)
         for rel in index.rooms.get(stage_name, {}).get(room_no, []):
-            ok = builder.add_instance(
+            idx = builder.add_instance(
                 rip_dir / rel,
                 f"Room{room_no}/{Path(rel).stem}",
                 translation=(t.trans_x, 0.0, t.trans_z) if t else (0.0, 0.0, 0.0),
                 rot_y_deg=t.rot_y_deg if t else 0.0,
                 group=f"Room{room_no}",
             )
-            room_models += ok
+            if idx is not None:
+                room_models += 1
+                room_node_ids.append(idx)
     if not room_models and not quiet:
         print(f"warning: no ripped room models found for {stage_name} under {rip_dir}")
 
     # ---- actors
     counts = Counter()
+    spawn_pts = []  # PLYR entries: where the game can place the player
     unresolved = Counter()
     skipped_names = Counter()
     for room_no, p in placements:
+        if rooms is not None and room_no is None:
+            # a --rooms build wants just those rooms; stage-wide actors (sea: ships,
+            # salvage points...) live all over the map
+            counts["stage_wide_skipped"] += 1
+            continue
         if p.layer >= 0 and not layers:
             counts["layered_skipped"] += 1
             continue
         if p.chunk == "PLYR":
+            spawn_pts.append(
+                {"room": room_no, "pos": list(p.pos), "rot_y_deg": round(p.rot_y_deg, 2)}
+            )
             if not spawns:
                 counts["spawns_skipped"] += 1
                 continue
@@ -289,7 +301,7 @@ def _build(
             continue
 
         group = f"Room{room_no}_actors" if room_no is not None else "Stage_actors"
-        ok = builder.add_instance(
+        idx = builder.add_instance(
             target,
             f"{p.name}.{counts['placed']}",
             translation=p.pos,
@@ -297,9 +309,9 @@ def _build(
             scale=p.scale,
             group=group,
         )
-        counts["placed" if ok else "empty_model"] += 1
+        counts["placed" if idx is not None else "empty_model"] += 1
 
-    offset = (0.0, 0.0, 0.0) if world else builder.recenter()
+    offset = (0.0, 0.0, 0.0) if world else builder.recenter(anchor=room_node_ids)
     out_path = builder.save()
     try:  # put the level on report.html (its Levels section scans stages/)
         from gcrip.rip import load_results, write_report
@@ -324,6 +336,12 @@ def _build(
         "instances": builder.stats.instances,
         "triangles": builder.stats.triangles,
         "world_offset": list(offset),
+        # room-local spawns first: with --rooms, stage-wide PLYR entries can sit on
+        # other islands and would drop the player in the middle of the ocean
+        "spawns": [
+            {**sp, "pos": [sp["pos"][0] - offset[0], sp["pos"][1], sp["pos"][2] - offset[2]]}
+            for sp in sorted(spawn_pts, key=lambda sp: sp["room"] is None)
+        ],
         "gltf": str(out_path),
         "seconds": seconds,
     }

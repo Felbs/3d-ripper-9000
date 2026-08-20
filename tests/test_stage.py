@@ -118,9 +118,10 @@ def test_merge_instances_share_meshes(tmp_path: Path):
     b = tiny_gltf(tmp_path, "b", hidden_clone=True)
     out = tmp_path / "level" / "level.gltf"
     lb = LevelBuilder(out, flatten=False)
-    assert lb.add_instance(a, "a.0", translation=(10, 0, 0))
-    assert lb.add_instance(a, "a.1", translation=(20, 0, 0), rot_y_deg=90, group="Room0")
-    assert lb.add_instance(b, "b.0", scale=(2.0, 2.0, 2.0), group="Room0")
+    assert lb.add_instance(a, "a.0", translation=(10, 0, 0)) is not None
+    a1 = lb.add_instance(a, "a.1", translation=(20, 0, 0), rot_y_deg=90, group="Room0")
+    assert a1 is not None
+    assert lb.add_instance(b, "b.0", scale=(2.0, 2.0, 2.0), group="Room0") is not None
     lb.save()
 
     doc = json.loads(out.read_text(encoding="utf-8"))
@@ -186,8 +187,8 @@ def test_merge_skinned_instance_gets_own_skin(tmp_path: Path):
 
     out = tmp_path / "lvl" / "lvl.gltf"
     lb = LevelBuilder(out, flatten=False)
-    assert lb.add_instance(src, "s.0")
-    assert lb.add_instance(src, "s.1", translation=(5, 0, 0))
+    assert lb.add_instance(src, "s.0") is not None
+    assert lb.add_instance(src, "s.1", translation=(5, 0, 0)) is not None
     lb.save()
     merged = json.loads(out.read_text(encoding="utf-8"))
     assert len(merged["skins"]) == 2
@@ -203,8 +204,8 @@ def test_flatten_bakes_transforms_and_drops_rigs(tmp_path: Path):
     a = tiny_gltf(tmp_path, "a", hidden_clone=True)
     out = tmp_path / "flat" / "flat.gltf"
     lb = LevelBuilder(out)  # flatten is the default
-    assert lb.add_instance(a, "a.0")
-    assert lb.add_instance(a, "a.1", translation=(100, 0, 0))
+    assert lb.add_instance(a, "a.0") is not None
+    assert lb.add_instance(a, "a.1", translation=(100, 0, 0)) is not None
     lb.save()
     doc = json.loads(out.read_text(encoding="utf-8"))
     assert "skins" not in doc

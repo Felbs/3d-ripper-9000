@@ -78,6 +78,7 @@ class LevelBuilder:
         self._templates: dict[Path, _Template | None] = {}
         self._groups: dict[str, int] = {}  # group name -> node index
         self._instances: list[int] = []  # instance node indices (for recenter)
+        self._inst_bounds: dict[int, tuple] = {}  # node idx -> (min3, max3) world AABB
         self._bmin = np.full(3, np.inf)  # world bounds over all instances
         self._bmax = np.full(3, -np.inf)
         self.stats = LevelStats()
@@ -329,10 +330,11 @@ class LevelBuilder:
         rot_y_deg: float = 0.0,
         scale: tuple[float, float, float] = (1.0, 1.0, 1.0),
         group: str | None = None,
-    ) -> bool:
+    ) -> int | None:
+        """Returns the instance's node index, or None if the model had no visible mesh."""
         tpl = self._load(gltf_path)
         if tpl is None:
-            return False
+            return None
         node: dict = {"name": name}
         if tpl.mesh is not None:  # flattened: the instance node carries the mesh itself
             node["mesh"] = tpl.mesh
@@ -362,13 +364,14 @@ class LevelBuilder:
                 corners[:, 0] = c * x + s * z
                 corners[:, 2] = -s * x + c * z
             corners += translation
+            self._inst_bounds[idx] = (corners.min(0), corners.max(0))
             self._bmin = np.minimum(self._bmin, corners.min(0))
             self._bmax = np.maximum(self._bmax, corners.max(0))
         self.stats.instances += 1
         key = gltf_path.stem
         self.stats.by_model[key] = self.stats.by_model.get(key, 0) + 1
         self.stats.triangles += tpl.triangles
-        return True
+        return idx
 
     def _attach(self, node_idx: int, group: str | None) -> None:
         scene = self.doc["scenes"][0]["nodes"]
@@ -385,14 +388,22 @@ class LevelBuilder:
 
     # -- output ----------------------------------------------------------------
 
-    def recenter(self) -> tuple[float, float, float]:
+    def recenter(self, anchor: list[int] | None = None) -> tuple[float, float, float]:
         """Shift every instance so the level's footprint is centred at the origin
-        (X/Z only - sea level stays at Y=0). Returns the world offset that was
-        subtracted, also stored in the scene extras as gcrip_world_offset."""
-        if not np.isfinite(self._bmin).all():
+        (X/Z only - sea level stays at Y=0). `anchor` limits the bounds to those
+        instance nodes (e.g. room geometry - far-flung stage actors would otherwise
+        drag the centre out to sea). Returns the world offset that was subtracted,
+        also stored in the scene extras as gcrip_world_offset."""
+        bmin, bmax = self._bmin, self._bmax
+        if anchor:
+            picked = [self._inst_bounds[i] for i in anchor if i in self._inst_bounds]
+            if picked:
+                bmin = np.minimum.reduce([mn for mn, _ in picked])
+                bmax = np.maximum.reduce([mx for _, mx in picked])
+        if not np.isfinite(bmin).all():
             return (0.0, 0.0, 0.0)
-        cx = float((self._bmin[0] + self._bmax[0]) / 2)
-        cz = float((self._bmin[2] + self._bmax[2]) / 2)
+        cx = float((bmin[0] + bmax[0]) / 2)
+        cz = float((bmin[2] + bmax[2]) / 2)
         if abs(cx) < 1.0 and abs(cz) < 1.0:
             return (0.0, 0.0, 0.0)
         for idx in self._instances:

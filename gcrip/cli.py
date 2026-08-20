@@ -314,6 +314,18 @@ def cmd_stage(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_godot(args: argparse.Namespace) -> int:
+    from gcrip.godot import export_godot
+
+    export_godot(
+        Path(args.ripdir),
+        args.stage or None,
+        out_dir=Path(args.out) if args.out else None,
+        quiet=args.quiet,
+    )
+    return 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     from gcrip.serve import serve
 
@@ -455,6 +467,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("-o", "--out", default=None, help="output dir (default <ripdir>/stages/<stage>)")
     p.add_argument("-q", "--quiet", action="store_true")
     p.set_defaults(fn=cmd_stage)
+
+    p = sub.add_parser(
+        "godot", help="recompiled stages -> a ready-to-open Godot 4 project (walk the levels)"
+    )
+    p.add_argument("ripdir", help="finished rip folder, e.g. out/rip/GZLE01")
+    p.add_argument("stage", nargs="*", help="stage folder names under stages/ (default: all)")
+    p.add_argument("-o", "--out", default=None, help="output dir (default <ripdir>/godot)")
+    p.add_argument("-q", "--quiet", action="store_true")
+    p.set_defaults(fn=cmd_godot)
 
     p = sub.add_parser("serve", help="open report.html locally with 'Open in Blender' buttons")
     p.add_argument("ripdir", help="out/rip/<GameID>")

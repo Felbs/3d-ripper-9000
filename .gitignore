@@ -15,3 +15,5 @@ out/
 *.ciso
 disc_manifest*.json
 roms/
+# local engine downloads, never committed
+tools/godot/

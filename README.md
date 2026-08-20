@@ -93,6 +93,20 @@ invisible logic actors (switches, tags, triggers) are skipped and counted in the
 report. Whole-disc numbers: **156/156 stages build, 8,428 actors placed, ~3% unresolved**.
 The entire Great Sea - all 49 islands with their props - comes out as a single 28 MB scene.
 
+### Walk the levels in Godot
+
+```
+gcrip godot out/rip/GZLE01 M_NewD2 sea_r44   # -> out/rip/GZLE01/godot/
+```
+
+Generates a ready-to-open **Godot 4** project from the recompiled stages: each stage is a
+scene with the level packed as a self-contained `.glb`, static trimesh collision on the room
+geometry, a sun + sky, and a third-person controller standing on the game's own player spawn
+point. Open the folder with Godot (godotengine.org, free/open source), press **F5**, and walk
+around Dragon Roost or Outset Island - WASD + mouse, Space to jump, Shift to sprint. This is
+the seed of the engine-recompiler direction: assets and placement come from your disc; game
+behaviour (enemies, items, puzzles) is yours to script on top.
+
 ## Status
 
 - **Phase 0 - disc filesystem walker: done.** `.iso`/`.gcm` parsing, FST tree,
@@ -219,6 +233,7 @@ gcrip serve out/GZLE01                         # report with Open-in-Blender but
 gcrip blend out/GZLE01                         # .blend asset library (needs Blender)
 gcrip stage out/GZLE01 M_NewD2                 # recompile a Wind Waker level into one glTF
 gcrip stage out/GZLE01 --all                   # every stage + stage_matrix.md
+gcrip godot out/GZLE01 [stages...]             # playable Godot 4 project from the stages
 ```
 
 ### Manifest layout
