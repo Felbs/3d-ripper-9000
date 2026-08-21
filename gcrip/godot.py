@@ -908,6 +908,17 @@ func _ground() -> void:
             return
 
     var was_on_floor := is_on_floor()
+    if was_on_floor and dist > 0.3:
+        # the ladder-top lip (wall code 5) at a platform edge: step over onto the ladder and
+        # climb down (procLadderDown); the lip is on layer 32 only, so is_on_wall() never sees it
+        var ftag := _front_wall(forward())
+        if ftag == "ladder_top" and _enter_ladder_top():
+            return
+        if ftag == "ladder" and _enter_ladder(false):
+            return
+        # walking slowly up to an edge that has a ladder below it (no lip): climb down too
+        if speed < AUTOJUMP_MIN_SPEED and _try_ladder_down():
+            return
     _apply(forward() * speed, -1.0)  # small downward push keeps floor contact on slopes
     if is_on_wall():
         speed *= 1.0 - WALL_PUSH_REDUCE * 0.5
@@ -1747,6 +1758,8 @@ func _ship() -> void:
 
 var _st_frame := 0
 var st_no_lock := 0   # self-test: suppress Z-target acquisition for N frames (crouch test)
+var st_ladder_foot := Vector3.ZERO
+var st_ladder_n := Vector3.FORWARD
 const _ST_SCRIPT := {
     # frame: [action, pressed]  -- bow, boomerang, bombs, hookshot in turn
     10: ["item_next", true], 11: ["item_next", false],
@@ -1773,14 +1786,26 @@ const _ST_SCRIPT := {
     990: ["action_x", true], 992: ["move_forward", true], 1004: ["move_forward", false], 1005: ["action_x", false],
     1080: ["move_forward", true], 1200: ["move_forward", false],
     1230: ["action_b", true], 1231: ["action_b", false],
+    # the lookout ladder (sea_r44): climb to the platform, step back onto it to descend
+    1300: ["to_ladder", true],
+    1310: ["move_forward", true], 1660: ["move_forward", false],
+    1680: ["to_hatch", true],
+    1690: ["move_forward", true], 1860: ["move_forward", false],
 }
 
 func _selftest_tick() -> void:
     _st_frame += 1
-    if _st_frame >= 1300:
+    if _st_frame >= 1880:
         print("selftest done")
         get_tree().quit()
         return
+    if _st_frame in [1740, 1830]:
+        # free overhead view of the platform for the screenshot (event camera override)
+        Game.set_event_cam(global_position + Vector3(-500, 700, -500), global_position + Vector3(100, 0, 200), 60.0)
+    if _st_frame in [1665, 1760, 1850]:
+        var img := get_viewport().get_texture().get_image()
+        img.save_png("user://ladder_%d.png" % _st_frame)
+        Game.clear_event_cam()
     if _st_frame == 12:
         Game.save_game("selftest")
     if _st_frame == 14:
@@ -1792,6 +1817,73 @@ func _selftest_tick() -> void:
             var boat := get_tree().current_scene.get_node_or_null("KingOfRedLions")
             if boat:
                 board(boat)
+        elif a[0] == "to_ladder":
+            # foot of the nearest ladder collider (layer 32, meta wall = ladder), facing it
+            var best_d := 1.0e12
+            var foot := Vector3.ZERO
+            var nrm := Vector3.FORWARD
+            var col := get_tree().current_scene.get_node_or_null("Collision")
+            if col:
+                for body in col.find_children("*", "StaticBody3D", true, false):
+                    if not (body.has_meta("wall") and str(body.get_meta("wall")) == "ladder"):
+                        continue
+                    for shape in body.find_children("*", "CollisionShape3D", true, false):
+                        var cs: CollisionShape3D = shape
+                        var poly := cs.shape as ConcavePolygonShape3D
+                        if poly == null:
+                            continue
+                        var faces := poly.get_faces()
+                        var i := 0
+                        while i + 2 < faces.size():
+                            var a0: Vector3 = cs.global_transform * faces[i]
+                            var a1: Vector3 = cs.global_transform * faces[i + 1]
+                            var a2: Vector3 = cs.global_transform * faces[i + 2]
+                            var c := (a0 + a1 + a2) / 3.0
+                            var lo := minf(a0.y, minf(a1.y, a2.y))
+                            var n := (a1 - a0).cross(a2 - a0)
+                            if n.length() > 1.0 and lo < 200.0 and c.y > 200.0 and c.distance_to(global_position) < best_d:
+                                best_d = c.distance_to(global_position)
+                                nrm = n.normalized()
+                                nrm.y = 0.0
+                                nrm = nrm.normalized()
+                                foot = Vector3(c.x, lo, c.z)
+                            i += 3
+            if best_d < 1.0e12:
+                if state == State.SHIP and ship:
+                    ship.clear_rider()
+                    ship = null
+                # the outside of the ladder is the side with the lower ground (the tower is the other)
+                var space := get_world_3d().direct_space_state
+                var best_side := 1.0
+                var best_gy := 1.0e9
+                for sgn in [1.0, -1.0]:
+                    var from: Vector3 = foot + nrm * float(sgn) * 90.0 + Vector3(0, 60.0, 0)
+                    var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(from, from - Vector3(0, 600.0, 0), 1))
+                    var gy: float = hit.position.y if hit else 1.0e8
+                    if gy < best_gy:
+                        best_gy = gy
+                        best_side = sgn
+                nrm *= best_side
+                global_position = Vector3(foot.x, best_gy + 5.0, foot.z) + nrm * 90.0
+                facing = heading_of(-nrm)
+                st_ladder_foot = foot
+                st_ladder_n = nrm
+                velocity = Vector3.ZERO
+                state = State.GROUND
+                snap_camera_behind()
+                print("selftest: at ladder foot ", foot.round(), " normal ", nrm)
+        elif a[0] == "to_hatch":
+            # on the platform, 120 inside the ladder's top edge, facing out over it
+            var space := get_world_3d().direct_space_state
+            var spot := Vector3(st_ladder_foot.x, global_position.y + 200.0, st_ladder_foot.z) - st_ladder_n * 120.0
+            var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(spot, spot - Vector3(0, 600.0, 0), 1))
+            if hit:
+                global_position = hit.position + Vector3(0, 5.0, 0)
+                facing = heading_of(st_ladder_n)
+                velocity = Vector3.ZERO
+                state = State.GROUND
+                snap_camera_behind()
+                print("selftest: at hatch ", global_position.round(), " facing out")
         elif a[0] == "crouch":
             lock_target = null
             st_no_lock = 45
@@ -1843,6 +1935,8 @@ func _selftest_tick() -> void:
             boat_info = " rope mode=%s amp=%.0f phase=%.2f len=%.0f" % [rope_mode, rope_amp, rope_phase, rope_len]
         if fp_active:
             boat_info += " fp pitch=%.0fdeg" % rad_to_deg(fp_pitch)
+        if state == State.LADDER:
+            boat_info += " ladder y=%.0f" % global_position.y
         if ship and is_instance_valid(ship):
             boat_info = " ship mode=%d sail=%s speed=%.1f yaw=%.0f tiller=%.0f y=%.1f pitch=%.0f fly=%s jump_ok=%s" % [
                 ship.mode, str(ship.sail_on), ship.speed_f, rad_to_deg(ship.yaw), ship.tiller,
@@ -2040,11 +2134,15 @@ func hook_done(landed: bool, hook_pos: Vector3, d: Vector3) -> void:
 # ---------------------------------------------------------------- ladders / vines
 
 func _front_wall(into: Vector3) -> String:
-    # wall code of the tagged collider (layer 32) 25 + radius ahead of Link's waist, "" if none
+    # wall code of the tagged collider (layer 32) 25 + radius ahead of Link's waist, "" if none;
+    # ladder tops are a short lip (code 5) at the platform edge, so a knee-height probe follows
     var space := get_world_3d().direct_space_state
     var from := global_position + Vector3(0, 60.0, 0)
     var q := PhysicsRayQueryParameters3D.create(from, from + into * 70.0, 32)
     var hit := space.intersect_ray(q)
+    if not hit:
+        from = global_position + Vector3(0, 18.0, 0)
+        hit = space.intersect_ray(PhysicsRayQueryParameters3D.create(from, from + into * 90.0, 32))
     wall_hit_n = Vector3.ZERO
     if not hit:
         return ""
@@ -2067,7 +2165,7 @@ func _try_ladder_down() -> bool:
     if space.intersect_ray(q):
         return false  # floor continues
     var probe := global_position + d * 60.0 - Vector3(0, 50.0, 0)
-    var q2 := PhysicsRayQueryParameters3D.create(probe, probe - d * 70.0, 32)
+    var q2 := PhysicsRayQueryParameters3D.create(probe, probe - d * 160.0, 32)
     var hit := space.intersect_ray(q2)
     if not hit:
         return false
@@ -2097,6 +2195,36 @@ func _enter_ladder(descend: bool) -> bool:
     var p := wall_hit_pos + n * LADDER_OFFSET
     global_position = Vector3(p.x, global_position.y, p.z)
     play_clip("ladderdwst" if descend else "ladderupst", 3.0 / 30.0, 1.0)
+    return true
+
+func _enter_ladder_top() -> bool:
+    # from the platform: swing over the lip onto the ladder's outer face and descend
+    var n := wall_hit_n
+    n.y = 0.0
+    if n.length() < 0.5:
+        return false
+    n = n.normalized()
+    # the lip's normal may face either way; the ladder's outside is where the ground is lower
+    var space := get_world_3d().direct_space_state
+    var outward := n
+    var best_gy := 1.0e9
+    for sgn in [1.0, -1.0]:
+        var from: Vector3 = wall_hit_pos + n * float(sgn) * 60.0 + Vector3(0, 40.0, 0)
+        var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(from, from - Vector3(0, 800.0, 0), 1))
+        var gy: float = hit.position.y if hit else -1.0e8
+        if gy < best_gy:
+            best_gy = gy
+            outward = n * float(sgn)
+    state = State.LADDER
+    velocity = Vector3.ZERO
+    speed = 0.0
+    wall_hold = 0
+    climb_over = 0
+    ladder_n = outward
+    facing = heading_of(-outward)
+    var top_y := wall_hit_pos.y
+    global_position = Vector3(wall_hit_pos.x, top_y - 30.0, wall_hit_pos.z) + outward * LADDER_OFFSET
+    play_clip("ladderdwst", 3.0 / 30.0, 1.0)
     return true
 
 func _enter_climbwall() -> bool:
@@ -2768,6 +2896,14 @@ fov = 60.0
 
 
 # player animation clips kept in link.glb (the model ships 594; these drive movement)
+# clips whose root translation the game (and player.gd) applies from code: the ladder cycle
+# climbs 37.5 per clip, the shimmy slides, the ledge climb rises 111 - played raw on top of
+# our movement they double up and snap back every loop (the "jittery ladder")
+_PLAYER_ROOT_MOTION_CLIPS = (
+    "ladderltor", "ladderrtol", "ladderupedl", "ladderdwst", "ladderupst",
+    "wallpl", "walldw", "wallwl", "wallwr", "wallholdup",
+    "vjmpcl", "hangmovel", "hangmover", "ropeclimb", "ropedown", "mstepover",
+)
 _PLAYER_CLIPS = (
     "wait", "walk", "dash", "mjmp", "jmped", "mrolll", "swimwait", "swiming",
     "cuta", "cutf", "cutr", "cutl", "cutea", "cuteb", "jattack", "jattackland",
@@ -5060,11 +5196,34 @@ def _godot_col_glb(col_gltf: Path, out_glb: Path) -> int:
     return n_solid
 
 
-def _trim_animations(doc: dict, blob: bytes, keep: tuple[str, ...]) -> tuple[dict, bytes]:
+def _trim_animations(
+    doc: dict,
+    blob: bytes,
+    keep: tuple[str, ...],
+    drop_root_motion: tuple[str, ...] = (),
+) -> tuple[dict, bytes]:
     """Keep only the named animations, then garbage-collect accessors/bufferViews so
-    the dropped clips' keyframe data leaves the buffer (Link ships 14 MB of clips)."""
+    the dropped clips' keyframe data leaves the buffer (Link ships 14 MB of clips).
+    Clips in ``drop_root_motion`` lose the root joint's translation track: the game
+    applies that motion from code (ladder rungs, shimmy, climb-over), and so do we."""
     doc = json.loads(json.dumps(doc))  # deep copy
     doc["animations"] = [a for a in doc.get("animations", []) if a.get("name") in keep]
+    if drop_root_motion:
+        root_nodes = set()
+        for skin in doc.get("skins", []):
+            joints = skin.get("joints", [])
+            if joints:
+                root_nodes.add(joints[0])
+        for i, n in enumerate(doc.get("nodes", [])):
+            if n.get("name") in ("link_root", "world_root"):
+                root_nodes.add(i)
+        for a in doc["animations"]:
+            if a.get("name") not in drop_root_motion:
+                continue
+            a["channels"] = [
+                c for c in a.get("channels", [])
+                if not (c["target"].get("path") == "translation" and c["target"].get("node") in root_nodes)
+            ]
     for node in doc.get("nodes", []):
         # hidden expression-variant clones: Godot ignores KHR_node_visibility and
         # would render every eye/mouth texture at once - un-mesh them instead
@@ -5126,12 +5285,14 @@ def _trim_animations(doc: dict, blob: bytes, keep: tuple[str, ...]) -> tuple[dic
     return doc, bytes(new_bin)
 
 
-def _animated_glb(src: Path, out_glb: Path, clips: tuple[str, ...]) -> list[str]:
+def _animated_glb(
+    src: Path, out_glb: Path, clips: tuple[str, ...], drop_root_motion: tuple[str, ...] = ()
+) -> list[str]:
     """Rigged model + the named clips as a small self-contained glb. Returns the clip
     names that were kept (in file order)."""
     doc = json.loads(src.read_text(encoding="utf-8"))
     blob = (src.parent / doc["buffers"][0]["uri"]).read_bytes()
-    trimmed, new_bin = _trim_animations(doc, blob, clips)
+    trimmed, new_bin = _trim_animations(doc, blob, clips, drop_root_motion)
     kept = [a.get("name", "") for a in trimmed.get("animations", [])]
     tmp_bin = src.parent / f"_gcrip_{out_glb.stem}.bin"
     tmp_gltf = src.parent / f"_gcrip_{out_glb.stem}.gltf"
@@ -5198,7 +5359,7 @@ def _player_model_glb(rip_dir: Path, out_glb: Path) -> bool:
     )  # fmt: skip
     if rel is None:
         return False
-    _animated_glb(rip_dir / rel, out_glb, _PLAYER_CLIPS)
+    _animated_glb(rip_dir / rel, out_glb, _PLAYER_CLIPS, _PLAYER_ROOT_MOTION_CLIPS)
     return True
 
 
