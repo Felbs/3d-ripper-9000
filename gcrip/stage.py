@@ -9,7 +9,9 @@ writes <ripdir>/stages/<stage>/<stage>.gltf: room geometry placed by the MULT ro
 table plus one instance per actor (world-space position, Y rotation, SCOB scale).
 
 What doesn't end up in the level (all counted in <stage>_report.json):
-  - logic actors (tags, switches, triggers, Tingle Tuner hooks) - they have no model
+  - logic actors (tags, switches, triggers, Tingle Tuner hooks) - they have no model,
+    but every one of them is still recorded: "tags" for Tag*/AttTag*/agb*, "logic" for
+    the rest (switches, salvage points, Ajav...), same fields either way
   - vegetation (grass/flowers/trees) and some effects - drawn from display lists
     embedded in the game executable, not from any archive
   - actors whose name we can't map to an archive yet (logged with counts)
@@ -252,6 +254,7 @@ def _build(
     own_scls: list = []
     ship_pts: list[dict] = []  # SHIP chunk: King of Red Lions mooring points
     tag_recs: list[dict] = []  # invisible trigger actors (TagEv, AttTag, TagMsg...)
+    logic_recs: list[dict] = []  # every other model-less actor (switches, salvage, Ajav)
     event_table: list[str] = []  # stage.dzs EVNT names (TagEv params >> 24 indexes them)
     if "Stage.arc" in stage_arcs:
         raw = disc.read_inner(f"res/Stage/{stage_name}/Stage.arc", "stage.dzs")
@@ -346,20 +349,23 @@ def _build(
             if cat:
                 counts[cat] += 1
                 skipped_names[p.name] += 1
+                # no model to place, but the placement is the only record of WHERE the
+                # thing is - keep it either way, never drop it on the floor
+                rec = {
+                    "actor": p.name,
+                    "chunk": p.chunk,
+                    "params": p.params,
+                    "rot": list(p.rot),
+                    "room": room_no,
+                    "layer": p.layer,
+                    "pos": list(p.pos),
+                    "rot_y_deg": round(p.rot_y_deg, 2),
+                    "scale": list(p.scale),
+                }
                 if p.name.startswith(("Tag", "AttTag", "agb")):
-                    tag_recs.append(
-                        {
-                            "actor": p.name,
-                            "chunk": p.chunk,
-                            "params": p.params,
-                            "rot": list(p.rot),
-                            "room": room_no,
-                            "layer": p.layer,
-                            "pos": list(p.pos),
-                            "rot_y_deg": round(p.rot_y_deg, 2),
-                            "scale": list(p.scale),
-                        }
-                    )
+                    tag_recs.append(rec)  # player triggers: the engine's tag pass reads these
+                else:
+                    logic_recs.append(rec)  # switches, salvage points, the Jabun wall...
                 continue
             pair_list = WW_ACTORS.get(p.name)
             if pair_list is None:
@@ -457,6 +463,14 @@ def _build(
             {**t, "pos": [t["pos"][0] - offset[0], t["pos"][1], t["pos"][2] - offset[2]]}
             for t in tag_recs
         ],
+        # model-less actors that aren't triggers: salvage points, switches, Ajav.  Kept
+        # out of "actors" on purpose - stage.gd resolves a mesh for everything in there.
+        "logic": [
+            {**t, "pos": [t["pos"][0] - offset[0], t["pos"][1], t["pos"][2] - offset[2]]}
+            for t in logic_recs
+        ],
+        # counts every model-less name, tags included (it was tallied and then binned)
+        "skipped_names": dict(skipped_names.most_common()),
         "event_table": event_table,
         "wave_max": {str(r): t.wave_max for r, t in mult.items() if r in room_nos},
         "offset": [offset[0], 0.0, offset[2]],

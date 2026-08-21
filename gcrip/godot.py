@@ -8962,6 +8962,7 @@ def export_godot(
             "wave_max": rep.get("wave_max") or {},
             "offset": rep.get("offset") or [0.0, 0.0, 0.0],
             "tags": rep.get("tags") or [],
+            "logic": rep.get("logic") or [],
             "event_table": rep.get("event_table") or [],
         }
         ev_json = d / f"{gltf_path.stem}_events.json"

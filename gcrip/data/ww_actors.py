@@ -378,7 +378,7 @@ WW_ACTORS: dict[str, list[tuple[str, str | None]]] = {
 # d_wood.o / d_grass.o symbol data) or pure effects - no archive model exists.
 CODE_DRAWN_PREFIXES = (
     "kusa", "flwr", "pflwr", "flower", "pflower", "swood", "woodb",
-    "bonbori", "zenfire", "zenshut", "salvag", "swslvg", "pitfall",
+    "bonbori", "zenfire", "zenshut", "salvag", "salvfm", "swslvg", "pitfall",
     "fire", "magma", "akabe", "kuro_", "ykgr", "ygstp", "mwtrsb", "mtflag", "quake",
 )
 
