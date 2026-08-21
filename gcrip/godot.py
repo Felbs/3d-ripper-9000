@@ -833,7 +833,7 @@ func _physics_process(_delta: float) -> void:
         sword_pivot.rotation.y = facing
     _camera_tick()
 
-    if global_position.y < start_pos.y - 50000.0:  # fell out of the world
+    if global_position.y < start_pos.y - 4000.0:  # fell out of the world (interiors have no floor past the door)
         global_position = start_pos
         velocity = Vector3.ZERO
         _enter_ground()
@@ -2816,6 +2816,7 @@ var selftest: bool = "--selftest" in OS.get_cmdline_user_args()   # scripted inp
 var shot_actor := ""   # --shot=<actor>: screenshot that actor's face to user://shot.png and quit
 var door_test := false   # --door[=<dest stage>]: take the first (matching) door, report the landing
 var door_want := ""
+var door_legs := 0
 var door_frames := 0
 var shot_frames := 0
 var events: Dictionary = {}        # this stage's event_list.dat: name -> event
@@ -2968,7 +2969,10 @@ func _process(delta: float) -> void:
         var cs := get_tree().current_scene
         if door_frames == 30 and cs:
             for n in cs.find_children("*", "Area3D", true, false):
-                if n.get("dest_stage") != null and (door_want == "" or str(n.dest_stage) == door_want):
+                if n.get("dest_stage") == null:
+                    continue
+                var ok_dest: bool = door_want == "" or str(n.dest_stage) == door_want or String(cs.name) == door_want
+                if ok_dest:
                     print("gcrip door: ", cs.name, " -> ", n.dest_stage, " room ", n.dest_room, " spawn ", n.dest_spawn)
                     last_warp_ms = -100000
                     warp(str(n.dest_stage), int(n.dest_room), int(n.dest_spawn))
@@ -2980,8 +2984,19 @@ func _process(delta: float) -> void:
                 var space := (cs2 as Node3D).get_world_3d().direct_space_state
                 var q := PhysicsRayQueryParameters3D.create(link.global_position + Vector3(0, 80, 0), link.global_position + Vector3(0, 80, 0) + Vector3(sin(float(link.get("facing"))), 0, cos(float(link.get("facing")))) * 120.0, 1)
                 var blocked := not space.intersect_ray(q).is_empty()
-                print("gcrip door: landed in ", cs2.name, " at ", link.global_position.round(), " ground=", has_ground(link.global_position), " wall_ahead=", blocked, " state=", link.get("state"))
-            get_tree().quit()
+                print("gcrip door: landed in ", cs2.name, " at ", link.global_position.round(), " ground=", ground_under(link.global_position), " wall_ahead=", blocked, " state=", link.get("state"))
+            print("gcrip door: facing=", rad_to_deg(float(link.get("facing"))), " cam_yaw=", rad_to_deg(link.cam_yaw_angle()), " fwd=", Vector3(sin(float(link.get("facing"))), 0, cos(float(link.get("facing")))).round())
+            Input.action_press("move_forward")   # then walk straight ahead for 2 s: still on a floor?
+        if door_frames == 260:
+            Input.action_release("move_forward")
+            var link2 := player()
+            if link2:
+                print("gcrip door: after walking ahead ", link2.global_position.round(), " ground=", ground_under(link2.global_position), " state=", link2.get("state"))
+            door_legs += 1
+            if door_legs >= 4:
+                get_tree().quit()
+            else:
+                door_frames = 0   # go back through the door and do it again
     autosave_frames += 1
     if autosave_frames >= 30 * 60 and not dialog_open and not event_running and not selftest and shot_actor == "" and not door_test:
         autosave_frames = 0
@@ -3466,21 +3481,28 @@ func _place_player() -> void:
         player.start_pos = player.global_position
         # face the way the PLYR entry says (into the room / away from the door) and put the
         # camera behind that
+        # PLYR rot_y is the way Link faces on arrival (door spawns point into the room)
         var f := deg_to_rad(float(best.get("rot_y_deg", 0.0)))
-        player.set("facing", f)
+        player.set_deferred("facing", f)   # after the Player's own _ready, which resets it
         if player.has_method("snap_camera_behind"):
-            player.snap_camera_behind()
+            player.call_deferred("snap_camera_behind")
     if bool(pending.get("restore", false)):
         _restore_position()
     pending = {}
 
 func has_ground(p: Vector3) -> bool:
+    return ground_under(p) != ""
+
+func ground_under(p: Vector3) -> String:
     var cs := get_tree().current_scene as Node3D
     if cs == null:
-        return true
+        return "?"
     var space := cs.get_world_3d().direct_space_state
     var q := PhysicsRayQueryParameters3D.create(p + Vector3(0, 50.0, 0), p - Vector3(0, 6000.0, 0), 1 | 2)
-    return not space.intersect_ray(q).is_empty()
+    var hit := space.intersect_ray(q)
+    if hit.is_empty():
+        return ""
+    return "%s@%.0f" % [hit.collider.name if hit.collider else "?", hit.position.y]
 """
 
 _CALIB_GD = """extends CanvasLayer\n# gcrip controller calibration: press each GameCube input in turn; writes an SDL\n# mapping for this pad's GUID so Godot's standard button/axis ids work afterwards.\n# Polls Input directly instead of listening to events: raw buttons 0/1 of an unknown pad\n# double as ui_accept/ui_cancel and their events never reach us.\n\nsignal done(guid: String, mapping: String)\n\nconst STEPS := [\n    ["A", "a"], ["B", "b"], ["X", "x"], ["Y", "y"],\n    ["Z", "rightshoulder"], ["L (press fully)", "lefttrigger"], ["R (press fully)", "righttrigger"],\n    ["Start", "start"],\n    ["push the LEFT stick RIGHT", "leftx"], ["push the LEFT stick UP", "lefty"],\n    ["push the C-stick RIGHT", "rightx"], ["push the C-stick UP", "righty"],\n    ["D-pad UP", "dpup"], ["D-pad DOWN", "dpdown"], ["D-pad LEFT", "dpleft"], ["D-pad RIGHT", "dpright"],\n]\nconst MAX_BUTTONS := 32\nconst MAX_AXES := 10\n\nvar step := 0\nvar device := -1\nvar parts: Array[String] = []\nvar used_buttons := {}\nvar used_axes := {}\nvar cooldown := 0.0\nvar was_down := {}\nvar last_seen := ""\n@onready var label: Label = $Panel/Label\n\nfunc _ready() -> void:\n    layer = 60\n    process_mode = Node.PROCESS_MODE_ALWAYS\n    var pads := Input.get_connected_joypads()\n    if pads.is_empty():\n        label.text = "No controller detected.\n\nPlug one in, then press F1 again.  (Esc closes)"\n        return\n    device = pads[0]\n    # settle: remember what is held right now so a resting trigger is not taken as a press\n    for b in MAX_BUTTONS:\n        was_down[b] = Input.is_joy_button_pressed(device, b)\n    _prompt()\n\nfunc _prompt() -> void:\n    if step >= STEPS.size():\n        _finish()\n        return\n    label.text = "Controller calibration  (%d/%d)   %s\n\nPress  %s\n\n%s\n\nEsc: cancel     Backspace: skip this one" % [\n        step + 1, STEPS.size(), Input.get_joy_name(device), STEPS[step][0], last_seen]\n\nfunc _input(event: InputEvent) -> void:\n    if event is InputEventKey and event.pressed:\n        if event.keycode == KEY_ESCAPE:\n            done.emit("", "")\n        elif event.keycode == KEY_BACKSPACE:\n            step += 1\n            _prompt()\n        get_viewport().set_input_as_handled()\n    elif event is InputEventJoypadButton or event is InputEventJoypadMotion:\n        get_viewport().set_input_as_handled()  # keep the game from reacting while we map\n\nfunc _process(delta: float) -> void:\n    cooldown = maxf(cooldown - delta, 0.0)\n    if device < 0 or step >= STEPS.size():\n        return\n    var sdl: String = STEPS[step][1]\n    var is_axis_step: bool = sdl.ends_with("x") or sdl.ends_with("y")\n    var is_trigger: bool = sdl.ends_with("trigger")\n    # buttons: rising edge\n    for b in MAX_BUTTONS:\n        var down := Input.is_joy_button_pressed(device, b)\n        var rose: bool = down and not was_down.get(b, false)\n        was_down[b] = down\n        if rose and cooldown <= 0.0 and not is_axis_step and not used_buttons.has(b):\n            used_buttons[b] = true\n            last_seen = "got raw button %d" % b\n            parts.append("%s:b%d" % [sdl, b])\n            _advance()\n            return\n    if cooldown > 0.0:\n        return\n    # axes: first one pushed past 0.6\n    for a in MAX_AXES:\n        var v := Input.get_joy_axis(device, a)\n        if absf(v) < 0.6 or used_axes.has(a):\n            continue\n        if is_axis_step:\n            used_axes[a] = true\n            # SDL axes are +right / +down; we asked for RIGHT and UP, so UP arriving positive\n            # (or RIGHT arriving negative) means the axis is inverted ('~' flips it)\n            var inverted: bool = (sdl.ends_with("y") and v > 0.0) or (sdl.ends_with("x") and v < 0.0)\n            last_seen = "got raw axis %d (%+.2f)" % [a, v]\n            parts.append("%s:a%d%s" % [sdl, a, "~" if inverted else ""])\n            _advance()\n            return\n        elif is_trigger:\n            used_axes[a] = true\n            last_seen = "got raw axis %d" % a\n            parts.append("%s:a%d" % [sdl, a])\n            _advance()\n            return\n\nfunc _advance() -> void:\n    cooldown = 0.6\n    step += 1\n    _prompt()\n\nfunc _finish() -> void:\n    if device < 0 or parts.is_empty():\n        done.emit("", "")\n        return\n    var guid := Input.get_joy_guid(device)\n    var name := Input.get_joy_name(device).replace(",", " ")\n    var mapping := "%s,%s,%s,platform:Windows," % [guid, name, ",".join(parts)]\n    label.text = "Saved mapping for %s\n\n%s" % [name, mapping]\n    await get_tree().create_timer(1.5).timeout\n    done.emit(guid, mapping)\n"""
@@ -4806,9 +4828,11 @@ def _stage_tscn(
     has_col: bool = False,
     exits: list[dict] | None = None,
     water_level: float = -1.0e9,
+    spawns: list[dict] | None = None,
 ) -> str:
     x, y, z = spawn
     exits = exits or []
+    spawns = spawns or []
     col_res = (
         f'[ext_resource type="PackedScene" path="res://stages/{name}_col.glb" id="3"]\n'
         if has_col
@@ -4821,6 +4845,7 @@ def _stage_tscn(
     stage_res = '[ext_resource type="Script" path="res://stage.gd" id="5"]\n'
     warp_shape = (
         '\n[sub_resource type="BoxShape3D" id="warpbox"]\nsize = Vector3(220, 320, 220)\n'
+        '\n[sub_resource type="BoxShape3D" id="doorslab"]\nsize = Vector3(260, 340, 30)\n'
         if exits
         else ""
     )
@@ -4838,6 +4863,23 @@ def _stage_tscn(
             f"dest_spawn = {e['spawn']}\n"
             f'\n[node name="Shape" type="CollisionShape3D" parent="{nm}"]\n'
             f'shape = SubResource("warpbox")\n'
+        )
+        # the game's door actors are solid: a slab just beyond the trigger keeps Link from
+        # walking through the doorway hole in the room mesh (hollow houses have no floor)
+        rot = math.radians(float(e.get("rot_y_deg", 0.0)))
+        out_x, out_z = math.sin(rot), math.cos(rot)
+        near = [sp for sp in spawns if math.dist((sp["pos"][0], sp["pos"][2]), (ex, ez)) < 400.0]
+        if near:
+            f = math.radians(float(near[0].get("rot_y_deg", 0.0)))
+            out_x, out_z = -math.sin(f), -math.cos(f)  # Link arrives facing into the room
+        a = math.atan2(out_x, out_z)
+        ca, sa = math.cos(a), math.sin(a)
+        warp_nodes.append(
+            f'\n[node name="Door{i}" type="StaticBody3D" parent="."]\n'
+            f"transform = Transform3D({ca:.4f}, 0, {-sa:.4f}, 0, 1, 0, {sa:.4f}, 0, {ca:.4f}, "
+            f"{ex + out_x * 70.0:.1f}, {ey + 170:.1f}, {ez + out_z * 70.0:.1f})\n"
+            f'\n[node name="Slab" type="CollisionShape3D" parent="Door{i}"]\n'
+            f'shape = SubResource("doorslab")\n'
         )
     return f"""[gd_scene load_steps={7 + int(has_col) + (2 if exits else 0)} format=3]
 
@@ -5307,7 +5349,7 @@ def export_godot(
         # per-stage water volumes come with the dzb liquid surfaces later
         water = 0.0 if name.lower().startswith("sea") else -1.0e9
         (out_dir / "scenes" / f"{name}.tscn").write_text(
-            _stage_tscn(name, spawn, has_col=has_col, exits=exits, water_level=water),
+            _stage_tscn(name, spawn, has_col=has_col, exits=exits, water_level=water, spawns=spawns),
             encoding="utf-8",
         )
         stage_data[name] = {
