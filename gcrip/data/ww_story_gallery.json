@@ -1,0 +1,982 @@
+{
+ "_source": "Mined read-only from the zeldaret/tww decompilation at Z:/memRip/sources/tww and the ripped GZLE01 (Wind Waker USA) disc data at Z:/3d ripper/out/rip/GZLE01. Area: the Nintendo Gallery (Pfigure + figureA..figureG), the pictograph-to-figurine loop that feeds it, the Ghost Ship (PShip), the Islet of Steel (sea room 30 + ShipD), the submarines (Abship) and Beedle's shop ships (Obshop). Same schema and conventions as ww_story_fortress.json. Event names come from each stage's Stage.arc/event_list.dat and from the stage.dzs EVNT table (dumped by tools/ww_story_mine.py); the parsed event scripts themselves are in out/rip/GZLE01/stages/<stage>/<stage>_events.json, and this chapter leans on them heavily because several beats are ordered ENTIRELY from event data (the Nintendo Gallery warp is a DIRECTOR NEXT action, not a stage exit). Triggers come from stage.dzs / room.dzr placement chunks: PLYR spawn points (params>>24 = index into the stage's EVNT table), TagEv volumes (params: >>24 EVNT index, >>16&0xFF switch2, >>8&0xFF switch, &0xFF action; rot.z = required event bit) and, for the shop ships and submarines, from collision exit ids handled in dStage_changeSceneExitId. Event-bit ids are authoritative numbers; the UNK_xxxx names are placeholders invented by the decomp team (include/d/d_save_event_flag.inc says so itself), so numeric ids are used here. IMPORTANT: this area's main progress state is NOT single event bits - see _storage below.",
+ "_storage": {
+  "figurine_collection": {
+   "what": "Which of the 134 figurines Carlov has already sculpted.",
+   "where": "17 BYTE REGISTERS inside the ordinary event-flag array dSv_event_c::mFlags[0x100]. They are not bit flags: dSv_event_c::setEventReg(u16 reg, u8 val) does mFlags[reg>>8] = (mFlags[reg>>8] & ~(u8)reg) | val and getEventReg returns (u8)reg & mFlags[reg>>8], so the LOW byte of the id is a MASK, not a bit. All 17 ids end in 0xFF, i.e. the whole byte.",
+   "register_order": [
+    "0x95FF",
+    "0x94FF",
+    "0x93FF",
+    "0x92FF",
+    "0x91FF",
+    "0x90FF",
+    "0x8FFF",
+    "0x8EFF",
+    "0x8DFF",
+    "0x8CFF",
+    "0xB1FF",
+    "0x9CFF",
+    "0x84FF",
+    "0x83FF",
+    "0x82FF",
+    "0x81FF",
+    "0x80FF"
+   ],
+   "addressing": "figure table index N (0 .. 0x85) lives in bit (N % 8) of register l_figure_comp[N / 8], where l_figure_comp is the list above. daNpcMt_c::isFigureGet / ::setFigure and daObjFigure_c::isFigureGet all use exactly this. 17 registers * 8 bits = 136 slots for TOTAL_FIGURE_COUNT = 0x86 = 134 figurines.",
+   "corroboration": "dSv_info_c::reinit() (the Second Quest carry-over) holds exactly these same 17 registers across the wipe and nothing else of the gallery's state except the bits 0x2F02, 0x3A01 and 0x3401 - src/d/d_save.cpp:1400-1427.",
+   "sources": [
+    "src/d/actor/d_a_npc_mt.cpp:304-320",
+    "src/d/actor/d_a_npc_mt.cpp:1351-1372",
+    "src/d/actor/d_a_obj_figure.cpp:40-57",
+    "src/d/actor/d_a_obj_figure.cpp:989-995",
+    "src/d/d_save.cpp:1201-1210",
+    "src/d/d_save.cpp:1400-1419"
+   ],
+   "confidence": "high"
+  },
+  "figure_index_space": {
+   "what": "How a pictograph subject becomes a figurine and which hall it lands in.",
+   "how": "A pictograph's subject is a dSnap 'photo index'. dSnap_PhotoIndex2TableIndex(p) = p - 0x49 turns it into the figure table index used everywhere else; valid photo indices are 0x49..0xCE, which is exactly the 134 entries of l_CharaData. dSnap_GetFigRoomId(tableIndex) returns l_CharaData[tableIndex].figRoom, 1..7, which is the gallery hall (1 = figureA .. 7 = figureG). Pfigure itself (room id 0) holds no figurines.",
+   "verified_against_placement": "Every `Figure` actor in figureA..figureG carries its table index in params bits 0..7 (daObjFigure_c::getPrmFigureNo, PRM_FIGURE_NO_W=8, PRM_FIGURE_NO_S=0). Reading all 134 of them out of the ripped .dzr placements and grouping by stage reproduces the figRoom column of l_CharaData EXACTLY: figureA 0x29-0x40 (24), figureB 0x0E-0x28 (27), figureC 0x00-0x0D (14), figureD 0x74-0x85 (18), figureE 0x61-0x73 (19), figureF 0x41-0x52 (18), figureG 0x53-0x60 (14). 24+27+14+18+19+18+14 = 134.",
+   "sources": [
+    "src/d/d_snap.cpp:36-45",
+    "src/d/d_snap.cpp:1443-1455",
+    "include/d/actor/d_a_obj_figure.h:40-43",
+    "src/d/actor/d_a_obj_figure.cpp:965-968",
+    "out/rip/GZLE01/stages/figureA/figureA_report.json"
+   ],
+   "confidence": "high"
+  },
+  "pictograph_storage": {
+   "what": "The pictographs themselves.",
+   "where": "NOT in the event flags. dComIfGs_getPictureNum() / dComIfGs_getPictureFormat() / dComIfGp_getPictureResult() are a separate save area; dSv_info_c::reinit() preserves the picture count and event register 0x89FF across the Second Quest alongside the figurine registers, which is the only handle on it visible from here. Carlov only ever reads the RESULT of the current pictograph (dComIfGp_getPictureResult / getPictureResultDetail / getPictureFormat) and then stores a single byte - the figure table index he is working on - in event register 0xA9FF.",
+   "sources": [
+    "src/d/actor/d_a_npc_mt.cpp:919-945",
+    "src/d/d_save.cpp:1445-1448",
+    "src/d/d_save.cpp:1487-1489"
+   ],
+   "confidence": "high"
+  },
+  "ghost_ship_and_shop_state": {
+   "what": "Ghost Ship progress and Beedle's loyalty card.",
+   "where": "Also byte registers, not bits: 0x8803 (2-bit counter, Ghost Ship visits), 0xC3FF and 0x85FF (the sea room and start code to spit Link back out at), 0x86FF (Beedle purchase count, 0..255).",
+   "sources": [
+    "src/d/actor/d_a_ghostship.cpp:355-375",
+    "src/d/actor/d_a_tag_ghostship.cpp:30-40",
+    "src/d/actor/d_a_npc_bs1.cpp:938-965"
+   ],
+   "confidence": "high"
+  }
+ },
+ "_not_this_area": {
+  "what": "Disposition of the leads from the sea event list that turned out NOT to belong to this area, kept so the next pass does not re-chase them.",
+  "detail": "DISPOSITION OF THE LEADS THAT TURNED OUT NOT TO BE MINE, kept so the next pass does not re-chase them. UO1_GET_ITEM, UB1_TALK, UB1_TALK_XY, UB1_TALK_PHOTO, UB1_TALK_PHOTO_GET_ITEM, UB4_GET_ITEM and UW2_GET_ITEM all belong to daNpcPeople_c, the generic island-villager actor: the names are its internal NPC codes (NPC_UO1, NPC_UB1/UB2, NPC_UB4, NPC_UW2, arcs Uo/Ub/Uw/Um/Sa/Ug), nothing to do with Beedle. RSH_GET_DEMO and RSH_SHOP_OUT belong to daNpc_Rsh1_c, which the decomp header names Zunari - the Windfall stall, not the shop ship. GOLD_SHIP_DELETE belongs to daOship_c's 'special' Warship and feeds the Tingle Tuner bit 0x3E80.",
+  "useful_crumb": "The one genuinely relevant crumb in that list: daNpcPeople_c has a photoCB and DSNAP types (DSNAP_TYPE_NPC_UO1, _NPC_UB1_UB2, _NPC_UB4, _NPC_UW2 ...), i.e. those villagers are photographable subjects and therefore feed Carlov's figurine list. UB1_TALK_PHOTO / UB1_TALK_PHOTO_GET_ITEM are that NPC reacting to being photographed, not a Beedle transaction.",
+  "sources": [
+   "src/d/actor/d_a_npc_people.cpp:27-46",
+   "src/d/actor/d_a_npc_people.cpp:4468-4492",
+   "src/d/actor/d_a_npc_rsh1.cpp:1-4",
+   "src/d/actor/d_a_npc_rsh1.cpp:467",
+   "src/d/actor/d_a_npc_rsh1.cpp:996",
+   "src/d/actor/d_a_oship.cpp:713-740",
+   "include/d/actor/d_a_oship.h:42"
+  ],
+  "confidence": "high"
+ },
+ "_bits": {
+  "0x2F02": {
+   "dec": 12034,
+   "byte_mask": [
+    47,
+    2
+   ],
+   "meaning": "Link has talked to Carlov at least once (his 1st-talk line has been shown). It is the gate on his X/Y prompt: daNpcMt_c::XyCheckCB only offers the Picto Box when 0x2F02 is set and 0x2F01 is clear.",
+   "set_by": "src/d/actor/d_a_npc_mt.cpp:1023-1025 (getMsg, first talk) - also forced on by the Second Quest carry-over, src/d/d_save.cpp:1425",
+   "read_by": [
+    "src/d/actor/d_a_npc_mt.cpp:1022",
+    "src/d/actor/d_a_npc_mt.cpp:1321"
+   ],
+   "confidence": "high"
+  },
+  "0x2F01": {
+   "dec": 12033,
+   "byte_mask": [
+    47,
+    1
+   ],
+   "meaning": "Carlov is currently sculpting a figurine: a valid colour pictograph has been accepted and its figure table index is sitting in register 0xA9FF. While it is set the X/Y prompt is refused and he only says his 'still working' line.",
+   "set_by": "src/d/actor/d_a_npc_mt.cpp:943",
+   "read_by": [
+    "src/d/actor/d_a_npc_mt.cpp:1020",
+    "src/d/actor/d_a_npc_mt.cpp:1321",
+    "src/d/d_kankyo_dayproc.inc:103"
+   ],
+   "confidence": "high"
+  },
+  "0x3080": {
+   "dec": 12416,
+   "byte_mask": [
+    48,
+    128
+   ],
+   "meaning": "The commissioned figurine is FINISHED and waiting to be collected. Raised by the day-change handler: at every day rollover, if 0x2F01 is set then 0x3080 is set. This is what makes the figurine take one in-game day.",
+   "set_by": "src/d/d_kankyo_dayproc.inc:103-104",
+   "read_by": [
+    "src/d/actor/d_a_npc_mt.cpp:970"
+   ],
+   "confidence": "high"
+  },
+  "0x3401": {
+   "dec": 13313,
+   "byte_mask": [
+    52,
+    1
+   ],
+   "meaning": "The seven Nintendo Gallery hall doors become usable. daKnob00_c gates door type 6 on it: without 0x3401 the door refuses, with it the door opens. Carlov raises it the moment he accepts the first pictograph.",
+   "set_by": "src/d/actor/d_a_npc_mt.cpp:944 - also forced on by the Second Quest carry-over, src/d/d_save.cpp:1427",
+   "read_by": [
+    "src/d/actor/d_a_knob00.cpp:698",
+    "src/d/actor/d_a_knob00.cpp:747"
+   ],
+   "confidence": "high"
+  },
+  "0x3A01": {
+   "dec": 14849,
+   "byte_mask": [
+    58,
+    1
+   ],
+   "meaning": "At least one figurine has ever been made. Switches Carlov's dialogue from the 1st-time wording (l_msg_mt_make / l_msg_mt_1st_kansei) to the repeat wording. Raised inside daNpcMt_c::setFigure, so it goes up with the very first figurine.",
+   "set_by": "src/d/actor/d_a_npc_mt.cpp:1372 - also forced on by the Second Quest carry-over, src/d/d_save.cpp:1426",
+   "read_by": [
+    "src/d/actor/d_a_npc_mt.cpp:947",
+    "src/d/actor/d_a_npc_mt.cpp:972",
+    "src/d/actor/d_a_npc_mt.cpp:1027"
+   ],
+   "confidence": "high"
+  },
+  "0x4080": {
+   "dec": 16512,
+   "byte_mask": [
+    64,
+    128
+   ],
+   "meaning": "The finished figurine has been handed over - i.e. daNpcMt_c::setFigure has already run for the index in 0xA9FF and the collection register bit is set. Held while Carlov walks Link through 'go and look at it'.",
+   "set_by": "src/d/actor/d_a_npc_mt.cpp:1001",
+   "read_by": [
+    "src/d/actor/d_a_npc_mt.cpp:397",
+    "src/d/actor/d_a_npc_mt.cpp:558",
+    "src/d/actor/d_a_npc_mt.cpp:566",
+    "src/d/actor/d_a_npc_mt.cpp:960",
+    "src/d/actor/d_a_npc_mt.cpp:971"
+   ],
+   "confidence": "high"
+  },
+  "0x3F01": {
+   "dec": 16129,
+   "byte_mask": [
+    63,
+    1
+   ],
+   "meaning": "Link has actually walked into the hall the new figurine was placed in. Raised in daNpcMt_c::_delete: when Carlov's actor is torn down for a stage change, if the next stage name matches l_figure_room_name[roomId] for roomId 1..7 and dSnap_GetFigRoomId(reg 0xA9FF) == roomId, 0x3F01 goes on.",
+   "set_by": "src/d/actor/d_a_npc_mt.cpp:553-562",
+   "read_by": [
+    "src/d/actor/d_a_npc_mt.cpp:1004"
+   ],
+   "confidence": "high"
+  },
+  "0x4040": {
+   "dec": 16448,
+   "byte_mask": [
+    64,
+    64
+   ],
+   "meaning": "Carlov's 'you found the room' line has been shown once. The last step of the four-bit conversation ladder (0x3080 -> 0x4080 -> 0x3F01 -> 0x4040) before all four are cleared again and the loop is free for the next pictograph.",
+   "set_by": "src/d/actor/d_a_npc_mt.cpp:1008",
+   "read_by": [
+    "src/d/actor/d_a_npc_mt.cpp:1007"
+   ],
+   "confidence": "high"
+  },
+  "0x3D08": {
+   "dec": 15624,
+   "byte_mask": [
+    61,
+    8
+   ],
+   "meaning": "The figurine collection is COMPLETE. daNpcMt_c phase_1 checks it (or calls isComp() and raises it), then calls setFigure(0x40) - unlocking the Link figurine - and returns cPhs_STOP_e, so Carlov never spawns again. isComp() wants getFigureMakeNum() >= 0x84, or >= 0x85 if figure 0x32 is already owned.",
+   "set_by": "src/d/actor/d_a_npc_mt.cpp:393",
+   "read_by": [
+    "src/d/actor/d_a_npc_mt.cpp:387"
+   ],
+   "confidence": "high"
+  },
+  "0xA9FF": {
+   "dec": 43519,
+   "byte_mask": [
+    169,
+    255
+   ],
+   "meaning": "REGISTER, not a bit (mask 0xFF = whole byte at mFlags[0xA9]). Holds the figure table index (0..0x85) of the figurine Carlov is currently working on / has just finished. Read back by setFigure and by dSnap_GetFigRoomId to name the hall.",
+   "set_by": "src/d/actor/d_a_npc_mt.cpp:945",
+   "read_by": [
+    "src/d/actor/d_a_npc_mt.cpp:558",
+    "src/d/actor/d_a_npc_mt.cpp:900",
+    "src/d/actor/d_a_npc_mt.cpp:978-999"
+   ],
+   "confidence": "high"
+  },
+  "figure_registers": {
+   "dec": null,
+   "byte_mask": null,
+   "meaning": "REGISTERS, not bits. The 17 bytes 0x95FF 0x94FF 0x93FF 0x92FF 0x91FF 0x90FF 0x8FFF 0x8EFF 0x8DFF 0x8CFF 0xB1FF 0x9CFF 0x84FF 0x83FF 0x82FF 0x81FF 0x80FF hold the whole figurine collection, one bit per figurine, index N -> bit N%8 of register list[N/8]. See _storage.figurine_collection.",
+   "set_by": "src/d/actor/d_a_npc_mt.cpp:1366-1372 (daNpcMt_c::setFigure)",
+   "read_by": [
+    "src/d/actor/d_a_npc_mt.cpp:1351-1363",
+    "src/d/actor/d_a_obj_figure.cpp:989-995",
+    "src/d/d_save.cpp:1400-1419"
+   ],
+   "confidence": "high"
+  },
+  "tmp_0x0202": {
+   "dec": 514,
+   "byte_mask": [
+    2,
+    2
+   ],
+   "meaning": "TEMPORARY flag (dSv_event_tmp_flag_c, a separate array from the event bits - it does not survive a save). Marks that Carlov's 3rd idle line has been used this visit; cleared whenever Carlov's actor is torn down for a stage that is not one of the seven halls.",
+   "set_by": "src/d/actor/d_a_npc_mt.cpp:1017 and :1031",
+   "read_by": [
+    "src/d/actor/d_a_npc_mt.cpp:1030"
+   ],
+   "confidence": "high"
+  },
+  "0x8803": {
+   "dec": 34819,
+   "byte_mask": [
+    136,
+    3
+   ],
+   "meaning": "REGISTER with a 2-bit mask (bits 0-1 of mFlags[0x88]). The Ghost Ship counter. daGhostship_c refuses to even create itself once it reads 3, and only lets Link aboard while it is < 3. daTag_Gship_c sets it to 3 outright the moment the treasure event starts (in the retail build; the demo build incremented it, which is why PShip has three rooms).",
+   "set_by": "src/d/actor/d_a_tag_ghostship.cpp:30-40",
+   "read_by": [
+    "src/d/actor/d_a_ghostship.cpp:251",
+    "src/d/actor/d_a_ghostship.cpp:357",
+    "src/d/actor/d_a_tag_ghostship.cpp:49"
+   ],
+   "confidence": "high"
+  },
+  "0xC3FF": {
+   "dec": 50175,
+   "byte_mask": [
+    195,
+    255
+   ],
+   "meaning": "REGISTER. The sea room number Link was in when the Ghost Ship swallowed him, written by daGhostship_c and read back by daTag_Gship_c to put him back.",
+   "set_by": "src/d/actor/d_a_ghostship.cpp:368",
+   "read_by": [
+    "src/d/actor/d_a_tag_ghostship.cpp:60"
+   ],
+   "confidence": "high"
+  },
+  "0x85FF": {
+   "dec": 34303,
+   "byte_mask": [
+    133,
+    255
+   ],
+   "meaning": "REGISTER. The sea start code (spawn) that goes with 0xC3FF - taken from the scls entry under Link's position at the moment he was swallowed.",
+   "set_by": "src/d/actor/d_a_ghostship.cpp:369",
+   "read_by": [
+    "src/d/actor/d_a_tag_ghostship.cpp:61"
+   ],
+   "confidence": "high"
+  },
+  "0x86FF": {
+   "dec": 34559,
+   "byte_mask": [
+    134,
+    255
+   ],
+   "meaning": "REGISTER. Beedle's loyalty count: +1 on every purchase, clamped to 255. At exactly 30 he posts LETTER_SILVER_MEMBERSHIP, at exactly 60 LETTER_GOLD_MEMBERSHIP.",
+   "set_by": "src/d/actor/d_a_npc_bs1.cpp:940-942",
+   "read_by": [
+    "src/d/actor/d_a_npc_bs1.cpp:685",
+    "src/d/actor/d_a_npc_bs1.cpp:849",
+    "src/d/actor/d_a_npc_bs1.cpp:1043",
+    "src/d/actor/d_a_npc_bs1.cpp:1233",
+    "src/f_op/f_op_msg_mng.cpp:2545"
+   ],
+   "confidence": "high"
+  },
+  "0xB003": {
+   "dec": 45059,
+   "byte_mask": [
+    176,
+    3
+   ],
+   "meaning": "LETTER_SILVER_MEMBERSHIP - a 2-bit REGISTER used by the letter system as a mail state, not a plain flag. Posted by Beedle at 30 purchases; the postbox then hands over msg 0x0F76 and dItemNo_COMPLIMENTARY_ID_e.",
+   "set_by": "src/d/actor/d_a_npc_bs1.cpp:961 (dLetter_send)",
+   "read_by": [
+    "src/d/actor/d_a_obj_toripost.cpp:49",
+    "src/d/d_kankyo_dayproc.inc:17"
+   ],
+   "confidence": "high"
+  },
+  "0xAF03": {
+   "dec": 44803,
+   "byte_mask": [
+    175,
+    3
+   ],
+   "meaning": "LETTER_GOLD_MEMBERSHIP - same shape as 0xB003. Posted by Beedle at 60 purchases; the postbox hands over msg 0x0F77 and dItemNo_FILL_UP_COUPON_e.",
+   "set_by": "src/d/actor/d_a_npc_bs1.cpp:950 (dLetter_send)",
+   "read_by": [
+    "src/d/actor/d_a_obj_toripost.cpp:52",
+    "src/d/d_kankyo_dayproc.inc:18"
+   ],
+   "confidence": "high"
+  },
+  "sea_switch_0x47": {
+   "dec": 71,
+   "byte_mask": null,
+   "meaning": "NOT an event bit - a SAVE SWITCH in the sea stage's switch area (dSv_save_c::STAGE_SEA switch 0x47). It is the Nintendo Gallery hatch's swSave: daObjOhatch_c reads it as m29C = param_get_swSave() from its placement params (the Ohatch in sea room 41 is placed with params 71) and starts open if it is already on. The Second Quest carry-over calls dComIfGs_onSaveSwitch(STAGE_SEA, 0x47) explicitly, which is what confirms the number.",
+   "set_by": "the FIGURE_HATCH_OPEN event: its `Mn` staff runs a SWON action - out/rip/GZLE01/stages/sea/sea_events.json; also src/d/d_save.cpp:1468",
+   "read_by": [
+    "src/d/actor/d_a_obj_ohatch.cpp:136-137",
+    "src/d/actor/d_a_obj_ohatch.cpp:200"
+   ],
+   "confidence": "high"
+  },
+  "0x3E80": {
+   "dec": 16000,
+   "byte_mask": [
+    62,
+    128
+   ],
+   "meaning": "NOT this area's, recorded only to close out the GOLD_SHIP_DELETE lead: it is raised when the 'special' Warship (daOship_c::isSpecial(), mModelType != 0xFF) finishes its sinking cutscene, and it is read by the Tingle Tuner switch actor daAgbsw0_c to change a hint message. GOLD_SHIP_DELETE is a Warship event, not a Ghost Ship one.",
+   "set_by": "src/d/actor/d_a_oship.cpp:732",
+   "read_by": [
+    "src/d/actor/d_a_agbsw0.cpp:991"
+   ],
+   "confidence": "medium"
+  }
+ },
+ "_actors": {
+  "Mt": {
+   "name": "Carlov",
+   "file": "src/d/actor/d_a_npc_mt.cpp",
+   "placed": "Pfigure room 0 at (-4, 0, -612), params 0xFF",
+   "notes": "Fully decompiled (no Nonmatching stubs in the parts used here). He looks up an event index for \"MT_GET_ITEM\" at createInit (:491) with a 0xFF default - but NO stage in the whole ripped disc has an event called MT_GET_ITEM, so mMtGetItemEventIdx is always -1 and daNpcMt_c::chkEndEvent can never fire. Carlov's give-item cutscene appears to be cut content."
+  },
+  "Mn": {
+   "name": "\"Manny\" per the decomp header - the man who opens the Nintendo Gallery hatch",
+   "file": "src/d/actor/d_a_npc_mn.cpp",
+   "placed": "sea room 41 (Forest Haven) at (224699, 1520, 192370) right beside the hatch, params 0x365E47FF; Pfigure room 0 params 0xFFFFFFFF; and one copy in every hall figureA..figureG, params 0x00FFFFFF",
+   "notes": "EVERY function body in d_a_npc_mn.cpp is a /* Nonmatching */ stub, so nothing about his behaviour can be read from the decomp. What he does is nevertheless visible in the event data: in FIGURE_HATCH_OPEN he is the staff that runs WAIT, HATCH, BIKKURI (surprise), SWON (SwOn 1), WAIT, TURN, WALK, TURN, LOOK, JUMP, END - i.e. he is the one who throws the switch that opens the hatch. Whatever he does in the eight gallery stages is unknown."
+  },
+  "Figure": {
+   "name": "a figurine on its pedestal",
+   "file": "src/d/actor/d_a_obj_figure.cpp",
+   "notes": "params bits 0..7 = figure table index. mbDisplay = isFigureGet(index) at construction: an unsculpted figurine draws only the pedestal (and not even that for indices 0x40 and 0x32). Talking to a displayed one orders FIGURE_CHECK, which is a pure MES_SET + camera save/load - the description card."
+  },
+  "PScnChg": {
+   "name": "the Ghost Ship's clear tag (fpcNm_TAG_GSHIP_e)",
+   "file": "src/d/actor/d_a_tag_ghostship.cpp",
+   "notes": "d_stage.cpp:572 maps the placement name \"PScnChg\" to TAG_GSHIP. Three copies are placed in PShip (one per room). It waits for DEFAULT_TREASURE / DEFAULT_TREASURE2 / DEFAULT_TREASURE_A to end, then sets register 0x8803 = 3 and orders PSHIP_CLEAR."
+  },
+  "ikadaS / ikada_h / ikada_u": {
+   "name": "the boardable Great Sea craft (fpcNm_OBJ_IKADA_e)",
+   "file": "src/d/actor/d_a_obj_ikada.cpp",
+   "notes": "The decomp header calls it \"Various Great Sea ships (Beedle, Submarines, Skull Platforms/Rafts, and Salvage Corp.)\". Boarding is NOT an exit chunk: dStage_changeSceneExitId reads the collision exit id, and exit id 0x3B -> stage \"Abship\", 0x3E -> stage \"Obshop\", with the destination room and spawn pulled out of the ikada actor's own params by IkadaGetRoomNoArg0 = (params>>4)&0x3F and IkadaGetLinkIdArg1 = (params>>10)&0xFF. Exit id 0x3D goes back to \"sea\" at the remembered room with point -2."
+  },
+  "Bs1 / Bs2": {
+   "name": "Beedle (mType 0) and his special-shop counterpart (mType 1)",
+   "file": "src/d/actor/d_a_npc_bs1.cpp",
+   "notes": "One actor class, two types. mShopIndex = params & 0xFF; for type 0 it becomes clamp(idx+2, 3, 5), for type 1 it is forced to 6. That indexes Item_set_data_tbl in d_shop.cpp: 3 = Bait Bag / All-Purpose Bait / Hyoi Pear, 4 = Arrows x10 / Arrows x30 / All-Purpose Bait, 5 = Arrows x30 / Bombs x30 / Red Potion, 6 = Empty Bottle / Piece of Heart / Treasure Chart (dItemNo_COLLECT_MAP_30_e)."
+  }
+ },
+ "steps": [
+  {
+   "id": "gal_hatch_open",
+   "stage": "sea",
+   "room": 41,
+   "layer": -1,
+   "trigger": {
+    "kind": "npc",
+    "detail": "On Forest Haven, at the metal hatch at (224319, 1507, 192260), the man 'Mn' standing beside it at (224699, 1520, 192370) plays FIGURE_HATCH_OPEN. The event's staff list is TIMEKEEPER, Mn, Ohatch, Mhsg15 (the ladder) and Link; Mn does WAIT -> HATCH -> BIKKURI -> SWON(SwOn 1) -> TURN/WALK/TURN/LOOK/JUMP/END, and Ohatch does OPEN once the timekeeper's 10-frame countdown fires. daObjOhatch_c only reacts if its own save switch (params 71 = sea switch 0x47) is already on AND FIGURE_HATCH_OPEN is running with the Ohatch staff's cut named 'OPEN' - so Mn's SWON is what arms it."
+   },
+   "event": "FIGURE_HATCH_OPEN",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "out/rip/GZLE01/stages/sea/sea_events.json:FIGURE_HATCH_OPEN",
+    "src/d/actor/d_a_obj_ohatch.cpp:136-137",
+    "src/d/actor/d_a_obj_ohatch.cpp:198-214",
+    "src/d/d_save.cpp:1468",
+    "out/rip/GZLE01/stages/sea/sea_report.json:actors"
+   ],
+   "notes": "What ORDERS the event could not be determined: nothing in src/ calls fopAcM_orderOtherEvent for FIGURE_HATCH_OPEN, no TagEv in sea room 41 points at it (it is not even in the sea EVNT table), and d_a_npc_mn.cpp is entirely /* Nonmatching */ stubs. Marked medium because the event data proves what the beat IS, not what starts it. It sets sea save switch 0x47, not an event bit - the Second Quest carry-over turns that same switch on by hand (d_save.cpp:1468), which is how the switch number was pinned down."
+  },
+  {
+   "id": "gal_enter",
+   "stage": "sea",
+   "room": 41,
+   "layer": -1,
+   "trigger": {
+    "kind": "tag",
+    "detail": "A TagEv at (224319, 1031, 192271) - directly under the hatch - with switch 255 and no event-bit gate (rot.z = -1) orders sea EVNT index 54 = 'nitendo'. That event has no actors at all: a DIRECTOR runs NEXT with Stage \"Pfigure\", RoomNo 0, Layer -1, StartCode 0. This is the only way into the Nintendo Gallery; there is no exit chunk anywhere in the ripped data that names Pfigure."
+   },
+   "event": "nitendo",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "tools/ww_story_mine.py sea --rooms 41",
+    "out/rip/GZLE01/stages/sea/sea_report.json:tags",
+    "out/rip/GZLE01/stages/sea/sea_events.json:nitendo"
+   ],
+   "notes": "'nitendo' is the developers' spelling. Getting down the shaft needs the ladder Mhsg15 at (224109, 720, 191210), which is a staff of FIGURE_HATCH_OPEN, so the hatch step gates this one physically rather than by a bit."
+  },
+  {
+   "id": "gal_meet_carlov",
+   "stage": "Pfigure",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "Talk to Mt (Carlov) at (-4, 0, -612). daNpcMt_c::getMsg falls all the way through to the last branch, shows l_msg_mt_1st_talk (msg 0x3651-ish family) and raises 0x2F02. Pfigure's EVNT table is EMPTY and none of its 8 spawns carries an event index, so nothing in this stage is auto-played - every beat here is dialogue-driven."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x2F02"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_mt.cpp:1024",
+    "tools/ww_story_mine.py Pfigure",
+    "out/rip/GZLE01/stages/Pfigure/Pfigure_report.json:actors"
+   ],
+   "notes": "Repeat talks walk down a ladder of lines: 0x3A01 clear -> 2nd talk; tmp 0x0202 clear -> 3rd talk (and set it); otherwise 4th talk. tmp 0x0202 is wiped whenever Carlov unloads for a stage outside the gallery, so the 3rd line comes back on each visit."
+  },
+  {
+   "id": "gal_show_pictograph",
+   "stage": "Pfigure",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "photo",
+    "detail": "NEW TRIGGER KIND. Not a talk and not a tag: Carlov installs eventInfo.mpCheckCB = daNpcMt_XyCheckCB, which is polled while Link is in talk range with the item menu open. It returns true only when 0x2F02 is set, 0x2F01 is clear, the selected X/Y item is dItemNo_PICTO_BOX_e or dItemNo_DELUXE_PICTO_BOX_e, and dComIfGs_getPictureNum() is non-zero. Accepting hands the stored pictograph to daNpcMt_c::getMsg via g_dComIfG_gameInfo.play.getEvent()->chkPhoto()."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x2F02"
+   ],
+   "sets_bits": [
+    "0x2F01",
+    "0x3401"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_mt.cpp:1321-1332",
+    "src/d/actor/d_a_npc_mt.cpp:919-968"
+   ],
+   "notes": "The refusal ladder, in the order the code tests it: greyscale film (GX_TF_I4/I8, i.e. the plain Picto Box) -> l_msg_mt_no_color; subject outside 0x49..0xCE -> l_msg_mt_no_figure; already sculpted -> l_msg_mt_maked; getPictureResultDetail()==1 -> face no good; ==2 -> body no good. So the Deluxe Picto Box is a hard requirement even though the plain one opens the prompt. On success he stores dSnap_PhotoIndex2TableIndex(photoNo) in register 0xA9FF and raises 0x2F01 and 0x3401. There is a commented bug in the decomp: result detail 3 is never tested (src/d/actor/d_a_npc_mt.cpp:941)."
+  },
+  {
+   "id": "gal_wait_a_day",
+   "stage": null,
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "day_change",
+    "detail": "NEW TRIGGER KIND. The sculpting takes one in-game day and nothing else. The environment day-rollover handler does, unconditionally, `if (isEventBit(0x2F01)) onEventBit(0x3080)`. No actor, no volume, no distance test is involved."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x2F01"
+   ],
+   "sets_bits": [
+    "0x3080"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/d_kankyo_dayproc.inc:102-104"
+   ],
+   "notes": "stage/room are null on purpose: the flag turns over wherever Link happens to be. The same handler ticks the two Beedle membership letters (dLetter_delivery at :17-18), which is why both of this area's timers share one hook."
+  },
+  {
+   "id": "gal_collect_figure",
+   "stage": "Pfigure",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "Talk to Carlov with 0x3080 set and 0x4080 clear. He shows l_msg_mt_1st_kansei or l_msg_mt_2nd_kansei (by 0x3A01), then calls setFigure(getEventReg(0xA9FF)) - which is the moment the figurine bit actually enters the 17-register collection - then raises 0x4080 and clears 0x2F01."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x3080"
+   ],
+   "sets_bits": [
+    "0x4080",
+    "0x3A01"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_mt.cpp:970-1002",
+    "src/d/actor/d_a_npc_mt.cpp:1366-1372"
+   ],
+   "notes": "Four bundled figurines are hard-coded here: taking index 0x4A also grants 0x49; taking 0x72 also grants 0x73,0x74,0x75,0x76,0x77,0x78 (a seven-in-one); and in the non-demo build 0x8C also grants 0x8D and 0x88 also grants 0x87. The indices are written in the source as dSnap_PhotoIndex2TableIndex(0x4a) etc, i.e. photo index minus 0x49."
+  },
+  {
+   "id": "gal_go_and_look",
+   "stage": "Pfigure",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "warp",
+    "detail": "With 0x4080 set, Carlov's next line (l_msg_mt_gallery) names the hall. Walking through that hall's door is what closes the loop: daNpcMt_c::_delete scans dComIfGp_getNextStageName() against l_figure_room_name[1..7] = figureA..figureG, and if the matching roomId equals dSnap_GetFigRoomId(getEventReg(0xA9FF)) it raises 0x3F01. Walking out to any OTHER stage instead clears 0x3080/0x2F01/0x4080/0x3F01/0x4040 and the whole 'go and see it' conversation is abandoned (the figurine is still collected)."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x4080"
+   ],
+   "sets_bits": [
+    "0x3F01"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_mt.cpp:548-572"
+   ],
+   "notes": "Talking to him once more after that shows l_msg_mt_room_in and sets 0x4040; the talk after THAT shows l_msg_mt_kansei_end and clears 0x3080, 0x4080, 0x3F01 and 0x4040 together, returning the machine to idle so the next pictograph can be handed over."
+  },
+  {
+   "id": "gal_hall_doors",
+   "stage": "Pfigure",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "object",
+    "detail": "Pfigure's seven KNOB00D doors sit on a ring at radius ~735 around the centre and lead one-to-one to figureA..figureG (dest spawns 0). They are door type 6, which daKnob00_c gates on event bit 0x3401 - the bit Carlov raises when he accepts the first pictograph - so before the first commission the whole ring is locked."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x3401"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Pfigure/Pfigure_report.json:exits",
+    "src/d/actor/d_a_knob00.cpp:698",
+    "src/d/actor/d_a_knob00.cpp:747"
+   ],
+   "notes": "KNOWN ENGINE BUG, not a mining question: Pfigure has 7 doors but 8 spawns (0 = the entrance drop at (0, 360, 293), 1..7 = the seven door mouths), and the remake's own door test found Link falling through the floor at spawn 7 (507, 0, -214), the figureG door. Every hall's return exit points back at Pfigure with the correct spawn 1..7."
+  },
+  {
+   "id": "gal_halls",
+   "stage": "figureA",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "room_enter",
+    "detail": "ONE MECHANISM, SEVEN INSTANCES - modelled once here. Every hall is a single-room stage with an empty EVNT table, exactly one spawn (id 0, no event) at its door, one KNOB00D back to Pfigure, one Paper (the wall placard), one Mn, and its own block of `Figure` actors. Each Figure decides at construction whether to draw itself: mbDisplay = isFigureGet(params & 0xFF) against the 17 collection registers. A displayed one can be talked to (attention distance 0xA8, plus a 150-unit / 13000-angle facing test) and orders FIGURE_CHECK, which is only OFF_PLR -> MES_SET -> ON_PLR with a camera save/load: the description card."
+   },
+   "event": "FIGURE_CHECK",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "tools/ww_story_mine.py figureA figureB figureC figureD figureE figureF figureG",
+    "out/rip/GZLE01/stages/figureA/figureA_report.json",
+    "src/d/actor/d_a_obj_figure.cpp:377-387",
+    "src/d/actor/d_a_obj_figure.cpp:554-560",
+    "out/rip/GZLE01/stages/Pfigure/Pfigure_events.json:FIGURE_CHECK"
+   ],
+   "notes": "The seven instances, as figure table indices read straight out of the placements and confirmed against l_CharaData[].figRoom: figureA 0x29-0x40 (24 figurines, includes 0x40 the Link figurine and 0x32), figureB 0x0E-0x28 (27), figureC 0x00-0x0D (14), figureD 0x74-0x85 (18), figureE 0x61-0x73 (19), figureF 0x41-0x52 (18), figureG 0x53-0x60 (14) - and Carlov's own figurine is index 0x5E (photo index 0xA7 = DSNAP_TYPE_NPC_MT), in hall G. Pfigure holds none. Total 134 = TOTAL_FIGURE_COUNT 0x86."
+  },
+  {
+   "id": "gal_complete",
+   "stage": "Pfigure",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "bits",
+    "detail": "Checked at actor creation, not on a talk. daNpcMt_c phase_1: if 0x3D08 is already set, or (Link did not arrive by a start-stage point and) isComp() returns true, then Carlov calls setFigure(0x40) - which unlocks the Link figurine in hall A - and returns cPhs_STOP_e, deleting himself. isComp() counts the collection with getFigureMakeNum() and wants >= 0x84 (132), or >= 0x85 (133) if figure 0x32 is already owned."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x3D08"
+   ],
+   "gives_item": "figure 0x40 (the Link figurine, hall A)",
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_mt.cpp:381-410",
+    "src/d/actor/d_a_npc_mt.cpp:1374-1400",
+    "src/d/actor/d_a_obj_figure.cpp:637"
+   ],
+   "notes": "Figure 0x40 also gets a much bigger heap (0x25000 rather than 0xCD90) and, uniquely with 0x32, draws NOTHING at all - not even the empty pedestal - while unowned. There is no MT_GET_ITEM event anywhere on the disc, so whatever Carlov was meant to hand over is cut; the reward as shipped is the Link figurine itself."
+  },
+  {
+   "id": "pship_chart",
+   "stage": null,
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "chest",
+    "detail": "PREREQUISITE, outside this area, recorded because the Ghost Ship is unreachable without it. daGhostship_c only sets mbCanEnterShip when dComIfGs_isOpenCollectMap(0x24) && dComIfGs_isGetCollectMap(0x24) - collect map slot 36, the Ghost Ship Chart. The only chest on the disc that grants it is a `takara` in stage WarpD at (-709, 881, -777), item 0xDB; the collect-map slot is 0xFF minus the item number (item_func_collectmapNN, d_item.cpp)."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "dItemNo_COLLECT_MAP_36 (0xDB) - Ghost Ship Chart",
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_ghostship.cpp:306",
+    "src/d/d_item.cpp:236-250",
+    "src/d/d_item.cpp:1719-1724",
+    "out/rip/GZLE01/stages/WarpD/WarpD_report.json:actors"
+   ],
+   "notes": "WarpD is not one of my stages, so how that chest is reached is somebody else's step; only the dependency is recorded here."
+  },
+  {
+   "id": "pship_appear",
+   "stage": "sea",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "object",
+    "detail": "The Ghost Ship actor exists per-island and is visible only on the right night. daGhostship_c::_execute compares its own params bits 0..7 (moonPhase) against dKy_moon_type_chk() and requires the clock to be outside 90..285, otherwise it calls dKy_pship_existense_cut() and drops alpha to 0. Even on the right night it fades OUT as Link closes to shipHideDist unless the Ghost Ship Chart is owned, in which case it stays solid and becomes enterable."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_ghostship.cpp:229-234",
+    "src/d/actor/d_a_ghostship.cpp:286-320"
+   ],
+   "notes": "The moon phase per island lives in each Ghostship placement's params, and the ghost-ship actor is also refused outright at _create time once register 0x8803 reads 3 (src/d/actor/d_a_ghostship.cpp:251) - so after the one raid the ship is gone from every island. The individual island placements were not enumerated; the ripped sea report does not carry a Ghostship actor row, so the placements must be on a layer or a room the exporter's logic filter skipped."
+  },
+  {
+   "id": "pship_board",
+   "stage": "sea",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "board",
+    "detail": "Sailing within l_HIO.shipEnterDist of a fully-faded-in Ghost Ship while register 0x8803 < 3 swallows Link. daGhostship_c looks up the scls entry under his position, writes that entry's room into register 0xC3FF and its start code into register 0x85FF, plays JA_SE_LK_WARP_TO_G_SHIP, and calls dComIfGp_setNextStage(\"PShip\", 0, 2) - spawn 0, room 2, always room 2 in the retail build."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_ghostship.cpp:355-375"
+   ],
+   "notes": "PShip has three rooms, 0/1/2, each an identical hold with one takara3 chest and one PScnChg tag, plus 24 Odokuro skulls, Rdead1 Redeads, wiz_r Wizzrobes, bable and pow. The demo build sent Link to room 0, then 1, then 2 on successive visits (setNextStage(\"PShip\", 0, r29)); retail collapsed that to a single visit to room 2, which is why rooms 0 and 1 are dead data."
+  },
+  {
+   "id": "pship_treasure",
+   "stage": "PShip",
+   "room": 2,
+   "layer": -1,
+   "trigger": {
+    "kind": "chest",
+    "detail": "The takara3 chest at (0, -550, -2255) in room 2, rot.z = -1025 (0xFBFF), so getItemNo() = (rot.z >> 8) & 0xFF = 0xFB and the open bit is 0xFF. Opening it runs one of the shared DEFAULT_TREASURE / DEFAULT_TREASURE2 / DEFAULT_TREASURE_A scripts."
+   },
+   "event": "DEFAULT_TREASURE",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "dItemNo_COLLECT_MAP_04 (0xFB) - collect map slot 4",
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/PShip/PShip_report.json:actors",
+    "include/d/actor/d_a_tbox.h:37",
+    "include/d/d_item_data.h:261",
+    "src/d/d_item.cpp:236-250"
+   ],
+   "notes": "Rooms 0 and 1 carry the same item 0xFB. The decomp only names these items dItemNo_COLLECT_MAP_nn; which printed chart each slot corresponds to lives in the message archive, not in the code, so the human-readable chart name is NOT determinable from the decompilation."
+  },
+  {
+   "id": "pship_clear",
+   "stage": "PShip",
+   "room": 2,
+   "layer": -1,
+   "trigger": {
+    "kind": "object",
+    "detail": "The PScnChg actor (fpcNm_TAG_GSHIP_e) sits in the room in mode CLEAR_WAIT. The instant any of DEFAULT_TREASURE, DEFAULT_TREASURE2 or DEFAULT_TREASURE_A reports endCheck, it switches to CLEAR_EVENT: its init sets register 0x8803 = 3 (so the Ghost Ship never exists again), then it orders PSHIP_CLEAR. During PSHIP_CLEAR it watches its own staff's cut name for \"WARAIGOE\" and plays JA_SE_CV_G_SHIP_SCREAM (0x8803 == 3) or _LAUGH otherwise, and on the event ending it calls setNextStage(\"sea\", getEventReg(0x85FF), getEventReg(0xC3FF), 0xFF, 0, 5) - back to exactly the spot the ship swallowed Link from."
+   },
+   "event": "PSHIP_CLEAR",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_tag_ghostship.cpp:22-68",
+    "src/d/d_stage.cpp:572",
+    "out/rip/GZLE01/stages/PShip/PShip_events.json:PSHIP_CLEAR"
+   ],
+   "notes": "PSHIP_CLEAR's staff are CAMERA (FIXEDFRM), PScnChg (WARAIGOE, WAIT) and Link (024surprised, 015laround, 020l_around2) - the laugh and Link's look-around, nothing more. PShip's EVNT table is nine MapToolCamera entries and none of its three spawns carries an event, so nothing here is placement-driven."
+  },
+  {
+   "id": "steel_approach",
+   "stage": "sea",
+   "room": 30,
+   "layer": -1,
+   "trigger": {
+    "kind": "object",
+    "detail": "The Islet of Steel itself, at roughly (-167360, 0, 81500). It is ringed by four Oship Warships (at (-167360,0,81500), (-162460,0,87000), (-171360,0,86900) and (-167360,0,84000)) and two Ocanon cannons on the islet at (-168060,800,81300) and (-166660,800,81300); three Bk Bokoblins and four Bb Kargarocs stand on the deck, and a HyoiKam seagull perch sits above them at (-167265, 4236, 79913). sea room 30's other cluster, around (-197360, 1400, 110000), is a separate Aygr Lookout Platform with its own tkrAOs chest."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/sea/sea_report.json:actors",
+    "src/d/d_stage.cpp:534",
+    "src/d/d_stage.cpp:653",
+    "src/d/d_stage.cpp:811",
+    "src/d/d_stage.cpp:816",
+    "src/d/d_stage.cpp:819"
+   ],
+   "notes": "sea room 30 has spawns 0, 1 and 100-103; spawn 1 at (-167360, 0, 81600) is the one on the islet itself. Nothing in room 30 auto-plays an event and there is no TagEv there, so the whole encounter is actor behaviour."
+  },
+  {
+   "id": "steel_interior",
+   "stage": "ShipD",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "warp",
+    "detail": "ShipD is a boat stage: daPy_lk_c's create explicitly names \"ShipD\" (alongside Pjavdou and Siren) as a stage where, when the last scene mode is 5, Link arrives already aboard the King of Red Lions rather than on foot. The stage backs that up - it has one PLYR spawn (id 0, no event, at (-1598, 0, -11)), one SHIP spawn at (-1292, 0, -208), a `Ship` actor at (346, 0, 29), and its collision carries a water layer. There is no exit chunk in the ripped data on either side, so the actual scene change is an ordinary exit polygon in the sea room 30 / ShipD collision (the SCLS tables), which the miner does not dump."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "src/d/actor/d_a_player_main.cpp:12465-12472",
+    "out/rip/GZLE01/stages/ShipD/ShipD_report.json"
+   ],
+   "notes": "Marked medium only because the exit-id side of the transition was not read out of the collision. ShipD has an EMPTY EVNT table, no TagEv and no story event script at all (0 of 70 look story-ish) - it is one room, six ootubo1 jars, one TagMsg at (1961, 240, -11) and the chest."
+  },
+  {
+   "id": "steel_chest",
+   "stage": "ShipD",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "chest",
+    "detail": "The tkrCTf chest at (2291, 260, -11), rot.z = -257 (0xFEFF): item = (rot.z >> 8) & 0xFF = 0xFE, open bit 0xFF."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "dItemNo_COLLECT_MAP_01 (0xFE) - collect map slot 1",
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/ShipD/ShipD_report.json:actors",
+    "include/d/actor/d_a_tbox.h:37",
+    "include/d/d_item_data.h:261"
+   ],
+   "notes": "'tkrCTf' is the chest model used for the Triforce-chart-class chests. As with the Ghost Ship's chart, the decomp only gives the collect-map slot number; the printed chart name is in the message archive."
+  },
+  {
+   "id": "sub_board",
+   "stage": "sea",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "board",
+    "detail": "Each submarine on the sea is an `ikadaS` placement (OBJ_IKADA). Stepping onto its boarding polygon hits collision exit id 0x3B, and dStage_changeSceneExitId turns that into setNextStage(\"Abship\", point, roomNo) where roomNo = (params>>4)&0x3F and point = (params>>10)&0xFF - so the submarine's own params pick which Abship room Link gets. Leaving again uses exit id 0x3D, which returns to \"sea\" at the room stashed by setIkadaShipBeforeRoomId with point -2."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/d_stage.cpp:2296-2320",
+    "include/d/d_stage.h:1138-1148",
+    "out/rip/GZLE01/stages/sea/sea_report.json:actors"
+   ],
+   "notes": "Seven ikadaS placements exist in the whole ripped sea, all with spawn 0: sea room 49 Five-Star Isles -> Abship room 0; room 25 Six-Eye Reef -> 1; room 34 Bomb Island -> 2; room 3 Northern Fairy Island -> 4; room 45 Headstone Island -> 5; room 14 Flight Control Platform -> 6; room 5 Crescent Moon Island -> 7. Abship room 3 has a full layout and a chest but NO submarine anywhere on the sea points at it - unused data (unless the exporter dropped that one placement; ikadaS is not in sea's unresolved-name list, so probably genuinely unused)."
+  },
+  {
+   "id": "sub_interior",
+   "stage": "Abship",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "room_enter",
+    "detail": "Every Abship room is one submarine. All eight rooms have a single spawn (id 0, no event) at (0, -550, 1825) - room 5's is at z 1625 - and a chest at the far end. The rooms are enemy dens: 7 Bk Bokoblins, 7 mo2 Moblins, 5 keeth, 4 wiz_r Wizzrobes, 5 nezumi rats with 3 nezuana holes, 16 Puti, 14 Ktaru barrels, plus the crew's table and crockery (OtbleL, Otble, MPot, MOsara, MKoppu, Ostool)."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "tools/ww_story_mine.py Abship",
+    "out/rip/GZLE01/stages/Abship/Abship_report.json"
+   ],
+   "notes": "Abship's EVNT table is hasigo_down followed by twelve MapToolCamera entries; none of the eight spawns carries an event index."
+  },
+  {
+   "id": "sub_ladder_down",
+   "stage": "Abship",
+   "room": 0,
+   "layer": 11,
+   "trigger": {
+    "kind": "tag",
+    "detail": "A single TagEv at (0, -1000, 325) on layer 11, switch 229, no event-bit gate (rot.z = -1), orders EVNT index 0 = hasigo_down. The event has only a CAMERA staff (FIXEDFRM centred on (18,-350,-2385), eye (25,-240,-2220), 45 frames) plus an ALL dummy: it is purely the camera that watches the ladder come down. Switch 229 is what actually gates it, and nothing in the placement data sets that switch, so it is raised by the room-clear logic."
+   },
+   "event": "hasigo_down",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "tools/ww_story_mine.py Abship",
+    "out/rip/GZLE01/stages/Abship/Abship_events.json:hasigo_down",
+    "out/rip/GZLE01/stages/Abship/Abship_report.json:tags"
+   ],
+   "notes": "'hasigo' is ladder. Only room 0 carries this tag; what raises switch 229 was not determined - grepping 'hasigo_down' in src/ finds nothing, so no C++ actor orders it by name. Abship's other tag is an AttTagB in room 4 at (151, -94, 1161), type 0, swSave 255 - an attention look-at marker with no event index at all, NOT a trigger."
+  },
+  {
+   "id": "sub_chests",
+   "stage": "Abship",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "chest",
+    "detail": "One chest per room, item number = (rot.z >> 8) & 0xFF with open bit 0xFF: room 0 takara6 at (0,-550,-1875) item 0x07; room 1 takara3 item 0x07; room 2 tkrASw at (0,-1000,-875) item 0x50; room 3 takara5 item 0xDD; room 4 takara5 at (0,-550,-1975) item 0xD9; room 5 takara5 item 0xDD; room 6 takara5 item 0xC4; room 7 takara item 0xDA."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "0x07 = dItemNo_HEART_PIECE_e (rooms 0, 1); 0x50 = dItemNo_EMPTY_BOTTLE_e (room 2); 0xDD = collect map 34 (rooms 3 and 5); 0xD9 = collect map 38 (room 4); 0xC4 = collect map 59 (room 6); 0xDA = collect map 37 (room 7)",
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Abship/Abship_report.json:actors",
+    "include/d/actor/d_a_tbox.h:37",
+    "include/d/d_item_data.h:261",
+    "src/d/d_item.cpp:236-250"
+   ],
+   "notes": "Rooms 3 and 5 both hold item 0xDD (collect map 34); since room 3 is not reachable from any sea placement, the duplicate is harmless. Room 2's tkrASw sits a floor lower (y -1000) than the rest."
+  },
+  {
+   "id": "shop_board",
+   "stage": "sea",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "board",
+    "detail": "Beedle's shop ships are `ikada_h` placements (and one `ikada_u`). Their boarding polygon carries collision exit id 0x3E, which dStage_changeSceneExitId turns into setNextStage(\"Obshop\", point, roomNo) with roomNo = (params>>4)&0x3F and point = (params>>10)&0xFF, all of them spawn 0. Obshop rooms 1-4 each carry a shopkeeper and a Ptco/Ptcu curtain (both are fpcNm_Obj_Bscurtain_e, types 0 and 1); rooms 1-4 spawn 0 auto-plays EVNT index 0, MapToolCamera. Rooms 5 and 6 have spawns at y -1000 but no actors at all."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/d_stage.cpp:2296-2312",
+    "include/d/d_stage.h:1138-1148",
+    "out/rip/GZLE01/stages/Obshop/Obshop_report.json",
+    "out/rip/GZLE01/stages/sea/sea_report.json:actors",
+    "src/d/actor/d_a_npc_bs1.cpp:1584-1602",
+    "src/d/d_shop.cpp:522-562"
+   ],
+   "notes": "The full mapping: Obshop room 2 (Bs1 params 0x01 -> shop set 3: Bait Bag, All-Purpose Bait, Hyoi Pear) is reached from sea rooms 10 Spectacle, 12 Pawprint, 13 Dragon Roost, 27 Eastern Triangle, 32 Southern Triangle, 41 Forest Haven and 44 Outset. Room 3 (params 0x02 -> set 4: Arrows x10, Arrows x30, All-Purpose Bait) from sea room 11 Windfall, on layers 1/3/5. Room 4 (params 0x03 -> set 5: Arrows x30, Bombs x30, Red Potion) from sea rooms 23 Greatfish, 26 Tower of the Gods and 38 Shark Island. Room 1 holds Bs2 (params 0x06, forced to shop set 6: Empty Bottle, Piece of Heart, Treasure Chart) and is reached from the single `ikada_u` at sea room 16, Rock Spire Isle - the special shop ship."
+  },
+  {
+   "id": "shop_buy",
+   "stage": "Obshop",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "buy",
+    "detail": "NEW TRIGGER KIND. Buying is not a talk event: daNpc_Bs1_c runs its own shop UI (mShopCamAction / mShopItems) out of d_shop.cpp, and only reaches the event system for the hand-over, ordering BS1_GETDEMO (type 0) or BS2_GETDEMO (type 1). Both scripts are the same three staff: the shopkeeper doing dummy1/dummy2, Link doing 001n_wait / 011get_item / 001n_wait, and CAMERA doing PAUSE / GETITEM / PAUSE. Every completed purchase bumps register 0x86FF by one (clamped at 255)."
+   },
+   "event": "BS1_GETDEMO",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_bs1.cpp:1566-1578",
+    "src/d/actor/d_a_npc_bs1.cpp:938-942",
+    "out/rip/GZLE01/stages/Obshop/Obshop_events.json:BS1_GETDEMO"
+   ],
+   "notes": "Each shop item also carries its own buy conditions (Shop_BuyCond_MUST_OWN_ITEM_e etc): arrows need the Bow, potions need an Empty Bottle, bait needs the Bait Bag, and the chart/bottle/heart-piece slots are MUST_NOT_OWN so they vanish once bought. Obshop's whole EVNT table is a single MapToolCamera entry."
+  },
+  {
+   "id": "shop_membership",
+   "stage": "Obshop",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "show_item",
+    "detail": "NEW TRIGGER KIND. Register 0x86FF hitting exactly 30 makes Beedle post LETTER_SILVER_MEMBERSHIP; hitting exactly 60 posts LETTER_GOLD_MEMBERSHIP. The day-change handler delivers them and the postbox actor hands over the goods (msg 0x0F76 -> dItemNo_COMPLIMENTARY_ID_e, msg 0x0F77 -> dItemNo_FILL_UP_COUPON_e). Bringing either back is the new trigger: daNpc_Bs1_c::XyEventCB watches the X/Y item button and, on type 0 only, orders PUT_PRAICE_TICKET for the Complimentary ID and PUT_FULL_TICKET for the Fill-Up Coupon. Not a talk, not a tag - an item presented from the menu."
+   },
+   "event": "PUT_PRAICE_TICKET",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_bs1.cpp:146-162",
+    "src/d/actor/d_a_npc_bs1.cpp:938-965",
+    "src/d/actor/d_a_npc_bs1.cpp:1612-1613",
+    "src/d/actor/d_a_obj_toripost.cpp:49",
+    "src/d/actor/d_a_obj_toripost.cpp:52",
+    "src/d/d_kankyo_dayproc.inc:17-18",
+    "out/rip/GZLE01/stages/Obshop/Obshop_events.json:PUT_PRAICE_TICKET"
+   ],
+   "notes": "PUT_PRAICE_TICKET's Bs1 staff is TALKMSG(3951..3953) -> GETTICKET -> CONTINUE_TALK -> SETANM -> WAIT(45) -> TALKMSG(3954) -> PRAISE -> SETANM, with Link doing 037present; PUT_FULL_TICKET is TALKMSG(3955..3956) -> GETTICKET -> JNTLOCK -> CONTINUE_TALK -> JNTLOCK -> MANTAN ('full') -> SETANM. Bs2 (type 1) refuses both - XyEventCB only branches when mType == 0."
+  }
+ ]
+}

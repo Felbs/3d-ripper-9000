@@ -1,0 +1,842 @@
+{
+ "_source": "Mined read-only from the zeldaret/tww decompilation at Z:/memRip/sources/tww and the ripped GZLE01 (Wind Waker USA) disc data at Z:/3d ripper/out/rip/GZLE01. Chapter: the Great Sea's minigames and platforms - the Flight Control Platform bird-man contest (sea room 14), the Boating Course (stage Ocean, entered from sea room 48), the Squid Hunt / 'Sploosh Kaboom' (stage Kaisen, entered from Windfall), Salvatore's cannon game on Spectacle Island (sea room 10), and the sea-borne furniture of the rest of sea: Big Octos, roaming cyclones, Old Man Ho Ho's lookouts, the Fishmen and the Hyoi-pear seagulls. Same conventions as ww_story_fortress.json. Event names come from each stage's Stage.arc/event_list.dat (dumped to out/rip/GZLE01/godot/events/<stage>.json) and from the stage.dzs EVNT table. Triggers come from stage.dzs / room.dzr placement chunks: PLYR spawn points (params>>24 = index into the stage's EVNT table -> auto-started event) and TagEv volumes (params: >>24 EVNT index, >>16&0xFF switch2, >>8&0xFF switch, &0xFF daTag_Event_c::Action_e; rot.z = required event bit). AttTag / AttTagB volumes carry NO event index and are not triggers. A TagEv whose type byte is 0xFF falls through daTag_Event_c::actionArrival's default case to ACTION_HUNT, i.e. it is a plain proximity volume of radius scale.x*100 in XZ and scale.y*100 in Y (src/d/actor/d_a_tag_event.cpp:242-264, 265-322); with switch 0xFF it re-fires every time. WARNING ABOUT COVERAGE: the four NPC actors that actually run these minigames - daNpcBmcon_c (Willi & Obli), daNpc_Kg1_c (Salvatore, squid hunt), daNpc_Kg2_c (Salvatore, cannon game) and daNpc_Sarace_c (boating course) - are 100% /* Nonmatching */ stubs in the decompilation. Everything about how they order events, what they charge, what they award and what they save is therefore UNKNOWN unless a sibling actor that IS decompiled (daGoal_Flag_c, daCanon_c, daDaiocta_c, daTornado_c, dSeaFightGame_info_c) states it. Every step below says which of the two it is. Event-bit ids are authoritative numbers; the UNK_xxxx names are placeholders invented by the decomp team, so numeric ids are used here. Leads from the brief that turned out NOT to belong to this chapter, recorded so the work is not repeated: ajav_uzu / ajav_destroy0 / ajav_destroy1 are daObjAjav, the stone wall over Jabun's cave (src/d/actor/d_a_obj_ajav.cpp:154-156); TOBOKERU and otoboke are staffed by Kk1, a Windfall NPC; TC_GET_RUPEE / TC_PAY_RUPEE are daNpc_Tc, Tingle & co (src/d/actor/d_a_npc_tc.cpp:644-645); Get_Rupee is staffed by Ob1 and is also in daNpc_Bm1's event table (src/d/actor/d_a_npc_bm1.cpp:503-507, the generic Rito postman); MELT_ICE / FREEZE_ICE / ICE_FAILED / FIRE_VOLCANO / FREEZE_VOLCANO / VOLCANO_FAILED are the Ice Ring Isle and Fire Mountain entrance puzzles (sea room 40 spawn 2 auto-plays ICE_FAILED, sea room 20 spawn 2 auto-plays VOLCANO_FAILED) and belong to an islands chapter, not to this one.",
+ "_scores": {
+  "headline": "No Wind Waker minigame score lives in a save area of its own. Persistent scores are EVENT REGISTERS: they are stored in the SAME 256-byte event-flag array as the event bits (dSv_event_c { u8 mFlags[0x100]; }, include/d/d_save.h:696-710), addressed by the same u16 id, but with a MULTI-BIT low byte used as a mask instead of a single-bit mask.",
+  "encoding": {
+   "source": "src/d/d_save.cpp:1201-1210",
+   "set": "setEventReg(id, v): mFlags[id >> 8] = (mFlags[id >> 8] & ~(id & 0xFF)) | v",
+   "get": "getEventReg(id): return mFlags[id >> 8] & (id & 0xFF)",
+   "caution": "Neither accessor shifts. The value is OR'd in raw and read back masked but NOT shifted down, so a register whose mask is 0xFF is a plain 0-255 byte of the save, a register whose mask is 0x0F is a 0-15 value living in the low nibble, and a register whose mask is 0xF0 would have to be pre-shifted by its caller. Every register this chapter uses has mask 0xFF, i.e. it owns a whole byte of the event-flag array.",
+   "consequence_for_the_remake": "isEventBit(id) on a register id returns true if ANY masked bit is set. A remake that models event flags as a set of named booleans will silently corrupt these scores; the storage has to be the raw 256-byte array."
+  },
+  "persistent": {
+   "0xBEFF": {
+    "what": "Squid Hunt / 'Sploosh Kaboom' record - the number of shots the player needed to sink all the squids. LOWER IS BETTER.",
+    "byte": "event-flag byte 0xBE, whole byte (mask 0xFF)",
+    "initial_value": "20, written on a fresh file by setInitEventBit(): dComIfGs_setEventReg(UNK_BEFF, daNpc_Kg1_c::m_highscore) with m_highscore = 20 (src/d/d_save_init.cpp:11-14, src/d/d_com_static.cpp:379). 20 is also, almost certainly, the shot allowance, since dSeaFightGame_info_c::init takes i_bulletNum.",
+    "what_counts": "dSeaFightGame_info_c::mScore is incremented once per shot, hit or miss (src/d/d_seafightgame.cpp:105-131, include/d/d_seafightgame.h:29). daMgBoard_c::getScore() exposes it (include/d/actor/d_a_mgameboard.h:19).",
+    "read_by": "the message system, to print the record in Salvatore's text: src/f_op/f_op_msg_mng.cpp:2142, 4099, 4138-4139, 6161, 7762, 7785",
+    "written_by": "UNKNOWN - no setEventReg(UNK_BEFF, ...) exists anywhere in src/ except the fresh-file initialiser. daNpc_Kg1_c is a stub, so the compare-and-store is invisible.",
+    "confidence": "high for the storage and the initial value, medium for 'lower is better' (inferred from the initial value being the shot allowance)"
+   },
+   "0xAAFF": {
+    "what": "Boating Course difficulty level - how much the time limit has been shortened.",
+    "byte": "event-flag byte 0xAA, whole byte (mask 0xFF)",
+    "used_by": "daGoal_Flag_c::_create, only on stage \"Ocean\" entered at start code 1: time_limit = l_HIO.mTimeLimit (240 s, include/d/actor/d_a_goal_flag.h:21) minus getEventReg(UNK_AAFF) * 10 (src/d/actor/d_a_goal_flag.cpp:563-569).",
+    "written_by": "UNKNOWN - nothing in src/ ever calls setEventReg(UNK_AAFF, ...). daNpc_Sarace_c is a stub. Grep for UNK_AAFF returns exactly two hits: this read and the enum definition (include/d/d_save_event_flag.inc:547).",
+    "confidence": "high for the read and the arithmetic, low for what raises it"
+   }
+  },
+  "transient": {
+   "note": "The IMMEDIATE result of a run is not saved at all. It is carried in DOL statics and in the in-RAM play struct, both of which die with the session.",
+   "daNpc_Sarace_c::ship_race_result / ship_race_rupee": "static s32 pair defined in src/d/d_com_static.cpp:267-268, zeroed by dSv_info_c::init (src/d/d_save.cpp:1389-1397). daGoal_Flag_c::_delete writes them as the Ocean stage unloads - result 2 + rupees for a clean finish, result 1 + rupees for a perfect one (src/d/actor/d_a_goal_flag.cpp:713-727) - and daPy_lk_c::startRestartRoom writes result 3 when the player is thrown out of the course mid-race (src/d/actor/d_a_player_main.cpp:10855-10866). The Sarace NPC back on sea room 48 reads them to decide the payout. Because they are DOL statics they survive the Ocean -> sea stage change but not a reset.",
+   "daNpc_Kg2_c::canon_game_result": "static s8 (include/d/actor/d_a_npc_kg2.h:14, 47-49); daCanon_c::end_proc_init sets 1 for 5/5 hits and 2 otherwise (src/d/actor/d_a_canon.cpp:411-424).",
+   "dComIfGp play struct": "mMiniGameType (include/d/d_com_inf_game.h:653-660, 873) plus mMiniGameRupee and the minigame result; startMiniGame/endMiniGame just set and clear the type byte. Observed type ids: 1 = Boating Course (d_a_goal_flag.cpp:589), 2 and 6 = daNpc_Ji1, 3 = cannon game (d_a_canon.cpp:267), 5 = auction, 7 = Rito mail sorting, 8 = the Fishman bow minigame (nothing decompiled calls startMiniGame(8), but d_meter.cpp:2471-2476 reads daNpc_So_c::getMiniGameRestArrow while type == 8). No id is ever written to the save.",
+   "daNpcBmcon_c fly distance": "getFlyDistMax / setFlyDistMax(short) / getFlyDistNow / setFlyDistNow(short) / calcFlyDist (include/d/actor/d_a_npc_bmcon1.h:64-69, all stubs at src/d/actor/d_a_npc_bmcon1.cpp:244-266). Nothing tells us whether the max is ever written to a register; no register id anywhere in src/ or in the message system is tied to the bird-man contest, and the message-substitution tags that print minigame numbers cover only 0xBEFF, 0x8AFF, 0x86FF, 0xC0FF and 0xBA0F (src/f_op/f_op_msg_mng.cpp). Best read: the bird-man distance is a per-attempt actor member, and only the one-off prize is persistent."
+  },
+  "not_scores_but_also_not_event_bits": {
+   "big_octo_deaths": "Each Big Octo remembers its own death in a per-room SAVE SWITCH, not an event bit: mSwitchNo = params >> 24, and daDaiocta_c::modeDelete calls dComIfGs_onSwitch(mSwitchNo, roomNo) as the body sinks; _create refuses to spawn when that switch is already set (src/d/actor/d_a_daiocta.cpp:1264, 1553-1560, 1694-1696). Switch numbers 0x0D..0x12 in sea rooms 6, 17, 20, 33, 36, 46."
+  }
+ },
+ "_actors": {
+  "Bmcon1 / Bmcon2": {
+   "name": "Willi and Obli, the bird-man contest brothers on the Flight Control Platform",
+   "file": "src/d/actor/d_a_npc_bmcon1.cpp",
+   "profile": "both are fpcNm_NPC_BMCON1_e; Bmcon1 is subtype 0, Bmcon2 subtype 1 (src/d/d_stage.cpp:719-720)",
+   "placement": "sea room 14 layer -1: Bmcon1 at (311201, 538, -201752) params 0x00090000, Bmcon2 at (310201, 1100, -202105) params 0x000A0000 (out/rip/GZLE01/stages/sea/sea_report.json)",
+   "state": "EVERY function body is /* Nonmatching */. checkOrder(), eventOrder(), chkEndEvent(), isClear(), calcFlyDist(), get/setFlyDistMax(), get/setFlyDistNow() exist as symbols only (include/d/actor/d_a_npc_bmcon1.h:41-70). There is no l_evn_tbl to read, so which of the five BMCON_* events each brother orders is not recoverable from src/.",
+   "who_is_who_in_the_event_data": "BMCON_RESULT and BMCON_GET_ITEM are staffed by Bmcon1; BMCON_END and BMCON_END2 are staffed by Bmcon2; BMCON_NEXT has no NPC staff at all, only DIRECTOR and TIMEKEEPER."
+  },
+  "Sarace": {
+   "name": "the Boating Course attendant",
+   "file": "src/d/actor/d_a_npc_sarace.cpp (26 of 220 lines are /* Nonmatching */ bodies; nothing but symbol names survives)",
+   "placement": "sea room 48 (dIsleRoom_BoatingCourse_e) at (192340, 376, 280200), and again in stage Ocean at (-9, 300, 696) facing 180 degrees",
+   "statics": "ship_race_rupee, ship_race_result - see _scores.transient"
+  },
+  "Kg1 / Kg2": {
+   "name": "Salvatore, twice: Kg1 runs the Squid Hunt, Kg2 runs the cannon game",
+   "files": "src/d/actor/d_a_npc_kg1.cpp (all stubs), src/d/actor/d_a_npc_kg2.cpp (34 stub bodies)",
+   "placement": "Kg1 in stage Kaisen at (-16, 0, 148); Kg2 in sea room 10 (Spectacle Island) at (-103529, 1057, -183445), standing next to the Canon actor at (-103381, 1057, -183265)",
+   "note": "daNpc_Kg1_c::m_highscore = 20 is the only non-stub thing either file contributes, and it is consumed by the save initialiser."
+  },
+  "GBoard / daMgBoard_c": {
+   "name": "the Squid Hunt game board",
+   "file": "src/d/actor/d_a_mgameboard.cpp (14 stub bodies) + src/d/d_seafightgame.cpp (fully decompiled)",
+   "profile": "OBJNAME(\"GBoard\", fpcNm_MGBOARD_e, 255, 0) at src/d/d_stage.cpp:868",
+   "rules": "8x8 grid, three scenarios: scenario 1 = one 2-cell squid, scenario 2 = a 2 and a 3, scenario 3 = a 2, a 3 and a 4. Ships are placed at random until checkPutShip accepts. Every attack decrements mBulletNum and increments mScore whether it hits or misses (src/d/d_seafightgame.cpp:10-49, 105-131).",
+   "placement": "not placed in Kaisen's dzr - Kaisen holds only Kg1, two KNOB00 doors, three item actors and four Fdai pedestals, so the board is created at runtime by Kg1."
+  },
+  "Canon / daCanon_c": {
+   "name": "the cannon of Salvatore's cannon game",
+   "file": "src/d/actor/d_a_canon.cpp - fully decompiled, zero stub bodies",
+   "rules": "10 shots (m65C = 10), 5 target ships (m65A counts hits). Each hit calls dComIfGp_setMiniGameRupee(m65A), so the on-screen counter is the hit count. The game ends when the shots run out or the fifth ship is hit; 5/5 sets minigame result 1 and canon_game_result 1, anything else sets 2 (src/d/actor/d_a_canon.cpp:250-280, 360-424)."
+  },
+  "Daiocta": {
+   "name": "Big Octo",
+   "file": "src/d/actor/d_a_daiocta.cpp - fully decompiled",
+   "param_decode": "src/d/actor/d_a_daiocta.cpp:1550-1573 getArg(): mOctoType = params & 0xFF; appear radius = ((params >> 8) & 0xFF) * 100 (0xFF means the HIO default); m575 = (params >> 16) & 0xFF is the start code to reload the stage at after being swallowed, 0xFF meaning 'do not reload, just spit the player out'; mSwitchNo = (params >> 24) & 0xFF is the per-room save switch that remembers it is dead. rot.z (home.angle.z) is read into m057C and selects DAIOCTA_DEAD_ELF over DAIOCTA_DEAD when it is 1."
+  },
+  "Ytrnd00 / daTornado_c": {
+   "name": "the roaming Great Sea cyclone",
+   "file": "src/d/actor/d_a_tornado.cpp - fully decompiled",
+   "behaviour": "wanders within 7500 units of its home position, registers itself on the sea chart (fopAcStts_SHOWMAP_e) and calls dKyw_tornado_Notice each frame. The moment event bit 0x2710 is set it plays its break animation, calls daShip_c::offTornadoFlg() and deletes itself; on a later load _create returns cPhs_ERROR_e so it never appears again (src/d/actor/d_a_tornado.cpp:176-192, 308-322)."
+  },
+  "NpcSo": {
+   "name": "the Fishman - one per sea room, 49 of them",
+   "file": "src/d/actor/d_a_npc_so.cpp (72 stub bodies of 450 lines)",
+   "note": "include/d/actor/d_a_npc_so.h:15 getMiniGameRestArrow() { return 10 - mB78; } and the cutMiniGame* method family (lines 102-115) are the only readable trace of a ten-arrow Fishman bow minigame; d_meter.cpp:2471-2481 hides a meter pane when fewer than 10 arrows are left and minigame type is 8."
+  }
+ },
+ "_bits": {
+  "0x2710": {
+   "dec": 10000,
+   "byte_mask": [
+    39,
+    16
+   ],
+   "meaning": "The Great Sea's roaming cyclones are switched off for good. Set from inside the event TACT0_RT: the Hr2 (Cyclos) staff's WAIT_2 action carries the integer property TORNADE_OFF = 1, and daNpc_Hr_c reacts to that integer by calling dComIfGs_onEventBit(UNK_2710) plus dComIfGs_onSwitch(getSwbit(), roomNo). Every daTornado_c then deletes itself and daShip_c::offTornadoFlg() is called.",
+   "set_by": "src/d/actor/d_a_npc_hr.cpp:678-683, driven by the TORNADE_OFF integer in event TACT0_RT (out/rip/GZLE01/godot/events/sea.json)",
+   "read_by": [
+    "src/d/actor/d_a_tornado.cpp:179",
+    "src/d/actor/d_a_tornado.cpp:314",
+    "src/d/actor/d_a_npc_hr.cpp:1335",
+    "src/d/actor/d_a_npc_hr.cpp:1514",
+    "src/d/actor/d_a_npc_hr.cpp:1886"
+   ],
+   "confidence": "high"
+  },
+  "0xAAFF": {
+   "dec": 43775,
+   "byte_mask": [
+    170,
+    255
+   ],
+   "meaning": "NOT A BIT - an event REGISTER occupying the whole of event-flag byte 0xAA. The Boating Course difficulty level: the race's time limit is 240 seconds minus 10 times this value. See _scores.",
+   "set_by": "(unknown - no setEventReg for it exists in src/; daNpc_Sarace_c is a stub)",
+   "read_by": [
+    "src/d/actor/d_a_goal_flag.cpp:567"
+   ],
+   "confidence": "high for the read, low for what writes it"
+  },
+  "0xBEFF": {
+   "dec": 48895,
+   "byte_mask": [
+    190,
+    255
+   ],
+   "meaning": "NOT A BIT - an event REGISTER occupying the whole of event-flag byte 0xBE. The Squid Hunt record, in shots used; a fresh file starts it at 20. See _scores.",
+   "set_by": "src/d/d_save_init.cpp:13 on a fresh file only; whatever updates it after a game lives in the stubbed daNpc_Kg1_c",
+   "read_by": [
+    "src/f_op/f_op_msg_mng.cpp:2142",
+    "src/f_op/f_op_msg_mng.cpp:4099",
+    "src/f_op/f_op_msg_mng.cpp:4138",
+    "src/f_op/f_op_msg_mng.cpp:6161",
+    "src/f_op/f_op_msg_mng.cpp:7762"
+   ],
+   "confidence": "high"
+  }
+ },
+ "steps": [
+  {
+   "id": "mg_birdman_look",
+   "stage": "sea",
+   "room": 14,
+   "layer": -1,
+   "trigger": {
+    "kind": "tag",
+    "detail": "A TagEv at (311503, 537, -201129), scale 3, params 0x15FF50FF: EVNT index 0x15 = 21 = BirdLook, switch2 0xFF, switch 0x50 = 80, type 0xFF. Type 0xFF takes daTag_Event_c::actionArrival's default branch to ACTION_HUNT, so it is a proximity volume of radius 300 in XZ and 300 in Y; switch 80 is a real room switch, so it fires once per save.",
+    "position": [
+     311503,
+     537,
+     -201129
+    ]
+   },
+   "event": "BirdLook",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/sea/sea_report.json:tags",
+    "src/d/actor/d_a_tag_event.cpp:18-45",
+    "src/d/actor/d_a_tag_event.cpp:242-264",
+    "src/d/actor/d_a_tag_event.cpp:265-322",
+    "out/rip/GZLE01/godot/events/sea.json:BirdLook",
+    "include/d/d_save.h:318",
+    "out/rip/GZLE01/stages/sea/sea_report.json:spawns",
+    "out/rip/GZLE01/stages/sea/sea_report.json:actors"
+   ],
+   "notes": "Pure camera flavour: BirdLook is CAMERA-only (FIXEDFRM, ROLLING with Roll -0.8, UNITRANS, FIXEDFRM, RESTOREPOS, PAUSE WaitAnyKey) plus an ALL/dummy staff. It looks up the launch tower as the player walks onto the deck at (311503, 537, -201129), which is right beside Bmcon1. ARRIVAL, folded in here: the Flight Control Platform is sea room 14 = dIsleRoom_FlightControlPlatform_e (include/d/d_save.h:318). Spawn 0 at (311316, 538, -201646) is the landing spot and carries EVNT index 0xFF, i.e. nothing auto-plays when the player docks; spawns 100-103 are the four sail-in corners of the sea square. The platform carries Bmcon1, Bmcon2, one Kanban signboard (params 0x00000339), a Tpost postbox, five TrFlag target flags, an Ah (Old Man Ho Ho) and one ikadaS. Of sea's 57 EVNT entries only three belong to this room: index 13 BMCON_NEXT, index 18 BirdStart and index 21 BirdLook."
+  },
+  {
+   "id": "mg_birdman_signup",
+   "stage": "sea",
+   "room": 14,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "Talking to Bmcon1 (Willi) at (311201, 538, -201752) enters the contest. This is INFERRED, not read: daNpcBmcon_c::checkOrder() and daNpcBmcon_c::eventOrder() exist as symbols but their bodies are /* Nonmatching */ stubs, so the actual condition, the entry fee and which event is ordered are all invisible. What IS certain from the event data is that Bmcon1 is the staff of BMCON_RESULT and BMCON_GET_ITEM while Bmcon2 is the staff of BMCON_END and BMCON_END2, i.e. Bmcon1 is the one Link talks to and Bmcon2 is the one at the top of the tower."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "low",
+   "sources": [
+    "src/d/actor/d_a_npc_bmcon1.cpp:129-138",
+    "include/d/actor/d_a_npc_bmcon1.h:41-42",
+    "out/rip/GZLE01/godot/events/sea.json:BMCON_RESULT",
+    "out/rip/GZLE01/stages/sea/sea_report.json:actors"
+   ],
+   "notes": "No entry fee, no rupee cost and no gating event bit could be recovered. Do not invent one."
+  },
+  {
+   "id": "mg_birdman_launch",
+   "stage": "sea",
+   "room": 14,
+   "layer": 0,
+   "trigger": {
+    "kind": "tag",
+    "detail": "A TagEv at (311102, 1125, -201822) - the top of the launch tower, right beside Bmcon2 - with params 0x0DFFFFFF: EVNT index 13 = BMCON_NEXT, switch2 0xFF, switch 0xFF (never remembered, so it re-fires every time), type 0xFF = plain proximity, scale 1 so radius 100 in XZ and 100 in Y. The SAME volume is placed twice, once on layer 0 and once on layer 1, which are the ordinary day and night layers - so it exists whenever the room is in its normal state and does NOT exist on layer 2.",
+    "position": [
+     311102,
+     1125,
+     -201822
+    ]
+   },
+   "event": "BMCON_NEXT",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/sea/sea_report.json:tags",
+    "out/rip/GZLE01/godot/events/sea.json:BMCON_NEXT",
+    "src/d/actor/d_a_tag_event.cpp:242-264"
+   ],
+   "notes": "BMCON_NEXT has no NPC staff at all: a TIMEKEEPER COUNTDOWN with Timer 0 and a DIRECTOR whose NEXT action carries Stage \"sea\", RoomNo 14, Layer 2, StartCode 1. So stepping onto the launch spot reloads the same room on layer 2 at spawn 1. This layer flip is what puts the contest into its 'a run is in progress' state and removes this very trigger."
+  },
+  {
+   "id": "mg_birdman_flight",
+   "stage": "sea",
+   "room": 14,
+   "layer": 2,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "sea room 14 spawn 1 at (310435, 1100, -202000) carries params 0x12FF000E, so EVNT index 0x12 = 18 = BirdStart auto-plays the moment the layer-2 reload lands. BirdStart is a CAMERA-driven launch sequence: two UNITRANS moves and a FIXEDPOS looking back at the platform from (297890, 1168, -202015), i.e. from out over the water."
+   },
+   "event": "BirdStart",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/sea/sea_report.json:spawns",
+    "out/rip/GZLE01/godot/events/sea.json:BirdStart"
+   ],
+   "notes": "The glide itself is scored by daNpcBmcon_c: calcFlyDist(), getFlyDistNow()/setFlyDistNow(short) for the run in progress and getFlyDistMax()/setFlyDistMax(short) for the best (include/d/actor/d_a_npc_bmcon1.h:64-69). All five are stubs, so neither the threshold nor the units are recoverable. The five TrFlag flags placed in this room - three at y=1200 near the tower and two at y=538 on the deck - are the daTori_Flag_c 'small red flag' object, whose file comment names exactly this platform and Horseshoe Island (src/d/actor/d_a_tori_flag.cpp:1-4); the actor holds no event logic at all."
+  },
+  {
+   "id": "mg_birdman_result",
+   "stage": "sea",
+   "room": 14,
+   "layer": -1,
+   "trigger": {
+    "kind": "score",
+    "detail": "When the run ends the contest reports the distance. Two different endings exist in the data and both send the player back to the ordinary layer: BMCON_END (Bmcon2 WAIT / MES_SET MsgNo 1 / WAIT / MES_SET MsgNo 2 / WAIT, Link 001n_wait, CAMERA PAUSE-UNITRANS-PAUSE-TALK-UNITRANS, DIRECTOR NEXT -> sea room 14 layer -1 start code 0) and the shorter BMCON_END2 (one MES_SET, same DIRECTOR NEXT). BMCON_RESULT is the talk-back afterwards: Bmcon1 MES_SET MsgNo 10 with a TALK camera. Which of END and END2 plays is decided by the stubbed daNpcBmcon_c (chkEndEvent() and isClear() are the two symbols that name the decision); the obvious reading is END for a run that beat the target and END2 for one that did not, but nothing states it.",
+    "new_kind": "score"
+   },
+   "event": "BMCON_END",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "out/rip/GZLE01/godot/events/sea.json:BMCON_END",
+    "out/rip/GZLE01/godot/events/sea.json:BMCON_END2",
+    "out/rip/GZLE01/godot/events/sea.json:BMCON_RESULT",
+    "include/d/actor/d_a_npc_bmcon1.h:69-70"
+   ],
+   "notes": "The DIRECTOR NEXT of both endings names Layer -1, not layer 0 or 1 - the reload asks for 'no explicit layer', which lets the normal day/night rule pick 0 or 1 again and so restores the BMCON_NEXT trigger for another attempt. High confidence on the wiring, medium only on which ending means what."
+  },
+  {
+   "id": "mg_birdman_prize",
+   "stage": "sea",
+   "room": 14,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "BMCON_GET_ITEM: Bmcon1 performs GET_ITEM then MES_SET, Link plays 001n_wait, 011get_item and 006n_talk, and the CAMERA runs GETITEM then TALK."
+   },
+   "event": "BMCON_GET_ITEM",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "out/rip/GZLE01/godot/events/sea.json:BMCON_GET_ITEM",
+    "src/d/actor/d_a_npc_bmcon1.cpp:159-162"
+   ],
+   "notes": "gives_item is deliberately null. The GET_ITEM action in the script carries no ItemNo property, so the item number comes from daNpcBmcon_c::eventGetItemInit(), which is a stub. The same is true of the event bit that must remember the prize was collected: no BMCON-related bit appears anywhere in src/ and none of the five BMCON_* scripts carries a PACKAGE PLAY EventFlag."
+  },
+  {
+   "id": "mg_boating_briefing",
+   "stage": "sea",
+   "room": 48,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "The Boating Course occupies sea room 48 = dIsleRoom_BoatingCourse_e (include/d/d_save.h:352). Sarace stands at (192340, 376, 280200) with three Ikada rafts around him. Talking to him plays SARACE_EXPCAM: Sarace WAIT(Timer 5) / TALK_MSG / CONTINUE_TALK / WAIT, a CAMERA that does SAVE, PAUSE, two FIXEDFRMs and LOAD, and - tellingly - ALL-type staffs named Ktarur and item, which are the rupee barrels and the rupees themselves being shown off during the explanation."
+   },
+   "event": "SARACE_EXPCAM",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "out/rip/GZLE01/godot/events/sea.json:SARACE_EXPCAM",
+    "out/rip/GZLE01/stages/sea/sea_report.json:actors",
+    "include/d/d_save.h:352"
+   ],
+   "notes": "Medium, not high, because nothing decompiled orders SARACE_EXPCAM - daNpc_Sarace_c::eventOrder / checkOrder are stubs. The event's own staff list is what identifies it as the course explanation."
+  },
+  {
+   "id": "mg_boating_enter",
+   "stage": "Ocean",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "warp",
+    "detail": "The Ocean stage has one room and exactly four spawns, and which one is used decides whether this is a race or a practice run. Spawn 1 at (191, 100, -604), params 0x02FF2000, carries EVNT index 2 = race_start_cam. Spawns 0 and 10, at (-109, 248, 896) and (91, 252, 896) with params 0x00FF0000, carry EVNT index 0 = StartCamera. Spawn 2 carries no event. daGoal_Flag_c::_create only arms the race when strcmp(getStartStageName(), \"Ocean\") == 0 AND getStartStagePoint() == 1, so start code 1 is the paid race and 0/10 are the free sail-around.",
+    "position": [
+     191,
+     100,
+     -604
+    ]
+   },
+   "event": "race_start_cam",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Ocean/Ocean_report.json:spawns",
+    "src/d/actor/d_a_goal_flag.cpp:563-593",
+    "tools/ww_story_mine.py Ocean"
+   ],
+   "notes": "There is no SCLS exit anywhere in sea that names Ocean, so the transfer must be done by daNpc_Sarace_c calling dComIfGp_setNextStage - which is a stub, so the exact call is not recoverable. The Ocean dzr holds Ship (the King of Red Lions, at (191, -100, -604), i.e. directly under spawn 1), 38 Ktarur rupee barrels, 42 Kamome seagulls, one Oyashi and Sarace again. Ocean's EVNT table is [StartCamera, barrel2_brk, race_start_cam, *, *]."
+  },
+  {
+   "id": "mg_boating_start",
+   "stage": "Ocean",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "timer",
+    "detail": "On the first frame of a start-code-1 entry daGoal_Flag_c::_create builds the whole race: fopMsgM_Timer_create(fpcNm_TIMER_e, 2, time_limit, 3, 0, 221, 439, 32, 419, NULL) where time_limit = l_HIO.mTimeLimit (240 seconds) minus getEventReg(UNK_AAFF) * 10; fopMsgM_MiniGameStarter_create for the 3-2-1-GO overlay; dComIfGp_startMiniGame(1); dComIfGp_setMiniGameRupee(0); setAction(RaceStart). RaceStart then drives the race_start_cam event through the Gflag staff's 00_dummy / 01_dummy / 02_dummy cuts, calls dMinigame_Starter_c::countStart on action index 1, starts the timer with timer_p->start(7) once the countdown says go, and plays JA_BGM_SEA_GAME. When race_start_cam ends it hands over to TimerExecute.",
+    "new_kind": "timer"
+   },
+   "event": "race_start_cam",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_goal_flag.cpp:563-593",
+    "src/d/actor/d_a_goal_flag.cpp:744-779",
+    "include/d/actor/d_a_goal_flag.h:21,24,27",
+    "src/d/d_minigame_starter.cpp:1-4",
+    "out/rip/GZLE01/godot/events/Ocean.json:race_start_cam"
+   ],
+   "notes": "The 3-2-1-GO overlay is its own process, dMinigame_Starter_c, loading the Mgst archive and the ship_race1.blo layout - the file comment calls it 'Boating Course - 3-2-1 GO! text' (src/d/d_minigame_starter.cpp:1-4). The finish line is a pair of path points: daGoal_Flag_c reads path point 0 and 1 of the path named in params >> 16 into mGoalFlagPolePos[0..1] and stores which side of that line the player started on."
+  },
+  {
+   "id": "mg_boating_goal",
+   "stage": "Ocean",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "score",
+    "detail": "daGoal_Flag_c::TimerExecute polls goal_check() every frame. goal_check() == 1 means the player crossed the finish line the right way; the first crossing sets mRaceEndState = 1, the second decides the outcome: mini-game rupees == 0 gives state 2 (failure), anything else state 3 (finished). State 3 then classifies the run: rupees < l_HIO.mPerfectRupeeScore (150) is finish_type 1, otherwise finish_type 2 = perfect. dComIfGp_setMiniGameResult(1), BGM JA_BGM_SEA_GOAL, and a MiniGameTerminater process created with (finish_type, remaining_time = timer_p->getRestTimeMs() / 10, rupees_collected). While the demo is not yet accepted the actor orders race_goal_cam.",
+    "new_kind": "score"
+   },
+   "event": "race_goal_cam",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_goal_flag.cpp:781-860",
+    "src/d/actor/d_a_goal_flag.cpp:864-897",
+    "include/d/actor/d_a_goal_flag.h:24",
+    "out/rip/GZLE01/godot/events/Ocean.json:race_goal_cam"
+   ],
+   "notes": "daGoal_Flag_c::RaceEnd ends the chapter of play: when race_goal_cam finishes, or after l_HIO.mEndCamEarlyFrame = 150 frames if the player presses A, B or START, it calls dComIfGp_setNextStage(\"sea\", 1, dIsleRoom_BoatingCourse_e) - back to sea room 48, start code 1, which is the spawn at (192340, 370, 280400) right in front of Sarace."
+  },
+  {
+   "id": "mg_boating_fail",
+   "stage": "Ocean",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "timer",
+    "detail": "Three ways to lose, all funnelling into race_fail_cam. (1) timer_p->getRestTimeMs() == 0 sets mRaceEndState = 2 and plays JA_SE_SGAME_TIMER_0. (2) goal_check() == -1, i.e. crossing the line backwards, does the same. (3) Crossing the line with zero rupees collected. All three end with dComIfGp_setMiniGameResult(2), finish_type 0 and BGM JA_BGM_SEA_FAIL. Separately, daPy_lk_c::startRestartRoom special-cases minigame type 1: if the player has to be restarted mid-race (falling out of the course) it forces dComIfGp_setNextStage(\"sea\", 1, dIsleRoom_BoatingCourse_e), plays JA_SE_FORCE_BACK and sets ship_race_result = 3.",
+    "new_kind": "timer"
+   },
+   "event": "race_fail_cam",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_goal_flag.cpp:781-860",
+    "src/d/actor/d_a_player_main.cpp:10855-10866",
+    "out/rip/GZLE01/godot/events/Ocean.json:race_fail_cam"
+   ],
+   "notes": "race_fail_cam differs from race_goal_cam by exactly one thing in the script: its Ship staff plays 05keep then 04racefail, where the goal version plays only 05keep."
+  },
+  {
+   "id": "mg_boating_reward",
+   "stage": "sea",
+   "room": 48,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "Back on the dock, Sarace pays out. daGoal_Flag_c::_delete - which runs as the Ocean stage unloads - translates the play struct into the two DOL statics that survive the stage change: minigame result 1 becomes ship_race_result = 2 with ship_race_rupee = the collected rupees, minigame result 2 becomes ship_race_result = 1 with the same rupee count, and a mid-race restart has already written ship_race_result = 3. Then dComIfGp_endMiniGame(1). daNpc_Sarace_c is the only thing that reads them, and it is a stub, so what each value buys is not recoverable."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "src/d/actor/d_a_goal_flag.cpp:713-727",
+    "src/d/d_com_static.cpp:267-268",
+    "src/d/d_save.cpp:1389-1397",
+    "include/d/actor/d_a_npc_sarace.h:39-40"
+   ],
+   "notes": "Note the deliberate inversion in _delete: minigame result 1 (the ordinary finish) maps to ship_race_result 2, and result 2 (the failure) maps to ship_race_result 1. Do not 'fix' that when porting. dSv_info_c::init zeroes both statics, so they are session state, not save state."
+  },
+  {
+   "id": "mg_squid_enter",
+   "stage": "Kaisen",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "warp",
+    "detail": "Two SCLS exits inside Windfall lead to Kaisen: one at (13760, 1738, -202830) facing 81.6 degrees to Kaisen spawn 1, one at (13386, 1113, -202268) facing -39.2 degrees to Kaisen spawn 0. Kaisen's own two exits go back to sea room 11 (Windfall) spawns 8 and 9, at exactly those positions. Kaisen has one room, an empty EVNT table (so nothing auto-plays on either spawn) and holds Kg1 at (-16, 0, 148), two KNOB00 doors, three item actors and four Fdai figurine pedestals."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Kaisen/Kaisen_report.json:exits",
+    "out/rip/GZLE01/stages/sea/sea_report.json:exits",
+    "out/rip/GZLE01/stages/sea/sea_report.json:spawns",
+    "tools/ww_story_mine.py Kaisen"
+   ],
+   "notes": "'Kaisen' is 海戦, naval battle - the game is Battleship, not a squid hunt, and the decomp's own file comment for daNpc_Kg1_c calls it Squid-Hunt/'Sploosh Kaboom'. Kaisen's four story scripts are MINIGAME_START, MINIGAME_END, KAISEN_GETITEM and DAI_ITEM; DAI_ITEM belongs to the four Fdai pedestals, not to the minigame (src/d/actor/d_a_dai.cpp:96)."
+  },
+  {
+   "id": "mg_squid_play",
+   "stage": "Kaisen",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "Talking to Kg1 starts a game. MINIGAME_START is staffed by GBoard, not by Kg1: GBoard runs a single action named START_CAMERA and the CAMERA does one FIXEDFRM. GBoard is fpcNm_MGBOARD_e (src/d/d_stage.cpp:868) and is NOT in Kaisen's placement data, so Kg1 creates it at runtime. The board is daMgBoard_c, which owns a dSeaFightGame_info_c: an 8x8 grid, up to four squid, three scenarios (one 2-cell squid; a 2 and a 3; a 2, a 3 and a 4), ship positions chosen at random until checkPutShip accepts. Each shot calls attack(x, y), which decrements mBulletNum and increments mScore whether it hits or misses, and decrements mAliveShipNum when a squid's last cell is hit."
+   },
+   "event": "MINIGAME_START",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/godot/events/Kaisen.json:MINIGAME_START",
+    "src/d/d_seafightgame.cpp:10-49",
+    "src/d/d_seafightgame.cpp:105-131",
+    "include/d/d_seafightgame.h:17-30",
+    "include/d/actor/d_a_mgameboard.h:12-31",
+    "src/d/d_stage.cpp:868"
+   ],
+   "notes": "Which scenario a given game uses, and how many bullets it grants, are arguments passed to dSeaFightGame_info_c::init by daMgBoard_c::MiniGameInit(), which is a stub. The fresh-file record of 20 (daNpc_Kg1_c::m_highscore) is the only number that hints at the allowance."
+  },
+  {
+   "id": "mg_squid_end",
+   "stage": "Kaisen",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "score",
+    "detail": "The game ends when the last squid is sunk (mAliveShipNum reaches 0) or the bullets run out. daMgBoard_c exposes checkClearGame(), checkEndGame() and getScore() for exactly this. MINIGAME_END is a bare CAMERA UNITRANS over 90 frames plus an ALL/dummy staff. The run's score - the number of shots used - is then compared against event register 0xBEFF and, if better, stored there.",
+    "new_kind": "score"
+   },
+   "event": "MINIGAME_END",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "include/d/actor/d_a_mgameboard.h:20-23",
+    "src/d/d_seafightgame.cpp:105-131",
+    "src/d/d_save_init.cpp:11-14",
+    "src/d/d_com_static.cpp:379",
+    "out/rip/GZLE01/godot/events/Kaisen.json:MINIGAME_END"
+   ],
+   "notes": "Medium because the compare-and-store itself is not in src/ - daNpc_Kg1_c is a stub. What IS certain: 0xBEFF is a whole-byte event register, it starts at 20 on a new file, and the message system prints it as Salvatore's record (src/f_op/f_op_msg_mng.cpp:2142, 4099, 4138-4139, 6161, 7762)."
+  },
+  {
+   "id": "mg_squid_prize",
+   "stage": "Kaisen",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "KAISEN_GETITEM: Link plays 001n_wait, 001n_wait, 011get_item, 001n_wait; the CAMERA does GETITEM then PAUSE; a TIMEKEEPER counts 15 frames. There is no NPC staff and no ItemNo property, so the item is chosen by the stubbed daNpc_Kg1_c."
+   },
+   "event": "KAISEN_GETITEM",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "out/rip/GZLE01/godot/events/Kaisen.json:KAISEN_GETITEM"
+   ],
+   "notes": "gives_item null on purpose. No event bit for 'the squid-hunt prize was taken' exists in src/, and KAISEN_GETITEM carries no PACKAGE PLAY EventFlag, so whatever remembers it is inside the stub."
+  },
+  {
+   "id": "mg_cannon_game",
+   "stage": "sea",
+   "room": 10,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "Spectacle Island, dIsleRoom_SpectacleIsland_e = 10. Kg2 (Salvatore again, this time the cannon game) stands at (-103529, 1057, -183445) and daCanon_c sits beside him at (-103381, 1057, -183265), with two Kanban signboards on the beach. The sequence in the event data is KG2_START_DEMO (Kg2 KGTALK then WAIT, CAMERA FIXEDFRM/PAUSE, Link 004_wait_init/006n_talk), then CANON_GAME, whose staff list is Canon (running the single cut named 'Canon_game'), Kg2 (SETANM/WAIT/SETANM/WAIT), a CAMERA STYLE, and ALL-type staffs BOMB and ALL. daCanon_c::wait_proc waits for exactly that cut: it teleports the player 200 units back along the cannon's home angle, resets m65A = 0 hits and m65C = 10 shots, and calls dComIfGp_startMiniGame(3)."
+   },
+   "event": "CANON_GAME",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_canon.cpp:250-280",
+    "src/d/actor/d_a_canon.cpp:360-424",
+    "src/d/actor/d_a_canon.cpp:425-447",
+    "out/rip/GZLE01/godot/events/sea.json:CANON_GAME",
+    "out/rip/GZLE01/stages/sea/sea_report.json:actors",
+    "include/d/d_save.h:314"
+   ],
+   "notes": "Five ships, ten shots. Each hit increments m65A and republishes it through dComIfGp_setMiniGameRupee, so the on-screen number is the hit count, not rupees. m65A == 5 plays JA_SE_PLAYSPOT_END_S on Kg2; running out of shots plays JA_SE_PLAYSPOT_END_F; anything else plays JA_SE_PLAYSPOT_DESTROY. end_proc_init sets dComIfGp_setMiniGameResult(1) and daNpc_Kg2_c::setCanonGameResult(1) for 5/5, and (2, 2) otherwise. The other two scripts, KG2_CLEAR_DEMO (Kg2 SETANM/KGTALK/SETANM/KGTALK/WAIT) and KG2_GETDEMO (Kg2 CREATEITEM then SETANM, Link 011get_item), are the congratulation and the prize; both are ordered by the stubbed daNpc_Kg2_c, and KG2_GETDEMO's CREATEITEM carries no ItemNo property, so gives_item stays null."
+  },
+  {
+   "id": "mg_big_octo",
+   "stage": "sea",
+   "room": 46,
+   "layer": -1,
+   "trigger": {
+    "kind": "defeat",
+    "detail": "ONE modelled step for all six Big Octos. daDaiocta_c has three events. DAIOCTA_SUIKOMI is ordered by modeDemo when the octo swallows the player: staffs are Daiocta (SUIKOMI1, SUIKOMI2, HAKIDASU, WAIT), Ship (00init, dummy, 07throw) and a TIMEKEEPER; when it ends, m575 == 0xFF makes the player class handle it via setDaiokutaEnd(), otherwise the stage is reloaded at start code m575. DAIOCTA_DEAD is ordered by modeDelete on death: Daiocta plays DEATH1 (sink to the water line, tell the daObjAuzu whirlpool to disappear) then DEATH2 (sink 3000 units below, bubbles, dComIfGs_onSwitch(mSwitchNo, roomNo)), after which the actor deletes itself. DAIOCTA_DEAD_ELF is the same beat but is ordered instead whenever m057C == 1, i.e. whenever the placement's rot.z is 1."
+   },
+   "event": "DAIOCTA_DEAD",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "instances": [
+    {
+     "room": 6,
+     "island": "SevenStarIsles",
+     "pos": [
+      197440,
+      0,
+      -283200
+     ],
+     "params": "0x0DFF2802",
+     "type": 2,
+     "appear_radius": 4000,
+     "switch": 13,
+     "rot_z": 255,
+     "event": "DAIOCTA_DEAD"
+    },
+    {
+     "room": 17,
+     "island": "TingleIsland",
+     "pos": [
+      -91160,
+      0,
+      -121400
+     ],
+     "params": "0x0EFF2802",
+     "type": 2,
+     "appear_radius": 4000,
+     "switch": 14,
+     "rot_z": 255,
+     "event": "DAIOCTA_DEAD"
+    },
+    {
+     "room": 20,
+     "island": "FireMountain",
+     "pos": [
+      223540,
+      0,
+      -84000
+     ],
+     "params": "0x0FFF2801",
+     "type": 1,
+     "appear_radius": 4000,
+     "switch": 15,
+     "rot_z": 255,
+     "event": "DAIOCTA_DEAD"
+    },
+    {
+     "room": 33,
+     "island": "PrivateOasis",
+     "pos": [
+      95140,
+      0,
+      104400
+     ],
+     "params": "0x10FF2801",
+     "type": 1,
+     "appear_radius": 4000,
+     "switch": 16,
+     "rot_z": 255,
+     "event": "DAIOCTA_DEAD"
+    },
+    {
+     "room": 36,
+     "island": "DiamondSteppeIsland",
+     "pos": [
+      -267060,
+      0,
+      213500
+     ],
+     "params": "0x11FF2801",
+     "type": 1,
+     "appear_radius": 4000,
+     "switch": 17,
+     "rot_z": 255,
+     "event": "DAIOCTA_DEAD"
+    },
+    {
+     "room": 46,
+     "island": "TwoEyeReef",
+     "pos": [
+      -4460,
+      0,
+      299700
+     ],
+     "params": "0x12FF2800",
+     "type": 0,
+     "appear_radius": 4000,
+     "switch": 18,
+     "rot_z": 1,
+     "event": "DAIOCTA_DEAD_ELF"
+    }
+   ],
+   "sources": [
+    "src/d/actor/d_a_daiocta.cpp:1090-1215",
+    "src/d/actor/d_a_daiocta.cpp:1227-1282",
+    "src/d/actor/d_a_daiocta.cpp:1550-1573",
+    "src/d/actor/d_a_daiocta.cpp:1690-1700",
+    "out/rip/GZLE01/stages/sea/sea_report.json:actors",
+    "out/rip/GZLE01/godot/events/sea.json:DAIOCTA_DEAD",
+    "out/rip/GZLE01/godot/events/sea.json:DAIOCTA_SUIKOMI",
+    "out/rip/GZLE01/godot/events/sea.json:DAIOCTA_DEAD_ELF"
+   ],
+   "notes": "Only the Two Eye Reef octo has rot.z = 1 and so plays DAIOCTA_DEAD_ELF; a BigElf actor is placed at (-4460, 0, 299700), the exact same coordinate, which is the Great Fairy it is sitting on. (There is a second BigElf in room 33 at (95540, 0, 99700), about 4700 units from that room's octo, whose rot.z is 255 - so the two are not paired the same way.) DAIOCTA_DEAD ends with dComIfGp_event_reset() and fopAcM_delete; DAIOCTA_DEAD_ELF does not delete the actor in the same branch, which is how the fairy reveal keeps running. Death is remembered by a per-room save switch, NOT by an event bit - see _scores.not_scores_but_also_not_event_bits."
+  },
+  {
+   "id": "mg_cyclones",
+   "stage": "sea",
+   "room": 9,
+   "layer": -1,
+   "trigger": {
+    "kind": "object",
+    "detail": "Three roaming cyclones are placed in the sea dzr as Ytrnd00 (fpcNm_TORNADO_e, src/d/d_stage.cpp:987), all with params 0xFFFFFFFF: room 9 Mother and Child Isles at (-197360, 0, -185000), room 18 Northern Triangle Island at (30640, 0, -82000), room 38 Shark Island at (-87360, 0, 200000). params 0xFFFFFFFF is neither of daTornado_c's two special cases (1 = sunken/small, 2 = small), so _create takes the default branch: fopAcM_SetParam(this, 0), dKyw_tornado_Notice(pos), the full-size model, a WINDUPWATER00 particle and fopAcStts_SHOWMAP_e so the cyclone shows on the sea chart. It then wanders, clamped to 7500 units from home."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_tornado.cpp:155-192",
+    "src/d/actor/d_a_tornado.cpp:296-322",
+    "src/d/d_stage.cpp:987",
+    "out/rip/GZLE01/stages/sea/sea_report.json:actors"
+   ],
+   "notes": "Each Ytrnd00 sits on the same coordinate as an Hr2 (Cyclos) actor, params 0x00FF6B01, in all three rooms - the cyclone and the god inside it are placed as a pair. The fourth Hr actor, params 0x00FF3000, is at Dragon Roost (room 13) and is the other brother, Zephos."
+  },
+  {
+   "id": "mg_cyclones_off",
+   "stage": "sea",
+   "room": 9,
+   "layer": -1,
+   "trigger": {
+    "kind": "npc",
+    "detail": "Cyclos gives up. The event TACT0_RT is staffed by Hr2 with the action list WAIT_1(Timer 90), WAIT_2(ANM 1, TORNADE_OFF 1, Timer 120), MOVE_1(TURN_PL 1, TORNADO 0, ...), SPEAK_1(MsgNo 6450), SMALL, MOVE_12(Timer 30), SPEAK_12(MsgNo 6451), MOVE_2, MOVE_3, CHANGE_0. daNpc_Hr_c polls its staff's integer properties every frame; the moment it finds a TORNADE_OFF integer it calls dComIfGs_onEventBit(UNK_2710), dComIfGs_onSwitch(getSwbit(), roomNo) and sets mReturnState = 1. Every daTornado_c then plays its break animation, calls daShip_c::offTornadoFlg() and deletes itself, and refuses to create on any later load."
+   },
+   "event": "TACT0_RT",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x2710"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_hr.cpp:678-683",
+    "src/d/actor/d_a_tornado.cpp:176-192",
+    "src/d/actor/d_a_tornado.cpp:308-322",
+    "out/rip/GZLE01/godot/events/sea.json:TACT0_RT"
+   ],
+   "notes": "This is a THIRD way for an event to raise an event bit, alongside a C++ actor calling onEventBit directly and the PACKAGE PLAY EventFlag mechanism: an ordinary NORMAL staff action carries a named INTEGER property, and the actor's own code turns that integer into an onEventBit call. The rest of the Cyclos chain is visible in sea's script list but is not wired here: INTRO_RT / INTRO_RT_F (his appearance), HIT_RT (Hr2 WAIT 90 then WAIT 20 with a FIXEDPOS camera - the arrow connecting), RT_TALK, PATTEN_RT, TACT1_RT, TACTM_RT, and the parallel HT_TALK / TACT_HT for Zephos. Which of them orders which is inside daNpc_Hr_c, which was not read in full."
+  },
+  {
+   "id": "mg_hoho_lookouts",
+   "stage": "sea",
+   "room": 14,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "Old Man Ho Ho, actor Ah = fpcNm_NPC_AH_e (src/d/d_stage.cpp:1020), stands at ten telescope lookouts around the Great Sea. Params are 0x0000FFnn where nn is his index: 0x00 Bomb Island (231698, 300, 81749), 0x01 the Flight Control Platform (311640, 550, -201800), 0x02 Outset Island (-182430, 3500, 320060) placed once each on layers 4, 5, 6 and 7, 0x03 Forsaken Fortress (-297797, 1290, -310100), 0x04 Crescent Moon Island (112540, 263, -302000), 0x05 Private Oasis (131600, 800, 118000), 0x06 Northern Fairy Island (-68060, 605, -280600), 0x07 Horseshoe Island (-309160, 976, 301200), 0x08 Stone Watcher Island (-106638, 550, 101165), and one at Two Eye Reef (7640, 1037, 285400) whose params are 0x00001209."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "src/d/d_stage.cpp:1020",
+    "src/d/actor/d_a_npc_ah.cpp:170",
+    "out/rip/GZLE01/stages/sea/sea_report.json:actors"
+   ],
+   "notes": "daNpc_Ah_c is fully decompiled but has no event table and orders no event; its only save reference in the whole file is a read of event bit 0x0520 (the Outset departure bit) at line 170, which is what makes the Outset copy appear on layers 4-7. He is pure dialogue - a lookout, not a minigame. Modelled as one step with ten instances rather than ten steps."
+  },
+  {
+   "id": "mg_fishman_chart",
+   "stage": "sea",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "item",
+    "detail": "One NpcSo (Fishman, fpcNm_NPC_SO_e, src/d/d_stage.cpp:702) is placed in every one of the 49 non-zero sea rooms, always at y = 0 out in open water. The chain of events in sea's script list is SO_1ST_MEET (NpcSo MOVE_TO_ACTOR, SET_ANM, TURN_TO_ACTOR, DIVE, TALK_MSG, JUMP, SET_ANM, TURN_TO_ACTOR, APPEAR, against Link's 049s_surp and 024surprised - the first-ever meeting), SO_1ST_MEET_END, SO_ESA_XY (Link 073foodthrow, NpcSo EATESA1ST then EATESA - feeding him bait), SO_MAPOPEN (NpcSo JUMP_MAPOPEN while Link plays 054let_open and 055let_read - the sea chart being filled in) and SO_GET_RUPEE (CAMERA GETITEM, Link 011get_item). A TagSo actor accompanies him: five of them are placed in room 14 alone, at params 0x1E00..0x1E04."
+   },
+   "event": "SO_MAPOPEN",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "src/d/d_stage.cpp:702",
+    "out/rip/GZLE01/godot/events/sea.json:SO_1ST_MEET",
+    "out/rip/GZLE01/godot/events/sea.json:SO_ESA_XY",
+    "out/rip/GZLE01/godot/events/sea.json:SO_MAPOPEN",
+    "out/rip/GZLE01/godot/events/sea.json:SO_GET_RUPEE",
+    "out/rip/GZLE01/stages/sea/sea_report.json:actors",
+    "out/rip/GZLE01/stages/sea/sea_report.json:tags"
+   ],
+   "notes": "Medium because daNpc_So_c is 72 stub bodies out of 450 lines: the order of the chain is read off the event scripts and the actor's method names, not off working code. The remaining SO_ scripts are SO_TRIFORCE_CHECK, SO_BOW, SO_TEST5 (SO_TEST5's name marks it as debug) and SO_1ST_MEET_END."
+  },
+  {
+   "id": "mg_fishman_bow",
+   "stage": "sea",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "score",
+    "detail": "A ten-arrow bow minigame run by the Fishman, minigame type 8. SO_BOW's NpcSo staff runs MINIGAME_WAIT, MINIGAME_WARP, MINIGAME_PL_TURN, MINIGAME, MINIGAME_END, MINIGAME_RETURN, WAIT(Timer 1), MINIGAME_PL_UP, TURN_TO_ACTOR, SET_ANM, APPEAR, framed by a DIRECTOR doing FADE/FADE/WAIT/FADE/FADE, with Link 014keep and Ship 05keep. Those cut names line up one-for-one with daNpc_So_c::cutMiniGameStart, cutMiniGameWarpStart, cutMiniGamePlTurnStart, cutMiniGameProc, cutMiniGameEndStart, cutMiniGameReturnStart and cutMiniGamePlUpStart. While minigame type is 8: d_a_arrow forces every arrow to TYPE_NORMAL, d_camera keeps updating the pad and shifting the C-stick even during an event, d_meter forces the do-status to dActStts_bow_01, and d_meter reads daNpc_So_c::getMiniGameRestArrow() (which returns 10 - mB78) to decide when to hide a meter pane.",
+    "new_kind": "score"
+   },
+   "event": "SO_BOW",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "include/d/actor/d_a_npc_so.h:15",
+    "include/d/actor/d_a_npc_so.h:102-115",
+    "src/d/actor/d_a_arrow.cpp:1227-1229",
+    "src/d/d_camera.cpp:719-723",
+    "src/d/d_meter.cpp:759-763",
+    "src/d/d_meter.cpp:2471-2481",
+    "src/d/d_meter.cpp:5575-5583",
+    "out/rip/GZLE01/godot/events/sea.json:SO_BOW"
+   ],
+   "notes": "Nothing decompiled ever calls startMiniGame(8), so the value 8 is deduced from the four places that test getMiniGameType() == 8 and from the fact that one of them reaches straight into daNpc_So_c. What the ten arrows are shot AT, what winning pays and where any record is kept are all unknown - daNpc_So_c is a stub and no event register is associated with it. Recorded because it is a real, wired sea minigame that no other chapter covers."
+  },
+  {
+   "id": "mg_hyoi_seagull",
+   "stage": "sea",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "item",
+    "detail": "One HyoiKam (fpcNm_NPC_KAM_e, src/d/d_stage.cpp:1170) is placed high above every sea room, 48 of them, at y between 1500 and 4500 - these are the Hyoi-pear seagull spawn points. Using a Hyoi pear plays kamome_call, staffed by HyoiKam with wait / descend / wait / change / wait against Link's 065foodset and a camera that starts on USEITEM0; leaving the bird plays kamome_out_turn, HyoiKam out_turn with a FIXEDPOS camera. daNpc_Kamome_c's event table names both (src/d/actor/d_a_npc_kamome.cpp:439-441) and line 198 sets mCurrEventIdxIdx = 1, the index of kamome_call."
+   },
+   "event": "kamome_call",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_kamome.cpp:195-200",
+    "src/d/actor/d_a_npc_kamome.cpp:437-441",
+    "src/d/d_stage.cpp:1170",
+    "out/rip/GZLE01/godot/events/sea.json:kamome_call",
+    "out/rip/GZLE01/godot/events/sea.json:kamome_out_turn",
+    "out/rip/GZLE01/stages/sea/sea_report.json:actors"
+   ],
+   "notes": "The decomp's file comment for d_a_npc_kamome.cpp is 'Player - Hyoi Seagull', i.e. while a Hyoi pear is active this actor IS the player. Separate from the 169 ordinary Kamome decorations."
+  },
+  {
+   "id": "mg_sea_platforms",
+   "stage": "sea",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "object",
+    "detail": "The floating things the player boards or shoots at, all one actor: daObjIkada_c, whose file comment is 'Various Great Sea ships (Beedle, Submarines, Skull Platforms/Rafts, and Salvage Corp.)'. mType = param bits 0..3 and selects the variant; for every type but 4 the path id lives in the second param word, for type 4 in bits 16..23. isBonbori() is types 1 and 3 (the lantern-hung shop ships), isCrane() is type 4 (Salvage Corp), isFlag() is types 0 and 4, isWave() is 1, 3 and 4. In sea, the placements are 20 'Ikada' with params 0x00000000 (type 0, no path - the moored rafts and skull platforms, three of them in room 48 at the Boating Course itself) and 7 'ikadaS' with params 0x000000n2 (type 2, path ids 0, 1, 2, 4, 5, 6 and 7) at Five Star Isles, Northern Fairy Island, Bomb Island, Six Eye Reef, Headstone Island, the Flight Control Platform and Crescent Moon Island."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "src/d/actor/d_a_obj_ikada.cpp:1-4",
+    "src/d/actor/d_a_obj_ikada.cpp:1327-1392",
+    "include/d/actor/d_a_obj_ikada.h:25-28",
+    "out/rip/GZLE01/stages/sea/sea_report.json:actors"
+   ],
+   "notes": "Which mType is which variant by name is NOT stated anywhere; only the four predicates above are. Type 4 is certainly the Salvage Corp crane (isCrane, and the code reaches for VSVSP_JNT_SV_CREAN_e joints). Types 1 and 3 are certainly the lantern ships. Types 0 and 2 are the plain platform and the pathed one; calling type 2 'submarine' is a guess and is flagged as such. The rest of the platform furniture is not this actor: 138 Ocanon (fpcNm_OBJ_CANON_e) cannons, 55 Oship, 98 Bk Bokoblins, 20 Puti Miniblins, 51 Odokuro skull pots and 29 tkrAOc/tkrAOs/tkrBMs treasure chests are placed straight into the sea rooms alongside them."
+  }
+ ]
+}

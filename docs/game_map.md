@@ -5,7 +5,7 @@ the mined data - the player's own state machine, the item list, the enemy table,
 baked cutscenes, the story graph - so this cannot drift from what the engine does.
 
 **Systems:** 9 working, 3 partial, 2 not started.  
-**Story:** 162 of 199 mined steps reachable (18 partial, 19 missing) across 10 chapters: outset, fortress, dragonroost, forbiddenwoods, jabun, towerofgods, hyrule, temples, fortress2, ganon.
+**Story:** 230 of 285 mined steps reachable (20 partial, 35 missing) across 13 chapters: outset, fortress, dragonroost, forbiddenwoods, jabun, towerofgods, hyrule, temples, fortress2, ganon, gallery, minigames, windfall.
 
 ## 1. Systems
 
@@ -25,9 +25,9 @@ flowchart LR
     G0 --> G0_3["Sailing<br/><i>boat physics, sail and wind; no cannon or crane, the Great Sea i</i>"]
     class G0_3 partial;
     GAME --> G1["Link"]
-    G1 --> G1_0["Player movement<br/><i>26 states: GROUND, AIR, ROLL, SWIM, LAND, ATTACK, JUMPCUT, JUMPC</i>"]
+    G1 --> G1_0["Player movement<br/><i>27 states: GROUND, AIR, ROLL, SWIM, LAND, ATTACK, JUMPCUT, JUMPC</i>"]
     class G1_0 ok;
-    G1 --> G1_1["Items (X)<br/><i>7: leaf, bow, boomerang, bomb, hookshot, rope, telescope</i>"]
+    G1 --> G1_1["Items (X)<br/><i>8: leaf, bow, boomerang, bomb, hookshot, rope, telescope, windwa</i>"]
     class G1_1 ok;
     GAME --> G2["Actors"]
     G2 --> G2_0["Enemies<br/><i>7 fully mined, 4 stubbed in the decomp (Puti, p_hat, Oq, wiz_r)</i>"]
@@ -54,8 +54,8 @@ flowchart LR
 | --- | --- | --- |
 | Stages | ok | 161 scenes exported, 157 enterable |
 | Doors | ok | 108 distinct door landings, all checked for a floor |
-| Player movement | ok | 26 states: GROUND, AIR, ROLL, SWIM, LAND, ATTACK, JUMPCUT, JUMPCUT_LAND, DAMAGE, GLIDE, CARRY, GRAB, VJUMP, HANG, CLIMB, LADDER, CLIMBWALL, AIM, ITEM_WAIT, HOOKPULL, SHIP, ROPE_THROW, ROPE, LOOK, CROUCH, CRAWL |
-| Items (X) | ok | 7: leaf, bow, boomerang, bomb, hookshot, rope, telescope |
+| Player movement | ok | 27 states: GROUND, AIR, ROLL, SWIM, LAND, ATTACK, JUMPCUT, JUMPCUT_LAND, DAMAGE, GLIDE, CARRY, GRAB, VJUMP, HANG, CLIMB, LADDER, CLIMBWALL, AIM, ITEM_WAIT, HOOKPULL, SHIP, ROPE_THROW, ROPE, LOOK, CROUCH, CRAWL, CONDUCT |
+| Items (X) | ok | 8: leaf, bow, boomerang, bomb, hookshot, rope, telescope, windwaker |
 | Enemies | partial | 7 fully mined, 4 stubbed in the decomp (Puti, p_hat, Oq, wiz_r) |
 | Actor models | ok | 52 animated models with clips and head attachment |
 | Cutscenes (.stb) | ok | 48 baked and played end to end |
@@ -127,7 +127,7 @@ flowchart TD
         grandma_after_kidnap --> tetra_dock_conversation
         tetra_board_ship["tetra_board_ship<br/><i>talk - OK</i>"]
         tetra_dock_conversation --> tetra_board_ship
-        departure["departure<br/>departure.stb<br/>sets 0x2401 0x2401 0x2401<br/><i>spawn - OK</i>"]
+        departure["departure<br/>departure.stb<br/>sets 0x2401 0x2401 0x2401 0x2401<br/><i>spawn - OK</i>"]
         tetra_board_ship --> departure
         aj_speak_ambient["aj_speak_ambient<br/>AJ_SPEAK<br/><i>talk - PARTIAL</i>"]
         departure --> aj_speak_ambient
@@ -156,9 +156,9 @@ flowchart TD
         ff_interior_cells --> ff_door_looks
         ff_moblin_patrol["ff_moblin_patrol<br/>moro_cam<br/><i>tag - OK</i>"]
         ff_door_looks --> ff_moblin_patrol
-        ff_find_sister["ff_find_sister<br/>find_sister.stb<br/>sets 0x2580 0x2580<br/><i>spawn - OK</i>"]
+        ff_find_sister["ff_find_sister<br/>find_sister.stb<br/>sets 0x2580 0x2580 0x2580<br/><i>spawn - OK</i>"]
         ff_moblin_patrol --> ff_find_sister
-        ff_meet_korl["ff_meet_korl<br/>meetshishioh.stb<br/>sets 0x0F80 0x2E01 0x2E01<br/><i>spawn - OK</i>"]
+        ff_meet_korl["ff_meet_korl<br/>meetshishioh.stb<br/>sets 0x0F80 0x2E01 0x2E01 0x2E01<br/><i>spawn - OK</i>"]
         ff_find_sister --> ff_meet_korl
         ff_board_korl["ff_board_korl<br/>sets 0x2A08<br/><i>board - OK</i>"]
         ff_meet_korl --> ff_board_korl
@@ -173,7 +173,7 @@ flowchart TD
         dr_medli_gives_letter --> dr_komali_refuses
         dr_medli_cliff_request["dr_medli_cliff_request<br/>md_cliff<br/>sets 0x1104<br/><i>talk - OK</i>"]
         dr_komali_refuses --> dr_medli_cliff_request
-        dr_throw_medli_to_ledge["dr_throw_medli_to_ledge<br/>MD_FLY<br/>sets 0x1102<br/><i>npc_tag - MISSING</i>"]
+        dr_throw_medli_to_ledge["dr_throw_medli_to_ledge<br/>MD_FLY<br/>sets 0x1102<br/><i>npc_tag - OK</i>"]
         dr_medli_cliff_request --> dr_throw_medli_to_ledge
         dr_bomb_the_spring["dr_bomb_the_spring<br/>Eskban<br/><i>npc - OK</i>"]
         dr_throw_medli_to_ledge --> dr_bomb_the_spring
@@ -259,7 +259,7 @@ flowchart TD
         jab_korl_briefing_after_greatfish --> jab_quill_at_greatfish
         jab_arrive_windfall_night["jab_arrive_windfall_night<br/>ARRIVAL_TWN<br/>sets 0x1F04<br/><i>tag - MISSING</i>"]
         jab_quill_at_greatfish --> jab_arrive_windfall_night
-        jab_bombshop_raid["jab_bombshop_raid<br/>bombshop.stb<br/>sets 0x2110 0x3B20 0x2110 0x2110<br/><i>tag - OK</i>"]
+        jab_bombshop_raid["jab_bombshop_raid<br/>bombshop.stb<br/>sets 0x2110 0x3B20 0x2110 0x2110 0x2110<br/><i>tag - OK</i>"]
         jab_arrive_windfall_night --> jab_bombshop_raid
         jab_bombshop_owner["jab_bombshop_owner<br/>BMS_LAND_DEMO<br/><i>npc - PARTIAL</i>"]
         jab_bombshop_raid --> jab_bombshop_owner
@@ -279,9 +279,9 @@ flowchart TD
         jab_get_bomb_bag --> jab_korl_briefing_after_bombs
         jab_return_to_outset["jab_return_to_outset<br/>PUROLO_RETURN<br/>sets 0x3E10<br/><i>tag - MISSING</i>"]
         jab_korl_briefing_after_bombs --> jab_return_to_outset
-        jab_blow_open_the_cave["jab_blow_open_the_cave<br/>ajav_uzu<br/><i>hit - MISSING</i>"]
+        jab_blow_open_the_cave["jab_blow_open_the_cave<br/>ajav_uzu<br/><i>hit - OK</i>"]
         jab_return_to_outset --> jab_blow_open_the_cave
-        jab_receive_nayrus_pearl["jab_receive_nayrus_pearl<br/>getperl_jab.stb<br/>sets 0x3920 0x3920 0x3920<br/><i>spawn - OK</i>"]
+        jab_receive_nayrus_pearl["jab_receive_nayrus_pearl<br/>getperl_jab.stb<br/>sets 0x3920 0x3920 0x3920 0x3920<br/><i>spawn - OK</i>"]
         jab_blow_open_the_cave --> jab_receive_nayrus_pearl
         jab_curse_broken["jab_curse_broken<br/>sets 0x2F20<br/><i>talk - OK</i>"]
         jab_receive_nayrus_pearl --> jab_curse_broken
@@ -296,7 +296,7 @@ flowchart TD
         totg_first_statue_reaction --> totg_place_pearl
         totg_tower_rises["totg_tower_rises<br/>MEGAMI_DEMO<br/>sets 0x1E40<br/><i>npc - OK</i>"]
         totg_place_pearl --> totg_tower_rises
-        totg_tower_rises_cutscene["totg_tower_rises_cutscene<br/>towerd.stb<br/>sets 0x2E80 0x2E80 0x2E80<br/><i>spawn - OK</i>"]
+        totg_tower_rises_cutscene["totg_tower_rises_cutscene<br/>towerd.stb<br/>sets 0x2E80 0x2E80 0x2E80 0x2E80<br/><i>spawn - OK</i>"]
         totg_tower_rises --> totg_tower_rises_cutscene
         totg_arrive_tower["totg_arrive_tower<br/><i>spawn - OK</i>"]
         totg_tower_rises_cutscene --> totg_arrive_tower
@@ -330,15 +330,15 @@ flowchart TD
         totg_heart_container --> totg_boss_warp
         totg_descend_shaft["totg_descend_shaft<br/>JMP_DEMO<br/><i>spawn - OK</i>"]
         totg_boss_warp --> totg_descend_shaft
-        totg_warp_to_hyrule["totg_warp_to_hyrule<br/>warp_in.stb<br/>sets 0x2D10 0x2D10 0x2D10<br/><i>spawn - OK</i>"]
+        totg_warp_to_hyrule["totg_warp_to_hyrule<br/>warp_in.stb<br/>sets 0x2D10 0x2D10 0x2D10 0x2D10<br/><i>spawn - OK</i>"]
         totg_descend_shaft --> totg_warp_to_hyrule
         totg_return_from_tower["totg_return_from_tower<br/>TOWER_WARPOUT<br/><i>warp - OK</i>"]
         totg_warp_to_hyrule --> totg_return_from_tower
-        totg_later_return_to_hyrule["totg_later_return_to_hyrule<br/>warphole.stb<br/>sets 0x2D08 0x2D08 0x2D08<br/><i>spawn - OK</i>"]
+        totg_later_return_to_hyrule["totg_later_return_to_hyrule<br/>warphole.stb<br/>sets 0x2D08 0x2D08 0x2D08 0x2D08<br/><i>spawn - OK</i>"]
         totg_return_from_tower --> totg_later_return_to_hyrule
     end
     subgraph hyrule["hyrule"]
-        hy_warp_in["hy_warp_in<br/>warp_in.stb<br/>sets 0x2D10 0x2D10 0x2D10<br/><i>spawn - OK</i>"]
+        hy_warp_in["hy_warp_in<br/>warp_in.stb<br/>sets 0x2D10 0x2D10 0x2D10 0x2D10<br/><i>spawn - OK</i>"]
         hy_descent["hy_descent<br/>warp_out.stb<br/><i>spawn - OK</i>"]
         hy_warp_in --> hy_descent
         hy_courtyard["hy_courtyard<br/><i>spawn - OK</i>"]
@@ -351,23 +351,23 @@ flowchart TD
         hy_hint --> hy_floor_puzzle
         hy_statue_moves["hy_statue_moves<br/>move_YLzou<br/><i>object - OK</i>"]
         hy_floor_puzzle --> hy_statue_moves
-        hy_draw_master_sword["hy_draw_master_sword<br/>master_sword.stb<br/>sets 0x2D04 0x2D04 0x2D04<br/><i>tag - OK</i>"]
+        hy_draw_master_sword["hy_draw_master_sword<br/>master_sword.stb<br/>sets 0x2D04 0x2D04 0x2D04 0x2D04<br/><i>tag - OK</i>"]
         hy_statue_moves --> hy_draw_master_sword
         hy_rebirth["hy_rebirth<br/>rebirth_hyral.stb<br/>sets 0x3802<br/><i>spawn - OK</i>"]
         hy_draw_master_sword --> hy_rebirth
-        hy_swing_sword["hy_swing_sword<br/>swing_sword.stb<br/>sets 0x3A04 0x3A04 0x3A04<br/><i>spawn - OK</i>"]
+        hy_swing_sword["hy_swing_sword<br/>swing_sword.stb<br/>sets 0x3A04 0x3A04 0x3A04 0x3A04<br/><i>spawn - OK</i>"]
         hy_rebirth --> hy_swing_sword
         hy_fight_out["hy_fight_out<br/><i>room_enter - OK</i>"]
         hy_swing_sword --> hy_fight_out
         hy_warp_back["hy_warp_back<br/>TO_SEA_WARP_1<br/>sets 0x3810<br/><i>object - OK</i>"]
         hy_fight_out --> hy_warp_back
-        hy_return_route_opens["hy_return_route_opens<br/>warphole.stb<br/>sets 0x2D08 0x2D08 0x2D08<br/><i>spawn - OK</i>"]
+        hy_return_route_opens["hy_return_route_opens<br/>warphole.stb<br/>sets 0x2D08 0x2D08 0x2D08 0x2D08<br/><i>spawn - OK</i>"]
         hy_warp_back --> hy_return_route_opens
-        hy_second_visit_awake_zelda["hy_second_visit_awake_zelda<br/>awake_zelda.stb<br/>sets 0x2D02 0x2D02 0x2D02<br/><i>tag - OK</i>"]
+        hy_second_visit_awake_zelda["hy_second_visit_awake_zelda<br/>awake_zelda.stb<br/>sets 0x2D02 0x2D02 0x2D02 0x2D02<br/><i>tag - OK</i>"]
         hy_return_route_opens --> hy_second_visit_awake_zelda
         hy_third_visit_swordroom_ambush["hy_third_visit_swordroom_ambush<br/>btl_of_swroom<br/><i>tag - OK</i>"]
         hy_second_visit_awake_zelda --> hy_third_visit_swordroom_ambush
-        hy_third_visit_break_barrier["hy_third_visit_break_barrier<br/>seal.stb<br/>sets 0x2C02 0x3B08 0x3B08 0x3B08<br/><i>object - OK</i>"]
+        hy_third_visit_break_barrier["hy_third_visit_break_barrier<br/>seal.stb<br/>sets 0x2C02 0x3B08 0x3B08 0x3B08 0x3B08<br/><i>object - OK</i>"]
         hy_third_visit_swordroom_ambush --> hy_third_visit_break_barrier
     end
     subgraph temples["temples"]
@@ -376,15 +376,15 @@ flowchart TD
         et_land_headstone --> et_enter_edaichi
         et_learn_earth_gods_lyric["et_learn_earth_gods_lyric<br/>MKNJD_D_LESSON<br/><i>talk - OK</i>"]
         et_enter_edaichi --> et_learn_earth_gods_lyric
-        et_dance_zola["et_dance_zola<br/>dance_zola.stb<br/>sets 0x2D40 0x2D40 0x2D40<br/><i>spawn - OK</i>"]
+        et_dance_zola["et_dance_zola<br/>dance_zola.stb<br/>sets 0x2D40 0x2D40 0x2D40 0x2D40<br/><i>spawn - OK</i>"]
         et_learn_earth_gods_lyric --> et_dance_zola
-        et_duet_opens_earth_temple["et_duet_opens_earth_temple<br/>MKNJD_D_DEMO<br/>sets 0x2920<br/><i>conduct - MISSING</i>"]
+        et_duet_opens_earth_temple["et_duet_opens_earth_temple<br/>MKNJD_D_DEMO<br/>sets 0x2920<br/><i>conduct - OK</i>"]
         et_dance_zola --> et_duet_opens_earth_temple
         et_hole_cam["et_hole_cam<br/>HoleCam<br/>sets 0x2920<br/><i>tag - OK</i>"]
         et_duet_opens_earth_temple --> et_hole_cam
         et_partner_hint_tags["et_partner_hint_tags<br/>md_tag_message<br/><i>tag - MISSING</i>"]
         et_hole_cam --> et_partner_hint_tags
-        et_inner_tablets["et_inner_tablets<br/>MKNJD_D_DEMO<br/><i>conduct - MISSING</i>"]
+        et_inner_tablets["et_inner_tablets<br/>MKNJD_D_DEMO<br/><i>conduct - OK</i>"]
         et_partner_hint_tags --> et_inner_tablets
         et_warp_jars["et_warp_jars<br/>WARPT_OPEN<br/><i>npc - OK</i>"]
         et_inner_tablets --> et_warp_jars
@@ -398,7 +398,7 @@ flowchart TD
         et_stalfos_miniboss --> et_jalhalla
         et_boss_warp["et_boss_warp<br/>WARP_WIND<br/><i>npc - OK</i>"]
         et_jalhalla --> et_boss_warp
-        et_pray_zola["et_pray_zola<br/>pray_zola.stb<br/>sets 0x3A02 0x3A02 0x3A02<br/><i>spawn - OK</i>"]
+        et_pray_zola["et_pray_zola<br/>pray_zola.stb<br/>sets 0x3A02 0x3A02 0x3A02 0x3A02<br/><i>spawn - OK</i>"]
         et_boss_warp --> et_pray_zola
         wt_land_gale_isle["wt_land_gale_isle<br/>sets 0x2E02<br/><i>board - OK</i>"]
         et_pray_zola --> wt_land_gale_isle
@@ -406,15 +406,15 @@ flowchart TD
         wt_land_gale_isle --> wt_enter_ekaze
         wt_learn_wind_gods_aria["wt_learn_wind_gods_aria<br/>MKNJD_K_LESSON<br/><i>talk - OK</i>"]
         wt_enter_ekaze --> wt_learn_wind_gods_aria
-        wt_dance_kokiri["wt_dance_kokiri<br/>dance_kokiri.stb<br/>sets 0x2D20 0x2D20 0x2D20<br/><i>spawn - OK</i>"]
+        wt_dance_kokiri["wt_dance_kokiri<br/>dance_kokiri.stb<br/>sets 0x2D20 0x2D20 0x2D20 0x2D20<br/><i>spawn - OK</i>"]
         wt_learn_wind_gods_aria --> wt_dance_kokiri
-        wt_duet_opens_wind_temple["wt_duet_opens_wind_temple<br/>MKNJD_K_DEMO<br/>sets 0x2910<br/><i>conduct - MISSING</i>"]
+        wt_duet_opens_wind_temple["wt_duet_opens_wind_temple<br/>MKNJD_K_DEMO<br/>sets 0x2910<br/><i>conduct - OK</i>"]
         wt_dance_kokiri --> wt_duet_opens_wind_temple
         wt_partner_hint_tags["wt_partner_hint_tags<br/>cb_tag_message<br/><i>tag - MISSING</i>"]
         wt_duet_opens_wind_temple --> wt_partner_hint_tags
         wt_makar_sows_seeds["wt_makar_sows_seeds<br/>cb_sow<br/><i>npc - OK</i>"]
         wt_partner_hint_tags --> wt_makar_sows_seeds
-        wt_inner_tablets["wt_inner_tablets<br/>MKNJD_K_DEMO<br/><i>conduct - MISSING</i>"]
+        wt_inner_tablets["wt_inner_tablets<br/>MKNJD_K_DEMO<br/><i>conduct - OK</i>"]
         wt_makar_sows_seeds --> wt_inner_tablets
         wt_wizzrobe_miniboss["wt_wizzrobe_miniboss<br/><i>room_enter - OK</i>"]
         wt_inner_tablets --> wt_wizzrobe_miniboss
@@ -422,7 +422,7 @@ flowchart TD
         wt_wizzrobe_miniboss --> wt_molgera
         wt_boss_warp["wt_boss_warp<br/>WARP_WIND<br/><i>npc - OK</i>"]
         wt_molgera --> wt_boss_warp
-        wt_pray_kokiri["wt_pray_kokiri<br/>pray_kokiri.stb<br/>sets 0x4004 0x4004 0x4004<br/><i>spawn - OK</i>"]
+        wt_pray_kokiri["wt_pray_kokiri<br/>pray_kokiri.stb<br/>sets 0x4004 0x4004 0x4004 0x4004<br/><i>spawn - OK</i>"]
         wt_boss_warp --> wt_pray_kokiri
     end
     subgraph fortress2["fortress2"]
@@ -443,17 +443,17 @@ flowchart TD
         ff2_skull_hammer --> ff2_climb_the_wall
         ff2_reach_the_tower["ff2_reach_the_tower<br/><i>room_enter - PARTIAL</i>"]
         ff2_climb_the_wall --> ff2_reach_the_tower
-        ff2_rescue["ff2_rescue<br/>rescue.stb<br/>sets 0x2D01 0x2D01 0x2D01<br/><i>spawn - OK</i>"]
+        ff2_rescue["ff2_rescue<br/>rescue.stb<br/>sets 0x2D01 0x2D01 0x2D01 0x2D01<br/><i>spawn - OK</i>"]
         ff2_reach_the_tower --> ff2_rescue
         ff2_tower_redressed["ff2_tower_redressed<br/><i>spawn - OK</i>"]
         ff2_rescue --> ff2_tower_redressed
         ff2_helmaroc_king["ff2_helmaroc_king<br/>sets 0x3C01<br/><i>defeat - PARTIAL</i>"]
         ff2_tower_redressed --> ff2_helmaroc_king
-        ff2_enter_ganon_room["ff2_enter_ganon_room<br/>attack_ganon.stb<br/>sets 0x3910 0x3910 0x3910<br/><i>spawn - OK</i>"]
+        ff2_enter_ganon_room["ff2_enter_ganon_room<br/>attack_ganon.stb<br/>sets 0x3910 0x3910 0x3910 0x3910<br/><i>spawn - OK</i>"]
         ff2_helmaroc_king --> ff2_enter_ganon_room
-        ff2_attack_ganon["ff2_attack_ganon<br/>attack_ganon.stb<br/>sets 0x3910 0x3910 0x3910<br/><i>spawn - OK</i>"]
+        ff2_attack_ganon["ff2_attack_ganon<br/>attack_ganon.stb<br/>sets 0x3910 0x3910 0x3910 0x3910<br/><i>spawn - OK</i>"]
         ff2_enter_ganon_room --> ff2_attack_ganon
-        ff2_runaway_majuto["ff2_runaway_majuto<br/>runaway_majuto.stb<br/>sets 0x3280 0x3280 0x3280<br/><i>spawn - OK</i>"]
+        ff2_runaway_majuto["ff2_runaway_majuto<br/>runaway_majuto.stb<br/>sets 0x3280 0x3280 0x3280 0x3280<br/><i>spawn - OK</i>"]
         ff2_attack_ganon --> ff2_runaway_majuto
         ff2_after_endless_night["ff2_after_endless_night<br/>kankin1<br/><i>room_enter - OK</i>"]
         ff2_runaway_majuto --> ff2_after_endless_night
@@ -474,16 +474,191 @@ flowchart TD
         gt_trial_molgera --> gt_four_doors_open
         gt_phantom_ganon["gt_phantom_ganon<br/>GANON_ARRIVE<br/><i>spawn - OK</i>"]
         gt_four_doors_open --> gt_phantom_ganon
-        gt_puppet_ganon["gt_puppet_ganon<br/>kugutu_ganon.stb<br/>sets 0x3B02 0x3B02<br/><i>spawn - OK</i>"]
+        gt_puppet_ganon["gt_puppet_ganon<br/>kugutu_ganon.stb<br/>sets 0x3B02 0x3B02 0x3B02<br/><i>spawn - OK</i>"]
         gt_phantom_ganon --> gt_puppet_ganon
         gt_to_the_roof["gt_to_the_roof<br/>to_roof.stb<br/><i>spawn - OK</i>"]
         gt_puppet_ganon --> gt_to_the_roof
-        gt_rooftop_confrontation["gt_rooftop_confrontation<br/>g2before.stb<br/>sets 0x4002 0x4002<br/><i>spawn - OK</i>"]
+        gt_rooftop_confrontation["gt_rooftop_confrontation<br/>g2before.stb<br/>sets 0x4002 0x4002 0x4002<br/><i>spawn - OK</i>"]
         gt_to_the_roof --> gt_rooftop_confrontation
-        gt_endhr["gt_endhr<br/>endhr.stb<br/>sets 0x3F40 0x3F40<br/><i>spawn - OK</i>"]
+        gt_endhr["gt_endhr<br/>endhr.stb<br/>sets 0x3F40 0x3F40 0x3F40<br/><i>spawn - OK</i>"]
         gt_rooftop_confrontation --> gt_endhr
         gt_ending["gt_ending<br/>ending.stb<br/><i>spawn - OK</i>"]
         gt_endhr --> gt_ending
+    end
+    subgraph gallery["gallery"]
+        gal_hatch_open["gal_hatch_open<br/>FIGURE_HATCH_OPEN<br/><i>npc - OK</i>"]
+        gal_enter["gal_enter<br/>nitendo<br/><i>tag - OK</i>"]
+        gal_hatch_open --> gal_enter
+        gal_meet_carlov["gal_meet_carlov<br/>sets 0x2F02<br/><i>talk - OK</i>"]
+        gal_enter --> gal_meet_carlov
+        gal_show_pictograph["gal_show_pictograph<br/>sets 0x2F01 0x3401<br/><i>photo - MISSING</i>"]
+        gal_meet_carlov --> gal_show_pictograph
+        gal_wait_a_day["gal_wait_a_day<br/>sets 0x3080<br/><i>day_change - MISSING</i>"]
+        gal_show_pictograph --> gal_wait_a_day
+        gal_collect_figure["gal_collect_figure<br/>sets 0x4080 0x3A01<br/><i>talk - OK</i>"]
+        gal_wait_a_day --> gal_collect_figure
+        gal_go_and_look["gal_go_and_look<br/>sets 0x3F01<br/><i>warp - OK</i>"]
+        gal_collect_figure --> gal_go_and_look
+        gal_hall_doors["gal_hall_doors<br/><i>object - OK</i>"]
+        gal_go_and_look --> gal_hall_doors
+        gal_halls["gal_halls<br/>FIGURE_CHECK<br/><i>room_enter - OK</i>"]
+        gal_hall_doors --> gal_halls
+        gal_complete["gal_complete<br/>sets 0x3D08<br/><i>bits - OK</i>"]
+        gal_halls --> gal_complete
+        pship_chart["pship_chart<br/><i>chest - OK</i>"]
+        gal_complete --> pship_chart
+        pship_appear["pship_appear<br/><i>object - OK</i>"]
+        pship_chart --> pship_appear
+        pship_board["pship_board<br/><i>board - OK</i>"]
+        pship_appear --> pship_board
+        pship_treasure["pship_treasure<br/>DEFAULT_TREASURE<br/><i>chest - OK</i>"]
+        pship_board --> pship_treasure
+        pship_clear["pship_clear<br/>PSHIP_CLEAR<br/><i>object - OK</i>"]
+        pship_treasure --> pship_clear
+        steel_approach["steel_approach<br/><i>object - OK</i>"]
+        pship_clear --> steel_approach
+        steel_interior["steel_interior<br/><i>warp - OK</i>"]
+        steel_approach --> steel_interior
+        steel_chest["steel_chest<br/><i>chest - OK</i>"]
+        steel_interior --> steel_chest
+        sub_board["sub_board<br/><i>board - OK</i>"]
+        steel_chest --> sub_board
+        sub_interior["sub_interior<br/><i>room_enter - OK</i>"]
+        sub_board --> sub_interior
+        sub_ladder_down["sub_ladder_down<br/>hasigo_down<br/><i>tag - OK</i>"]
+        sub_interior --> sub_ladder_down
+        sub_chests["sub_chests<br/><i>chest - OK</i>"]
+        sub_ladder_down --> sub_chests
+        shop_board["shop_board<br/><i>board - OK</i>"]
+        sub_chests --> shop_board
+        shop_buy["shop_buy<br/>BS1_GETDEMO<br/><i>buy - MISSING</i>"]
+        shop_board --> shop_buy
+        shop_membership["shop_membership<br/>PUT_PRAICE_TICKET<br/><i>show_item - MISSING</i>"]
+        shop_buy --> shop_membership
+        sea_ub_leads_not_mine["sea_ub_leads_not_mine<br/><i>talk - OK</i>"]
+        shop_membership --> sea_ub_leads_not_mine
+    end
+    subgraph minigames["minigames"]
+        mg_fcp_arrive["mg_fcp_arrive<br/><i>room_enter - OK</i>"]
+        mg_birdman_look["mg_birdman_look<br/>BirdLook<br/><i>tag - OK</i>"]
+        mg_fcp_arrive --> mg_birdman_look
+        mg_birdman_signup["mg_birdman_signup<br/><i>talk - PARTIAL</i>"]
+        mg_birdman_look --> mg_birdman_signup
+        mg_birdman_launch["mg_birdman_launch<br/>BMCON_NEXT<br/><i>tag - OK</i>"]
+        mg_birdman_signup --> mg_birdman_launch
+        mg_birdman_flight["mg_birdman_flight<br/>BirdStart<br/><i>spawn - OK</i>"]
+        mg_birdman_launch --> mg_birdman_flight
+        mg_birdman_result["mg_birdman_result<br/>BMCON_END<br/><i>score - MISSING</i>"]
+        mg_birdman_flight --> mg_birdman_result
+        mg_birdman_prize["mg_birdman_prize<br/>BMCON_GET_ITEM<br/><i>talk - OK</i>"]
+        mg_birdman_result --> mg_birdman_prize
+        mg_boating_briefing["mg_boating_briefing<br/>SARACE_EXPCAM<br/><i>talk - OK</i>"]
+        mg_birdman_prize --> mg_boating_briefing
+        mg_boating_enter["mg_boating_enter<br/>race_start_cam<br/><i>warp - OK</i>"]
+        mg_boating_briefing --> mg_boating_enter
+        mg_boating_start["mg_boating_start<br/>race_start_cam<br/><i>timer - MISSING</i>"]
+        mg_boating_enter --> mg_boating_start
+        mg_boating_goal["mg_boating_goal<br/>race_goal_cam<br/><i>score - MISSING</i>"]
+        mg_boating_start --> mg_boating_goal
+        mg_boating_fail["mg_boating_fail<br/>race_fail_cam<br/><i>timer - MISSING</i>"]
+        mg_boating_goal --> mg_boating_fail
+        mg_boating_reward["mg_boating_reward<br/><i>talk - OK</i>"]
+        mg_boating_fail --> mg_boating_reward
+        mg_squid_enter["mg_squid_enter<br/><i>warp - OK</i>"]
+        mg_boating_reward --> mg_squid_enter
+        mg_squid_play["mg_squid_play<br/>MINIGAME_START<br/><i>talk - OK</i>"]
+        mg_squid_enter --> mg_squid_play
+        mg_squid_end["mg_squid_end<br/>MINIGAME_END<br/><i>score - MISSING</i>"]
+        mg_squid_play --> mg_squid_end
+        mg_squid_prize["mg_squid_prize<br/>KAISEN_GETITEM<br/><i>talk - OK</i>"]
+        mg_squid_end --> mg_squid_prize
+        mg_cannon_game["mg_cannon_game<br/>CANON_GAME<br/><i>talk - OK</i>"]
+        mg_squid_prize --> mg_cannon_game
+        mg_big_octo["mg_big_octo<br/>DAIOCTA_DEAD<br/><i>defeat - OK</i>"]
+        mg_cannon_game --> mg_big_octo
+        mg_cyclones["mg_cyclones<br/><i>object - OK</i>"]
+        mg_big_octo --> mg_cyclones
+        mg_cyclones_off["mg_cyclones_off<br/>TACT0_RT<br/>sets 0x2710<br/><i>npc - OK</i>"]
+        mg_cyclones --> mg_cyclones_off
+        mg_hoho_lookouts["mg_hoho_lookouts<br/><i>talk - OK</i>"]
+        mg_cyclones_off --> mg_hoho_lookouts
+        mg_fishman_chart["mg_fishman_chart<br/>SO_MAPOPEN<br/><i>item - MISSING</i>"]
+        mg_hoho_lookouts --> mg_fishman_chart
+        mg_fishman_bow["mg_fishman_bow<br/>SO_BOW<br/><i>score - MISSING</i>"]
+        mg_fishman_chart --> mg_fishman_bow
+        mg_hyoi_seagull["mg_hyoi_seagull<br/>kamome_call<br/><i>item - MISSING</i>"]
+        mg_fishman_bow --> mg_hyoi_seagull
+        mg_sea_platforms["mg_sea_platforms<br/><i>object - OK</i>"]
+        mg_hyoi_seagull --> mg_sea_platforms
+    end
+    subgraph windfall["windfall"]
+        wf_town_title_card["wf_town_title_card<br/>TELOP_TAURA<br/><i>tag - MISSING</i>"]
+        wf_jail_entry_camera["wf_jail_entry_camera<br/>First<br/><i>tag - OK</i>"]
+        wf_town_title_card --> wf_jail_entry_camera
+        wf_jail_picto_box["wf_jail_picto_box<br/><i>chest - OK</i>"]
+        wf_jail_entry_camera --> wf_jail_picto_box
+        wf_jail_rotten_floor["wf_jail_rotten_floor<br/>NZFALL<br/><i>object - OK</i>"]
+        wf_jail_picto_box --> wf_jail_rotten_floor
+        wf_tingle_through_bars["wf_tingle_through_bars<br/>TC_TALK_NEAR_JAIL<br/>sets 0x0B40<br/><i>talk - OK</i>"]
+        wf_jail_rotten_floor --> wf_tingle_through_bars
+        wf_free_tingle["wf_free_tingle<br/>OpenDoor<br/>sets 0x0B80<br/><i>tag - OK</i>"]
+        wf_tingle_through_bars --> wf_free_tingle
+        wf_lenzo_first_talk["wf_lenzo_first_talk<br/>sets 0x1208<br/><i>talk - OK</i>"]
+        wf_free_tingle --> wf_lenzo_first_talk
+        wf_lenzo_attic_chests["wf_lenzo_attic_chests<br/><i>chest - OK</i>"]
+        wf_lenzo_first_talk --> wf_lenzo_attic_chests
+        wf_lenzo_sees_picto_box["wf_lenzo_sees_picto_box<br/>sets 0x1701<br/><i>talk - OK</i>"]
+        wf_lenzo_attic_chests --> wf_lenzo_sees_picto_box
+        wf_lenzo_research_assistant["wf_lenzo_research_assistant<br/>PHOTO_TALK<br/>sets 0x1601<br/><i>npc - OK</i>"]
+        wf_lenzo_sees_picto_box --> wf_lenzo_research_assistant
+        wf_lenzo_three_assignments["wf_lenzo_three_assignments<br/><i>photo - MISSING</i>"]
+        wf_lenzo_research_assistant --> wf_lenzo_three_assignments
+        wf_lenzo_deluxe_picto_box["wf_lenzo_deluxe_picto_box<br/><i>show_item - MISSING</i>"]
+        wf_lenzo_three_assignments --> wf_lenzo_deluxe_picto_box
+        wf_lenzo_legendary_pictograph["wf_lenzo_legendary_pictograph<br/>sets 0x3808<br/><i>photo - MISSING</i>"]
+        wf_lenzo_deluxe_picto_box --> wf_lenzo_legendary_pictograph
+        wf_photograph_ub1["wf_photograph_ub1<br/>UB1_TALK_PHOTO_GET_ITEM<br/>sets 0x0A40 0x2102<br/><i>photo - MISSING</i>"]
+        wf_lenzo_legendary_pictograph --> wf_photograph_ub1
+        wf_killer_bees_first_talk["wf_killer_bees_first_talk<br/>sets 0x1210<br/><i>talk - OK</i>"]
+        wf_photograph_ub1 --> wf_killer_bees_first_talk
+        wf_hide_and_seek["wf_hide_and_seek<br/>MK_GAMESTART<br/>sets 0x2201<br/><i>talk - OK</i>"]
+        wf_killer_bees_first_talk --> wf_hide_and_seek
+        wf_hide_and_seek_cleared["wf_hide_and_seek_cleared<br/>MK_GAMESET<br/>sets 0x1340<br/><i>npc - OK</i>"]
+        wf_hide_and_seek --> wf_hide_and_seek_cleared
+        wf_marie_first_talk["wf_marie_first_talk<br/>sets 0x1E01<br/><i>talk - OK</i>"]
+        wf_hide_and_seek_cleared --> wf_marie_first_talk
+        wf_marie_asks_for_pendant["wf_marie_asks_for_pendant<br/>sets 0x1F80<br/><i>talk - OK</i>"]
+        wf_marie_first_talk --> wf_marie_asks_for_pendant
+        wf_bees_point_at_the_tree["wf_bees_point_at_the_tree<br/>MK_TALK3<br/>sets 0x1E04<br/><i>talk - OK</i>"]
+        wf_marie_asks_for_pendant --> wf_bees_point_at_the_tree
+        wf_joy_pendant_tree["wf_joy_pendant_tree<br/>MK_PENDANT<br/>sets 0x1E02<br/><i>hit - OK</i>"]
+        wf_bees_point_at_the_tree --> wf_joy_pendant_tree
+        wf_marie_joy_pendants["wf_marie_joy_pendants<br/>sets 0x1C08 0x1C04<br/><i>show_item - MISSING</i>"]
+        wf_joy_pendant_tree --> wf_marie_joy_pendants
+        wf_marie_preach["wf_marie_preach<br/>HO_PREACH<br/><i>npc - OK</i>"]
+        wf_marie_joy_pendants --> wf_marie_preach
+        wf_auction["wf_auction<br/>Auction<br/><i>spawn - OK</i>"]
+        wf_marie_preach --> wf_auction
+        wf_auction_lots["wf_auction_lots<br/>AUCTION_GET_ITEM<br/>sets 0x0F01 0x1080 0x1040 0x1020 0x1008 0x1004 0x4008<br/><i>minigame - MISSING</i>"]
+        wf_auction --> wf_auction_lots
+        wf_moblins_letter["wf_moblins_letter<br/>Get_Mo3_Ltr<br/>sets 0x1908<br/><i>talk - OK</i>"]
+        wf_auction_lots --> wf_moblins_letter
+        wf_cafe_bar_camera["wf_cafe_bar_camera<br/>FirstCamera<br/><i>tag - OK</i>"]
+        wf_moblins_letter --> wf_cafe_bar_camera
+        wf_stall_merchants["wf_stall_merchants<br/>ROTEN_EXCHANGE_1ST<br/>sets 0x1320 0x1310 0x1308 0x1304 0x1302 0x1301<br/><i>show_item - MISSING</i>"]
+        wf_cafe_bar_camera --> wf_stall_merchants
+        wf_shop_guru_statue["wf_shop_guru_statue<br/>sets 0x3E04<br/><i>show_item - MISSING</i>"]
+        wf_stall_merchants --> wf_shop_guru_statue
+        wf_tott_dance["wf_tott_dance<br/>TACT_TT10<br/>sets 0x0B08 0x0C40<br/><i>conduct - OK</i>"]
+        wf_shop_guru_statue --> wf_tott_dance
+        wf_sploosh_kaboom["wf_sploosh_kaboom<br/>KAISEN_GETITEM<br/><i>minigame - MISSING</i>"]
+        wf_tott_dance --> wf_sploosh_kaboom
+        wf_chu_jelly_juice_shop["wf_chu_jelly_juice_shop<br/>next_link<br/><i>spawn - PARTIAL</i>"]
+        wf_sploosh_kaboom --> wf_chu_jelly_juice_shop
+        wf_bomb_shop["wf_bomb_shop<br/>bombshop.stb<br/>sets 0x2110 0x2110<br/><i>tag - OK</i>"]
+        wf_chu_jelly_juice_shop --> wf_bomb_shop
+        wf_hollo_shop_is_not_windfall["wf_hollo_shop_is_not_windfall<br/>WALK_START<br/><i>spawn - OK</i>"]
+        wf_bomb_shop --> wf_hollo_shop_is_not_windfall
     end
     tale_demo_hero_clothes -.->|0x2A80| aryll_omedeto
     telescope_watch_quill -.->|0x0310| zelda_fly_helmaroc
@@ -598,9 +773,35 @@ flowchart TD
     gt_trial_molgera -.->|0x3208| gt_four_doors_open
     gt_four_doors_open -.->|0x3204| gt_phantom_ganon
     gt_four_doors_open -.->|0x3204| gt_puppet_ganon
-    class opening_lookout_awake,aryll_tower_first_talk,grandma_birthday_talk,tale_demo_hero_clothes,aryll_omedeto,aryll_get_telescope,telescope_watch_quill,zelda_fly_helmaroc,aryll_etalk,grandma_after_prologue,orca_first_talk,orca_sparring_lesson,orca_gives_hero_sword,orca_spin_attack_lesson,grandma_after_sword,amori_bokoblin_dropin,amori_meet_tetra,outset_ridge_layer9,stolen_sister,outset_village_layer2,look_shield,grandma_gives_shield,grandma_after_kidnap,tetra_dock_conversation,tetra_board_ship,departure,post_outset_note,ff_ride_to_fortress,ff_launched_at_fortress,ff_arrive_exterior,ff_tower_looks,ff_tetra_ooi,ff_infiltration,ff_searchlight_look,ff_push_barrel,ff_interior_cells,ff_door_looks,ff_moblin_patrol,ff_find_sister,ff_meet_korl,ff_board_korl,dr_chieftain_dragontale,dr_medli_gives_letter,dr_medli_cliff_request,dr_bomb_the_spring,dr_enter_cavern,dr_cavern_set_pieces,dr_trapped_with_bokoblins,dr_clear_room_bars_open,dr_grappling_hook,dr_carry_medli,dr_boss_warp_out,dr_valoo_calms,dr_dins_pearl,dr_secret_cave,fw_korl_sends_link_to_forest,fw_korl_forest_directions,fw_forest_haven_looks,fw_fall_into_forest_haven,fw_mori_inside,fw_meet_deku_tree,fw_woods_telop,fw_woods_cameras,fw_rescue_makar,fw_warp_out_with_makar,fw_boss_warpout_to_forest_haven,fw_getperl_deku,fw_makar_in_forest_haven,fw_korl_after_the_pearl,fw_otkura_boundary,jab_korl_points_to_greatfish,jab_korl_briefing_after_greatfish,jab_quill_at_greatfish,jab_bombshop_raid,jab_password_door,jab_board_pirate_ship,jab_rope_course_2,jab_rope_course_2_cleared,jab_get_bomb_bag,jab_korl_briefing_after_bombs,jab_receive_nayrus_pearl,jab_curse_broken,jab_abship_not_in_this_chapter,totg_pearl_din,totg_first_statue_reaction,totg_place_pearl,totg_tower_rises,totg_tower_rises_cutscene,totg_arrive_tower,totg_enter_dungeon,totg_interior_camera_beats,totg_wake_servants,totg_trial_east,totg_trial_west,totg_trial_north,totg_pedestals_done,totg_warp_up,totg_big_key,totg_darknut,totg_get_bow,totg_heart_container,totg_boss_warp,totg_descend_shaft,totg_warp_to_hyrule,totg_return_from_tower,totg_later_return_to_hyrule,hy_warp_in,hy_descent,hy_courtyard,hy_intro,hy_floor_puzzle,hy_statue_moves,hy_draw_master_sword,hy_rebirth,hy_swing_sword,hy_fight_out,hy_warp_back,hy_return_route_opens,hy_second_visit_awake_zelda,hy_third_visit_swordroom_ambush,hy_third_visit_break_barrier,et_land_headstone,et_enter_edaichi,et_learn_earth_gods_lyric,et_dance_zola,et_hole_cam,et_warp_jars,et_mkie_block_cameras,et_moro_cam,et_stalfos_miniboss,et_jalhalla,et_boss_warp,et_pray_zola,wt_land_gale_isle,wt_enter_ekaze,wt_learn_wind_gods_aria,wt_dance_kokiri,wt_makar_sows_seeds,wt_wizzrobe_miniboss,wt_molgera,wt_boss_warp,wt_pray_kokiri,ff2_sail_to_fortress,ff2_land_at_fortress,ff2_enter_interior,ff2_moblins_patrol,ff2_interior_chests,ff2_skull_hammer,ff2_rescue,ff2_tower_redressed,ff2_enter_ganon_room,ff2_attack_ganon,ff2_runaway_majuto,ff2_after_endless_night,gt_tower_intro,gt_four_doors_open,gt_phantom_ganon,gt_puppet_ganon,gt_to_the_roof,gt_rooftop_confrontation,gt_endhr,gt_ending ok;
-    class aj_speak_ambient,dr_komali_refuses,dr_gohma,fw_koroks_and_lift,fw_glide_to_forbidden_woods,fw_mothula,fw_kalle_demos,jab_bombshop_owner,jab_niko_second_course_intro,totg_gohdan,ff2_phantom_ganon,ff2_climb_the_wall,ff2_reach_the_tower,ff2_helmaroc_king,gt_trial_gohma,gt_trial_kalle_demos,gt_trial_jalhalla,gt_trial_molgera partial;
-    class dr_arrive_island,dr_throw_medli_to_ledge,fw_arrive_forest_haven,fw_get_deku_leaf,fw_dungeon_items,fw_get_boomerang,fw_heart_container,jab_arrive_greatfish_ruined,jab_arrive_windfall_night,jab_return_to_outset,jab_blow_open_the_cave,hy_hint,et_duet_opens_earth_temple,et_partner_hint_tags,et_inner_tablets,wt_duet_opens_wind_temple,wt_partner_hint_tags,wt_inner_tablets,gt_warp_appears missing;
+    gal_meet_carlov -.->|0x2F02| gal_show_pictograph
+    gal_show_pictograph -.->|0x2F01| gal_wait_a_day
+    gal_wait_a_day -.->|0x3080| gal_collect_figure
+    gal_collect_figure -.->|0x4080| gal_go_and_look
+    gal_show_pictograph -.->|0x3401| gal_hall_doors
+    jab_arrive_windfall_night -.->|0x1F04| wf_town_title_card
+    wf_tingle_through_bars -.->|0x0B40| wf_free_tingle
+    wf_lenzo_first_talk -.->|0x1208| wf_lenzo_sees_picto_box
+    wf_lenzo_sees_picto_box -.->|0x1701| wf_lenzo_research_assistant
+    wf_lenzo_research_assistant -.->|0x1601| wf_lenzo_three_assignments
+    wf_lenzo_research_assistant -.->|0x1601| wf_lenzo_deluxe_picto_box
+    wf_lenzo_research_assistant -.->|0x1601| wf_lenzo_legendary_pictograph
+    wf_hide_and_seek -.->|0x2201| wf_hide_and_seek_cleared
+    wf_hide_and_seek -.->|0x2201| wf_marie_asks_for_pendant
+    wf_hide_and_seek_cleared -.->|0x1340| wf_marie_asks_for_pendant
+    wf_marie_first_talk -.->|0x1E01| wf_marie_asks_for_pendant
+    wf_marie_asks_for_pendant -.->|0x1F80| wf_bees_point_at_the_tree
+    wf_bees_point_at_the_tree -.->|0x1E04| wf_joy_pendant_tree
+    wf_bees_point_at_the_tree -.->|0x1E04| wf_marie_joy_pendants
+    wf_marie_asks_for_pendant -.->|0x1F80| wf_marie_joy_pendants
+    wf_bees_point_at_the_tree -.->|0x1E04| wf_marie_preach
+    jab_arrive_windfall_night -.->|0x1F04| wf_auction
+    wf_auction_lots -.->|0x1004| wf_shop_guru_statue
+    jab_arrive_windfall_night -.->|0x1F04| wf_sploosh_kaboom
+    jab_arrive_windfall_night -.->|0x1F04| wf_chu_jelly_juice_shop
+    jab_arrive_windfall_night -.->|0x1F04| wf_bomb_shop
+    class opening_lookout_awake,aryll_tower_first_talk,grandma_birthday_talk,tale_demo_hero_clothes,aryll_omedeto,aryll_get_telescope,telescope_watch_quill,zelda_fly_helmaroc,aryll_etalk,grandma_after_prologue,orca_first_talk,orca_sparring_lesson,orca_gives_hero_sword,orca_spin_attack_lesson,grandma_after_sword,amori_bokoblin_dropin,amori_meet_tetra,outset_ridge_layer9,stolen_sister,outset_village_layer2,look_shield,grandma_gives_shield,grandma_after_kidnap,tetra_dock_conversation,tetra_board_ship,departure,post_outset_note,ff_ride_to_fortress,ff_launched_at_fortress,ff_arrive_exterior,ff_tower_looks,ff_tetra_ooi,ff_infiltration,ff_searchlight_look,ff_push_barrel,ff_interior_cells,ff_door_looks,ff_moblin_patrol,ff_find_sister,ff_meet_korl,ff_board_korl,dr_chieftain_dragontale,dr_medli_gives_letter,dr_medli_cliff_request,dr_throw_medli_to_ledge,dr_bomb_the_spring,dr_enter_cavern,dr_cavern_set_pieces,dr_trapped_with_bokoblins,dr_clear_room_bars_open,dr_grappling_hook,dr_carry_medli,dr_boss_warp_out,dr_valoo_calms,dr_dins_pearl,dr_secret_cave,fw_korl_sends_link_to_forest,fw_korl_forest_directions,fw_forest_haven_looks,fw_fall_into_forest_haven,fw_mori_inside,fw_meet_deku_tree,fw_woods_telop,fw_woods_cameras,fw_rescue_makar,fw_warp_out_with_makar,fw_boss_warpout_to_forest_haven,fw_getperl_deku,fw_makar_in_forest_haven,fw_korl_after_the_pearl,fw_otkura_boundary,jab_korl_points_to_greatfish,jab_korl_briefing_after_greatfish,jab_quill_at_greatfish,jab_bombshop_raid,jab_password_door,jab_board_pirate_ship,jab_rope_course_2,jab_rope_course_2_cleared,jab_get_bomb_bag,jab_korl_briefing_after_bombs,jab_blow_open_the_cave,jab_receive_nayrus_pearl,jab_curse_broken,jab_abship_not_in_this_chapter,totg_pearl_din,totg_first_statue_reaction,totg_place_pearl,totg_tower_rises,totg_tower_rises_cutscene,totg_arrive_tower,totg_enter_dungeon,totg_interior_camera_beats,totg_wake_servants,totg_trial_east,totg_trial_west,totg_trial_north,totg_pedestals_done,totg_warp_up,totg_big_key,totg_darknut,totg_get_bow,totg_heart_container,totg_boss_warp,totg_descend_shaft,totg_warp_to_hyrule,totg_return_from_tower,totg_later_return_to_hyrule,hy_warp_in,hy_descent,hy_courtyard,hy_intro,hy_floor_puzzle,hy_statue_moves,hy_draw_master_sword,hy_rebirth,hy_swing_sword,hy_fight_out,hy_warp_back,hy_return_route_opens,hy_second_visit_awake_zelda,hy_third_visit_swordroom_ambush,hy_third_visit_break_barrier,et_land_headstone,et_enter_edaichi,et_learn_earth_gods_lyric,et_dance_zola,et_duet_opens_earth_temple,et_hole_cam,et_inner_tablets,et_warp_jars,et_mkie_block_cameras,et_moro_cam,et_stalfos_miniboss,et_jalhalla,et_boss_warp,et_pray_zola,wt_land_gale_isle,wt_enter_ekaze,wt_learn_wind_gods_aria,wt_dance_kokiri,wt_duet_opens_wind_temple,wt_makar_sows_seeds,wt_inner_tablets,wt_wizzrobe_miniboss,wt_molgera,wt_boss_warp,wt_pray_kokiri,ff2_sail_to_fortress,ff2_land_at_fortress,ff2_enter_interior,ff2_moblins_patrol,ff2_interior_chests,ff2_skull_hammer,ff2_rescue,ff2_tower_redressed,ff2_enter_ganon_room,ff2_attack_ganon,ff2_runaway_majuto,ff2_after_endless_night,gt_tower_intro,gt_four_doors_open,gt_phantom_ganon,gt_puppet_ganon,gt_to_the_roof,gt_rooftop_confrontation,gt_endhr,gt_ending,gal_hatch_open,gal_enter,gal_meet_carlov,gal_collect_figure,gal_go_and_look,gal_hall_doors,gal_halls,gal_complete,pship_chart,pship_appear,pship_board,pship_treasure,pship_clear,steel_approach,steel_interior,steel_chest,sub_board,sub_interior,sub_ladder_down,sub_chests,shop_board,sea_ub_leads_not_mine,mg_fcp_arrive,mg_birdman_look,mg_birdman_launch,mg_birdman_flight,mg_birdman_prize,mg_boating_briefing,mg_boating_enter,mg_boating_reward,mg_squid_enter,mg_squid_play,mg_squid_prize,mg_cannon_game,mg_big_octo,mg_cyclones,mg_cyclones_off,mg_hoho_lookouts,mg_sea_platforms,wf_jail_entry_camera,wf_jail_picto_box,wf_jail_rotten_floor,wf_tingle_through_bars,wf_free_tingle,wf_lenzo_first_talk,wf_lenzo_attic_chests,wf_lenzo_sees_picto_box,wf_lenzo_research_assistant,wf_killer_bees_first_talk,wf_hide_and_seek,wf_hide_and_seek_cleared,wf_marie_first_talk,wf_marie_asks_for_pendant,wf_bees_point_at_the_tree,wf_joy_pendant_tree,wf_marie_preach,wf_auction,wf_moblins_letter,wf_cafe_bar_camera,wf_tott_dance,wf_bomb_shop,wf_hollo_shop_is_not_windfall ok;
+    class aj_speak_ambient,dr_komali_refuses,dr_gohma,fw_koroks_and_lift,fw_glide_to_forbidden_woods,fw_mothula,fw_kalle_demos,jab_bombshop_owner,jab_niko_second_course_intro,totg_gohdan,ff2_phantom_ganon,ff2_climb_the_wall,ff2_reach_the_tower,ff2_helmaroc_king,gt_trial_gohma,gt_trial_kalle_demos,gt_trial_jalhalla,gt_trial_molgera,mg_birdman_signup,wf_chu_jelly_juice_shop partial;
+    class dr_arrive_island,fw_arrive_forest_haven,fw_get_deku_leaf,fw_dungeon_items,fw_get_boomerang,fw_heart_container,jab_arrive_greatfish_ruined,jab_arrive_windfall_night,jab_return_to_outset,hy_hint,et_partner_hint_tags,wt_partner_hint_tags,gt_warp_appears,gal_show_pictograph,gal_wait_a_day,shop_buy,shop_membership,mg_birdman_result,mg_boating_start,mg_boating_goal,mg_boating_fail,mg_squid_end,mg_fishman_chart,mg_fishman_bow,mg_hyoi_seagull,wf_town_title_card,wf_lenzo_three_assignments,wf_lenzo_deluxe_picto_box,wf_lenzo_legendary_pictograph,wf_photograph_ub1,wf_marie_joy_pendants,wf_auction_lots,wf_stall_merchants,wf_shop_guru_statue,wf_sploosh_kaboom missing;
 ```
 
 | chapter | step | trigger | event | sets | status | why |
@@ -630,7 +831,7 @@ flowchart TD
 | outset | grandma_after_kidnap | talk |  | 0x0740 | ok | Game.story_talk - via actors/npc.gd |
 | outset | tetra_dock_conversation | npc | yuukaigo |  | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
 | outset | tetra_board_ship | talk |  |  | ok | Game.story_talk - via actors/npc.gd |
-| outset | departure | spawn | departure_DEMO | 0x2401 0x2401 0x2401 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| outset | departure | spawn | departure_DEMO | 0x2401 0x2401 0x2401 0x2401 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | outset | aj_speak_ambient | talk | AJ_SPEAK |  | partial | mined with low confidence |
 | outset | post_outset_note | spawn |  |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | fortress | ff_ride_to_fortress | spawn |  |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
@@ -644,15 +845,15 @@ flowchart TD
 | fortress | ff_interior_cells | spawn | kankin1 |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | fortress | ff_door_looks | tag | DoorLook1 |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
 | fortress | ff_moblin_patrol | tag | moro_cam |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
-| fortress | ff_find_sister | spawn | FIND_SISTER | 0x2580 0x2580 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
-| fortress | ff_meet_korl | spawn | MEETSHISHIOH | 0x0F80 0x2E01 0x2E01 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| fortress | ff_find_sister | spawn | FIND_SISTER | 0x2580 0x2580 0x2580 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| fortress | ff_meet_korl | spawn | MEETSHISHIOH | 0x0F80 0x2E01 0x2E01 0x2E01 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | fortress | ff_board_korl | board |  | 0x2A08 | ok | player.gd board() raises RODE_KORL the first time Link boards the boat |
 | dragonroost | dr_arrive_island | tag | ARRIVAL_DRG | 0x0902 | missing | no TagEv in sea orders 'ARRIVAL_DRG' |
 | dragonroost | dr_chieftain_dragontale | tag | demo10 |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
 | dragonroost | dr_medli_gives_letter | talk | Md_ItemGet | 0x0E02 | ok | Game.story_talk - via actors/npc.gd |
 | dragonroost | dr_komali_refuses | talk |  |  | partial | mined with low confidence |
 | dragonroost | dr_medli_cliff_request | talk | md_cliff | 0x1104 | ok | Game.story_talk - via actors/npc.gd |
-| dragonroost | dr_throw_medli_to_ledge | npc_tag | MD_FLY | 0x1102 | missing | a trigger volume that watches an NPC rather than the player (Medli gliding into the Dragon Roost updraft) |
+| dragonroost | dr_throw_medli_to_ledge | npc_tag | MD_FLY | 0x1102 | ok | actors/npc_tag.gd - a volume that box-tests one named NPC and never the player. Wired end to end, but not yet seen to fire in an integration test |
 | dragonroost | dr_bomb_the_spring | npc | Eskban |  | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
 | dragonroost | dr_enter_cavern | tag | TELOP_DORAGON |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
 | dragonroost | dr_cavern_set_pieces | tag | moro_cut |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
@@ -673,15 +874,15 @@ flowchart TD
 | forbiddenwoods | fw_mori_inside | spawn | MORI_INSIDE |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | forbiddenwoods | fw_meet_deku_tree | npc | meet_deku | 0x1801 | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
 | forbiddenwoods | fw_koroks_and_lift | npc | Calling |  | partial | mined with low confidence |
-| forbiddenwoods | fw_get_deku_leaf | item |  |  | missing | picking up a placed item actor. Needs the pickup's own spawn condition (itemDek only exists once the Deku Tree scene is done) plus a collected bit per placement |
+| forbiddenwoods | fw_get_deku_leaf | item |  |  | missing | trigger kind 'item' has no mechanism |
 | forbiddenwoods | fw_glide_to_forbidden_woods | room_enter |  |  | partial | mined with low confidence |
 | forbiddenwoods | fw_woods_telop | tag | TELOP_FOREST |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
 | forbiddenwoods | fw_woods_cameras | tag | StartCam |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
-| forbiddenwoods | fw_dungeon_items | item |  |  | missing | picking up a placed item actor. Needs the pickup's own spawn condition (itemDek only exists once the Deku Tree scene is done) plus a collected bit per placement |
+| forbiddenwoods | fw_dungeon_items | item |  |  | missing | trigger kind 'item' has no mechanism |
 | forbiddenwoods | fw_mothula | defeat |  |  | partial | the mechanism works, but 'gmos' has no mined enemy profile so nothing wraps the actor |
-| forbiddenwoods | fw_get_boomerang | item |  |  | missing | picking up a placed item actor. Needs the pickup's own spawn condition (itemDek only exists once the Deku Tree scene is done) plus a collected bit per placement |
+| forbiddenwoods | fw_get_boomerang | item |  |  | missing | trigger kind 'item' has no mechanism |
 | forbiddenwoods | fw_kalle_demos | defeat |  |  | partial | the mechanism works, but 'Bkm' has no mined enemy profile so nothing wraps the actor |
-| forbiddenwoods | fw_heart_container | item |  |  | missing | picking up a placed item actor. Needs the pickup's own spawn condition (itemDek only exists once the Deku Tree scene is done) plus a collected bit per placement |
+| forbiddenwoods | fw_heart_container | item |  |  | missing | trigger kind 'item' has no mechanism |
 | forbiddenwoods | fw_rescue_makar | npc | cb_rescue |  | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
 | forbiddenwoods | fw_warp_out_with_makar | npc | WARP_WIND |  | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
 | forbiddenwoods | fw_boss_warpout_to_forest_haven | spawn | BOSS_WARPOUT |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
@@ -694,7 +895,7 @@ flowchart TD
 | jabun | jab_korl_briefing_after_greatfish | talk |  | 0x0A01 | ok | Game.story_talk - via actors/npc.gd |
 | jabun | jab_quill_at_greatfish | talk |  |  | ok | Game.story_talk - via actors/npc.gd |
 | jabun | jab_arrive_windfall_night | tag | ARRIVAL_TWN | 0x1F04 | missing | no TagEv in sea_r11 orders 'ARRIVAL_TWN' |
-| jabun | jab_bombshop_raid | tag | bombshop | 0x2110 0x3B20 0x2110 0x2110 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| jabun | jab_bombshop_raid | tag | bombshop | 0x2110 0x3B20 0x2110 0x2110 0x2110 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
 | jabun | jab_bombshop_owner | npc | BMS_LAND_DEMO |  | partial | mined with low confidence |
 | jabun | jab_password_door | talk |  | 0x1910 0x3B20 | ok | Game.story_talk - via actors/npc.gd |
 | jabun | jab_board_pirate_ship | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
@@ -704,15 +905,15 @@ flowchart TD
 | jabun | jab_get_bomb_bag | chest | P2B_BOMB_GET |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
 | jabun | jab_korl_briefing_after_bombs | talk |  | 0x1F02 | ok | Game.story_talk - via actors/npc.gd |
 | jabun | jab_return_to_outset | tag | PUROLO_RETURN | 0x3E10 | missing | no TagEv in sea_r44 orders 'PUROLO_RETURN' |
-| jabun | jab_blow_open_the_cave | hit | ajav_uzu |  | missing | damaging a placed object with a weapon or bomb, which then orders its own event (blowing open Jabun's cave wall) |
-| jabun | jab_receive_nayrus_pearl | spawn | getperl_jab | 0x3920 0x3920 0x3920 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| jabun | jab_blow_open_the_cave | hit | ajav_uzu |  | ok | actors/hit_object.gd - take_hit stages that each order an event. The one mined case cannot fire: the Ajav wall is absent from the ripped placement data |
+| jabun | jab_receive_nayrus_pearl | spawn | getperl_jab | 0x3920 0x3920 0x3920 0x3920 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | jabun | jab_curse_broken | talk |  | 0x2F20 | ok | Game.story_talk - via actors/npc.gd |
 | jabun | jab_abship_not_in_this_chapter | room_enter | hasigo_down |  | ok | stage.gd - the stage's arrival event runs on load |
 | towerofgods | totg_pearl_din | npc | DOGUU_DEMO1 |  | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
 | towerofgods | totg_first_statue_reaction | npc | DOGUU_DEMO2 |  | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
 | towerofgods | totg_place_pearl | npc | DOGUU_DEMO3 | 0x1480 0x1440 0x1410 | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
 | towerofgods | totg_tower_rises | npc | MEGAMI_DEMO | 0x1E40 | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
-| towerofgods | totg_tower_rises_cutscene | spawn | towerd | 0x2E80 0x2E80 0x2E80 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| towerofgods | totg_tower_rises_cutscene | spawn | towerd | 0x2E80 0x2E80 0x2E80 0x2E80 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | towerofgods | totg_arrive_tower | spawn |  |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | towerofgods | totg_enter_dungeon | spawn | moro_scam |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | towerofgods | totg_interior_camera_beats | tag | moro_R06 |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
@@ -729,52 +930,52 @@ flowchart TD
 | towerofgods | totg_heart_container | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
 | towerofgods | totg_boss_warp | warp | WARP_WIND |  | ok | actors/warp_object.gd - picks WHICH event to order from save state, the way daWarpf_c::CreateInit does, then plays it and changes stage |
 | towerofgods | totg_descend_shaft | spawn | JMP_DEMO |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
-| towerofgods | totg_warp_to_hyrule | spawn | warp_in | 0x2D10 0x2D10 0x2D10 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| towerofgods | totg_warp_to_hyrule | spawn | warp_in | 0x2D10 0x2D10 0x2D10 0x2D10 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | towerofgods | totg_return_from_tower | warp | TOWER_WARPOUT |  | ok | actors/warp_object.gd - picks WHICH event to order from save state, the way daWarpf_c::CreateInit does, then plays it and changes stage |
-| towerofgods | totg_later_return_to_hyrule | spawn | warphole | 0x2D08 0x2D08 0x2D08 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
-| hyrule | hy_warp_in | spawn | warp_in | 0x2D10 0x2D10 0x2D10 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| towerofgods | totg_later_return_to_hyrule | spawn | warphole | 0x2D08 0x2D08 0x2D08 0x2D08 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| hyrule | hy_warp_in | spawn | warp_in | 0x2D10 0x2D10 0x2D10 0x2D10 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | hyrule | hy_descent | spawn | warp_out |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | hyrule | hy_courtyard | spawn |  |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | hyrule | hy_intro | spawn | hy_intro |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | hyrule | hy_hint | tag | HIRL_HINT |  | missing | no TagEv in Hyroom orders 'HIRL_HINT' |
 | hyrule | hy_floor_puzzle | object | MtryB_sink |  | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
 | hyrule | hy_statue_moves | object | move_YLzou |  | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
-| hyrule | hy_draw_master_sword | tag | master_sword | 0x2D04 0x2D04 0x2D04 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| hyrule | hy_draw_master_sword | tag | master_sword | 0x2D04 0x2D04 0x2D04 0x2D04 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
 | hyrule | hy_rebirth | spawn | rebirth_hyral | 0x3802 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
-| hyrule | hy_swing_sword | spawn | swing_sword | 0x3A04 0x3A04 0x3A04 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| hyrule | hy_swing_sword | spawn | swing_sword | 0x3A04 0x3A04 0x3A04 0x3A04 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | hyrule | hy_fight_out | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
 | hyrule | hy_warp_back | object | TO_SEA_WARP_1 | 0x3810 | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
-| hyrule | hy_return_route_opens | spawn | warphole | 0x2D08 0x2D08 0x2D08 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
-| hyrule | hy_second_visit_awake_zelda | tag | to_awake_zl | 0x2D02 0x2D02 0x2D02 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| hyrule | hy_return_route_opens | spawn | warphole | 0x2D08 0x2D08 0x2D08 0x2D08 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| hyrule | hy_second_visit_awake_zelda | tag | to_awake_zl | 0x2D02 0x2D02 0x2D02 0x2D02 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
 | hyrule | hy_third_visit_swordroom_ambush | tag | btl_of_swroom |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
-| hyrule | hy_third_visit_break_barrier | object | seal | 0x2C02 0x3B08 0x3B08 0x3B08 | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
+| hyrule | hy_third_visit_break_barrier | object | seal | 0x2C02 0x3B08 0x3B08 0x3B08 0x3B08 | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
 | temples | et_land_headstone | board |  | 0x2E04 | ok | player.gd board() raises RODE_KORL the first time Link boards the boat |
 | temples | et_enter_edaichi | spawn |  |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | temples | et_learn_earth_gods_lyric | talk | MKNJD_D_LESSON |  | ok | Game.story_talk - via actors/npc.gd |
-| temples | et_dance_zola | spawn | dance_zola | 0x2D40 0x2D40 0x2D40 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
-| temples | et_duet_opens_earth_temple | conduct | MKNJD_D_DEMO | 0x2920 | missing | the Wind Waker duets. Needs a conducting mode with song ids, a two-body proximity and facing test against the partner, and a success/failure branch |
+| temples | et_dance_zola | spawn | dance_zola | 0x2D40 0x2D40 0x2D40 0x2D40 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| temples | et_duet_opens_earth_temple | conduct | MKNJD_D_DEMO | 0x2920 | ok | player.gd CONDUCT state + Game.conduct_tick - the tablet's song, the 800-unit two-body proximity and the facing test, with a real ERROR branch |
 | temples | et_hole_cam | tag | HoleCam | 0x2920 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
 | temples | et_partner_hint_tags | tag | md_tag_message |  | missing | no TagEv in M_Dai orders 'md_tag_message' |
-| temples | et_inner_tablets | conduct | MKNJD_D_DEMO |  | missing | the Wind Waker duets. Needs a conducting mode with song ids, a two-body proximity and facing test against the partner, and a success/failure branch |
+| temples | et_inner_tablets | conduct | MKNJD_D_DEMO |  | ok | player.gd CONDUCT state + Game.conduct_tick - the tablet's song, the 800-unit two-body proximity and the facing test, with a real ERROR branch |
 | temples | et_warp_jars | npc | WARPT_OPEN |  | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
 | temples | et_mkie_block_cameras | tag | MkieB_die |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
 | temples | et_moro_cam | tag | moro_D03 |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
 | temples | et_stalfos_miniboss | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
 | temples | et_jalhalla | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
 | temples | et_boss_warp | npc | WARP_WIND |  | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
-| temples | et_pray_zola | spawn | pray_zola | 0x3A02 0x3A02 0x3A02 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| temples | et_pray_zola | spawn | pray_zola | 0x3A02 0x3A02 0x3A02 0x3A02 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | temples | wt_land_gale_isle | board |  | 0x2E02 | ok | player.gd board() raises RODE_KORL the first time Link boards the boat |
 | temples | wt_enter_ekaze | spawn |  |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | temples | wt_learn_wind_gods_aria | talk | MKNJD_K_LESSON |  | ok | Game.story_talk - via actors/npc.gd |
-| temples | wt_dance_kokiri | spawn | dance_kokiri | 0x2D20 0x2D20 0x2D20 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
-| temples | wt_duet_opens_wind_temple | conduct | MKNJD_K_DEMO | 0x2910 | missing | the Wind Waker duets. Needs a conducting mode with song ids, a two-body proximity and facing test against the partner, and a success/failure branch |
+| temples | wt_dance_kokiri | spawn | dance_kokiri | 0x2D20 0x2D20 0x2D20 0x2D20 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| temples | wt_duet_opens_wind_temple | conduct | MKNJD_K_DEMO | 0x2910 | ok | player.gd CONDUCT state + Game.conduct_tick - the tablet's song, the 800-unit two-body proximity and the facing test, with a real ERROR branch |
 | temples | wt_partner_hint_tags | tag | cb_tag_message |  | missing | no TagEv in kaze orders 'cb_tag_message' |
 | temples | wt_makar_sows_seeds | npc | cb_sow |  | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
-| temples | wt_inner_tablets | conduct | MKNJD_K_DEMO |  | missing | the Wind Waker duets. Needs a conducting mode with song ids, a two-body proximity and facing test against the partner, and a success/failure branch |
+| temples | wt_inner_tablets | conduct | MKNJD_K_DEMO |  | ok | player.gd CONDUCT state + Game.conduct_tick - the tablet's song, the 800-unit two-body proximity and the facing test, with a real ERROR branch |
 | temples | wt_wizzrobe_miniboss | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
 | temples | wt_molgera | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
 | temples | wt_boss_warp | npc | WARP_WIND |  | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
-| temples | wt_pray_kokiri | spawn | pray_kokiri | 0x4004 0x4004 0x4004 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| temples | wt_pray_kokiri | spawn | pray_kokiri | 0x4004 0x4004 0x4004 0x4004 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | fortress2 | ff2_sail_to_fortress | tag | BEAST_GATE | 0x3040 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
 | fortress2 | ff2_land_at_fortress | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
 | fortress2 | ff2_enter_interior | spawn | kankin2 |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
@@ -784,14 +985,14 @@ flowchart TD
 | fortress2 | ff2_skull_hammer | chest |  |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
 | fortress2 | ff2_climb_the_wall | tag | MapToolCamera |  | partial | mined with low confidence |
 | fortress2 | ff2_reach_the_tower | room_enter |  |  | partial | mined with low confidence |
-| fortress2 | ff2_rescue | spawn | rescue | 0x2D01 0x2D01 0x2D01 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| fortress2 | ff2_rescue | spawn | rescue | 0x2D01 0x2D01 0x2D01 0x2D01 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | fortress2 | ff2_tower_redressed | spawn |  |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | fortress2 | ff2_helmaroc_king | defeat |  | 0x3C01 | partial | the mechanism works, but 'Bdk' has no mined enemy profile so nothing wraps the actor |
-| fortress2 | ff2_enter_ganon_room | spawn | attack_ganon | 0x3910 0x3910 0x3910 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
-| fortress2 | ff2_attack_ganon | spawn | attack_ganon | 0x3910 0x3910 0x3910 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
-| fortress2 | ff2_runaway_majuto | spawn | runaway_majuto | 0x3280 0x3280 0x3280 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| fortress2 | ff2_enter_ganon_room | spawn | attack_ganon | 0x3910 0x3910 0x3910 0x3910 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| fortress2 | ff2_attack_ganon | spawn | attack_ganon | 0x3910 0x3910 0x3910 0x3910 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| fortress2 | ff2_runaway_majuto | spawn | runaway_majuto | 0x3280 0x3280 0x3280 0x3280 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | fortress2 | ff2_after_endless_night | room_enter | kankin1 |  | ok | stage.gd - the stage's arrival event runs on load |
-| ganon | gt_warp_appears | actor | APPEAR_WARP | 0x3D02 | missing | a placed object resolves its event by NAME through the event manager |
+| ganon | gt_warp_appears | actor | APPEAR_WARP | 0x3D02 | missing | a placed object resolves its event by NAME through the event manager; nothing in the engine does that yet |
 | ganon | gt_tower_intro | tag | Gintro2 |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
 | ganon | gt_trial_gohma | boss | 4_door_dn | 0x3240 0x3904 | partial | the mechanism works, but 'Btd' has no mined enemy profile so nothing wraps the actor |
 | ganon | gt_trial_kalle_demos | boss | 4_door_mr | 0x3220 0x3902 | partial | the mechanism works, but 'Bkm' has no mined enemy profile so nothing wraps the actor |
@@ -799,11 +1000,97 @@ flowchart TD
 | ganon | gt_trial_molgera | boss | 4_door_kz | 0x3208 0x3A80 | partial | the mechanism works, but 'Bmgn' has no mined enemy profile so nothing wraps the actor |
 | ganon | gt_four_doors_open | bits | 4_door_fin | 0x3204 | ok | Game.story_bits_tick - fires as soon as every requires_bits entry is set |
 | ganon | gt_phantom_ganon | spawn | GANON_ARRIVE |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
-| ganon | gt_puppet_ganon | spawn | kugutu_ganon | 0x3B02 0x3B02 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| ganon | gt_puppet_ganon | spawn | kugutu_ganon | 0x3B02 0x3B02 0x3B02 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | ganon | gt_to_the_roof | spawn | to_roof |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
-| ganon | gt_rooftop_confrontation | spawn | g2before | 0x4002 0x4002 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
-| ganon | gt_endhr | spawn | endhr | 0x3F40 0x3F40 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| ganon | gt_rooftop_confrontation | spawn | g2before | 0x4002 0x4002 0x4002 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| ganon | gt_endhr | spawn | endhr | 0x3F40 0x3F40 0x3F40 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | ganon | gt_ending | spawn | ending |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| gallery | gal_hatch_open | npc | FIGURE_HATCH_OPEN |  | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
+| gallery | gal_enter | tag | nitendo |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| gallery | gal_meet_carlov | talk |  | 0x2F02 | ok | Game.story_talk - via actors/npc.gd |
+| gallery | gal_show_pictograph | photo |  | 0x2F01 0x3401 | missing | taking or delivering a pictograph: a camera mode plus a per-subject result value |
+| gallery | gal_wait_a_day | day_change |  | 0x3080 | missing | trigger kind 'day_change' has no mechanism |
+| gallery | gal_collect_figure | talk |  | 0x4080 0x3A01 | ok | Game.story_talk - via actors/npc.gd |
+| gallery | gal_go_and_look | warp |  | 0x3F01 | ok | actors/warp_object.gd - picks WHICH event to order from save state, the way daWarpf_c::CreateInit does, then plays it and changes stage |
+| gallery | gal_hall_doors | object |  |  | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
+| gallery | gal_halls | room_enter | FIGURE_CHECK |  | ok | stage.gd - the stage's arrival event runs on load |
+| gallery | gal_complete | bits |  | 0x3D08 | ok | Game.story_bits_tick - fires as soon as every requires_bits entry is set |
+| gallery | pship_chart | chest |  |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
+| gallery | pship_appear | object |  |  | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
+| gallery | pship_board | board |  |  | ok | player.gd board() raises RODE_KORL the first time Link boards the boat |
+| gallery | pship_treasure | chest | DEFAULT_TREASURE |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
+| gallery | pship_clear | object | PSHIP_CLEAR |  | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
+| gallery | steel_approach | object |  |  | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
+| gallery | steel_interior | warp |  |  | ok | actors/warp_object.gd - picks WHICH event to order from save state, the way daWarpf_c::CreateInit does, then plays it and changes stage |
+| gallery | steel_chest | chest |  |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
+| gallery | sub_board | board |  |  | ok | player.gd board() raises RODE_KORL the first time Link boards the boat |
+| gallery | sub_interior | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
+| gallery | sub_ladder_down | tag | hasigo_down |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| gallery | sub_chests | chest |  |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
+| gallery | shop_board | board |  |  | ok | player.gd board() raises RODE_KORL the first time Link boards the boat |
+| gallery | shop_buy | buy | BS1_GETDEMO |  | missing | trigger kind 'buy' has no mechanism |
+| gallery | shop_membership | show_item | PUT_PRAICE_TICKET |  | missing | holding an inventory item out to an NPC (dEvtCnd_CANTALKITEM_e): a talk that carries the selected item id, with the NPC branching on it |
+| gallery | sea_ub_leads_not_mine | talk |  |  | ok | Game.story_talk - via actors/npc.gd |
+| minigames | mg_fcp_arrive | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
+| minigames | mg_birdman_look | tag | BirdLook |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| minigames | mg_birdman_signup | talk |  |  | partial | mined with low confidence |
+| minigames | mg_birdman_launch | tag | BMCON_NEXT |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| minigames | mg_birdman_flight | spawn | BirdStart |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| minigames | mg_birdman_result | score | BMCON_END |  | missing | trigger kind 'score' has no mechanism |
+| minigames | mg_birdman_prize | talk | BMCON_GET_ITEM |  | ok | Game.story_talk - via actors/npc.gd |
+| minigames | mg_boating_briefing | talk | SARACE_EXPCAM |  | ok | Game.story_talk - via actors/npc.gd |
+| minigames | mg_boating_enter | warp | race_start_cam |  | ok | actors/warp_object.gd - picks WHICH event to order from save state, the way daWarpf_c::CreateInit does, then plays it and changes stage |
+| minigames | mg_boating_start | timer | race_start_cam |  | missing | trigger kind 'timer' has no mechanism |
+| minigames | mg_boating_goal | score | race_goal_cam |  | missing | trigger kind 'score' has no mechanism |
+| minigames | mg_boating_fail | timer | race_fail_cam |  | missing | trigger kind 'timer' has no mechanism |
+| minigames | mg_boating_reward | talk |  |  | ok | Game.story_talk - via actors/npc.gd |
+| minigames | mg_squid_enter | warp |  |  | ok | actors/warp_object.gd - picks WHICH event to order from save state, the way daWarpf_c::CreateInit does, then plays it and changes stage |
+| minigames | mg_squid_play | talk | MINIGAME_START |  | ok | Game.story_talk - via actors/npc.gd |
+| minigames | mg_squid_end | score | MINIGAME_END |  | missing | trigger kind 'score' has no mechanism |
+| minigames | mg_squid_prize | talk | KAISEN_GETITEM |  | ok | Game.story_talk - via actors/npc.gd |
+| minigames | mg_cannon_game | talk | CANON_GAME |  | ok | Game.story_talk - via actors/npc.gd |
+| minigames | mg_big_octo | defeat | DAIOCTA_DEAD |  | ok | actors/enemy.gd death -> Game.story_enemy_defeated / story_room_cleared; a dungeon boss also writes the per-stage boss_dead field, which is NOT an event bit |
+| minigames | mg_cyclones | object |  |  | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
+| minigames | mg_cyclones_off | npc | TACT0_RT | 0x2710 | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
+| minigames | mg_hoho_lookouts | talk |  |  | ok | Game.story_talk - via actors/npc.gd |
+| minigames | mg_fishman_chart | item | SO_MAPOPEN |  | missing | trigger kind 'item' has no mechanism |
+| minigames | mg_fishman_bow | score | SO_BOW |  | missing | trigger kind 'score' has no mechanism |
+| minigames | mg_hyoi_seagull | item | kamome_call |  | missing | trigger kind 'item' has no mechanism |
+| minigames | mg_sea_platforms | object |  |  | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
+| windfall | wf_town_title_card | tag | TELOP_TAURA |  | missing | no TagEv in sea_r11 orders 'TELOP_TAURA' |
+| windfall | wf_jail_entry_camera | tag | First |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| windfall | wf_jail_picto_box | chest |  |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
+| windfall | wf_jail_rotten_floor | object | NZFALL |  | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
+| windfall | wf_tingle_through_bars | talk | TC_TALK_NEAR_JAIL | 0x0B40 | ok | Game.story_talk - via actors/npc.gd |
+| windfall | wf_free_tingle | tag | OpenDoor | 0x0B80 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| windfall | wf_lenzo_first_talk | talk |  | 0x1208 | ok | Game.story_talk - via actors/npc.gd |
+| windfall | wf_lenzo_attic_chests | chest |  |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
+| windfall | wf_lenzo_sees_picto_box | talk |  | 0x1701 | ok | Game.story_talk - via actors/npc.gd |
+| windfall | wf_lenzo_research_assistant | npc | PHOTO_TALK | 0x1601 | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
+| windfall | wf_lenzo_three_assignments | photo |  |  | missing | taking or delivering a pictograph: a camera mode plus a per-subject result value |
+| windfall | wf_lenzo_deluxe_picto_box | show_item |  |  | missing | holding an inventory item out to an NPC (dEvtCnd_CANTALKITEM_e): a talk that carries the selected item id, with the NPC branching on it |
+| windfall | wf_lenzo_legendary_pictograph | photo |  | 0x3808 | missing | taking or delivering a pictograph: a camera mode plus a per-subject result value |
+| windfall | wf_photograph_ub1 | photo | UB1_TALK_PHOTO_GET_ITEM | 0x0A40 0x2102 | missing | taking or delivering a pictograph: a camera mode plus a per-subject result value |
+| windfall | wf_killer_bees_first_talk | talk |  | 0x1210 | ok | Game.story_talk - via actors/npc.gd |
+| windfall | wf_hide_and_seek | talk | MK_GAMESTART | 0x2201 | ok | Game.story_talk - via actors/npc.gd |
+| windfall | wf_hide_and_seek_cleared | npc | MK_GAMESET | 0x1340 | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
+| windfall | wf_marie_first_talk | talk |  | 0x1E01 | ok | Game.story_talk - via actors/npc.gd |
+| windfall | wf_marie_asks_for_pendant | talk |  | 0x1F80 | ok | Game.story_talk - via actors/npc.gd |
+| windfall | wf_bees_point_at_the_tree | talk | MK_TALK3 | 0x1E04 | ok | Game.story_talk - via actors/npc.gd |
+| windfall | wf_joy_pendant_tree | hit | MK_PENDANT | 0x1E02 | ok | actors/hit_object.gd - take_hit stages that each order an event. The one mined case cannot fire: the Ajav wall is absent from the ripped placement data |
+| windfall | wf_marie_joy_pendants | show_item |  | 0x1C08 0x1C04 | missing | holding an inventory item out to an NPC (dEvtCnd_CANTALKITEM_e): a talk that carries the selected item id, with the NPC branching on it |
+| windfall | wf_marie_preach | npc | HO_PREACH |  | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
+| windfall | wf_auction | spawn | Auction |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| windfall | wf_auction_lots | minigame | AUCTION_GET_ITEM | 0x0F01 0x1080 0x1040 0x1020 0x1008 0x1004 0x4008 | missing | an outcome decided by a scored activity rather than a position or a bit |
+| windfall | wf_moblins_letter | talk | Get_Mo3_Ltr | 0x1908 | ok | Game.story_talk - via actors/npc.gd |
+| windfall | wf_cafe_bar_camera | tag | FirstCamera |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| windfall | wf_stall_merchants | show_item | ROTEN_EXCHANGE_1ST | 0x1320 0x1310 0x1308 0x1304 0x1302 0x1301 | missing | holding an inventory item out to an NPC (dEvtCnd_CANTALKITEM_e): a talk that carries the selected item id, with the NPC branching on it |
+| windfall | wf_shop_guru_statue | show_item |  | 0x3E04 | missing | holding an inventory item out to an NPC (dEvtCnd_CANTALKITEM_e): a talk that carries the selected item id, with the NPC branching on it |
+| windfall | wf_tott_dance | conduct | TACT_TT10 | 0x0B08 0x0C40 | ok | player.gd CONDUCT state + Game.conduct_tick - the tablet's song, the 800-unit two-body proximity and the facing test, with a real ERROR branch |
+| windfall | wf_sploosh_kaboom | minigame | KAISEN_GETITEM |  | missing | an outcome decided by a scored activity rather than a position or a bit |
+| windfall | wf_chu_jelly_juice_shop | spawn | next_link |  | partial | mined with low confidence |
+| windfall | wf_bomb_shop | tag | bombshop | 0x2110 0x2110 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| windfall | wf_hollo_shop_is_not_windfall | spawn | WALK_START |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 
 ## 3. What is not mined yet
 

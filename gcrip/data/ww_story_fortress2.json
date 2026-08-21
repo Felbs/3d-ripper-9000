@@ -416,6 +416,7 @@
    "sets_bits": [
     "0x2D01",
     "0x2D01",
+    "0x2D01",
     "0x2D01"
    ],
    "gives_item": null,
@@ -428,7 +429,7 @@
     "src/d/d_event_data.cpp:13-51",
     "src/d/actor/d_a_obj_tide.cpp:390-396"
    ],
-   "notes": "4221 frames, 140.7 s - the longest cutscene of the chapter. Its demo actors are all placed on M2tower layer 1 around spawn 16: Ls1 (Aryll) at (3469, 3945, -2659), Zl1 (Tetra) at (3951, 3939, -3788), P1a at (4100, 3939, -3967), P1b at (3852, 3938, -3629) and Dk, the NPC Helmaroc King, at (3503, 4548, -3390). Dialogue (messages 1211-1232 of zel_00, baked into the .stb): 'Big Brother!' / 'The cell won't open that easily!' / 'we had to draw that monster bird off for you' / '...That sword! Where did you get that?!' / 'For now, we'll just take these girls' / 'Gonzo! Excellent! Take this one for me.' / 'We'll be back. I swear it!'. daObjTide's Act_c::chk_demo_rescue watches for this event by name and drives the water with it - M2tower places two Tide3 actors. rescue.stb raises 0x2D01 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). rescue.stb raises 0x2D01 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+   "notes": "4221 frames, 140.7 s - the longest cutscene of the chapter. Its demo actors are all placed on M2tower layer 1 around spawn 16: Ls1 (Aryll) at (3469, 3945, -2659), Zl1 (Tetra) at (3951, 3939, -3788), P1a at (4100, 3939, -3967), P1b at (3852, 3938, -3629) and Dk, the NPC Helmaroc King, at (3503, 4548, -3390). Dialogue (messages 1211-1232 of zel_00, baked into the .stb): 'Big Brother!' / 'The cell won't open that easily!' / 'we had to draw that monster bird off for you' / '...That sword! Where did you get that?!' / 'For now, we'll just take these girls' / 'Gonzo! Excellent! Take this one for me.' / 'We'll be back. I swear it!'. daObjTide's Act_c::chk_demo_rescue watches for this event by name and drives the water with it - M2tower places two Tide3 actors. rescue.stb raises 0x2D01 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). rescue.stb raises 0x2D01 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). rescue.stb raises 0x2D01 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
   },
   {
    "id": "ff2_tower_redressed",
@@ -499,6 +500,7 @@
    "sets_bits": [
     "0x3910",
     "0x3910",
+    "0x3910",
     "0x3910"
    ],
    "gives_item": null,
@@ -509,7 +511,7 @@
     "out/rip/GZLE01/godot/events/M2ganon.json:attack_ganon",
     "out/rip/GZLE01/godot/cutscenes/attack_ganon.json"
    ],
-   "notes": "M2ganon is a tiny stage - 21 placed actors: the door back to M2tower (spawn 20), three Search searchlights far below, eleven Ikari anchors, four RopeR at y 13202 (the rigging over the room), a dmgroom, and Zl1 (Tetra) at (2007, 11677, -8886) waiting just inside. Ganondorf himself is not in the placement data; he is a demo actor created by the .stb. attack_ganon.stb raises 0x3910 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). attack_ganon.stb raises 0x3910 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+   "notes": "M2ganon is a tiny stage - 21 placed actors: the door back to M2tower (spawn 20), three Search searchlights far below, eleven Ikari anchors, four RopeR at y 13202 (the rigging over the room), a dmgroom, and Zl1 (Tetra) at (2007, 11677, -8886) waiting just inside. Ganondorf himself is not in the placement data; he is a demo actor created by the .stb. attack_ganon.stb raises 0x3910 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). attack_ganon.stb raises 0x3910 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). attack_ganon.stb raises 0x3910 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
   },
   {
    "id": "ff2_attack_ganon",
@@ -528,6 +530,7 @@
    "sets_bits": [
     "0x3910",
     "0x3910",
+    "0x3910",
     "0x3910"
    ],
    "gives_item": null,
@@ -538,7 +541,7 @@
     "src/d/d_event_data.cpp:798-800",
     "src/d/d_event_data.cpp:13-51"
    ],
-   "notes": "4105 frames, 136.8 s. Dialogue (messages 1234-1252 of zel_00): 'It's been a while, boy.' / 'My name is Ganondorf... And I am the master of Forsaken Fortress.' / 'By withdrawing the blade, you have broken that seal...' / 'You cannot defeat me with a blade that does not sparkle with the power to repel evil!' / 'Its power is gone, and its edges are dull!' / Tetra: '{name}! Get up!' / 'My Triforce of Power is resonating! ...Princess Zelda!'. This is why 0x3910 exists: while it is set and 0x2D02 is not, the King of Red Lions changes his line to msgNo 0xD7B and several of his behaviours are refused (src/d/actor/d_a_ship.cpp:466-472, 3485, 3499, 3515, 4136). attack_ganon.stb raises 0x3910 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). attack_ganon.stb raises 0x3910 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+   "notes": "4105 frames, 136.8 s. Dialogue (messages 1234-1252 of zel_00): 'It's been a while, boy.' / 'My name is Ganondorf... And I am the master of Forsaken Fortress.' / 'By withdrawing the blade, you have broken that seal...' / 'You cannot defeat me with a blade that does not sparkle with the power to repel evil!' / 'Its power is gone, and its edges are dull!' / Tetra: '{name}! Get up!' / 'My Triforce of Power is resonating! ...Princess Zelda!'. This is why 0x3910 exists: while it is set and 0x2D02 is not, the King of Red Lions changes his line to msgNo 0xD7B and several of his behaviours are refused (src/d/actor/d_a_ship.cpp:466-472, 3485, 3499, 3515, 4136). attack_ganon.stb raises 0x3910 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). attack_ganon.stb raises 0x3910 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). attack_ganon.stb raises 0x3910 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
   },
   {
    "id": "ff2_runaway_majuto",
@@ -557,6 +560,7 @@
    "sets_bits": [
     "0x3280",
     "0x3280",
+    "0x3280",
     "0x3280"
    ],
    "gives_item": null,
@@ -567,7 +571,7 @@
     "out/rip/GZLE01/godot/cutscenes/runaway_majuto.json",
     "tools/ww_story_mine.py ADMumi"
    ],
-   "notes": "OUTSIDE THE ASSIGNED STAGE SET, included because it is the other half of the confrontation and nothing else reaches it: ADMumi ('the sea, demo') is where attack_ganon deposits Link. 1780 frames, 59.3 s. Dialogue (messages 1253-1259): 'It's all right, {name}! She has merely lost consciousness.' / 'Your sister has escaped the Forsaken Fortress with the pirates. You can relax. She's safe now.' / 'Lord Valoo! You arrived not a moment too soon...' / 'Ganon cannot be destroyed by such simple means as wrath and fire.' / '{name}, I will explain things later! Now we must return to the world beneath the sea!'. ADMumi's other spawns (201 warp_in, 232 warphole, 0/1/2 towerd/towerf/towern) belong to the Tower of the Gods and the endgame, not here. 0x3280 is the chapter's last bit and it dresses Hyrule and Hyroom with layer|2 for the next one. runaway_majuto.stb raises 0x3280 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). runaway_majuto.stb raises 0x3280 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+   "notes": "OUTSIDE THE ASSIGNED STAGE SET, included because it is the other half of the confrontation and nothing else reaches it: ADMumi ('the sea, demo') is where attack_ganon deposits Link. 1780 frames, 59.3 s. Dialogue (messages 1253-1259): 'It's all right, {name}! She has merely lost consciousness.' / 'Your sister has escaped the Forsaken Fortress with the pirates. You can relax. She's safe now.' / 'Lord Valoo! You arrived not a moment too soon...' / 'Ganon cannot be destroyed by such simple means as wrath and fire.' / '{name}, I will explain things later! Now we must return to the world beneath the sea!'. ADMumi's other spawns (201 warp_in, 232 warphole, 0/1/2 towerd/towerf/towern) belong to the Tower of the Gods and the endgame, not here. 0x3280 is the chapter's last bit and it dresses Hyrule and Hyroom with layer|2 for the next one. runaway_majuto.stb raises 0x3280 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). runaway_majuto.stb raises 0x3280 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). runaway_majuto.stb raises 0x3280 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
   },
   {
    "id": "ff2_after_endless_night",

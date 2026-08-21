@@ -443,6 +443,7 @@
    ],
    "sets_bits": [
     "0x2580",
+    "0x2580",
     "0x2580"
    ],
    "gives_item": null,
@@ -451,7 +452,7 @@
     "out/rip/GZLE01/stages/Mjtower/Mjtower_report.json",
     "out/rip/GZLE01/godot/cutscenes/find_sister.json"
    ],
-   "notes": "Link finds Aryll in the cell at the top of the tower - and the Helmaroc King finds him. Mjtower's only other story script is AHEAHE, the shared boss-defeat event every boss stage carries. find_sister.stb raises 0x2580 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). find_sister.stb raises 0x2580 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+   "notes": "Link finds Aryll in the cell at the top of the tower - and the Helmaroc King finds him. Mjtower's only other story script is AHEAHE, the shared boss-defeat event every boss stage carries. find_sister.stb raises 0x2580 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). find_sister.stb raises 0x2580 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). find_sister.stb raises 0x2580 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
   },
   {
    "id": "ff_meet_korl",
@@ -468,6 +469,7 @@
    "sets_bits": [
     "0x0F80",
     "0x2E01",
+    "0x2E01",
     "0x2E01"
    ],
    "gives_item": null,
@@ -478,7 +480,7 @@
     "out/rip/GZLE01/stages/sea/sea_report.json:spawns",
     "out/rip/GZLE01/godot/cutscenes/meetshishioh.json"
    ],
-   "notes": "'shishioh' is lion king. With MET_KORL set the continue table sends a save to sea room 11 (Windfall) start code 128. meetshishioh.stb raises 0x2E01 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). meetshishioh.stb raises 0x2E01 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+   "notes": "'shishioh' is lion king. With MET_KORL set the continue table sends a save to sea room 11 (Windfall) start code 128. meetshishioh.stb raises 0x2E01 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). meetshishioh.stb raises 0x2E01 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). meetshishioh.stb raises 0x2E01 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
   },
   {
    "id": "ff_board_korl",

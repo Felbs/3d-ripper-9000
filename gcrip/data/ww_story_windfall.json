@@ -1,0 +1,1672 @@
+{
+ "_source": "Mined read-only from the zeldaret/tww decompilation at Z:/memRip/sources/tww and the ripped GZLE01 (Wind Waker USA) disc data at Z:/3d ripper/out/rip/GZLE01. Area: WINDFALL ISLAND and its side quests - sea room 11 (the town) plus the interiors Opub (Cafe Bar), Obombh (Bomb Shop), Pnezumi (Town Jail), Nitiyou (Mrs. Marie's School), Pdrgsh (Chu Jelly Juice Shop), Ocmera (Lenzo's House), Orichh (House of Wealth / the auction) and Kaisen (Salvatore's battleship game). Ocrogh was checked and is NOT Windfall - see step wf_hollo_shop_is_not_windfall. Same schema and conventions as ww_story_fortress.json. Event names come from each stage's Stage.arc/event_list.dat and from the stage.dzs EVNT table (dumped by tools/ww_story_mine.py). Triggers come from stage.dzs / room.dzr placement chunks - PLYR spawn points (params>>24 = index into the stage's EVNT table), TagEv volumes (params: >>24 EVNT index, >>16&0xFF switch2, >>8&0xFF switch, &0xFF daTag_Event_c::Action_e; rot.z = required event bit), TRES chests (item id = (rot.z>>8)&0xFF, include/d/actor/d_a_tbox.h:37) and `item` actors (item id = params&0xFF, include/d/actor/d_a_item.h:141) - and from the NPC actors themselves. UNLIKE the dungeon chapters, almost nothing in Windfall is placement-triggered: the side quests live inside the NPC actors, which walk message ids and event REGISTERS (0xC0FF, 0xC407, 0xC103, 0xCB03/0xCA03/0xC903, 0x790F, 0xCD03) as much as event bits, so this file documents registers in _bits alongside the real bits and says which is which. Event-bit ids are authoritative numbers; the UNK_xxxx names are placeholders invented by the decomp team (include/d/d_save_event_flag.inc says so itself), so numeric ids are used here. The island's arrival bit 0x1F04 / ARRIVAL_TWN and the bomb-shop raid are already mined in gcrip/data/ww_story_jabun.json and are cross-referenced, not repeated.",
+ "_bits": {
+  "0x0B40": {
+   "dec": 2880,
+   "byte_mask": [
+    11,
+    64
+   ],
+   "meaning": "Link has spoken to Tingle through the bars of the Windfall jail at least once. daNpc_Tc_c raises it the first time it runs the TC_TALK_NEAR_JAIL branch and uses it to pick which of the three jail-side talk events plays (5/6 = first time, 7 = repeat) and which message id getMsgNormal returns (0x10D3 vs 0x10D9).",
+   "set_by": "src/d/actor/d_a_npc_tc.cpp:1231, src/d/actor/d_a_npc_tc.cpp:1291",
+   "read_by": [
+    "src/d/actor/d_a_npc_tc.cpp:921",
+    "src/d/actor/d_a_npc_tc.cpp:1221",
+    "src/d/actor/d_a_npc_tc.cpp:1285"
+   ],
+   "confidence": "high"
+  },
+  "0x0B80": {
+   "dec": 2944,
+   "byte_mask": [
+    11,
+    128
+   ],
+   "meaning": "TINGLE FREED. daNpc_Tc_c::statusDemoRescue raises it the moment the TC_RESCUE event ends and then deletes the jail Tingle. It is the gate for the TYPE_NORMAL2 Tingle placement (the one on Tingle Island) and is cached by the actor's HIO block on construction.",
+   "set_by": "src/d/actor/d_a_npc_tc.cpp:1464",
+   "read_by": [
+    "src/d/actor/d_a_npc_tc.cpp:71",
+    "src/d/actor/d_a_npc_tc.cpp:1485",
+    "src/d/actor/d_a_npc_tc.cpp:1838"
+   ],
+   "confidence": "high"
+  },
+  "0x1708": {
+   "dec": 5896,
+   "byte_mask": [
+    23,
+    8
+   ],
+   "meaning": "Gates the TYPE_BLUE Tingle placement (daNpc_Tc_c::isCreate). Not raised anywhere in the Windfall stages; listed here only because the jail Tingle actor reads it, so a remake that reuses the actor needs it defined.",
+   "set_by": "(no setter found in src/)",
+   "read_by": [
+    "src/d/actor/d_a_npc_tc.cpp:73",
+    "src/d/actor/d_a_npc_tc.cpp:1832"
+   ],
+   "confidence": "medium"
+  },
+  "0x1208": {
+   "dec": 4616,
+   "byte_mask": [
+    18,
+    8
+   ],
+   "meaning": "Link has talked to Lenzo once (the l_msg_1st_talk branch, before Link owns a Picto Box). daNpcPhoto_c::getMsg raises it. The Killer Bees read it: with 0x1208 set and no Picto Box in the inventory they play MK_TALK2 and point Link at the jail.",
+   "set_by": "src/d/actor/d_a_npc_photo.cpp:1839 (l_save_dat.field_0x00)",
+   "read_by": [
+    "src/d/actor/d_a_npc_photo.cpp:1836",
+    "src/d/actor/d_a_npc_mk.cpp:1101",
+    "src/d/actor/d_a_npc_mk.cpp:1120"
+   ],
+   "confidence": "high"
+  },
+  "0x1701": {
+   "dec": 5889,
+   "byte_mask": [
+    23,
+    1
+   ],
+   "meaning": "Lenzo has seen that Link owns a Picto Box (the l_msg_1st_photo branch). Raised by daNpcPhoto_c::getMsg the first time Link talks to him carrying PICTO_BOX or DELUXE_PICTO_BOX; it also switches Lenzo's texture-pattern animation on.",
+   "set_by": "src/d/actor/d_a_npc_photo.cpp:1829 (l_save_dat.field_0x02)",
+   "read_by": [
+    "src/d/actor/d_a_npc_photo.cpp:719",
+    "src/d/actor/d_a_npc_photo.cpp:962",
+    "src/d/actor/d_a_npc_photo.cpp:1826",
+    "src/d/actor/d_a_npc_photo.cpp:2031"
+   ],
+   "confidence": "high"
+  },
+  "0x1601": {
+   "dec": 5633,
+   "byte_mask": [
+    22,
+    1
+   ],
+   "meaning": "Link is Lenzo's research assistant. Raised in two places: daNpcPhoto_c::eventMesSetInit case 0 (the first PHOTO_TALK conversation) and daTagPhoto_c, the volume that sits on each research subject. Once it is set Lenzo's dialogue is driven by the assignment register 0xC407 instead of the introduction messages.",
+   "set_by": "src/d/actor/d_a_npc_photo.cpp:1322 (l_save_dat.field_0x04), src/d/actor/d_a_tag_photo.cpp:223",
+   "read_by": [
+    "src/d/actor/d_a_npc_photo.cpp:981",
+    "src/d/actor/d_a_npc_photo.cpp:1319",
+    "src/d/actor/d_a_npc_photo.cpp:1767"
+   ],
+   "confidence": "high"
+  },
+  "0xC407": {
+   "dec": 50183,
+   "byte_mask": [
+    196,
+    7
+   ],
+   "meaning": "REGISTER, not a single bit - l_save_dat.field_0x06. Counts Lenzo's research-assistant progress 0..6: even values mean 'assignment n handed out', odd values mean 'assignment n photographed but not yet delivered'. It is incremented in next_msgStatus when a delivered pictograph is accepted. At >= 6 all three subjects are done and showing Lenzo a bottled firefly upgrades the Picto Box.",
+   "set_by": "src/d/actor/d_a_npc_photo.cpp:1677-1679",
+   "read_by": [
+    "src/d/actor/d_a_npc_photo.cpp:1700",
+    "src/d/actor/d_a_npc_photo.cpp:1750",
+    "src/d/actor/d_a_npc_photo.cpp:1797-1824",
+    "src/d/actor/d_a_npc_photo.cpp:2148",
+    "src/d/actor/d_a_npc_photo.cpp:2160"
+   ],
+   "confidence": "high"
+  },
+  "0x3808": {
+   "dec": 14344,
+   "byte_mask": [
+    56,
+    8
+   ],
+   "meaning": "The first time Lenzo accepts a Deluxe (colour) pictograph as good enough for the gallery, he plays l_msg_week_1st; afterwards l_msg_week[day of week]. Raised by daNpcPhoto_c::getMsg in the isPhotoDxOk() branch, which also sets temp bit 0x0302 (the Legendary Pictograph is ready to hand over).",
+   "set_by": "src/d/actor/d_a_npc_photo.cpp:1783",
+   "read_by": [
+    "src/d/actor/d_a_npc_photo.cpp:1782"
+   ],
+   "confidence": "high"
+  },
+  "0x0A40": {
+   "dec": 2624,
+   "byte_mask": [
+    10,
+    64
+   ],
+   "meaning": "Link has talked to the Ub1 townswoman once (l_msg_ub1_1st_talk). Raised by daNpcPeople_c::eventUb1TalkInit.",
+   "set_by": "src/d/actor/d_a_npc_people.cpp:6079",
+   "read_by": [
+    "src/d/actor/d_a_npc_people.cpp:6078"
+   ],
+   "confidence": "high"
+  },
+  "0x2102": {
+   "dec": 8450,
+   "byte_mask": [
+    33,
+    2
+   ],
+   "meaning": "Ub1 has asked Link to photograph her (the l_msg_ub1_no_collect_map20 branch, reached once Link owns a Picto Box and does not yet own Treasure Chart 20).",
+   "set_by": "src/d/actor/d_a_npc_people.cpp:6088",
+   "read_by": [],
+   "confidence": "high"
+  },
+  "0xC103": {
+   "dec": 49411,
+   "byte_mask": [
+    193,
+    3
+   ],
+   "meaning": "REGISTER. Ub1's Treasure-Chart-20 counter. Set to 1 by the XY (show-item) branch l_msg_xy_ub1_get_map20_1; is1DayGetMap20() is true only when it reads exactly 2, which picks the 'a day has passed' dialogue.",
+   "set_by": "src/d/actor/d_a_npc_people.cpp:6158",
+   "read_by": [
+    "src/d/actor/d_a_npc_people.cpp:8257"
+   ],
+   "confidence": "medium"
+  },
+  "0x1210": {
+   "dec": 4624,
+   "byte_mask": [
+    18,
+    16
+   ],
+   "meaning": "Link has talked to a Killer Bee once (daNpc_Mk_c::getMsg falls through to message 0x26BD and raises it).",
+   "set_by": "src/d/actor/d_a_npc_mk.cpp:243",
+   "read_by": [
+    "src/d/actor/d_a_npc_mk.cpp:239"
+   ],
+   "confidence": "high"
+  },
+  "0x2201": {
+   "dec": 8705,
+   "byte_mask": [
+    34,
+    1
+   ],
+   "meaning": "The hide-and-seek game has been started at least once. daNpc_Mk_c::talk01 raises it in the same breath as ordering MK_GAMESTART. Mrs. Marie reads it: she only starts talking about Joy Pendants once the Bees have run their game.",
+   "set_by": "src/d/actor/d_a_npc_mk.cpp:1056",
+   "read_by": [
+    "src/d/actor/d_a_npc_ho.cpp:194"
+   ],
+   "confidence": "high"
+  },
+  "0x1340": {
+   "dec": 4928,
+   "byte_mask": [
+    19,
+    64
+   ],
+   "meaning": "Hide-and-seek cleared - the Piece of Heart has been handed over. Raised in daNpc_Mk_c's demo step 13, right after fopAcM_createItemForPresentDemo(dItemNo_HEART_PIECE_e).",
+   "set_by": "src/d/actor/d_a_npc_mk.cpp:825",
+   "read_by": [
+    "src/d/actor/d_a_npc_mk.cpp:235",
+    "src/d/actor/d_a_npc_ho.cpp:195"
+   ],
+   "confidence": "high"
+  },
+  "0x1380": {
+   "dec": 4992,
+   "byte_mask": [
+    19,
+    128
+   ],
+   "meaning": "Raised when Link picks option 0 at Mrs. Marie's message 0x2718. The Killer Bees read it and switch to message 0x26C5. What the choice actually is has not been read out of the message archive, so the meaning is inferred from who reads it.",
+   "set_by": "src/d/actor/d_a_npc_ho.cpp:232",
+   "read_by": [
+    "src/d/actor/d_a_npc_mk.cpp:237"
+   ],
+   "confidence": "low"
+  },
+  "0x1F80": {
+   "dec": 8064,
+   "byte_mask": [
+    31,
+    128
+   ],
+   "meaning": "Mrs. Marie has asked Link for a Joy Pendant. next_msg_sub0 raises it the first time Link talks to her with 0x2201 and 0x1340 both set, plays message 0x271E and pays out a purple rupee. In daytime it also raises temp bit 0x0580, which is what makes a Killer Bee run up to Link with MK_TALK4.",
+   "set_by": "src/d/actor/d_a_npc_ho.cpp:200",
+   "read_by": [
+    "src/d/actor/d_a_npc_ho.cpp:196",
+    "src/d/actor/d_a_npc_mk.cpp:1094",
+    "src/d/actor/d_a_npc_mk.cpp:1113",
+    "src/d/actor/d_a_npc_mk.cpp:1189"
+   ],
+   "confidence": "high"
+  },
+  "0x1E04": {
+   "dec": 7684,
+   "byte_mask": [
+    30,
+    4
+   ],
+   "meaning": "The Killer Bees have told Link where to get a Joy Pendant. daNpc_Mk_c::visitTalkInit raises it at the end of MK_TALK3 / MK_TALK4. Two things key off it: daTag_Mk_c's pendant tree only arms itself when it is set (and only in daylight), and in the RETAIL build it is the flag Mrs. Marie checks before she will accept a Joy Pendant at all (DEMO_SELECT(0x1E02, 0x1E04); include/global.h:64-73 makes the second argument the retail one).",
+   "set_by": "src/d/actor/d_a_npc_mk.cpp:1098",
+   "read_by": [
+    "src/d/actor/d_a_tag_mk.cpp:296",
+    "src/d/actor/d_a_npc_ho.cpp:401",
+    "src/d/actor/d_a_npc_ho.cpp:620"
+   ],
+   "confidence": "high"
+  },
+  "0x1E02": {
+   "dec": 7682,
+   "byte_mask": [
+    30,
+    2
+   ],
+   "meaning": "The Joy Pendant in the tree has been knocked down (the MK_PENDANT event). daTag_Mk_c raises it in actionReady, i.e. when the event is accepted, and the tag creates itself into ACT_WAIT (dead) ever after. In the DEMO build this is also the flag Mrs. Marie checks instead of 0x1E04.",
+   "set_by": "src/d/actor/d_a_tag_mk.cpp:273",
+   "read_by": [
+    "src/d/actor/d_a_tag_mk.cpp:524",
+    "src/d/actor/d_a_npc_mk.cpp:1094",
+    "src/d/actor/d_a_npc_mk.cpp:1114",
+    "src/d/actor/d_a_npc_mk.cpp:1189"
+   ],
+   "confidence": "high"
+  },
+  "0x1602": {
+   "dec": 5634,
+   "byte_mask": [
+    22,
+    2
+   ],
+   "meaning": "A Killer Bee has told Link about the Picto Box (MK_TALK2). Raised by daNpc_Mk_c::visitTalkInit when 0x1208 is set (Lenzo has been met) and Link still owns neither PICTO_BOX nor DELUXE_PICTO_BOX.",
+   "set_by": "src/d/actor/d_a_npc_mk.cpp:1105",
+   "read_by": [],
+   "confidence": "high"
+  },
+  "0x1E01": {
+   "dec": 7681,
+   "byte_mask": [
+    30,
+    1
+   ],
+   "meaning": "Link has met Mrs. Marie (message 0x2711). Raised by daNpc_Ho_c::getMsg in HO_STATE_TALK_01.",
+   "set_by": "src/d/actor/d_a_npc_ho.cpp:394",
+   "read_by": [
+    "src/d/actor/d_a_npc_ho.cpp:393"
+   ],
+   "confidence": "high"
+  },
+  "0xC0FF": {
+   "dec": 49407,
+   "byte_mask": [
+    192,
+    255
+   ],
+   "meaning": "REGISTER. The running number of Joy Pendants Link has given Mrs. Marie. receivePendant() adds to it; getMsg branches on == 0, and next_msgStatus checks >= 0x28 (40) for the Hero's Charm and >= 0x63 (99) for the maxed-out dialogue.",
+   "set_by": "src/d/actor/d_a_npc_ho.cpp:293 receivePendant(1) / :312 receivePendant(0x14) / :326 and :338 receivePendant(all)",
+   "read_by": [
+    "src/d/actor/d_a_npc_ho.cpp:329",
+    "src/d/actor/d_a_npc_ho.cpp:398",
+    "src/d/actor/d_a_npc_ho.cpp:404",
+    "src/d/actor/d_a_npc_ho.cpp:418"
+   ],
+   "confidence": "high"
+  },
+  "0x1C08": {
+   "dec": 7176,
+   "byte_mask": [
+    28,
+    8
+   ],
+   "meaning": "Mrs. Marie has handed over the CABANA DEED for 20 Joy Pendants. Raised at message 0x2743, together with temp bit 0x0104 and mItemNum = dItemNo_CABANA_DEED_e.",
+   "set_by": "src/d/actor/d_a_npc_ho.cpp:318",
+   "read_by": [
+    "src/d/actor/d_a_npc_ho.cpp:264",
+    "src/d/actor/d_a_npc_ho.cpp:409"
+   ],
+   "confidence": "high"
+  },
+  "0x1C04": {
+   "dec": 7172,
+   "byte_mask": [
+    28,
+    4
+   ],
+   "meaning": "Mrs. Marie has handed over the HERO'S CHARM for 40 Joy Pendants (register 0xC0FF >= 0x28). Raised at message 0x2751.",
+   "set_by": "src/d/actor/d_a_npc_ho.cpp:353",
+   "read_by": [
+    "src/d/actor/d_a_npc_ho.cpp:262",
+    "src/d/actor/d_a_npc_ho.cpp:329",
+    "src/d/actor/d_a_npc_ho.cpp:413"
+   ],
+   "confidence": "high"
+  },
+  "0x2D80": {
+   "dec": 11648,
+   "byte_mask": [
+    45,
+    128
+   ],
+   "meaning": "Set by daTag_Mk_c::getMsg when the item Link is holding out is the CABANA DEED. The tag that reads it is daTag_Mk_c type 3 (ACT_VILLA), and no type-3 TagMk is placed in Windfall - the only TagMk in sea room 11 is type 1 - so this bit belongs to the Private Oasis, not to this area. Recorded because Mrs. Marie's Cabana Deed is what feeds it.",
+   "set_by": "src/d/actor/d_a_tag_mk.cpp:82",
+   "read_by": [
+    "src/d/actor/d_a_tag_mk.cpp:314",
+    "src/d/actor/d_a_tag_mk.cpp:480"
+   ],
+   "confidence": "medium"
+  },
+  "0x0F01": {
+   "dec": 3841,
+   "byte_mask": [
+    15,
+    1
+   ],
+   "meaning": "Link has won the JOY PENDANT lot at the Windfall auction (l_item_dat[0], message 0x1D10, base price 40). daAuction_c::eventGetItemInit raises the lot's bit as it spawns the present-demo item.",
+   "set_by": "src/d/actor/d_a_auction.cpp:1210 (l_item_dat[].mObtainedEventBit)",
+   "read_by": [
+    "src/d/actor/d_a_auction.cpp:1493",
+    "src/d/actor/d_a_auction.cpp:1501"
+   ],
+   "confidence": "high"
+  },
+  "0x1080": {
+   "dec": 4224,
+   "byte_mask": [
+    16,
+    128
+   ],
+   "meaning": "Link has won the TREASURE CHART 27 lot (l_item_dat[1], message 0x1D11, base price 5). daAuction_c::eventGetItemInit raises the lot's bit as it spawns the present-demo item.",
+   "set_by": "src/d/actor/d_a_auction.cpp:1210 (l_item_dat[].mObtainedEventBit)",
+   "read_by": [
+    "src/d/actor/d_a_auction.cpp:1493",
+    "src/d/actor/d_a_auction.cpp:1501"
+   ],
+   "confidence": "high"
+  },
+  "0x1040": {
+   "dec": 4160,
+   "byte_mask": [
+    16,
+    64
+   ],
+   "meaning": "Link has won the TREASURE CHART 18 lot (l_item_dat[2], message 0x1D12, base price 60). daAuction_c::eventGetItemInit raises the lot's bit as it spawns the present-demo item.",
+   "set_by": "src/d/actor/d_a_auction.cpp:1210 (l_item_dat[].mObtainedEventBit)",
+   "read_by": [
+    "src/d/actor/d_a_auction.cpp:1493",
+    "src/d/actor/d_a_auction.cpp:1501"
+   ],
+   "confidence": "high"
+  },
+  "0x1020": {
+   "dec": 4128,
+   "byte_mask": [
+    16,
+    32
+   ],
+   "meaning": "Link has won the PIECE OF HEART lot (l_item_dat[3], message 0x1D13, base price 80). daAuction_c::eventGetItemInit raises the lot's bit as it spawns the present-demo item.",
+   "set_by": "src/d/actor/d_a_auction.cpp:1210 (l_item_dat[].mObtainedEventBit)",
+   "read_by": [
+    "src/d/actor/d_a_auction.cpp:1493",
+    "src/d/actor/d_a_auction.cpp:1501"
+   ],
+   "confidence": "high"
+  },
+  "0x1008": {
+   "dec": 4104,
+   "byte_mask": [
+    16,
+    8
+   ],
+   "meaning": "Link has won the POSTMAN STATUE lot (l_item_dat2[0], message 0x1D14, base price 30). This is the second auction table, used when m822 == 2; the item actually created for the present demo is l_item_dat22[0] = dItemNo_MAGIC_ARMOR_e, so the statue is the lot on the block and the Magic Armor is what Link walks away with.",
+   "set_by": "src/d/actor/d_a_auction.cpp:1202 (l_item_dat2[].mObtainedEventBit)",
+   "read_by": [],
+   "confidence": "high"
+  },
+  "0x1004": {
+   "dec": 4100,
+   "byte_mask": [
+    16,
+    4
+   ],
+   "meaning": "Link has won the SHOP GURU STATUE lot (l_item_dat2[1], message 0x1D15, base price 40); the item created is l_item_dat22[1] = dItemNo_COLLECT_MAP_06_e (Treasure Chart 6).",
+   "set_by": "src/d/actor/d_a_auction.cpp:1202 (l_item_dat2[].mObtainedEventBit)",
+   "read_by": [],
+   "confidence": "high"
+  },
+  "0x4008": {
+   "dec": 16392,
+   "byte_mask": [
+    64,
+    8
+   ],
+   "meaning": "The last auction lot went to one of the NPC bidders rather than to Link. Raised at message 0x1D05 when m824 != 0 and CLEARED when m824 == 0; the winner's model number is stored in register 0x790F and the lot index in register 0xCD03, which is how the auctioneer names the previous winner the next time round.",
+   "set_by": "src/d/actor/d_a_auction.cpp:1428 (offEventBit at :1432)",
+   "read_by": [
+    "src/d/actor/d_a_auction.cpp:414",
+    "src/d/actor/d_a_auction.cpp:1301"
+   ],
+   "confidence": "high"
+  },
+  "0x790F": {
+   "dec": 30991,
+   "byte_mask": [
+    121,
+    15
+   ],
+   "meaning": "REGISTER. Which NPC bidder won the previous lot (index into l_npc_msg_dat).",
+   "set_by": "src/d/actor/d_a_auction.cpp:1429",
+   "read_by": [
+    "src/d/actor/d_a_auction.cpp:1302"
+   ],
+   "confidence": "high"
+  },
+  "0xCD03": {
+   "dec": 52483,
+   "byte_mask": [
+    205,
+    3
+   ],
+   "meaning": "REGISTER. Which lot index was auctioned last.",
+   "set_by": "src/d/actor/d_a_auction.cpp:1430",
+   "read_by": [],
+   "confidence": "medium"
+  },
+  "0x1320": {
+   "dec": 4896,
+   "byte_mask": [
+    19,
+    32
+   ],
+   "meaning": "Merchant 0 of the three Ro stall keepers on Windfall: 'has been shown a tradeable item / conversation opened' (l_save_dat[0].field_0x00). Raised in the exchange branch of daNpc_Roten_c's message handler.",
+   "set_by": "src/d/actor/d_a_npc_roten.cpp:2523",
+   "read_by": [],
+   "confidence": "medium"
+  },
+  "0xCB03": {
+   "dec": 51971,
+   "byte_mask": [
+    203,
+    3
+   ],
+   "meaning": "REGISTER. Merchant 0's exchange counter (l_save_dat[0].field_0x02). Incremented on each accepted trade; at >= 3 the merchant stops trading and plays ROTEN_GET_MAP instead.",
+   "set_by": "src/d/actor/d_a_npc_roten.cpp:2437-2439",
+   "read_by": [
+    "src/d/actor/d_a_npc_roten.cpp:2505",
+    "src/d/actor/d_a_npc_roten.cpp:2525",
+    "src/d/actor/d_a_npc_roten.cpp:2841"
+   ],
+   "confidence": "medium"
+  },
+  "0xC803": {
+   "dec": 51203,
+   "byte_mask": [
+    200,
+    3
+   ],
+   "meaning": "REGISTER. Merchant 0's second register (l_save_dat[0].field_0x04); read alongside the exchange counter. Its exact use was not pinned down.",
+   "set_by": "(read/written inside daNpc_Roten_c's message handler)",
+   "read_by": [],
+   "confidence": "low"
+  },
+  "0x1304": {
+   "dec": 4868,
+   "byte_mask": [
+    19,
+    4
+   ],
+   "meaning": "Merchant 0 has completed the exchange and given out his reward (l_save_dat[0].field_0x06). Raised at d_a_npc_roten.cpp:2282 (event path) and :2517 (message path).",
+   "set_by": "src/d/actor/d_a_npc_roten.cpp:2282, src/d/actor/d_a_npc_roten.cpp:2517",
+   "read_by": [],
+   "confidence": "medium"
+  },
+  "0x1310": {
+   "dec": 4880,
+   "byte_mask": [
+    19,
+    16
+   ],
+   "meaning": "Merchant 1 of the three Ro stall keepers on Windfall: 'has been shown a tradeable item / conversation opened' (l_save_dat[1].field_0x00). Raised in the exchange branch of daNpc_Roten_c's message handler.",
+   "set_by": "src/d/actor/d_a_npc_roten.cpp:2523",
+   "read_by": [],
+   "confidence": "medium"
+  },
+  "0xCA03": {
+   "dec": 51715,
+   "byte_mask": [
+    202,
+    3
+   ],
+   "meaning": "REGISTER. Merchant 1's exchange counter (l_save_dat[1].field_0x02). Incremented on each accepted trade; at >= 3 the merchant stops trading and plays ROTEN_GET_MAP instead.",
+   "set_by": "src/d/actor/d_a_npc_roten.cpp:2437-2439",
+   "read_by": [
+    "src/d/actor/d_a_npc_roten.cpp:2505",
+    "src/d/actor/d_a_npc_roten.cpp:2525",
+    "src/d/actor/d_a_npc_roten.cpp:2841"
+   ],
+   "confidence": "medium"
+  },
+  "0xC703": {
+   "dec": 50947,
+   "byte_mask": [
+    199,
+    3
+   ],
+   "meaning": "REGISTER. Merchant 1's second register (l_save_dat[1].field_0x04); read alongside the exchange counter. Its exact use was not pinned down.",
+   "set_by": "(read/written inside daNpc_Roten_c's message handler)",
+   "read_by": [],
+   "confidence": "low"
+  },
+  "0x1302": {
+   "dec": 4866,
+   "byte_mask": [
+    19,
+    2
+   ],
+   "meaning": "Merchant 1 has completed the exchange and given out his reward (l_save_dat[1].field_0x06). Raised at d_a_npc_roten.cpp:2282 (event path) and :2517 (message path).",
+   "set_by": "src/d/actor/d_a_npc_roten.cpp:2282, src/d/actor/d_a_npc_roten.cpp:2517",
+   "read_by": [],
+   "confidence": "medium"
+  },
+  "0x1308": {
+   "dec": 4872,
+   "byte_mask": [
+    19,
+    8
+   ],
+   "meaning": "Merchant 2 of the three Ro stall keepers on Windfall: 'has been shown a tradeable item / conversation opened' (l_save_dat[2].field_0x00). Raised in the exchange branch of daNpc_Roten_c's message handler.",
+   "set_by": "src/d/actor/d_a_npc_roten.cpp:2523",
+   "read_by": [],
+   "confidence": "medium"
+  },
+  "0xC903": {
+   "dec": 51459,
+   "byte_mask": [
+    201,
+    3
+   ],
+   "meaning": "REGISTER. Merchant 2's exchange counter (l_save_dat[2].field_0x02). Incremented on each accepted trade; at >= 3 the merchant stops trading and plays ROTEN_GET_MAP instead.",
+   "set_by": "src/d/actor/d_a_npc_roten.cpp:2437-2439",
+   "read_by": [
+    "src/d/actor/d_a_npc_roten.cpp:2505",
+    "src/d/actor/d_a_npc_roten.cpp:2525",
+    "src/d/actor/d_a_npc_roten.cpp:2841"
+   ],
+   "confidence": "medium"
+  },
+  "0xC603": {
+   "dec": 50691,
+   "byte_mask": [
+    198,
+    3
+   ],
+   "meaning": "REGISTER. Merchant 2's second register (l_save_dat[2].field_0x04); read alongside the exchange counter. Its exact use was not pinned down.",
+   "set_by": "(read/written inside daNpc_Roten_c's message handler)",
+   "read_by": [],
+   "confidence": "low"
+  },
+  "0x1301": {
+   "dec": 4865,
+   "byte_mask": [
+    19,
+    1
+   ],
+   "meaning": "Merchant 2 has completed the exchange and given out his reward (l_save_dat[2].field_0x06). Raised at d_a_npc_roten.cpp:2282 (event path) and :2517 (message path).",
+   "set_by": "src/d/actor/d_a_npc_roten.cpp:2282, src/d/actor/d_a_npc_roten.cpp:2517",
+   "read_by": [],
+   "confidence": "medium"
+  },
+  "0x3E04": {
+   "dec": 15876,
+   "byte_mask": [
+    62,
+    4
+   ],
+   "meaning": "Merchant 1 has been given the SHOP GURU STATUE. daNpc_Roten_c special-cases mNpcNo == 1 && !0x3E04 && itemNo == dItemNo_SHOP_GURU_STATUE_e, and raises the bit at d_a_npc_roten.cpp:2503.",
+   "set_by": "src/d/actor/d_a_npc_roten.cpp:2503",
+   "read_by": [
+    "src/d/actor/d_a_npc_roten.cpp:2828"
+   ],
+   "confidence": "high"
+  },
+  "0x0B08": {
+   "dec": 2824,
+   "byte_mask": [
+    11,
+    8
+   ],
+   "meaning": "Link has talked to Tott once (message 0x22C5). Until 0x0C40 is set, Tott then keeps asking with message 0x22CA and the actor raises order flag 0x4, which is the 'come and conduct for me' offer.",
+   "set_by": "src/d/actor/d_a_npc_tt.cpp:167",
+   "read_by": [
+    "src/d/actor/d_a_npc_tt.cpp:163",
+    "src/d/actor/d_a_npc_tt.cpp:624"
+   ],
+   "confidence": "high"
+  },
+  "0x0C40": {
+   "dec": 3136,
+   "byte_mask": [
+    12,
+    64
+   ],
+   "meaning": "Tott's dancing lesson is finished - Link conducted the whole pattern without getTactTimerCancel() firing, so demoProcTact1 falls through to the default case. From then on Tott's idle animation is the dance (setAnmStatus) and his dialogue is message 0x22CB.",
+   "set_by": "src/d/actor/d_a_npc_tt.cpp:320",
+   "read_by": [
+    "src/d/actor/d_a_npc_tt.cpp:73",
+    "src/d/actor/d_a_npc_tt.cpp:160",
+    "src/d/actor/d_a_npc_tt.cpp:624"
+   ],
+   "confidence": "high"
+  },
+  "0x1908": {
+   "dec": 6408,
+   "byte_mask": [
+    25,
+    8
+   ],
+   "meaning": "Read by daNpc_Bm1_c to choose between messages 0x1EF0 and 0x1EF2, and raised when message 0x1EF8 is dismissed. This is the same message chain that, at 0x1EF6, puts the postman into state m8FD = 3 and makes him order l_evn_tbl[0] = Get_Mo3_Ltr, so it is the Moblin's-Letter conversation's own progress flag.",
+   "set_by": "src/d/actor/d_a_npc_bm1.cpp:3175",
+   "read_by": [
+    "src/d/actor/d_a_npc_bm1.cpp:1676"
+   ],
+   "confidence": "medium"
+  },
+  "0x2110": {
+   "dec": 8464,
+   "byte_mask": [
+    33,
+    16
+   ],
+   "meaning": "BOMB SHOP RAID. NOT mined here - already documented in gcrip/data/ww_story_jabun.json (step jab_bombshop_raid). Raised by bombshop.stb's PACKAGE PLAY EventFlag when the cutscene starts (tools/ww_stb_flags.py; src/d/d_event_data.cpp:797-800). Listed only so the Obombh cross-reference step below resolves.",
+   "set_by": "(event data - bombshop.stb, see gcrip/data/ww_story_jabun.json)",
+   "read_by": [],
+   "confidence": "high"
+  },
+  "0x1F04": {
+   "dec": 7940,
+   "byte_mask": [
+    31,
+    4
+   ],
+   "meaning": "WINDFALL ARRIVAL. NOT mined here - it is already documented in gcrip/data/ww_story_jabun.json (step jab_arrive_windfall_night, ARRIVAL_TWN). It is listed in this file only so the Windfall side-quest steps can point at the bit that means 'the island has been landed on', which dComIfGs_checkSeaLandingEvent needs before the boat will dock.",
+   "set_by": "(see gcrip/data/ww_story_jabun.json)",
+   "read_by": [
+    "src/d/d_com_inf_game.cpp:1273-1280",
+    "src/d/actor/d_a_tag_island.cpp"
+   ],
+   "confidence": "high"
+  }
+ },
+ "_actors": {
+  "Mk / UkB / UkC / UkD": {
+   "name": "The Killer Bees - Ivan (Mk, the leader) and Jin, Jan & Jun-Roberto (Uk)",
+   "file": "src/d/actor/d_a_npc_mk.cpp, src/d/actor/d_a_npc_uk.cpp, src/d/d_a_npc_mk_static.cpp",
+   "event_names": [
+    "MK_TALK",
+    "MK_TALK2",
+    "MK_TALK3",
+    "MK_TALK4",
+    "MK_GAMESTART",
+    "MK_GAMESET",
+    "MK_DROP",
+    "MK_PENDANT",
+    "UkB_FOUND",
+    "UkC_FOUND",
+    "UkD_FOUND",
+    "UkD_FOUND2"
+   ],
+   "table_source": "no l_evn_tbl - daNpc_Mk_c looks each name up individually with dComIfGp_evmng_getEventIdx / eventInfo.setEventName",
+   "how_each_is_ordered": {
+    "MK_TALK/2/3/4": "visitSetEvent picks the name from 0x1F80 / 0x1E02 / 0x1208 + camera ownership (src/d/actor/d_a_npc_mk.cpp:1112-1126); visit01 upgrades to MK_TALK4 with an approach order when temp bit 0x0580 is set (:1189)",
+    "MK_GAMESTART": "talk01 when the message flow leaves flag 0x8 set (:1051)",
+    "MK_GAMESET": "talk02 once daNpc_Mk_Static_c::chkGameSet() is true (:1079)",
+    "MK_DROP": "climb01 - a Bee up a pole, knocked down by checkFrontRollCrash within 200.0f (:1214)",
+    "MK_PENDANT": "NOT the NPC - daTag_Mk_c::actionHunt, the tree volume (src/d/actor/d_a_tag_mk.cpp:287)",
+    "Uk*_FOUND": "d_a_npc_uk.cpp is entirely /* Nonmatching */; the names are only in the event list"
+   }
+  },
+  "Ho": {
+   "name": "Mrs. Marie",
+   "file": "src/d/actor/d_a_npc_ho.cpp",
+   "event_names": [
+    "HO_PREACH",
+    "DEFAULT_GIVEITEM",
+    "DEFAULT_TALK"
+   ],
+   "table_source": "fopAcM_orderChangeEvent by literal name (src/d/actor/d_a_npc_ho.cpp:632, :663, :690, :703)",
+   "how_each_is_ordered": {
+    "HO_PREACH": "talk01 when next_msgStatus case 0x2725 has set flag 0x20 (src/d/actor/d_a_npc_ho.cpp:628-635)",
+    "DEFAULT_GIVEITEM": "talk03 whenever mItemNum has been queued by the message walk (:661-663)"
+   }
+  },
+  "Tc": {
+   "name": "Tingle (jail copy)",
+   "file": "src/d/actor/d_a_npc_tc.cpp",
+   "event_table": [
+    "TC_JUMP_DEMO",
+    "TC_RESCUE",
+    "TC_TALK_NEAR_JAIL",
+    "TC_TALK_NEAR_JAIL_S",
+    "TC_TALK_NEAR_JAIL2",
+    "TC_GET_RUPEE",
+    "TC_PAY_RUPEE"
+   ],
+   "table_source": "src/d/actor/d_a_npc_tc.cpp:638-646 (a_demo_name_tbl)",
+   "index_rule": "mEventIdx is a state byte; eventOrder maps index >= 3 to a_demo_name_tbl[mEventIdx - 3] via fopAcM_orderOtherEvent. Indices 8 and 9 pass an extra 0x14F argument. Indices 1 and 2 are talk, not demo. Same shape as Tetra's l_evn_tbl.",
+   "how_each_is_ordered": {
+    "TC_RESCUE": "help_action, once dComIfGp_evmng_endCheck(\"OpenDoor\") is true (:1488)",
+    "TC_TALK_NEAR_JAIL*": "statusWalkToJail / statusWaitNearJail on a wall hit (:1221-1231, :1285-1291)"
+   }
+  },
+  "Po": {
+   "name": "Lenzo",
+   "file": "src/d/actor/d_a_npc_photo.cpp (+ src/d/actor/d_a_tag_photo.cpp for the subject volumes)",
+   "event_names": [
+    "PHOTO_LINK_BACK",
+    "PHOTO_GET_ITEM",
+    "PHOTO_GET_ITEM2",
+    "PHOTO_GET_PHOTO",
+    "PHOTO_GALLERY",
+    "PHOTO_COUNTER_TALK0",
+    "PHOTO_COUNTER_TALK1",
+    "PHOTO_DATE_UB4",
+    "PHOTO_TALK",
+    "PHOTO_TALK2"
+   ],
+   "table_source": "src/d/actor/d_a_npc_photo.cpp:731-738 and src/d/actor/d_a_tag_photo.cpp:125-126",
+   "save_slots": "l_save_dat at src/d/actor/d_a_npc_photo.cpp:526-531 = { 0x1208 met, 0x1701 has camera, 0x1601 assistant, 0xC407 progress register }"
+  },
+  "Auc0..Auc7 / Auction": {
+   "name": "The Windfall auction",
+   "file": "src/d/actor/d_a_auction.cpp",
+   "event_names": [
+    "Auction",
+    "AUCTION_START",
+    "AUCTION_START2",
+    "AUCTION_END2",
+    "AUCTION_GET_ITEM",
+    "AUCTION_NO_ITEM",
+    "AUCTION_TALK",
+    "AUCTION_TALK_XY"
+   ],
+   "table_source": "src/d/actor/d_a_auction.cpp:264-268, plus Orichh's EVNT table entry 0",
+   "lots": "l_item_dat / l_item_dat2 / l_item_dat22 at src/d/actor/d_a_auction.cpp:50-65"
+  },
+  "Ro (Roten2/3/4)": {
+   "name": "The three stall merchants on the Windfall dock (Zunari and his two neighbours)",
+   "file": "src/d/actor/d_a_npc_roten.cpp",
+   "event_names": [
+    "ROTEN_EXCHANGE_1ST",
+    "ROTEN_EXCHANGE_2ND",
+    "ROTEN_CHANGE_ITEM",
+    "ROTEN_GET_MAP"
+   ],
+   "table_source": "src/d/actor/d_a_npc_roten.cpp:1747-1750",
+   "index_rule": "mNpcNo = getPrmNpcNo() = params >> 24 (0, 1, 2 for Roten2, Roten3, Roten4). It indexes l_arcname_tbl (all three are \"Ro\"), l_npc_dat, l_npc_staff_id and l_save_dat."
+  },
+  "Bm1 (Bm4 placement)": {
+   "name": "Rito postman",
+   "file": "src/d/actor/d_a_npc_bm1.cpp",
+   "event_table": [
+    "Get_Mo3_Ltr",
+    "Met_Ryu_Islnd",
+    "Get_Rupee",
+    "Skn_Islnd"
+   ],
+   "table_source": "src/d/actor/d_a_npc_bm1.cpp:503-508 (l_evn_tbl)",
+   "index_rule": "m8FD is a state byte; eventOrder sets mEventIdx = m8FD - 3 for m8FD >= 3 and calls fopAcM_orderOtherEventId (:1174-1190). Same shape as Tetra's and Tingle's tables."
+  },
+  "Tt": {
+   "name": "Tott the dancer",
+   "file": "src/d/actor/d_a_npc_tt.cpp",
+   "event_names": [
+    "TACT_TT10",
+    "TACT_TT11",
+    "TACT_TT12",
+    "TACT_TT13"
+   ],
+   "table_source": "src/d/actor/d_a_npc_tt.cpp:29, :300, :310, :315",
+   "index_rule": "TACT_TT10 is the offer; demoInitChange chains to TACT_TT11; demoProcTact1 branches on daPy_lk_c::getTactTimerCancel() - 1 -> TT12, 2 -> TT13, 0 -> success"
+  }
+ },
+ "steps": [
+  {
+   "id": "wf_town_title_card",
+   "stage": "sea",
+   "room": 11,
+   "layer": -1,
+   "trigger": {
+    "kind": "tag",
+    "detail": "Five TagEv volumes scattered across the town, all with params 0x11FF3FFF -> EVNT index 17 (>>24 = 0x11 = 17), switch2 0xFF, type 0xFF = TELOP_TAURA, switch 63, no event-bit gate, at (10108, 157, -199682) scale 19, (16016, 18, -202315) scale 5, (11968, 115, -198464) scale 8, (13175, 89, -199132) scale 8 and (16240, 200, -202690). TELOP is a title card: TELOP_PULOLO is Outset's (Puroro/Prolo Island) and TELOP_TAURA is Windfall's (Taura Island). Whichever volume Link crosses first prints the island name and the switch stops the other four."
+   },
+   "event": "TELOP_TAURA",
+   "stb": null,
+   "requires_bits": [
+    "0x1F04"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/sea/sea_report.json:tags",
+    "tools/ww_story_mine.py sea --rooms 11"
+   ],
+   "notes": "The arrival itself (TagIsl at (11905, 0, -200869) on layers 2 and 3, params 0x1CFF5B04, and the ARRIVAL_TWN event) is already mined in gcrip/data/ww_story_jabun.json - not repeated here."
+  },
+  {
+   "id": "wf_jail_entry_camera",
+   "stage": "Pnezumi",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "tag",
+    "detail": "Three TagEv volumes at (558, 0, -1038), (739, 0, -1049) and (648, 0, -998), all switch 19, order EVNT entry 1 = \"First\" - the establishing camera on the cell block. Pnezumi has no PLYR spawn that auto-plays an event, so this volume trio is the only thing that fires on entry."
+   },
+   "event": "First",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Pnezumi/Pnezumi_report.json:tags",
+    "tools/ww_story_mine.py Pnezumi"
+   ],
+   "notes": "Pnezumi's EVNT table is exactly two entries: OpenDoor, First."
+  },
+  {
+   "id": "wf_jail_picto_box",
+   "stage": "Pnezumi",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "chest",
+    "detail": "The single TRES chest in the jail, at (737, 78, -337), rot (0, -32768, 9215). daTbox_c reads the item out of home.angle.z: (9215 >> 8) & 0xFF = 0x23 = dItemNo_PICTO_BOX_e. The chest's save flag byte is 0xFF (unsaved slot)."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "PICTO_BOX",
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Pnezumi/Pnezumi_report.json:actors",
+    "include/d/actor/d_a_tbox.h:37",
+    "include/d/d_item_data.h:42"
+   ],
+   "notes": "This is where the whole Lenzo chain starts: 0x1208 (Lenzo has been met) plus an empty camera slot is what makes a Killer Bee play MK_TALK2 and point Link here (src/d/actor/d_a_npc_mk.cpp:1101). The four loose `item` actors in the jail are all params &0xFF = 0x02 = blue rupees (include/d/actor/d_a_item.h:141)."
+  },
+  {
+   "id": "wf_jail_rotten_floor",
+   "stage": "Pnezumi",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "object",
+    "detail": "Four Nzfall actors (daObj_Pfall_c). mode_wait watches for Link inside a 100.0f radius / 100.0f height cylinder with speedF == 0 and counts a timer down; when it expires it orders the NZFALL event, and when NZFALL ends it calls dComIfGp_setNextStage(\"sea\", 15, dIsleRoom_WindfallIsland_e) - the floor gives way and dumps Link back out into the town at start point 15."
+   },
+   "event": "NZFALL",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_obj_pfall.cpp:325-357",
+    "out/rip/GZLE01/stages/Pnezumi/Pnezumi_report.json:actors"
+   ],
+   "notes": "l_HIO.field_0x06 is a debug switch: when non-zero the actor resets instead of warping."
+  },
+  {
+   "id": "wf_tingle_through_bars",
+   "stage": "Pnezumi",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "The Tc actor in the jail runs help_action -> STATUS_SIT. Its statusWalkToJail / statusWaitNearJail states wait for a wall hit with mTalkingNearJail set, then pick an event index: 5 = TC_TALK_NEAR_JAIL on a fresh file, 6 = TC_TALK_NEAR_JAIL_S when dComIfGs_getClearCount() != 0 (second quest), 7 = TC_TALK_NEAR_JAIL2 on a repeat visit. eventOrder maps index n>=3 to a_demo_name_tbl[n-3]. Whichever fires, 0x0B40 goes up."
+   },
+   "event": "TC_TALK_NEAR_JAIL",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x0B40"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_tc.cpp:638-646",
+    "src/d/actor/d_a_npc_tc.cpp:1221-1231",
+    "src/d/actor/d_a_npc_tc.cpp:1285-1291",
+    "src/d/actor/d_a_npc_tc.cpp:921"
+   ],
+   "notes": "TC_JUMP_DEMO (index 3) is the little hop he does on the way to the bars; statusDemoJump just waits for it to end and returns to STATUS_WALK_TO_JAIL."
+  },
+  {
+   "id": "wf_free_tingle",
+   "stage": "Pnezumi",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "tag",
+    "detail": "A TagEv at (-738, 59, 1275), switch 5, orders EVNT entry 0 = \"OpenDoor\". daNpc_Tc_c::help_action polls dComIfGp_evmng_endCheck(\"OpenDoor\") every frame; when that event finishes it sets mEventIdx = 4 (a_demo_name_tbl[1] = TC_RESCUE) and enters STATUS_DEMO_RESCUE. statusDemoRescue waits for TC_RESCUE to end, raises 0x0B80 and deletes the jail Tingle."
+   },
+   "event": "OpenDoor",
+   "stb": null,
+   "requires_bits": [
+    "0x0B40"
+   ],
+   "sets_bits": [
+    "0x0B80"
+   ],
+   "gives_item": "TINGLE_TUNER",
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Pnezumi/Pnezumi_report.json:tags",
+    "src/d/actor/d_a_npc_tc.cpp:1485-1492",
+    "src/d/actor/d_a_npc_tc.cpp:1462-1468",
+    "src/d/actor/d_a_npc_tc_cut.inc:138"
+   ],
+   "notes": "The Tingle Tuner is not handed out by an onGetItem call in d_a_npc_tc.cpp - it comes from the cut file, d_a_npc_tc_cut.inc:138 sets itemNo = dItemNo_TINGLE_TUNER_e inside the demo. requires_bits 0x0B40 is the ordinary route (you talk to him first); nothing in the data actually enforces it."
+  },
+  {
+   "id": "wf_lenzo_first_talk",
+   "stage": "Ocmera",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "Two Po actors (daNpcPhoto_c) are placed in Lenzo's house. phase_1 picks which copy runs from getPrmArg0() and whether Link already owns Treasure Chart 20: arg0 == 0 only spawns when COLLECT_MAP_20 is NOT held and the start point matches; any other arg0 spawns the mirror case and forces field_0x9C1 = 4 (the l_msg_ub4 dialogue set). Talking with no Picto Box in the inventory runs l_msg_1st_talk and raises 0x1208."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x1208"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_photo.cpp:613-630",
+    "src/d/actor/d_a_npc_photo.cpp:1836-1841",
+    "out/rip/GZLE01/stages/Ocmera/Ocmera_report.json:actors"
+   ],
+   "notes": "Ocmera's exits both go to sea room 11 (start points 10 and 11), so it is unambiguously a Windfall interior. Ocmera has no EVNT table at all - every Lenzo event is looked up by name with dComIfGp_evmng_getEventIdx(..., 0xff)."
+  },
+  {
+   "id": "wf_lenzo_attic_chests",
+   "stage": "Ocmera",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "chest",
+    "detail": "Two chests on Lenzo's upper floor at y = 450, which is the floor the second Ocmera exit (sea start point 11, the roof door) leads to: takara at (599, 450, -578) rot.z = -6401 -> (0xE6FF >> 8) & 0xFF = 0xE6 = dItemNo_COLLECT_MAP_25_e, and takara2 at (805, 450, -579) rot.z = 1535 -> 0x05 = dItemNo_PURPLE_RUPEE_e."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "COLLECT_MAP_25",
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Ocmera/Ocmera_report.json:actors",
+    "include/d/actor/d_a_tbox.h:37",
+    "include/d/d_item_data.h:237"
+   ],
+   "notes": "Neither chest is gated by an event bit in the placement data; the gate is physical (getting onto the roof)."
+  },
+  {
+   "id": "wf_lenzo_sees_picto_box",
+   "stage": "Ocmera",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "Talk to Lenzo while carrying PICTO_BOX or DELUXE_PICTO_BOX. daNpcPhoto_c::getMsg falls into the l_msg_1st_photo branch, raises 0x1701 and calls initTexPatternAnm(true, 1); after that the branch is l_msg_2nd_photo."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x1208"
+   ],
+   "sets_bits": [
+    "0x1701"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_photo.cpp:1825-1834"
+   ],
+   "notes": "Lenzo's own gate is checkGetItem, not an event bit - 0x1208 is listed as a requirement because that is the ordinary order of events, not because the code tests it."
+  },
+  {
+   "id": "wf_lenzo_research_assistant",
+   "stage": "Ocmera",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "npc",
+    "detail": "The PHOTO_TALK conversation. daNpcPhoto_c::eventMesSetInit case 0 checks 0x1601: if it is clear it plays l_msg_1st_talk_photo and raises it, otherwise it plays l_msg_talk_photo[tagNo] where tagNo comes from the daTagPhoto_c volume that started the conversation (dComIfGp_event_getPt2()->getTagNo()). Lenzo's events are PHOTO_LINK_BACK, PHOTO_GET_ITEM, PHOTO_GET_ITEM2, PHOTO_GET_PHOTO, PHOTO_GALLERY, PHOTO_COUNTER_TALK0/1 and PHOTO_DATE_UB4."
+   },
+   "event": "PHOTO_TALK",
+   "stb": null,
+   "requires_bits": [
+    "0x1701"
+   ],
+   "sets_bits": [
+    "0x1601"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_photo.cpp:1313-1330",
+    "src/d/actor/d_a_npc_photo.cpp:731-738",
+    "src/d/actor/d_a_tag_photo.cpp:125-126",
+    "src/d/actor/d_a_tag_photo.cpp:223"
+   ],
+   "notes": "daTagPhoto_c is the volume that sits on each research subject; it owns PHOTO_TALK and PHOTO_TALK2 and raises 0x1601 itself as well."
+  },
+  {
+   "id": "wf_lenzo_three_assignments",
+   "stage": "Ocmera",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "photo",
+    "detail": "NEW KIND. Three photo assignments, tracked in register 0xC407, not in bits. Lenzo's dialogue table walks it: 0 = 1st order not yet given, 1 = 1st order outstanding, 2 = 2nd order, 3 = 2nd outstanding, 4 = 3rd order, 5 = 3rd outstanding, 6 = all three delivered. next_msgStatus increments the register (and calls dPb_erasePicture() on the even steps) as each delivered pictograph is accepted; case 6 additionally sets field_0x9CC so the l_msg_3rd_order_end speech plays."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x1601"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_photo.cpp:1660-1690",
+    "src/d/actor/d_a_npc_photo.cpp:1797-1824"
+   ],
+   "notes": "Which three subjects the assignments name is in the message archive, not in the code, so the subjects themselves could not be identified from the decomp."
+  },
+  {
+   "id": "wf_lenzo_deluxe_picto_box",
+   "stage": "Ocmera",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "show_item",
+    "detail": "NEW KIND. Hold out a FIREFLY_BOTTLE to Lenzo. daNpcPhoto_c's show-item handler: itemNo == dItemNo_FIREFLY_BOTTLE_e && getEventReg(0xC407) >= 6 && !checkGetItem(DELUXE_PICTO_BOX) -> mItemNo = dItemNo_DELUXE_PICTO_BOX_e and the event index becomes DEFAULT_TALK_XY."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x1601"
+   ],
+   "sets_bits": [],
+   "gives_item": "DELUXE_PICTO_BOX",
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_photo.cpp:1749-1756",
+    "src/d/actor/d_a_npc_photo.cpp:2148-2153"
+   ],
+   "notes": "No event bit records the upgrade - the save state is checkGetItem(DELUXE_PICTO_BOX) itself."
+  },
+  {
+   "id": "wf_lenzo_legendary_pictograph",
+   "stage": "Ocmera",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "photo",
+    "detail": "With the Deluxe Picto Box in hand, daNpcPhoto_c::getMsg calls isPhotoDxOk() on the picture Link is carrying. If it passes it raises temp bit 0x0302 and, the first time only, event bit 0x3808 plus l_msg_week_1st; later visits use l_msg_week[dKy_get_dayofweek()]. Then holding the Deluxe Picto Box out while 0x0302 is set gives dItemNo_LEGENDARY_PICTOGRAPH_e."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x1601"
+   ],
+   "sets_bits": [
+    "0x3808"
+   ],
+   "gives_item": "LEGENDARY_PICTOGRAPH",
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_photo.cpp:1771-1795",
+    "src/d/actor/d_a_npc_photo.cpp:1742-1748",
+    "src/d/actor/d_a_npc_photo.cpp:2140-2146"
+   ],
+   "notes": "0x0302 and 0x0301 are TEMP bits (dSv_event_tmp_flag_c), cleared on stage change, so this is a same-visit handshake, not a saved quest step."
+  },
+  {
+   "id": "wf_photograph_ub1",
+   "stage": "sea",
+   "room": 11,
+   "layer": -1,
+   "trigger": {
+    "kind": "photo",
+    "detail": "The Ub1 townswoman (two placements in sea room 11, one per day/night layer set). daNpcPeople_c::eventUb1TalkInit walks: no 0x0A40 -> l_msg_ub1_1st_talk + raise 0x0A40; no Picto Box -> l_msg_ub1_no_camera; Picto Box but no Treasure Chart 20 -> l_msg_ub1_no_collect_map20 + raise 0x2102. Then daNpcPeople_c::photoCB, the pictograph callback, checks dComIfGp_getPictureResult() == 5 && !is1GetMap20() and returns m766[3] = UB1_TALK_PHOTO_GET_ITEM instead of the plain UB1_TALK_PHOTO - that event is what hands over Treasure Chart 20. is1GetMap20() is simply checkGetItem(COLLECT_MAP_20); is1DayGetMap20() is register 0xC103 == 2."
+   },
+   "event": "UB1_TALK_PHOTO_GET_ITEM",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x0A40",
+    "0x2102"
+   ],
+   "gives_item": "COLLECT_MAP_20",
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_people.cpp:6076-6096",
+    "src/d/actor/d_a_npc_people.cpp:6152-6159",
+    "src/d/actor/d_a_npc_people.cpp:8067-8078",
+    "src/d/actor/d_a_npc_people.cpp:8251-8258",
+    "src/d/actor/d_a_npc_people.cpp:4476-4482"
+   ],
+   "notes": "getPictureResult() == 5 is the game's own judgement that the photo is a good one of her; what the other result values mean was not traced."
+  },
+  {
+   "id": "wf_killer_bees_first_talk",
+   "stage": "sea",
+   "room": 11,
+   "layer": 0,
+   "trigger": {
+    "kind": "talk",
+    "detail": "Four Mk / UkB / UkC / UkD placements stand together at (12651..12828, 1041, -201404..-201636) on layers 0 and 4 - the Killer Bees loitering as a group, params low byte 0x01. daNpc_Mk_c::getMsg's fall-through case plays message 0x26BD and raises 0x1210."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x1210"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/sea/sea_report.json:actors",
+    "src/d/actor/d_a_npc_mk.cpp:226-247"
+   ],
+   "notes": "d_a_npc_uk.cpp's header names them: Jin, Jan & Jun-Roberto. Mk is the fourth (the leader). Every function body in d_a_npc_uk.cpp is a /* Nonmatching */ stub, so the hiders' own logic is not in the decomp."
+  },
+  {
+   "id": "wf_hide_and_seek",
+   "stage": "sea",
+   "room": 11,
+   "layer": 0,
+   "trigger": {
+    "kind": "talk",
+    "detail": "daNpc_Mk_c::talk01: when the message flow leaves flag 0x8 set, the actor looks up MK_GAMESTART, orders it with fopAcM_orderChangeEventId, raises temp bit 0x0040 and event bit 0x2201. The three hiders then move to their second placements - UkB (8195, 682, -198440), UkC (14008, 1045, -200574), UkD (9724, 1144, -203661), all params low byte 0x02 - and Mk waits at (12297, 1385, -199016). Finding each one plays UkB_FOUND / UkC_FOUND / UkD_FOUND (UkD also has UkD_FOUND2). talk02 polls daNpc_Mk_Static_c::chkGameSet(); once it is true it orders MK_GAMESET and blows the end whistle."
+   },
+   "event": "MK_GAMESTART",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x2201"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_mk.cpp:1048-1067",
+    "src/d/actor/d_a_npc_mk.cpp:1069-1088",
+    "src/d/d_a_npc_mk_static.cpp:306-307",
+    "out/rip/GZLE01/stages/sea/sea_report.json:actors"
+   ],
+   "notes": "The four *_FOUND event names come from sea's event script list, not from src/ - nothing in the decompiled source references them by name, because d_a_npc_uk.cpp is entirely stubbed."
+  },
+  {
+   "id": "wf_hide_and_seek_cleared",
+   "stage": "sea",
+   "room": 11,
+   "layer": 0,
+   "trigger": {
+    "kind": "npc",
+    "detail": "MK_GAMESET runs the Bees' demo. Its step 13 calls fopAcM_createItemForPresentDemo(&current.pos, dItemNo_HEART_PIECE_e), registers the item as the event's partner and raises 0x1340. Step 14 clears temp bit 0x0040 and sets temp bit 0x0120."
+   },
+   "event": "MK_GAMESET",
+   "stb": null,
+   "requires_bits": [
+    "0x2201"
+   ],
+   "sets_bits": [
+    "0x1340"
+   ],
+   "gives_item": "HEART_PIECE",
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_mk.cpp:818-832"
+   ],
+   "notes": "0x1340 is the flag Mrs. Marie tests before she will bring Joy Pendants up at all."
+  },
+  {
+   "id": "wf_marie_first_talk",
+   "stage": "Nitiyou",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "Mrs. Marie is the Ho actor, one placement in the school along with two schoolchildren (Ug1, Ug2). daNpc_Ho_c::getMsg in HO_STATE_TALK_01: at night dKy_checkEventNightStop() short-circuits to message 0x2722; otherwise the first visit plays 0x2711 and raises 0x1E01, and later visits play 0x2712 or 0x2713 depending on whether register 0xC0FF is still zero."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x1E01"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_ho.cpp:386-399",
+    "out/rip/GZLE01/stages/Nitiyou/Nitiyou_report.json:actors"
+   ],
+   "notes": "Nitiyou has an EMPTY EVNT table and no TagEv volumes at all - nothing in the school is placement-triggered. Its only story-looking scripts are UG1_TALK, DAI_ITEM and HO_PREACH."
+  },
+  {
+   "id": "wf_marie_asks_for_pendant",
+   "stage": "Nitiyou",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "daNpc_Ho_c::next_msg_sub0 at message 0x2712: if 0x2201 (the Bees' game has been played) and 0x1340 (it was won) and 0x1F80 is not yet set, it raises 0x1F80, plays 0x271E and - in daylight - also raises temp bit 0x0580. next_msgStatus case 0x271E then queues mItemNum = dItemNo_PURPLE_RUPEE_e, so the conversation pays 50 rupees."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x2201",
+    "0x1340",
+    "0x1E01"
+   ],
+   "sets_bits": [
+    "0x1F80"
+   ],
+   "gives_item": "PURPLE_RUPEE",
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_ho.cpp:190-206",
+    "src/d/actor/d_a_npc_ho.cpp:238-243"
+   ],
+   "notes": "Temp bit 0x0580 is the same-day handshake that sends a Killer Bee running at Link with MK_TALK4 (src/d/actor/d_a_npc_mk.cpp:1189)."
+  },
+  {
+   "id": "wf_bees_point_at_the_tree",
+   "stage": "sea",
+   "room": 11,
+   "layer": 0,
+   "trigger": {
+    "kind": "talk",
+    "detail": "With 0x1F80 set and 0x1E02 clear, daNpc_Mk_c::visitSetEvent names the conversation MK_TALK3 (and visit01 upgrades it to MK_TALK4, with an order flag so the Bee approaches Link, when temp bit 0x0580 is also set). visitTalkInit runs that conversation, jumps to STATE_DEMO03 and raises 0x1E04."
+   },
+   "event": "MK_TALK3",
+   "stb": null,
+   "requires_bits": [
+    "0x1F80"
+   ],
+   "sets_bits": [
+    "0x1E04"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_mk.cpp:1093-1110",
+    "src/d/actor/d_a_npc_mk.cpp:1112-1126",
+    "src/d/actor/d_a_npc_mk.cpp:1186-1194"
+   ],
+   "notes": "The same visitTalkInit also handles the Picto Box hint: 0x1208 set and no camera owned -> MK_TALK2 and raise 0x1602."
+  },
+  {
+   "id": "wf_joy_pendant_tree",
+   "stage": "sea",
+   "room": 11,
+   "layer": -1,
+   "trigger": {
+    "kind": "hit",
+    "detail": "The one TagMk in the game's sea stage sits in Windfall at (9266, 590, -198527), scale 3.0, params 0xFFFFFF01. daTag_Mk_c::getType() is params & 0xFF = 1, which falls into create()'s default case: if 0x1E02 is clear it starts in ACT_ARRIVAL. actionArrival waits for 0x1E04 and daylight (!dKy_daynight_check()) and then switches to ACT_HUNT; actionHunt fires when daPy_py_c::checkFrontRollCrash() is true within 150.0f XZ - i.e. Link rolls into the tree - and orders MK_PENDANT. actionReady raises 0x1E02 as soon as the demo is accepted."
+   },
+   "event": "MK_PENDANT",
+   "stb": null,
+   "requires_bits": [
+    "0x1E04"
+   ],
+   "sets_bits": [
+    "0x1E02"
+   ],
+   "gives_item": "JOY_PENDANT",
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_tag_mk.cpp:25-27",
+    "src/d/actor/d_a_tag_mk.cpp:270-292",
+    "src/d/actor/d_a_tag_mk.cpp:295-300",
+    "src/d/actor/d_a_tag_mk.cpp:475-530",
+    "out/rip/GZLE01/stages/sea/sea_report.json:tags"
+   ],
+   "notes": "Reusing the existing kind `hit`: checkFrontRollCrash is a roll collision, not a sword hit, but it is the same 'Link's body hits this object' shape. daNpc_Mk_c::climb01 is the mirror case - a Bee up a pole, knocked down by the same front-roll test at 200.0f, playing MK_DROP."
+  },
+  {
+   "id": "wf_marie_joy_pendants",
+   "stage": "Nitiyou",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "show_item",
+    "detail": "NEW KIND. Hold a JOY_PENDANT out to Mrs. Marie. daNpc_Ho_c::wait01 only offers the item-talk order flag when isEventBit(DEMO_SELECT(0x1E02, 0x1E04)) - 0x1E04 in every retail build - and getMsg HO_STATE_TALK_03 refuses with 0x2739 unless the held item really is a Joy Pendant. The counting is all register 0xC0FF: receivePendant(1) on the first one (message 0x273D), then at 0x273E, if dComIfGs_getBeastNum(dBeastIdx_JOY_PENDANT_e) >= 20, the flow goes 0x2741 -> 0x2742 -> receivePendant(0x14) -> 0x2743, which hands over the CABANA DEED and raises 0x1C08. Later, message 0x274D takes every pendant Link is carrying and 0x274E checks register 0xC0FF >= 0x28 (40) with 0x1C04 clear -> 0x274F -> 0x2751, the HERO'S CHARM, raising 0x1C04. Once both prizes are out, extra pendants pay red / purple / orange rupees by count (message 0x2754)."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x1E04",
+    "0x1F80"
+   ],
+   "sets_bits": [
+    "0x1C08",
+    "0x1C04"
+   ],
+   "gives_item": "CABANA_DEED then HEROS_CHARM",
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_ho.cpp:290-355",
+    "src/d/actor/d_a_npc_ho.cpp:400-419",
+    "src/d/actor/d_a_npc_ho.cpp:618-624",
+    "include/global.h:64-73"
+   ],
+   "notes": "Both prizes are in one step because they are one register-driven conversation. Note the count for the Cabana Deed is read from the inventory (getBeastNum) while the count for the Hero's Charm is read from the register - they are different numbers if Link hands them over in batches."
+  },
+  {
+   "id": "wf_marie_preach",
+   "stage": "Nitiyou",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "npc",
+    "detail": "HO_PREACH. daNpc_Ho_c::wait01 raises order flag 0x4 whenever 0x1E04 is set and it is not dKy_checkEventNightStop(); next_msgStatus case 0x2725 sets flag 0x20, and talk01 turns that into fopAcM_orderChangeEvent(..., \"HO_PREACH\", 0, 0xFFFF). preach() waits for the event to end and drops back into DEFAULT_TALK."
+   },
+   "event": "HO_PREACH",
+   "stb": null,
+   "requires_bits": [
+    "0x1E04"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_ho.cpp:618-624",
+    "src/d/actor/d_a_npc_ho.cpp:268-272",
+    "src/d/actor/d_a_npc_ho.cpp:628-641",
+    "src/d/actor/d_a_npc_ho.cpp:697-708"
+   ],
+   "notes": "Purely a flavour lecture - it raises no bit and gives no item."
+  },
+  {
+   "id": "wf_auction",
+   "stage": "Orichh",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "Orichh (House of Wealth) spawn 5 at (2, 0, 737) carries EVNT index 0 = \"Auction\", the stage's only table entry, so walking into the auction room starts it. daAuction_c looks up AUCTION_START, AUCTION_GET_ITEM, AUCTION_NO_ITEM, AUCTION_START2 and AUCTION_END2 on create, and the stage also carries AUCTION_TALK / AUCTION_TALK_XY. Seven bidder actors Auc0..Auc7 are placed with it, driven by l_npc_dat (bid speed and ceiling per bidder: 1000, 450, 500, 250, 998, 998, 150)."
+   },
+   "event": "Auction",
+   "stb": null,
+   "requires_bits": [
+    "0x1F04"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Orichh/Orichh_report.json:spawns",
+    "src/d/actor/d_a_auction.cpp:264-268",
+    "src/d/actor/d_a_auction.cpp:67-75",
+    "tools/ww_story_mine.py Orichh"
+   ],
+   "notes": "Orichh's two exits both go to sea room 11 (start points 3 and 4). It also holds a takara2 chest at (651, 156, 280) with rot.z 1279 -> item 0x04 = RED_RUPEE, and the Gp1 (Maggie's Father), Kp1 and Kf1 NPCs."
+  },
+  {
+   "id": "wf_auction_lots",
+   "stage": "Orichh",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "minigame",
+    "detail": "NEW KIND. Outbid the AI bidders. daAuction_c::eventGetItemInit spawns the won lot with fopAcM_createItemForPresentDemo and raises that lot's event bit. l_item_dat (the ordinary rotation) is JOY_PENDANT / bit 0x0F01 / base 40, COLLECT_MAP_27 / 0x1080 / 5, COLLECT_MAP_18 / 0x1040 / 60, HEART_PIECE / 0x1020 / 80. l_item_dat2 (the m822 == 2 rotation) is POSTMAN_STATUE / 0x1008 / 30 and SHOP_GURU_STATUE / 0x1004 / 40, but the item actually created for those two comes from l_item_dat22 - MAGIC_ARMOR and COLLECT_MAP_06. If an NPC wins instead, message 0x1D05 raises 0x4008 and stores the winner in register 0x790F and the lot in 0xCD03; if Link wins, 0x4008 is cleared."
+   },
+   "event": "AUCTION_GET_ITEM",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x0F01",
+    "0x1080",
+    "0x1040",
+    "0x1020",
+    "0x1008",
+    "0x1004",
+    "0x4008"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_auction.cpp:50-65",
+    "src/d/actor/d_a_auction.cpp:1194-1213",
+    "src/d/actor/d_a_auction.cpp:1424-1436",
+    "src/d/actor/d_a_auction.cpp:1489-1505"
+   ],
+   "notes": "sets_bits lists every lot bit the same routine can raise; exactly one goes up per won lot. What switches m822 to 2 (the rare rotation) was not traced - it is set outside eventGetItemInit."
+  },
+  {
+   "id": "wf_moblins_letter",
+   "stage": "Opub",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "The Cafe Bar holds a Bm4 postman (daNpc_Bm1_c). Its event table is l_evn_tbl = { Get_Mo3_Ltr, Met_Ryu_Islnd, Get_Rupee, Skn_Islnd }, and eventOrder turns state m8FD >= 3 into mEventIdx = m8FD - 3, so m8FD == 3 orders Get_Mo3_Ltr. talk_1 sets m8FD = 3 when message 0x1EF6 is dismissed; the entry message is chosen by isEventBit(0x1908) ? 0x1EF2 : 0x1EF0, and 0x1EF8 raises 0x1908. event_proc case 0 (Get_Mo3_Ltr finishing) only sets internal state - the letter itself is handed over inside the event data."
+   },
+   "event": "Get_Mo3_Ltr",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x1908"
+   ],
+   "gives_item": "MOBLINS_LETTER",
+   "confidence": "medium",
+   "sources": [
+    "src/d/actor/d_a_npc_bm1.cpp:503-508",
+    "src/d/actor/d_a_npc_bm1.cpp:1174-1190",
+    "src/d/actor/d_a_npc_bm1.cpp:1670-1680",
+    "src/d/actor/d_a_npc_bm1.cpp:2978-2999",
+    "src/d/actor/d_a_npc_bm1.cpp:3157-3178",
+    "out/rip/GZLE01/stages/Opub/Opub_report.json:actors"
+   ],
+   "notes": "gives_item is inferred from the event name (Mo3 = the Moblin, Ltr = letter) plus dItemNo_MOBLINS_LETTER_e existing at include/d/d_item_data.h:163 - no onGetItem for it appears in d_a_npc_bm1.cpp, so the handover is event data. Orichh's script list carries the matching other half, GET_MAGYS_LTTR (Maggie's Letter), plus GET_KAKERA_HRT (a Piece of Heart), bensyou, angry and Kaere_Kaere - but d_a_npc_gp1.cpp (Maggie's Father) is entirely /* Nonmatching */ stubs, so the Maggie-and-Moe chain could not be wired up from the decomp."
+  },
+  {
+   "id": "wf_cafe_bar_camera",
+   "stage": "Opub",
+   "room": 0,
+   "layer": 1,
+   "trigger": {
+    "kind": "tag",
+    "detail": "Opub's EVNT table is { MapToolCamera, FirstCamera }. Spawn 0 at (400, -275, 373) carries index 0 (the map-tool camera, engine boilerplate), and a single TagEv on LAYER 1 with switch 20 at (-108, 0, 98) orders index 1 = FirstCamera. Being on layer 1 means it only exists in one of the stage's day/night/story layer sets."
+   },
+   "event": "FirstCamera",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Opub/Opub_report.json:tags",
+    "tools/ww_story_mine.py Opub"
+   ],
+   "notes": "Opub also carries UO1_GET_ITEM, UB1_TALK(_XY), UB4_GET_ITEM, UW2_GET_ITEM, UM1_GET_ITEM/TALK, UM3_TELESCOPE_TALK, UM3_GET_ITEM, SA3_GET_ITEM and SA5_TALK_XY / SA5_GET_ITEM - the same daNpcPeople_c townsfolk scripts that sea room 11 has, because the drinkers move indoors at night."
+  },
+  {
+   "id": "wf_stall_merchants",
+   "stage": "sea",
+   "room": 11,
+   "layer": -1,
+   "trigger": {
+    "kind": "show_item",
+    "detail": "Three Ro stall keepers, Roten2 / Roten3 / Roten4, all placed at (12640, 0, -200000) with params 0x00000000 / 0x01000000 / 0x02000000 - the top byte is the npc number and all three load the same \"Ro\" archive. daNpc_Roten_c takes an item from dItemNo_TOWN_FLOWER_e (0x8C) up to dItemNo_SHOP_GURU_STATUE_e (0x97) - isKoukanItem() - and runs ROTEN_EXCHANGE_1ST, ROTEN_EXCHANGE_2ND, ROTEN_CHANGE_ITEM and ROTEN_GET_MAP. Each merchant has his own save slot in l_save_dat: an exchange counter register, and once it reaches 3 the merchant stops trading and plays ROTEN_GET_MAP instead."
+   },
+   "event": "ROTEN_EXCHANGE_1ST",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x1320",
+    "0x1310",
+    "0x1308",
+    "0x1304",
+    "0x1302",
+    "0x1301"
+   ],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "src/d/actor/d_a_npc_roten.cpp:17-21",
+    "src/d/actor/d_a_npc_roten.cpp:1496-1521",
+    "src/d/actor/d_a_npc_roten.cpp:1747-1750",
+    "src/d/actor/d_a_npc_roten.cpp:2818-2845",
+    "src/d/actor/d_a_npc_roten.cpp:2437-2449",
+    "src/d/actor/d_a_npc_roten.cpp:2503-2527",
+    "out/rip/GZLE01/stages/sea/sea_report.json:actors"
+   ],
+   "notes": "Which of the three is Zunari and exactly what each accepts is in the message archive, not in the code; the trade table l_item_dat[][12] at d_a_npc_roten.cpp:1517 is a matrix of small indices whose meaning was not decoded. sets_bits lists all three merchants' slots because the same code path serves all three."
+  },
+  {
+   "id": "wf_shop_guru_statue",
+   "stage": "sea",
+   "room": 11,
+   "layer": -1,
+   "trigger": {
+    "kind": "show_item",
+    "detail": "One special case in the same actor: mNpcNo == 1 && !isEventBit(0x3E04) && itemNo == dItemNo_SHOP_GURU_STATUE_e is singled out ahead of the generic exchange test, and the bit is raised at d_a_npc_roten.cpp:2503."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x1004"
+   ],
+   "sets_bits": [
+    "0x3E04"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_roten.cpp:2828-2833",
+    "src/d/actor/d_a_npc_roten.cpp:2500-2506"
+   ],
+   "notes": "requires_bits 0x1004 is the auction bit for the Shop Guru Statue lot - that is where the statue comes from - but nothing in daNpc_Roten_c tests it; it tests the inventory."
+  },
+  {
+   "id": "wf_tott_dance",
+   "stage": "sea",
+   "room": 11,
+   "layer": 0,
+   "trigger": {
+    "kind": "conduct",
+    "detail": "Tott (Tt), placed at (9967, 1110, -203370) on layers 0, 1, 4 and 5. His item-talk callback only accepts dItemNo_WIND_WAKER_e. First conversation: message 0x22C5, raising 0x0B08. After that, wait01 raises order flag 0x4 whenever 0x0B08 is set and 0x0C40 is not, which orders TACT_TT10; demoInitChange chains into TACT_TT11 and demoProcTact1 switches on daPy_lk_c::getTactTimerCancel() - 1 orders TACT_TT12, 2 orders TACT_TT13, and 0 (Link kept time all the way through) falls to the default case, which raises 0x0C40 and ends the cut. From then on setAnmStatus gives Tott the dance animation instead of the idle."
+   },
+   "event": "TACT_TT10",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x0B08",
+    "0x0C40"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_tt.cpp:20-32",
+    "src/d/actor/d_a_npc_tt.cpp:155-172",
+    "src/d/actor/d_a_npc_tt.cpp:295-325",
+    "src/d/actor/d_a_npc_tt.cpp:618-628",
+    "out/rip/GZLE01/stages/sea/sea_report.json:actors"
+   ],
+   "notes": "getMsg's default branch calls dComIfGp_setMelodyNum(5) on message 0x5B3, so a melody is learned somewhere in this flow, but which melody index 5 is was not chased down. The Skanran actor at (13162, 2800, -202270) is the watching crowd (sea carries kanran_start and kanran_vive scripts for it)."
+  },
+  {
+   "id": "wf_sploosh_kaboom",
+   "stage": "Kaisen",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "minigame",
+    "detail": "Salvatore's battleship game. Kaisen ('kaisen' = naval battle) has an EMPTY EVNT table, so nothing auto-plays; the whole thing is driven by the Kg1 actor, whose file header names it 'NPC - Salvatore (Squid-Hunt/\"Sploosh Kaboom\" Minigame)'. The stage's story scripts are MINIGAME_START, MINIGAME_END, KAISEN_GETITEM and DAI_ITEM, and it holds three `item` actors at (81/206/331, 155, -462) with params &0xFF = 0x03 = YELLOW_RUPEE. Both exits go to sea room 11."
+   },
+   "event": "KAISEN_GETITEM",
+   "stb": null,
+   "requires_bits": [
+    "0x1F04"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "low",
+   "sources": [
+    "out/rip/GZLE01/stages/Kaisen/Kaisen_report.json",
+    "src/d/actor/d_a_npc_kg1.cpp:3",
+    "tools/ww_story_mine.py Kaisen"
+   ],
+   "notes": "EVERY function body in d_a_npc_kg1.cpp is a /* Nonmatching */ stub, so the win condition, the prize and any event bit are all unknown. sea also carries KG2_START_DEMO, KG2_CLEAR_DEMO and KG2_GETDEMO for the other Kg actor (d_a_npc_kg2.cpp), and a Gk1 is placed both in sea room 11 layer 4 and in Opub."
+  },
+  {
+   "id": "wf_chu_jelly_juice_shop",
+   "stage": "Pdrgsh",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "The Chu Jelly Juice Shop. Spawn 1 at (-85, 0, 35) carries EVNT index 0 = the stage's only entry, \"next_link\". The shop's story scripts are CREATE_DRUG, GET_DRUG, PUT_ITEM, PUT_ITEM_FAIL and DAI_ITEM, and the shopkeeper is the single Ds1 actor, whose file header names it 'NPC - Doc Bandam (Windfall Potion Shop shopkeeper)'. The stage also has two Fdai stands (the pedestals PUT_ITEM / DAI_ITEM act on) and two loose `item` actors. Its exit goes to sea room 11 start point 7."
+   },
+   "event": "next_link",
+   "stb": null,
+   "requires_bits": [
+    "0x1F04"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "low",
+   "sources": [
+    "out/rip/GZLE01/stages/Pdrgsh/Pdrgsh_report.json",
+    "src/d/actor/d_a_npc_ds1.cpp:1-4",
+    "src/d/actor/d_a_npc_ds1.cpp:46-48",
+    "tools/ww_story_mine.py Pdrgsh"
+   ],
+   "notes": "d_a_npc_ds1.cpp is entirely /* Nonmatching */ stubs - not one event bit, item id or message number survives in it. The only usable signal is the function name daNpc_Ds1_checkCreateDrugChuchu, which confirms the Chu Jelly is the input. No bit could be assigned to this quest."
+  },
+  {
+   "id": "wf_bomb_shop",
+   "stage": "Obombh",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "tag",
+    "detail": "CROSS-REFERENCE, not new. Obombh's EVNT table is a single entry, \"bombshop\"; spawn 200 at (13, 498, -165) and a TagEv at (5, 498, -177) with type SPE_EVENT and switch 16 both order it, and bombshop.stb raises 0x2110 from its PACKAGE PLAY EventFlag. The pirates (Zl1, P1a, P1b, P1c) and the shopkeeper actors Bms1/Bms2 are placed here. All of this is already mined in gcrip/data/ww_story_jabun.json as steps jab_bombshop_raid and jab_bombshop_owner."
+   },
+   "event": "bombshop",
+   "stb": "bombshop.stb",
+   "requires_bits": [
+    "0x1F04"
+   ],
+   "sets_bits": [
+    "0x2110",
+    "0x2110"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Obombh/Obombh_report.json",
+    "tools/ww_stb_flags.py",
+    "gcrip/data/ww_story_jabun.json"
+   ],
+   "notes": "Listed so the Windfall graph is complete for the island; the authority for this beat is ww_story_jabun.json. Obombh's other story scripts are BMS_GET_DEMO and BMS_LAND_DEMO. bombshop.stb raises 0x2110 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+  },
+  {
+   "id": "wf_hollo_shop_is_not_windfall",
+   "stage": "Ocrogh",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "ANSWER TO THE QUESTION IN THE BRIEF: Ocrogh is FOREST HAVEN, not Windfall. Three independent checks agree. (1) No stage in the whole rip has an exit whose dest_stage is \"Ocrogh\", and Ocrogh itself has no exits - so it is not one of the twelve Windfall doors, every one of which resolves to sea room 11. (2) d_kankyo_rain.cpp:866 excludes exactly two stage names from indoor rain, \"Ocrogh\" and \"Omori\", and Omori is the Forest Haven interior; d_kyeff.cpp:155-167 groups it the same way. (3) Its single placed actor is Bj7 at (-120, 0, 157) - Bj is the Forest Haven / Korok NPC family (d_a_npc_bj1.cpp), and the stage's scripts are Get_Blu_Btl (get blue bottle/potion) and Mak_Drg (make drug). Spawn 0 at (-31, 0, 414) carries EVNT index 0 = WALK_START."
+   },
+   "event": "WALK_START",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Ocrogh/Ocrogh_report.json",
+    "src/d/d_kankyo_rain.cpp:866-867",
+    "src/d/d_kyeff.cpp:155-167",
+    "gcrip/data/ww_stages.py"
+   ],
+   "notes": "gcrip/data/ww_stages.py already labels it \"Hollo's Forest Potion Shop\". d_a_npc_bj1.cpp is 119 /* Nonmatching */ stubs, so Hollo's potion logic is not in the decomp either. This step exists to record the finding; it is not a Windfall story beat."
+  }
+ ]
+}

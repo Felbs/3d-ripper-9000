@@ -38,6 +38,12 @@ IMPLEMENTED = {
               " sword swing) rather than an area the player walks into",
     "warp": "actors/warp_object.gd - picks WHICH event to order from save state, the way"
             " daWarpf_c::CreateInit does, then plays it and changes stage",
+    "conduct": "player.gd CONDUCT state + Game.conduct_tick - the tablet's song, the 800-unit"
+               " two-body proximity and the facing test, with a real ERROR branch",
+    "npc_tag": "actors/npc_tag.gd - a volume that box-tests one named NPC and never the player."
+               " Wired end to end, but not yet seen to fire in an integration test",
+    "hit": "actors/hit_object.gd - take_hit stages that each order an event. The one mined case"
+           " cannot fire: the Ajav wall is absent from the ripped placement data",
 }
 
 # An enemy the mined data names but enemies.json has no profile for is never wrapped, so its
@@ -54,17 +60,12 @@ def unwrapped_enemy(step: dict, enemies: dict) -> str:
 # Mechanisms the mined chapters need that the engine has not built yet.  Each line says what
 # it would take, so the list doubles as the build order for the rest of the game.
 UNIMPLEMENTED = {
-    "item": "picking up a placed item actor. Needs the pickup's own spawn condition (itemDek"
-            " only exists once the Deku Tree scene is done) plus a collected bit per placement",
-
-    "actor": "a placed object resolves its event by NAME through the event manager",
-
-    "conduct": "the Wind Waker duets. Needs a conducting mode with song ids, a two-body"
-               " proximity and facing test against the partner, and a success/failure branch",
-    "npc_tag": "a trigger volume that watches an NPC rather than the player (Medli gliding into"
-               " the Dragon Roost updraft)",
-    "hit": "damaging a placed object with a weapon or bomb, which then orders its own event"
-           " (blowing open Jabun's cave wall)",
+    "actor": "a placed object resolves its event by NAME through the event manager; nothing in"
+             " the engine does that yet",
+    "show_item": "holding an inventory item out to an NPC (dEvtCnd_CANTALKITEM_e): a talk that"
+                 " carries the selected item id, with the NPC branching on it",
+    "photo": "taking or delivering a pictograph: a camera mode plus a per-subject result value",
+    "minigame": "an outcome decided by a scored activity rather than a position or a bit",
 }
 
 MODELLED_STATE = {"collect[0] bit0": 'has_item("sword")', "collect[1] bit0": 'has_item("shield")'}

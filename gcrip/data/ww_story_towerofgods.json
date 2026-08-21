@@ -436,6 +436,7 @@
    "sets_bits": [
     "0x2E80",
     "0x2E80",
+    "0x2E80",
     "0x2E80"
    ],
    "gives_item": null,
@@ -446,7 +447,7 @@
     "src/d/actor/d_a_obj_doguu.cpp:353-356",
     "src/d/d_event_data.cpp:798-800"
    ],
-   "notes": "The naive reading - d = Din placed, f = Farore, n = Nayru - is right about the letters but wrong about the beat. All three scripts are byte-identical apart from the filename: same EventFlag 11904, same OffsetPos (-50179, -1000, 7070), same OffsetAngY 90, and all three end at Stage 'sea', RoomNo 26, StartCode 0. They are one beat, the tower rising out of the sea, filmed from whichever Triangle Island Link finished at, and every one of them deposits him at the foot of the Tower of the Gods. towerf.stb and towern.stb are the alternates; the step is listed once under towerd. towerd.stb raises 0x2E80 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). towerd.stb raises 0x2E80 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+   "notes": "The naive reading - d = Din placed, f = Farore, n = Nayru - is right about the letters but wrong about the beat. All three scripts are byte-identical apart from the filename: same EventFlag 11904, same OffsetPos (-50179, -1000, 7070), same OffsetAngY 90, and all three end at Stage 'sea', RoomNo 26, StartCode 0. They are one beat, the tower rising out of the sea, filmed from whichever Triangle Island Link finished at, and every one of them deposits him at the foot of the Tower of the Gods. towerf.stb and towern.stb are the alternates; the step is listed once under towerd. towerd.stb raises 0x2E80 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). towerd.stb raises 0x2E80 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). towerd.stb raises 0x2E80 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
   },
   {
    "id": "totg_arrive_tower",
@@ -852,6 +853,7 @@
    "sets_bits": [
     "0x2D10",
     "0x2D10",
+    "0x2D10",
     "0x2D10"
    ],
    "gives_item": null,
@@ -862,7 +864,7 @@
     "src/d/d_event_data.cpp:798-800",
     "src/d/actor/d_a_warpf.cpp:230-232"
    ],
-   "notes": "The end of the chapter: Link is carried down through the sea into the sealed Hyrule under it. 0x2D10 is raised the moment the .stb starts, not when it ends. What follows belongs to the Hyrule chapter (Hyrule layer 8 is the layer daWarphr_c special-cases when it plays warp_out on the way back). warp_in.stb raises 0x2D10 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). warp_in.stb raises 0x2D10 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+   "notes": "The end of the chapter: Link is carried down through the sea into the sealed Hyrule under it. 0x2D10 is raised the moment the .stb starts, not when it ends. What follows belongs to the Hyrule chapter (Hyrule layer 8 is the layer daWarphr_c special-cases when it plays warp_out on the way back). warp_in.stb raises 0x2D10 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). warp_in.stb raises 0x2D10 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). warp_in.stb raises 0x2D10 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
   },
   {
    "id": "totg_return_from_tower",
@@ -904,6 +906,7 @@
    "sets_bits": [
     "0x2D08",
     "0x2D08",
+    "0x2D08",
     "0x2D08"
    ],
    "gives_item": null,
@@ -917,7 +920,7 @@
     "src/d/actor/d_a_warpdm20.cpp:118-123",
     "out/rip/GZLE01/stages/sea/sea_report.json:tags (TagWp room 26, params 0xFFFFFF02)"
    ],
-   "notes": "NOT part of this chapter - it is the second, much later descent into Hyrule, made from the sea rather than from inside the tower. It is recorded here because it shares the ADMumi stage and because 0x2D08 is what finally switches on the Gdemo20 warp pillar that stands, dormant, in sea room 26 from the moment the tower rises. ADMumi's remaining spawn, 244 -> runaway_majuto.stb (EventFlag 12928, -> Hyrule StartCode 0), is reached from M2ganon's attack_ganon event and belongs to the endgame, not here. warphole.stb raises 0x2D08 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). warphole.stb raises 0x2D08 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+   "notes": "NOT part of this chapter - it is the second, much later descent into Hyrule, made from the sea rather than from inside the tower. It is recorded here because it shares the ADMumi stage and because 0x2D08 is what finally switches on the Gdemo20 warp pillar that stands, dormant, in sea room 26 from the moment the tower rises. ADMumi's remaining spawn, 244 -> runaway_majuto.stb (EventFlag 12928, -> Hyrule StartCode 0), is reached from M2ganon's attack_ganon event and belongs to the endgame, not here. warphole.stb raises 0x2D08 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). warphole.stb raises 0x2D08 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). warphole.stb raises 0x2D08 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
   }
  ]
 }
