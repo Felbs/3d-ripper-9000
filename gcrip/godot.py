@@ -140,10 +140,38 @@ const FALL_DAMAGE_2 := 6000.0        # 2 hearts
 # --- misc ---
 const WALL_PUSH_REDUCE := 0.6        # basic.wall_push_speed_reduce
 const ANIM_BLEND := 2.4 / 30.0       # basic.default_anm_morf_frames (2.4 frames)
+# --- sword (cut / cutA / cutF / cutR / cutL / cutEA / cutEB / cutJump tables) ---
+# per swing: clip, anim rate, start frame, end frame, cancel frame, lunge frame,
+# lunge speed (base + 0.2 x entry speed), decel (scale, min, max), hit window [start, end)
+const CUTS := {
+    "cuta":  {"rate": 1.2, "start": 4.0, "end": 19, "cancel": 16.0, "lunge_f": 6.0, "lunge": 10.0, "dec": [0.7, 0.5, 2.6],  "hit": [5.0, 11.0]},
+    "cutf":  {"rate": 1.2, "start": 4.0, "end": 19, "cancel": 17.0, "lunge_f": 6.0, "lunge": 8.0,  "dec": [0.7, 0.5, 0.95], "hit": [5.0, 12.0]},
+    "cutr":  {"rate": 1.2, "start": 4.0, "end": 19, "cancel": 16.0, "lunge_f": 6.0, "lunge": 1.0,  "dec": [0.7, 0.5, 0.95], "hit": [6.0, 12.0]},
+    "cutl":  {"rate": 1.2, "start": 4.0, "end": 18, "cancel": 16.0, "lunge_f": 6.0, "lunge": 1.0,  "dec": [0.7, 0.5, 0.95], "hit": [5.0, 10.0]},
+    "cutea": {"rate": 1.0, "start": 4.0, "end": 19, "cancel": 99.0, "lunge_f": 6.0, "lunge": 15.0, "dec": [0.7, 0.5, 4.0],  "hit": [5.0, 11.0]},
+    "cuteb": {"rate": 0.9, "start": 4.0, "end": 19, "cancel": 99.0, "lunge_f": 6.0, "lunge": 7.0,  "dec": [0.7, 0.5, 1.5],  "hit": [5.0, 11.0]},
+}
+const CUT_LUNGE_CARRY := 0.2         # cutX.lunge_speed_carry_ratio
+const COMBO_WINDOW_FRAMES := 2       # cutX.combo_window_frames (m3522)
+const SWORD_RADIUS := 20.0           # cut.hero_sword_at_radius
+const SWORD_LENGTH_SCALE := 1.5      # cut.hero_sword_at_length_scale
+const JATTACK := {"rate": 0.74, "start": 2.0, "end": 15, "speed": 18.0, "speed_y": 27.0, "gravity": -3.0, "hit": [13.0, 15.0]}
+const JATTACK_AIR := {"rate": 0.8, "start": 1.0, "end": 15, "speed": 9.0, "speed_y": 18.0, "gravity": -3.0, "hit": [13.0, 15.0]}
+const JATTACK_LAND := {"rate": 1.1, "start": 1.0, "end": 14, "cancel": 12.0}
+# --- damage (dam / damage / laDamage tables) ---
+const DAMAGE_INVINCIBLE_FRAMES := 30    # dam.damage_invincible_frames
+const DAMAGE_ANIM := {"rate": 0.6, "start": 0.0, "end": 9}
+const DAMAGE_KNOCKBACK_BASE := 13.0     # damage.damage_knockback_speed_base
+const DAMAGE_KNOCKBACK_PER_VEC := 0.05  # damage.damage_knockback_speed_per_damage_vec
+const DAMAGE_DECEL := [0.5, 0.25, 1.2]  # damage.damage_decel_scale / min / max
+const LARGE_DAMAGE_SPEED := 25.0        # laDamage.fly_speed
+const LARGE_DAMAGE_SPEED_Y := 60.0      # laDamage.fly_yspeed
+const LARGE_DAMAGE_GRAVITY := -13.0     # laDamage.fly_gravity
+const MAX_HEARTS_START := 3             # quarter hearts: 12
 
 const S16_TO_RAD := PI / 32768.0
 
-enum State { GROUND, AIR, ROLL, SWIM, LAND }
+enum State { GROUND, AIR, ROLL, SWIM, LAND, ATTACK, JUMPCUT, JUMPCUT_LAND, DAMAGE }
 
 @export var water_level := -1.0e9   # stage sets this (sea stages: 0)
 
@@ -165,6 +193,23 @@ var fall_start_y := 0.0
 var strafe := Vector2.ZERO  # strafe velocity (x right, y forward) in target mode
 var swim_speed := 0.0
 
+# combat
+var hearts_max := MAX_HEARTS_START * 4   # quarter hearts
+var hearts := MAX_HEARTS_START * 4
+var invincible := 0                      # frames
+var combo := 0                           # m34C4: swings in the current chain
+var combo_timer := 0                     # m3522
+var cut: Dictionary = {}
+var cut_frame := 0.0                     # current animation frame of the swing
+var cut_entry_speed := 0.0
+var hit_targets := {}                    # bodies already hit by this swing
+var jattack: Dictionary = {}
+var damage_dir := Vector3.ZERO
+@onready var sword_pivot: Node3D = get_node_or_null("SwordPivot")
+@onready var sword_area: Area3D = get_node_or_null("SwordPivot/SwordHit")
+@onready var sword_shape: CollisionShape3D = get_node_or_null("SwordPivot/SwordHit/Shape")
+@onready var hud_hearts: Label = get_node_or_null("HUD/Hearts")
+
 func _ready() -> void:
     start_pos = global_position
     fall_start_y = global_position.y
@@ -172,6 +217,9 @@ func _ready() -> void:
     Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
     if model:
         anim = model.find_child("AnimationPlayer", true, false)
+    add_to_group("player")
+    _sword_active(false)
+    _update_hud()
 
 func _unhandled_input(event: InputEvent) -> void:
     if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
@@ -259,15 +307,32 @@ func _physics_process(_delta: float) -> void:
     if absf(cx) > 0.2 or absf(cy) > 0.2:
         _orbit(cx * 0.06, cy * 0.04)
 
+    if invincible > 0:
+        invincible -= 1
+        if model:
+            model.visible = (invincible / 2) % 2 == 0  # damage flicker
+    elif model and not model.visible:
+        model.visible = true
+    if combo_timer > 0:
+        combo_timer -= 1
+        if combo_timer == 0 and state != State.ATTACK:
+            combo = 0
+
     match state:
         State.GROUND: _ground()
         State.AIR: _air()
         State.ROLL: _roll()
         State.SWIM: _swim()
         State.LAND: _land()
+        State.ATTACK: _attack()
+        State.JUMPCUT: _jumpcut()
+        State.JUMPCUT_LAND: _jumpcut_land()
+        State.DAMAGE: _damage()
 
     if model:
         model.rotation.y = facing
+    if sword_pivot:
+        sword_pivot.rotation.y = facing
 
     if global_position.y < start_pos.y - 50000.0:  # fell out of the world
         global_position = start_pos
@@ -315,6 +380,9 @@ func _ground() -> void:
     else:
         _decel_to(0.0)
 
+    if Input.is_action_just_pressed("action_b"):
+        _enter_attack(s)
+        return
     if Input.is_action_just_pressed("action_a") and speed > 1.0:
         _enter_roll()
         return
@@ -359,7 +427,13 @@ func _ground_strafe(s: Vector2, dist: float) -> void:
     strafe = strafe.move_toward(want, accel)
     speed = strafe.length()
 
+    if Input.is_action_just_pressed("action_b"):
+        _enter_attack(s)
+        return
     if Input.is_action_just_pressed("action_a"):
+        if s.y > 0.5:  # Z-target + A + forward = jump attack
+            _enter_jumpcut(JATTACK)
+            return
         if s.y < -0.5:
             _enter_air(-forward() * BACKFLIP_SPEED, BACKFLIP_SPEED_Y, BACKFLIP_GRAVITY)
             return
@@ -399,6 +473,9 @@ func _enter_air_autojump() -> void:
 func _air() -> void:
     if in_water():
         _enter_swim()
+        return
+    if Input.is_action_just_pressed("action_b"):  # midair jump attack
+        _enter_jumpcut(JATTACK_AIR)
         return
     fall_start_y = maxf(fall_start_y, global_position.y)
     var vy := velocity.y / 30.0 + gravity
@@ -467,6 +544,217 @@ func _roll() -> void:
         speed = minf(speed, RUN_SPEED_MAX)
         _enter_ground()
 
+# ---------------------------------------------------------------- sword
+
+func _sword_active(on: bool) -> void:
+    if sword_shape:
+        sword_shape.disabled = not on
+    if not on:
+        hit_targets.clear()
+
+func _cut_dir(s: Vector2) -> String:
+    # stick direction relative to Link's facing: forward / right / left / none
+    if s.length() < 0.3:
+        return "none"
+    var want := heading_of(stick_world_dir(s))
+    var off := wrapf(want - facing, -PI, PI)
+    if absf(off) < PI / 4.0:
+        return "forward"
+    return "right" if off < 0.0 else "left"
+
+func _enter_attack(s: Vector2) -> void:
+    # changeCutProc: swings 1-3 by stick direction, the 4th is a finisher (EA/EB)
+    combo += 1
+    var d := _cut_dir(s)
+    var clip := ""
+    if combo >= 4:
+        clip = "cutea" if d in ["right", "forward"] else "cuteb"
+    elif d == "forward":
+        clip = "cutf"
+    elif d == "right":
+        clip = "cutr"
+    elif d == "none" and Input.is_action_pressed("target"):
+        clip = "cuta"
+    else:
+        clip = "cutl"
+    if d != "none" and not Input.is_action_pressed("target"):
+        facing = heading_of(stick_world_dir(s))
+    cut = CUTS[clip]
+    cut_frame = cut["start"]
+    cut_entry_speed = absf(speed)
+    state = State.ATTACK
+    hit_targets.clear()
+    play_clip(clip, 2.5 / 30.0, cut["rate"])
+    if anim and anim.has_animation(clip):
+        anim.seek(cut["start"] / 30.0, true)
+
+func _attack() -> void:
+    var prev := cut_frame
+    cut_frame += cut["rate"]
+    if prev < cut["lunge_f"] and cut_frame >= cut["lunge_f"]:
+        speed = cut_entry_speed * CUT_LUNGE_CARRY + cut["lunge"]
+    else:
+        var dec: Array = cut["dec"]
+        var step := clampf(speed * dec[0], dec[1], dec[2])
+        speed = maxf(speed - step, 0.0)
+    var hit: Array = cut["hit"]
+    var active: bool = cut_frame >= hit[0] and cut_frame < hit[1]
+    _sword_active(active)
+    if active:
+        _sword_sweep()
+    _apply(forward() * speed, -1.0)
+    combo_timer = COMBO_WINDOW_FRAMES
+    if combo >= 4 and cut_frame >= cut["end"]:
+        combo = 0
+    if cut_frame > cut["cancel"] or cut_frame >= cut["end"]:
+        var s := stick()
+        if Input.is_action_just_pressed("action_b") and combo < 4:
+            _sword_active(false)
+            _enter_attack(s)
+            return
+        if Input.is_action_just_pressed("action_a") and s.length() > 0.3:
+            _sword_active(false)
+            combo = 0
+            _enter_roll()
+            return
+        if cut_frame >= cut["end"]:
+            _sword_active(false)
+            if combo >= 4:
+                combo = 0
+            _enter_ground()
+            return
+    if not is_on_floor():
+        _sword_active(false)
+        _enter_air(forward() * speed, 0.0, GRAVITY)
+
+func _sword_sweep() -> void:
+    if sword_area == null:
+        return
+    for body in sword_area.get_overlapping_bodies():
+        if body == self or hit_targets.has(body):
+            continue
+        hit_targets[body] = true
+        if body.has_method("take_hit"):
+            body.take_hit(1, global_position)
+    for area in sword_area.get_overlapping_areas():
+        if hit_targets.has(area):
+            continue
+        hit_targets[area] = true
+        if area.has_method("take_hit"):
+            area.take_hit(1, global_position)
+
+func _enter_jumpcut(p: Dictionary) -> void:
+    jattack = p
+    state = State.JUMPCUT
+    cut_frame = p["start"]
+    air_vel = forward() * p["speed"]
+    velocity.y = p["speed_y"] * 30.0
+    gravity = p["gravity"]
+    fall_start_y = global_position.y
+    hit_targets.clear()
+    play_clip("jattack", 1.0 / 30.0, p["rate"])
+    if anim and anim.has_animation("jattack"):
+        anim.seek(p["start"] / 30.0, true)
+
+func _jumpcut() -> void:
+    cut_frame += jattack["rate"]
+    var vy := velocity.y / 30.0 + gravity
+    var hit: Array = jattack["hit"]
+    var active: bool = cut_frame >= hit[0] and cut_frame < hit[1]
+    _sword_active(active)
+    if active:
+        _sword_sweep()
+    _apply(air_vel, vy)
+    if is_on_floor() and cut_frame > 4.0:
+        _sword_active(false)
+        state = State.JUMPCUT_LAND
+        cut_frame = JATTACK_LAND["start"]
+        speed = 0.0
+        play_clip("jattackland", 2.0 / 30.0, JATTACK_LAND["rate"])
+
+func _jumpcut_land() -> void:
+    cut_frame += JATTACK_LAND["rate"]
+    _apply(Vector3.ZERO, -1.0)
+    if cut_frame > JATTACK_LAND["cancel"] and (stick().length() > 0.3 or Input.is_action_just_pressed("action_a") or Input.is_action_just_pressed("action_b")):
+        _enter_ground()
+        return
+    if cut_frame >= JATTACK_LAND["end"]:
+        _enter_ground()
+
+# ---------------------------------------------------------------- damage
+
+func take_damage(quarter_hearts: int, source_pos: Vector3, large := false) -> void:
+    # called by enemies / hazards; uses the damage / laDamage tables
+    if invincible > 0 or state == State.DAMAGE:
+        return
+    hearts = maxi(hearts - quarter_hearts, 0)
+    _update_hud()
+    invincible = DAMAGE_INVINCIBLE_FRAMES
+    var dv := global_position - source_pos
+    dv.y = 0.0
+    var dist := dv.length()
+    damage_dir = dv.normalized() if dist > 0.01 else -forward()
+    _sword_active(false)
+    combo = 0
+    if hearts <= 0:
+        _die()
+        return
+    if large:
+        _enter_air(damage_dir * LARGE_DAMAGE_SPEED, LARGE_DAMAGE_SPEED_Y, LARGE_DAMAGE_GRAVITY)
+        play_clip("damfb", 0.0)
+        return
+    state = State.DAMAGE
+    speed = DAMAGE_KNOCKBACK_BASE + DAMAGE_KNOCKBACK_PER_VEC * dist
+    cut_frame = DAMAGE_ANIM["start"]
+    # directional flinch: which side the hit came from relative to facing
+    var rel := wrapf(heading_of(-damage_dir) - facing, -PI, PI)
+    var clip := "damf"
+    if absf(rel) > PI * 0.75:
+        clip = "damb"
+    elif rel > PI * 0.25:
+        clip = "daml"
+    elif rel < -PI * 0.25:
+        clip = "damr"
+    play_clip(clip, 0.0, DAMAGE_ANIM["rate"])
+
+func _damage() -> void:
+    cut_frame += DAMAGE_ANIM["rate"]
+    var step := clampf(speed * DAMAGE_DECEL[0], DAMAGE_DECEL[1], DAMAGE_DECEL[2])
+    speed = maxf(speed - step, 0.0)
+    _apply(damage_dir * speed, -1.0)
+    if cut_frame >= DAMAGE_ANIM["end"]:
+        speed = 0.0
+        _enter_ground()
+
+func heal(quarter_hearts: int) -> void:
+    hearts = mini(hearts + quarter_hearts, hearts_max)
+    _update_hud()
+
+func _die() -> void:
+    # no game-over screen yet: respawn at the stage entry with full hearts
+    global_position = start_pos
+    velocity = Vector3.ZERO
+    speed = 0.0
+    hearts = hearts_max
+    invincible = DAMAGE_INVINCIBLE_FRAMES * 2
+    _update_hud()
+    _enter_ground()
+
+func _update_hud() -> void:
+    if hud_hearts == null:
+        return
+    var s := ""
+    var full := hearts / 4
+    var part := hearts % 4
+    for i in hearts_max / 4:
+        if i < full:
+            s += "\\u2665 "
+        elif i == full and part > 0:
+            s += ["", "\\u25d4 ", "\\u25d1 ", "\\u25d5 "][part]
+        else:
+            s += "\\u2661 "
+    hud_hearts.text = s
+
 func _enter_swim() -> void:
     state = State.SWIM
     swim_speed = 0.0
@@ -526,6 +814,10 @@ def _player_tscn(has_model: bool) -> str:
 radius = 40.0
 height = 160.0
 
+[sub_resource type="CapsuleShape3D" id="sword"]
+radius = 20.0
+height = 170.0
+
 [node name="Player" type="CharacterBody3D"]
 collision_mask = 5
 script = ExtResource("1")
@@ -539,6 +831,29 @@ transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 250, 0)
 omni_range = 1500.0
 light_energy = 0.7
 shadow_enabled = false
+
+[node name="SwordPivot" type="Node3D" parent="."]
+
+[node name="SwordHit" type="Area3D" parent="SwordPivot"]
+collision_layer = 0
+collision_mask = 8
+monitorable = false
+
+[node name="Shape" type="CollisionShape3D" parent="SwordPivot/SwordHit"]
+transform = Transform3D(1, 0, 0, 0, 0, -1, 0, 1, 0, 0, 90, 85)
+shape = SubResource("sword")
+
+[node name="HUD" type="CanvasLayer" parent="."]
+layer = 10
+
+[node name="Hearts" type="Label" parent="HUD"]
+offset_left = 24.0
+offset_top = 16.0
+offset_right = 600.0
+offset_bottom = 70.0
+theme_override_font_sizes/font_size = 34
+theme_override_colors/font_color = Color(1, 0.25, 0.3, 1)
+text = ""
 
 [node name="CamYaw" type="Node3D" parent="."]
 
@@ -554,7 +869,11 @@ far = 1000000.0
 
 
 # player animation clips kept in link.glb (the model ships 594; these drive movement)
-_PLAYER_CLIPS = ("wait", "walk", "dash", "mjmp", "jmped", "mrolll", "swimwait", "swiming")
+_PLAYER_CLIPS = (
+    "wait", "walk", "dash", "mjmp", "jmped", "mrolll", "swimwait", "swiming",
+    "cuta", "cutf", "cutr", "cutl", "cutea", "cuteb", "jattack", "jattackland",
+    "damf", "damb", "daml", "damr", "dam", "damff", "damfb", "talka",
+)  # fmt: skip
 
 _GAME_GD = """extends Node
 # gcrip autoload: stage warps + controller mapping. Doors' destinations come from the
