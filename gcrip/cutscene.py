@@ -25,6 +25,7 @@ from typing import Any
 
 from gcrip.formats import rarc, stb, yay0, yaz0
 
+DEMO_ANIMS = Path(__file__).with_name("data") / "ww_demo_anims.json"
 FPS = 30.0
 POS_ROUND = 0      # game units are ~100 per metre: whole units are far below what shows
 ANGLE_ROUND = 2
@@ -132,6 +133,60 @@ def _ident(views: dict[str, _TrackView], frame: int, name: str) -> int | None:
         return None
 
 
+def _demo_anim_table() -> dict:
+    """data/ww_demo_anims.json: per scene / actor, how an ANIMATION value (or, for Link, the
+    actor's own data records) resolves to a .bck in the Demo or object archive."""
+    if DEMO_ANIMS.exists():
+        try:
+            return json.loads(DEMO_ANIMS.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+    return {}
+
+
+def _clip_stem(bck: str) -> str:
+    return Path(str(bck)).stem
+
+
+def _clip_track(scene_name: str, actor: str, anim_values: list, table: dict) -> Any:
+    """-> a per-frame list of clip names for this actor (None where the scene sets none).
+
+    Two different mechanisms, per the decomp: most actors carry the resource id in the
+    ANIMATION value itself, while Link's ANIMATION value is a demo *mode* enum and the real
+    animation comes from his data records, which the table already resolved to a frame-keyed
+    timeline."""
+    info = (table.get("scenes", {}).get(scene_name, {}).get("actors", {}) or {}).get(actor)
+    if not info:
+        return None
+    out: list[str | None] = [None] * len(anim_values)
+    timeline = info.get("timeline")
+    if timeline:
+        keyed = sorted((int(f), v) for f, v in timeline.items())
+        cur = None
+        ki = 0
+        for f in range(len(out)):
+            while ki < len(keyed) and keyed[ki][0] <= f:
+                cur = _clip_stem(keyed[ki][1].get("bck", ""))
+                ki += 1
+            out[f] = cur
+        return out
+    values = info.get("values") or {}
+    for f, v in enumerate(anim_values):
+        if v is None:
+            continue
+        hit = values.get(str(int(v)))
+        if hit:
+            out[f] = _clip_stem(hit.get("bck", ""))
+    # an ANIMATION value holds until the next one
+    cur = None
+    for f in range(len(out)):
+        if out[f] is not None:
+            cur = out[f]
+        else:
+            out[f] = cur
+    return out
+
+
 def bake(scene: stb.Stb, *, name: str = "") -> dict:
     """-> {name, frames, seconds, camera, actors[], messages[], sounds[]} with one entry per
     frame in each track (null where the scene never sets that feature)."""
@@ -191,12 +246,13 @@ def bake(scene: stb.Stb, *, name: str = "") -> dict:
                 a["anim_frame"].append(round(af, 2) if af is not None else None)
                 a["anim_mode"].append(_ident(views, f, "ANIMATION_MODE"))
                 a["shape"].append(_ident(views, f, "SHAPE"))
+            a["clip"] = _rle(_clip_track(name, str(a["id"]), a["anim"], _DEMO_TABLE) or [])
             a["pos"] = _rle([_round(v, POS_ROUND) for v in a["pos"]])
             a["rot_y"] = _rle([_round(v, ANGLE_ROUND) for v in a["rot_y"]])
             a["scale"] = _rle([_round(v, ANGLE_ROUND) for v in a["scale"]])
             for k in ("anim", "anim_frame", "anim_mode", "shape"):
                 a[k] = _rle(a[k])
-            if all(a[k] is None for k in ("pos", "rot_y", "scale", "anim", "shape")):
+            if all(a[k] is None for k in ("pos", "rot_y", "scale", "anim", "shape", "clip")):
                 continue   # a demo-only prop the file never actually drives
             out["actors"].append(a)
         elif obj.kind == "message":
@@ -205,6 +261,24 @@ def bake(scene: stb.Stb, *, name: str = "") -> dict:
                 out["messages"].append({"id": obj.id, "msg": msgs})
         elif obj.kind == "sound":
             out["sounds"].append({"id": obj.id})
+    return out
+
+
+_DEMO_TABLE = _demo_anim_table()
+
+
+def clips_by_actor() -> dict[str, set[str]]:
+    """{actor name: every cutscene clip it plays} - the rigs must export these."""
+    out: dict[str, set[str]] = {}
+    for scene in _DEMO_TABLE.get("scenes", {}).values():
+        for actor, info in (scene.get("actors") or {}).items():
+            names = out.setdefault(actor, set())
+            for v in (info.get("values") or {}).values():
+                if v.get("bck"):
+                    names.add(_clip_stem(v["bck"]))
+            for v in (info.get("timeline") or {}).values():
+                if v.get("bck"):
+                    names.add(_clip_stem(v["bck"]))
     return out
 
 
