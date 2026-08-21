@@ -227,6 +227,26 @@ var cam_was_recenter := false
 var cam_manual := 0                    # frames of C-stick / mouse control left
 var cam_manual_yaw := 0.0
 var cam_manual_pitch := 0.0
+# --- Z-target lock-on (lockonCamera, style LL01) ---
+const LOCK_ACQUIRE_DIST := 1000.0
+const LOCK_RELEASE_DIST := 1400.0      # inferred (the table's release distance is per target type)
+const LOCK_LON_MIN := 75.0             # deg, camera offset from the Link->target line, far
+const LOCK_LON_MAX := 20.0             # near
+const LOCK_LAT_MIN := 20.0             # pitch far
+const LOCK_LAT_MAX := -5.0             # pitch near
+const LOCK_R_LO := 420.0
+const LOCK_R_HI := 480.0
+const LOCK_FOV_MIN := 48.0
+const LOCK_FOV_MAX := 62.0
+const LOCK_YAW_RATE := 0.04
+var lock_target: Node3D = null
+var lock_frames := 0
+var lock_base_y := 0.0
+var lock_cush := 0.28
+var lock_shift_r := 0.0
+var lock_shift_yaw := 0.0
+var cam_fov := 60.0
+@onready var hud_reticle: Label = get_node_or_null("HUD/Reticle")
 var anim: AnimationPlayer = null
 var current_clip := ""
 var start_pos := Vector3.ZERO
@@ -341,7 +361,114 @@ static func _to_sph(v: Vector3) -> Vector3:  # (R, pitch, yaw)
     var h := Vector2(v.x, v.z).length()
     return Vector3(v.length(), atan2(v.y, h), atan2(v.x, v.z))
 
+func _target_attn() -> Vector3:
+    if lock_target == null:
+        return Vector3.ZERO
+    return lock_target.global_position + Vector3(0, 60.0, 0)
+
+func _update_lock() -> void:
+    # hold Z/R: lock onto the closest enemy / talkable thing within 1000 units in the camera's view
+    var want: bool = Input.is_action_pressed("target")
+    if not want:
+        lock_target = null
+        return
+    if lock_target != null:
+        if not is_instance_valid(lock_target) or lock_target.global_position.distance_to(global_position) > LOCK_RELEASE_DIST:
+            lock_target = null
+        else:
+            return
+    var best: Node3D = null
+    var best_d := LOCK_ACQUIRE_DIST
+    var cy := cam_yaw_angle()
+    var cam_fwd := Vector3(sin(cy), 0.0, cos(cy))
+    for grp in ["enemy", "interact"]:
+        for n in get_tree().get_nodes_in_group(grp):
+            if not is_instance_valid(n) or n == held or not (n is Node3D):
+                continue
+            var to_n: Vector3 = n.global_position - global_position
+            to_n.y = 0.0
+            var d := to_n.length()
+            if d > best_d or d < 1.0:
+                continue
+            if cam_fwd.dot(to_n / d) < 0.3:
+                continue
+            best = n
+            best_d = d
+    if best != null:
+        lock_target = best
+        lock_frames = 0
+        lock_base_y = cam_center.y
+        lock_cush = 0.28
+        lock_shift_r = 0.0
+        lock_shift_yaw = 0.0
+
+func _lockon_tick() -> void:
+    var attn := global_position + Vector3(0, CAM_ATTN_HEIGHT, 0)
+    var tattn := _target_attn()
+    lock_frames += 1
+    var to_t := tattn - attn
+    var ts := _to_sph(to_t)                         # (dist, pitch_t, yaw_t)
+    var t := clampf(ts.x / LOCK_RELEASE_DIST, 0.0, 1.0)
+    var d := _to_sph(cam_eye - cam_center)
+    # center: between Link and the target, height eased with a ground/air cushion
+    lock_cush += ((0.28 if is_on_floor() else 1.0) - lock_cush) * 0.2
+    var h_tgt := attn.y + lerpf(-22.5, 5.0, t)
+    lock_base_y += lock_cush * (h_tgt - lock_base_y)
+    var a := minf(absf(wrapf(d.z + PI - ts.z, -PI, PI)), absf(ts.y * 1.3))
+    var r_goal := (ts.x - ts.x * 0.1) * absf(cos(a) * -0.5 + 0.5) + ts.x * 0.05
+    lock_shift_r += 0.2 * (r_goal - lock_shift_r)
+    lock_shift_yaw += 0.4 * wrapf(ts.z - lock_shift_yaw, -PI, PI)
+    cam_center = Vector3(attn.x, lock_base_y, attn.z) + _sph(lock_shift_r, 0.0, lock_shift_yaw)
+    # desired yaw: behind Link, offset sideways from the Link->target line (75 deg far .. 20 near)
+    var lon := deg_to_rad(lerpf(LOCK_LON_MIN, LOCK_LON_MAX, t))
+    var charged: bool = lock_frames >= 60
+    if not charged:
+        lon *= lock_frames / 60.0
+    var side := signf(wrapf(d.z + PI - ts.z, -PI, PI))
+    if side == 0.0:
+        side = 1.0
+    var yaw_des := ts.z + side * lon + PI
+    var err := wrapf(yaw_des - d.z, -PI, PI)
+    var rate := 0.15 if not charged else (LOCK_YAW_RATE if absf(err) >= lon else 0.0)
+    var yaw := d.z + err * rate
+    var pitch := d.y + (deg_to_rad(lerpf(LOCK_LAT_MIN, LOCK_LAT_MAX, t)) - d.y) * 0.33
+    pitch = clampf(pitch, deg_to_rad(-60.0), deg_to_rad(80.0))
+    var R := d.x + (clampf(d.x, LOCK_R_LO, LOCK_R_HI) - d.x) * 0.05
+    cam_fov += (lerpf(LOCK_FOV_MIN, LOCK_FOV_MAX, t) - cam_fov) * 0.33
+    cam_eye = cam_center + _sph(R, pitch, yaw)
+    _camera_output(attn)
+
+func _camera_output(attn: Vector3) -> void:
+    # bumpCheck: keep the eye out of walls, never closer than 40 to Link
+    var out_center := cam_center
+    out_center.y = maxf(out_center.y, global_position.y + 32.0)
+    var out_eye := cam_eye
+    var space := get_world_3d().direct_space_state
+    var q := PhysicsRayQueryParameters3D.create(out_center, cam_eye, 1)
+    var hit := space.intersect_ray(q)
+    if hit:
+        var back: Vector3 = (out_center - cam_eye).normalized() * CAM_WALL_MARGIN
+        out_eye = hit.position + back
+    if out_eye.distance_to(attn) < CAM_MIN_DIST:
+        out_eye = attn + (out_eye - attn).normalized() * CAM_MIN_DIST
+    camera.global_position = out_eye
+    if out_eye.distance_to(out_center) > 1.0:
+        camera.look_at(out_center, Vector3.UP)
+    camera.fov = cam_fov
+    if hud_reticle:
+        if lock_target != null and is_instance_valid(lock_target):
+            var p := _target_attn()
+            hud_reticle.visible = not camera.is_position_behind(p)
+            hud_reticle.position = camera.unproject_position(p) - hud_reticle.size / 2.0
+        else:
+            hud_reticle.visible = false
+
 func _camera_tick() -> void:
+    _update_lock()
+    if lock_target != null:
+        _lockon_tick()
+        return
+    cam_fov += (CAM_FOV - cam_fov) * 0.05
     var recenter: bool = Input.is_action_pressed("target")
     var attn := global_position + Vector3(0, CAM_ATTN_HEIGHT, 0)
     # center target: attention point + style offset rotated by Link's yaw
@@ -407,23 +534,7 @@ func _camera_tick() -> void:
 
     var eye_tgt := cam_center + _sph(R, pitch, yaw)
     cam_eye += (eye_tgt - cam_eye) * CAM_EYE_SMOOTH
-
-    # collision (bumpCheck): keep the eye out of walls, never closer than 40 to Link
-    var out_center := cam_center
-    out_center.y = maxf(out_center.y, global_position.y + 32.0)
-    var out_eye := cam_eye
-    var space := get_world_3d().direct_space_state
-    var q := PhysicsRayQueryParameters3D.create(out_center, cam_eye, 1)
-    var hit := space.intersect_ray(q)
-    if hit:
-        var back: Vector3 = (out_center - cam_eye).normalized() * CAM_WALL_MARGIN
-        out_eye = hit.position + back
-    if out_eye.distance_to(attn) < CAM_MIN_DIST:
-        out_eye = attn + (out_eye - attn).normalized() * CAM_MIN_DIST
-    camera.global_position = out_eye
-    if out_eye.distance_to(out_center) > 1.0:
-        camera.look_at(out_center, Vector3.UP)
-    camera.fov = CAM_FOV
+    _camera_output(attn)
 
 func cam_yaw_angle() -> float:
     var f := cam_center - cam_eye
@@ -651,8 +762,14 @@ func _decel_to(target: float) -> void:
     speed = maxf(speed - step, target)
 
 func _ground_strafe(s: Vector2, dist: float) -> void:
-    # Z-target: face the camera direction, strafe with atnMove constants
-    facing = cam_yaw_angle()
+    # Z-target: face the target (or the camera direction), strafe with atnMove constants
+    if lock_target != null and is_instance_valid(lock_target):
+        var to_t := lock_target.global_position - global_position
+        to_t.y = 0.0
+        if to_t.length() > 1.0:
+            turn_toward(heading_of(to_t.normalized()), TURN_MAX_STEP, TURN_MIN_STEP, 2.0)
+    else:
+        facing = cam_yaw_angle()
     var want := Vector2(s.x * STRAFE_SPEED_MAX, s.y * (STRAFE_BACK_MAX if s.y < 0.0 else STRAFE_SPEED_MAX))
     var accel := STRAFE_BACK_ACCEL if s.y < 0.0 else STRAFE_ACCEL
     strafe = strafe.move_toward(want, accel)
@@ -1398,6 +1515,16 @@ horizontal_alignment = 1
 theme_override_font_sizes/font_size = 26
 theme_override_colors/font_color = Color(0.95, 0.95, 0.7, 1)
 text = ""
+
+[node name="Reticle" type="Label" parent="HUD"]
+visible = false
+offset_right = 48.0
+offset_bottom = 48.0
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 40
+theme_override_colors/font_color = Color(1, 0.85, 0.2, 1)
+text = "◎"
 
 [node name="Items" type="Label" parent="HUD"]
 anchors_preset = 3
