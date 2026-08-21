@@ -80,6 +80,7 @@ class Dzs:
     mult: dict[int, RoomTransform] = field(default_factory=dict)  # room_no -> transform
     scls: list[Exit] = field(default_factory=list)  # exit table (doors index into it)
     ships: list[ShipPoint] = field(default_factory=list)  # SHIP: boat mooring points
+    events: list[str] = field(default_factory=list)  # EVNT: event names tag actors index into
 
 
 def _canonical(fourcc: str) -> tuple[str, int]:
@@ -119,6 +120,11 @@ def parse(data: bytes) -> Dzs:
                 tx, tz, ry, room, wave = struct.unpack_from(">ffHBb", data, off + k * 12)
                 ry = ry - 0x10000 if ry >= 0x8000 else ry
                 out.mult[room] = RoomTransform(tx, tz, ry, room, wave)
+        elif fourcc == "EVNT":
+            for k in range(n):
+                base = off + k * 0x18
+                nm = data[base + 4 : base + 19].split(b"\0")[0].decode("latin-1", "replace")
+                out.events.append(nm)
         elif fourcc == "SHIP":
             for k in range(n):
                 x, y, z, ry, sid = struct.unpack_from(">3fHB", data, off + k * 0x10)

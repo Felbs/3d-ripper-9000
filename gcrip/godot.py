@@ -2801,6 +2801,28 @@ func _ready() -> void:
 
 # ---- events (event_list.dat -> events/<stage>.json; event_runner.gd plays one)
 
+func event_bit(n: int) -> bool:
+    var bits: Dictionary = save.get("event_bits", {})
+    return bits.has(str(n))
+
+func set_event_bit(n: int) -> void:
+    var bits: Dictionary = save.get("event_bits", {})
+    bits[str(n)] = true
+    save["event_bits"] = bits
+
+func is_switch(room: int, bit: int) -> bool:
+    var sw: Dictionary = save.get("switches", {})
+    return sw.has("%s/%d/%d" % [current_stage_key(), room, bit])
+
+func set_switch(room: int, bit: int) -> void:
+    var sw: Dictionary = save.get("switches", {})
+    sw["%s/%d/%d" % [current_stage_key(), room, bit]] = true
+    save["switches"] = sw
+
+func current_stage_key() -> String:
+    var cs := get_tree().current_scene
+    return String(cs.name).split("_r")[0] if cs else ""
+
 func load_events(stage: String) -> void:
     events = {}
     var f := FileAccess.open("res://events/%s.json" % stage, FileAccess.READ)
@@ -3805,8 +3827,10 @@ var anim: AnimationPlayer = null
 var wait_clip := ""
 var talk_clip := ""
 var talking := false
+var actor := ""
 
-func setup(actor: String, _p: int, mesh_node: Node3D, rot_y_deg: float) -> void:
+func setup(actor_name: String, _p: int, mesh_node: Node3D, rot_y_deg: float) -> void:
+    actor = actor_name
     mesh = mesh_node
     home = global_position
     facing = deg_to_rad(rot_y_deg)
@@ -3847,6 +3871,28 @@ func interact_prompt(link: Node3D) -> String:
 func interact(link: Node3D) -> void:
     var to_link := link.global_position - global_position
     facing = atan2(to_link.x, to_link.z)
+    # first meeting: the NPC's own event (e.g. Ji1_StartSpeak) plays before the lines
+    for suffix in ["_StartSpeak", "_Start", "_TALK", "_Talk", "_Speak"]:
+        var ev: String = actor + suffix
+        var played: Dictionary = Game.save.get("talk_events", {})
+        if Game.events.has(ev) and not played.has(ev):
+            played[ev] = true
+            Game.save["talk_events"] = played
+            if Game.run_event(ev) and Game.event_runner:
+                Game.event_runner.finished.connect(_talk)
+                return
+            break
+    _talk()
+
+func event_talk(on: bool) -> void:
+    talking = on
+    if anim:
+        if on and talk_clip != "":
+            anim.play(talk_clip, 0.2)
+        elif not on and wait_clip != "":
+            anim.play(wait_clip, 0.3)
+
+func _talk() -> void:
     talking = true
     if anim and talk_clip != "":
         anim.play(talk_clip, 0.2)
@@ -4239,7 +4285,26 @@ func _ready() -> void:
     _tag_liquids()
     _wrap_actors()
     _spawn_ships()
+    _spawn_tags()
     _start_bgm.call_deferred()
+
+func _spawn_tags() -> void:
+    var info: Dictionary = Game.stage_data.get(name, {})
+    var table: Array = info.get("event_table", [])
+    var n := 0
+    for rec in info.get("tags", []):
+        if str(rec.get("actor", "")) != "TagEv":
+            continue
+        var tag := Area3D.new()
+        tag.set_script(load("res://actors/tag_event.gd"))
+        tag.name = "TagEv_%d" % n
+        add_child(tag)
+        tag.global_position = Vector3(rec["pos"][0], rec["pos"][1], rec["pos"][2])
+        var rot: Array = rec.get("rot", [0, 0, 0])
+        tag.setup(int(rec["params"]), int(rot[2]), int(rec.get("room", 0) if rec.get("room") != null else 0), table, rec.get("scale", [1, 1, 1]))
+        n += 1
+    if n > 0:
+        print("gcrip: ", n, " event tags in ", name)
 
 func _spawn_ships() -> void:
     # one King of Red Lions: the SHIP point of Outset (room 44) when present, else the first
@@ -4389,6 +4454,8 @@ _EVENT_GD = 'extends Node\n# gcrip: runs one event_list.dat event (d_event_manag
 _ROPE_GD = 'extends Node3D\n# gcrip: Grappling Hook rope (d_a_himo2.cpp). Free flight 20 u/f for 40 frames, lobbed by a\n# pitch bias; locked flight to a grapple post at 30 u/f homing; a hooked rope hands Link the\n# pendulum (player.gd ROPE states). Returns at 50 u/f x a ramp after a miss.\n\nconst FLY_SPEED := 20.0\nconst FLY_FRAMES := 40\nconst LOCK_SPEED := 30.0\nconst LOCK_TURN := 0x800 * PI / 32768.0\nconst LOCK_ARRIVE := 50.0\nconst LOCK_FRAMES := 70\nconst PITCH_BIAS_PER_UNIT := -5.0        # s16 per unit of distance\nconst PITCH_BIAS_MIN := -3000.0\nconst S16 := PI / 32768.0\n\nenum State { FLY_FREE, FLY_LOCK, RETURN, HOOKED }\nvar state: int = State.FLY_FREE\nvar player: Node3D = null\nvar post: Node3D = null\nvar target := Vector3.ZERO\nvar yaw := 0.0\nvar pitch := 0.0          # positive = down\nvar t := 0\nvar ramp := 0.0\nvar line: MeshInstance3D = null\nvar tip: Node3D = null\n\nstatic func fwd(y: float, p: float) -> Vector3:\n    return Vector3(sin(y) * cos(p), -sin(p), cos(y) * cos(p))\n\nfunc launch(link: Node3D, from: Vector3, aim_yaw: float, aim_pitch: float, post_node: Node3D) -> void:\n    player = link\n    post = post_node\n    global_position = from\n    yaw = aim_yaw\n    pitch = aim_pitch\n    if post and is_instance_valid(post):\n        state = State.FLY_LOCK\n        target = post.hook_point()\n    else:\n        state = State.FLY_FREE\n        var d := from.distance_to(from + fwd(yaw, pitch) * 800.0)\n        pitch += maxf(PITCH_BIAS_PER_UNIT * d, PITCH_BIAS_MIN) * S16\n    line = MeshInstance3D.new()\n    var cyl := CylinderMesh.new()\n    cyl.top_radius = 1.8\n    cyl.bottom_radius = 1.8\n    cyl.height = 1.0\n    line.mesh = cyl\n    var mat := StandardMaterial3D.new()\n    mat.albedo_color = Color(0.55, 0.42, 0.25)\n    line.material_override = mat\n    line.top_level = true\n    add_child(line)\n    var scene := load("res://items/ropeend.glb") if ResourceLoader.exists("res://items/ropeend.glb") else null\n    if scene:\n        tip = scene.instantiate()\n        add_child(tip)\n\nfunc root() -> Vector3:\n    if player and is_instance_valid(player) and player.has_method("rope_hand"):\n        return player.rope_hand()\n    return global_position\n\nfunc _physics_process(_delta: float) -> void:\n    t += 1\n    match state:\n        State.FLY_FREE:\n            var old := global_position\n            var next := old + fwd(yaw, pitch) * FLY_SPEED\n            var space := get_world_3d().direct_space_state\n            var q := PhysicsRayQueryParameters3D.create(old, next, 1 | 8)\n            q.collide_with_areas = true\n            var hit := space.intersect_ray(q)\n            if hit:\n                var c = hit.collider\n                if c and c.has_method("take_hit"):\n                    c.take_hit(1, old)\n                global_position = hit.position\n                _start_return()\n            else:\n                global_position = next\n                if t >= FLY_FRAMES:\n                    _start_return()\n        State.FLY_LOCK:\n            var to := target - global_position\n            if to.length() < LOCK_ARRIVE or t > LOCK_FRAMES:\n                global_position = target\n                state = State.HOOKED\n                if player and is_instance_valid(player) and player.has_method("rope_hooked"):\n                    player.rope_hooked(self, target)\n            else:\n                var want_yaw := atan2(to.x, to.z)\n                var want_pitch := atan2(-to.y, Vector2(to.x, to.z).length())\n                yaw += clampf(wrapf(want_yaw - yaw, -PI, PI), -LOCK_TURN, LOCK_TURN)\n                pitch += clampf(want_pitch - pitch, -LOCK_TURN, LOCK_TURN)\n                global_position += fwd(yaw, pitch) * LOCK_SPEED\n        State.RETURN:\n            ramp += 0.01\n            var to := root() - global_position\n            var step := 400.0 * ramp\n            if to.length() <= maxf(step, 5.0):\n                if player and is_instance_valid(player) and player.has_method("rope_done"):\n                    player.rope_done()\n                queue_free()\n                return\n            global_position += to.normalized() * step\n        State.HOOKED:\n            pass\n    _draw(root())\n\nfunc _start_return() -> void:\n    state = State.RETURN\n    ramp = 0.0\n\nfunc release() -> void:\n    # Link let go: the rope comes back to the hand\n    _start_return()\n\nfunc _draw(r: Vector3) -> void:\n    if line == null:\n        return\n    var a := r\n    var b := global_position\n    var d := b - a\n    var l := d.length()\n    if l < 1.0:\n        line.visible = false\n        return\n    line.visible = true\n    line.global_position = (a + b) * 0.5\n    line.look_at(b, Vector3.UP if absf(d.normalized().y) < 0.99 else Vector3.FORWARD)\n    line.rotate_object_local(Vector3.RIGHT, PI / 2.0)\n    line.scale = Vector3(1.0, l, 1.0)\n'
 
 _KUI_GD = 'extends Node3D\n# gcrip: grapple post (d_a_kui). Marks where the grappling hook can catch: the hook point is\n# the top of the post\'s mesh. Group "grapple_post"; hook_point() for the rope\'s target search.\n\nvar params := 0\nvar mesh: Node3D = null\nvar top := 170.0\n\nfunc setup(p: int, mesh_node: Node3D, _rot_y: float) -> void:\n    params = p\n    mesh = mesh_node\n    add_to_group("grapple_post")\n    if mesh is MeshInstance3D:\n        var aabb: AABB = (mesh as MeshInstance3D).get_aabb()\n        var hi := mesh.global_transform * (aabb.position + aabb.size)\n        var lo := mesh.global_transform * aabb.position\n        top = maxf(hi.y, lo.y) - global_position.y\n\nfunc hook_point() -> Vector3:\n    return global_position + Vector3(0, top, 0)\n'
+
+_TAG_EVENT_GD = 'extends Area3D\n# gcrip: TagEv (d_a_tag_event.cpp) - an invisible cylinder (scale x 100) that orders the\n# stage event named by the EVNT table entry params >> 24 when Link walks in. A switch bit\n# (params >> 8) remembers it fired; an event bit in rot.z gates it (0 / 0xFFFF = none).\n\nvar params := 0\nvar event_flag := 0\nvar event_name := ""\nvar swbit := 0xFF\nvar room := 0\nvar done := false\n\nfunc setup(p: int, rot_z: int, r: int, table: Array, sc: Array) -> void:\n    params = p\n    room = r\n    event_flag = rot_z & 0xFFFF\n    swbit = (p >> 8) & 0xFF\n    var no := (p >> 24) & 0xFF\n    if no < table.size():\n        event_name = str(table[no])\n    var shape := CollisionShape3D.new()\n    var cyl := CylinderShape3D.new()\n    cyl.radius = maxf(float(sc[0]) * 100.0, 40.0)\n    cyl.height = maxf(float(sc[1]) * 100.0, 60.0) * 2.0\n    shape.shape = cyl\n    add_child(shape)\n    collision_layer = 0\n    collision_mask = 1\n    monitoring = true\n    body_entered.connect(_on_body_entered)\n\nfunc _on_body_entered(body: Node3D) -> void:\n    if done or not (body is CharacterBody3D) or not body.is_in_group("player"):\n        return\n    if event_name == "" or not Game.events.has(event_name):\n        return\n    if swbit != 0xFF and Game.is_switch(room, swbit):\n        done = true\n        return\n    if event_flag != 0 and event_flag != 0xFFFF and not Game.event_bit(event_flag):\n        return\n    if Game.run_event(event_name):\n        done = true\n        if swbit != 0xFF:\n            Game.set_switch(room, swbit)\n'
 
 _WARP_GD = """extends Area3D
 # gcrip: walking into this (a door) loads the destination stage.
@@ -4905,6 +4972,8 @@ def export_godot(
             "ships": rep.get("ships") or [],
             "wave_max": rep.get("wave_max") or {},
             "offset": rep.get("offset") or [0.0, 0.0, 0.0],
+            "tags": rep.get("tags") or [],
+            "event_table": rep.get("event_table") or [],
         }
         ev_json = d / f"{gltf_path.stem}_events.json"
         if ev_json.exists():
@@ -4952,6 +5021,7 @@ def export_godot(
         "item.gd": _ACTOR_ITEM_GD,
         "sign.gd": _ACTOR_SIGN_GD,
         "kui.gd": _KUI_GD,
+        "tag_event.gd": _TAG_EVENT_GD,
         "chest.gd": _ACTOR_CHEST_GD,
         "pig.gd": _ACTOR_PIG_GD,
         "gull.gd": _ACTOR_GULL_GD,

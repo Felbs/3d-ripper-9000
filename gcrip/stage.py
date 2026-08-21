@@ -251,12 +251,15 @@ def _build(
     stage_scls: list = []
     own_scls: list = []
     ship_pts: list[dict] = []  # SHIP chunk: King of Red Lions mooring points
+    tag_recs: list[dict] = []  # invisible trigger actors (TagEv, AttTag, TagMsg...)
+    event_table: list[str] = []  # stage.dzs EVNT names (TagEv params >> 24 indexes them)
     if "Stage.arc" in stage_arcs:
         raw = disc.read_inner(f"res/Stage/{stage_name}/Stage.arc", "stage.dzs")
         if raw:
             d = dzs_mod.parse(raw)
             mult = d.mult
             stage_scls = d.scls
+            event_table = list(d.events)
             own_scls += d.scls
             placements += [(None, p, stage_scls) for p in d.placements]
     room_nos = []
@@ -340,6 +343,19 @@ def _build(
             if cat:
                 counts[cat] += 1
                 skipped_names[p.name] += 1
+                if p.name.startswith(("Tag", "AttTag", "agb")):
+                    tag_recs.append(
+                        {
+                            "actor": p.name,
+                            "chunk": p.chunk,
+                            "params": p.params,
+                            "rot": list(p.rot),
+                            "room": room_no,
+                            "pos": list(p.pos),
+                            "rot_y_deg": round(p.rot_y_deg, 2),
+                            "scale": list(p.scale),
+                        }
+                    )
                 continue
             pair_list = WW_ACTORS.get(p.name)
             if pair_list is None:
@@ -432,6 +448,11 @@ def _build(
             {**sp, "pos": [sp["pos"][0] - offset[0], sp["pos"][1], sp["pos"][2] - offset[2]]}
             for sp in ship_pts
         ],
+        "tags": [
+            {**t, "pos": [t["pos"][0] - offset[0], t["pos"][1], t["pos"][2] - offset[2]]}
+            for t in tag_recs
+        ],
+        "event_table": event_table,
         "wave_max": {str(r): t.wave_max for r, t in mult.items() if r in room_nos},
         "offset": [offset[0], 0.0, offset[2]],
         "gltf": str(out_path),
