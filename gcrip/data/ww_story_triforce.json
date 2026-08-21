@@ -12,7 +12,7 @@
    "5": "invisible decoy ('SalvagE'): isEffectKind() is FALSE so nothing is drawn, checkDistance prefers any real point over it, and dredging it spawns fpcNm_OQ_e param 2. No saved state at all.",
    "6": "full-moon night only ('SalvFM'). Completion -> one of the 16 event bits in daSalvage_c::m_savelabel, all cleared again weekly."
   },
-  "type_field": "params & 0xF. type 1 -> the crane finds something (SALVAGE_GETITEM / SLVG_GETITEM_LEFT); type 0 / 2 / 3 and any kind-5 point -> SALVAGE_HAZURE / SLVG_HAZURE_LEFT. The _LEFT twin is chosen purely by daShip_c::getCraneAngle() < 0, i.e. which side the arm is swung to (src/d/actor/d_a_salvage.cpp:420-438).",
+  "type_field": "params & 0xF. type 1 -> the crane finds something (SALVAGE_GETITEM / SLVG_GETITEM_LEFT); type 0 / 2 / 3 and any kind-5 point -> SALVAGE_HAZURE / SLVG_HAZURE_LEFT. The _LEFT twin is chosen purely by daShip_c::getCraneAngle() < 0, i.e. which side the arm is swung to (src/d/actor/d_a_salvage.cpp:355-370).",
   "state_storage": {
    "chart held": "dSv_player_map_c::field_0x0[4][4] via onGetMap / isGetMap (dComIfGs_isGetCollectMap, 1-based chart number)",
    "chart opened on the Sea Chart": "same table via onOpenMap / isOpenMap (dComIfGs_isOpenCollectMap)",
@@ -304,7 +304,7 @@
    "meaning": "Read together with getTriforceNum() == 8 when picking the story layer for Hyrule / Hyroom / kenroom: while eight shards are held AND this bit is CLEAR those stages load layer 4 - the assembled Triforce in the chamber under the pedestal. Nothing in src/ raises it, so it comes from event data, most likely the Triforce-restored scene itself.",
    "set_by": "(event data - no onEventBit for it exists in src/)",
    "read_by": [
-    "src/d/d_com_inf_game.cpp:220",
+    "src/d/d_com_inf_game.cpp:222",
     "src/d/d_com_inf_game.cpp:230",
     "src/d/d_com_inf_game.cpp:239",
     "src/d/d_com_inf_game.cpp:241",
@@ -319,10 +319,10 @@
     128
    ],
    "meaning": "The Cabana Deed has been handed to the man at the Windfall dock (daTag_Mk_c::getMsg raises it when the event's pre-item is dItemNo_CABANA_DEED_e). Listed here only because the Cabana is where the Tingle Tuner points Link for Triforce Chart 2.",
-   "set_by": "src/d/actor/d_a_tag_mk.cpp:82",
+   "set_by": "src/d/actor/d_a_tag_mk.cpp:81-82",
    "read_by": [
-    "src/d/actor/d_a_tag_mk.cpp:311",
-    "src/d/actor/d_a_tag_mk.cpp:479"
+    "src/d/actor/d_a_tag_mk.cpp:314",
+    "src/d/actor/d_a_tag_mk.cpp:480"
    ],
    "confidence": "medium"
   },
@@ -666,7 +666,7 @@
     "src/d/actor/d_a_agbsw0.cpp:861-1051",
     "src/d/d_item.cpp:1884-2022",
     "include/d/d_item_data.h:128-135",
-    "include/d/d_item_data.h:255-263",
+    "include/d/d_item_data.h:254-262",
     "include/d/d_com_inf_game.h:1195-1240",
     "include/d/d_save.h:303-353"
    ],
@@ -717,7 +717,7 @@
     "src/d/actor/d_a_npc_tc.cpp:958-965",
     "src/d/actor/d_a_npc_tc.cpp:1397-1404",
     "src/d/actor/d_a_npc_tc.cpp:636-660",
-    "src/d/actor/d_a_npc_tc_msg_normal2.inc:60-107",
+    "src/d/actor/d_a_npc_tc_msg_normal2.inc:39-107",
     "src/d/actor/d_a_npc_tc_msg_normal2.inc:177-205",
     "src/d/actor/d_a_npc_tc_cut.inc:126-205",
     "src/d/actor/d_a_npc_tc_cut.inc:306-313",
@@ -1033,7 +1033,7 @@
     "res/Stage/sea/Room*.arc room.dzr SCOB 'Salvage' (196 placements, kind 0, decoded per src/d/d_salvage.cpp:14-22)",
     "src/d/actor/d_a_salvage.cpp:503-530",
     "include/d/d_item_data.h:6-22",
-    "include/d/d_item_data.h:196-263"
+    "include/d/d_item_data.h:196-262"
    ],
    "notes": "Kind 0 is the only salvage kind that gets the light-pillar particle (dPa_name::ID_AK_JN_SALVAGELIGHT00, src/d/actor/d_a_salvage.cpp:388-440)."
   },

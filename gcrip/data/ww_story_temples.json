@@ -407,6 +407,7 @@
     "0x2D40",
     "0x2D40",
     "0x2D40",
+    "0x2D40",
     "0x2D40"
    ],
    "gives_item": null,
@@ -417,7 +418,7 @@
     "out/rip/GZLE01/godot/cutscenes/dance_zola.json",
     "tools/ww_story_mine.py Edaichi"
    ],
-   "notes": "1220 frames / 40.7s, four cutscene actors (Link, d_act0, d_act1, d_act2) and ten message beats 1260-1269 - those message ids are not in the ripped zel_00.bmg, so the text was not read. 'zola' is the Zora side, i.e. Medli's ancestor Laruto; the pairing is confirmed by placement, not by assumption: dance_zola and pray_zola are the EVNT entries of Edaichi and M_DaiB (the Earth Temple), dance_kokiri and pray_kokiri those of Ekaze and kazeB (the Wind Temple). dance_zola.stb raises 0x2D40 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). dance_zola.stb raises 0x2D40 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). dance_zola.stb raises 0x2D40 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). dance_zola.stb raises 0x2D40 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+   "notes": "1220 frames / 40.7s, four cutscene actors (Link, d_act0, d_act1, d_act2) and ten message beats 1260-1269 - those message ids are not in the ripped zel_00.bmg, so the text was not read. 'zola' is the Zora side, i.e. Medli's ancestor Laruto; the pairing is confirmed by placement, not by assumption: dance_zola and pray_zola are the EVNT entries of Edaichi and M_DaiB (the Earth Temple), dance_kokiri and pray_kokiri those of Ekaze and kazeB (the Wind Temple). dance_zola.stb raises 0x2D40 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). dance_zola.stb raises 0x2D40 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). dance_zola.stb raises 0x2D40 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). dance_zola.stb raises 0x2D40 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). dance_zola.stb raises 0x2D40 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
   },
   {
    "id": "et_duet_opens_earth_temple",
@@ -687,6 +688,7 @@
     "0x3A02",
     "0x3A02",
     "0x3A02",
+    "0x3A02",
     "0x3A02"
    ],
    "gives_item": "MASTER_SWORD_2 (dItemNo 0x3A, half power - item_func_lv3_sword sets collect(0,2))",
@@ -700,7 +702,7 @@
     "src/d/actor/d_a_npc_md.cpp:565-570",
     "src/d/actor/d_a_ship.cpp:449"
    ],
-   "notes": "3100 frames / 103s, seven cutscene actors, and its first sound cue is literally named BGM_GETMS - the get-Master-Sword fanfare. The sword upgrade is not granted by any code in src/: it is inside the .stb, and three independent pieces of evidence pin it here - the BGM_GETMS cue, daWarpf_c::checkEndDemo using MASTER_SWORD_2 as the STAGE_ET 'this dungeon is finished' test, and daNpc_Md_c::create using isCollect(0, 2) as the condition for the M_DaiB sage Medli to exist. This is the end of the Earth half. pray_zola.stb raises 0x3A02 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). pray_zola.stb raises 0x3A02 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). pray_zola.stb raises 0x3A02 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). pray_zola.stb raises 0x3A02 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+   "notes": "3100 frames / 103s, seven cutscene actors, and its first sound cue is literally named BGM_GETMS - the get-Master-Sword fanfare. The sword upgrade is not granted by any code in src/: it is inside the .stb, and three independent pieces of evidence pin it here - the BGM_GETMS cue, daWarpf_c::checkEndDemo using MASTER_SWORD_2 as the STAGE_ET 'this dungeon is finished' test, and daNpc_Md_c::create using isCollect(0, 2) as the condition for the M_DaiB sage Medli to exist. This is the end of the Earth half. pray_zola.stb raises 0x3A02 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). pray_zola.stb raises 0x3A02 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). pray_zola.stb raises 0x3A02 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). pray_zola.stb raises 0x3A02 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). pray_zola.stb raises 0x3A02 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
   },
   {
    "id": "wt_land_gale_isle",
@@ -799,6 +801,7 @@
     "0x2D20",
     "0x2D20",
     "0x2D20",
+    "0x2D20",
     "0x2D20"
    ],
    "gives_item": null,
@@ -809,7 +812,7 @@
     "out/rip/GZLE01/godot/cutscenes/dance_kokiri.json",
     "tools/ww_story_mine.py Ekaze"
    ],
-   "notes": "1340 frames / 44.7s, four cutscene actors (Link, d_act1, d_act2, d_act10) and eleven message beats 1270-1279, none of which are in the ripped zel_00.bmg. 'kokiri' is the Korok side - Makar's ancestor Fado. dance_kokiri.stb raises 0x2D20 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). dance_kokiri.stb raises 0x2D20 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). dance_kokiri.stb raises 0x2D20 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). dance_kokiri.stb raises 0x2D20 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+   "notes": "1340 frames / 44.7s, four cutscene actors (Link, d_act1, d_act2, d_act10) and eleven message beats 1270-1279, none of which are in the ripped zel_00.bmg. 'kokiri' is the Korok side - Makar's ancestor Fado. dance_kokiri.stb raises 0x2D20 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). dance_kokiri.stb raises 0x2D20 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). dance_kokiri.stb raises 0x2D20 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). dance_kokiri.stb raises 0x2D20 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). dance_kokiri.stb raises 0x2D20 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
   },
   {
    "id": "wt_duet_opens_wind_temple",
@@ -1006,6 +1009,7 @@
     "0x4004",
     "0x4004",
     "0x4004",
+    "0x4004",
     "0x4004"
    ],
    "gives_item": "MASTER_SWORD_3 (dItemNo 0x3E, fully restored - item_func_master_sword_ex sets collect(0,3))",
@@ -1019,7 +1023,7 @@
     "src/d/actor/d_a_npc_cb1.cpp:266-274",
     "src/d/actor/d_a_ship.cpp:435-441"
    ],
-   "notes": "2445 frames / 81.5s, seven cutscene actors, first sound cue GETBGM. As with pray_zola the sword upgrade lives in the .stb, and the same three independent checks pin it: the get-item BGM, daWarpf_c::checkEndDemo using MASTER_SWORD_3 as the STAGE_WT completion test, and daNpc_Cb1_c::create using MASTER_SWORD_3 as the condition for the kazeB sage Makar. 0x4004 is the top of this chapter's rung on the King of Red Lions' advice ladder; the next rung up, 0x2D08, belongs to the Triforce chapter. The requires_bits entry 0x3A02 is an ordering claim from that ladder and from the Makar placement chain, not a gate written into kazeB itself. pray_kokiri.stb raises 0x4004 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). pray_kokiri.stb raises 0x4004 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). pray_kokiri.stb raises 0x4004 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). pray_kokiri.stb raises 0x4004 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+   "notes": "2445 frames / 81.5s, seven cutscene actors, first sound cue GETBGM. As with pray_zola the sword upgrade lives in the .stb, and the same three independent checks pin it: the get-item BGM, daWarpf_c::checkEndDemo using MASTER_SWORD_3 as the STAGE_WT completion test, and daNpc_Cb1_c::create using MASTER_SWORD_3 as the condition for the kazeB sage Makar. 0x4004 is the top of this chapter's rung on the King of Red Lions' advice ladder; the next rung up, 0x2D08, belongs to the Triforce chapter. The requires_bits entry 0x3A02 is an ordering claim from that ladder and from the Makar placement chain, not a gate written into kazeB itself. pray_kokiri.stb raises 0x4004 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). pray_kokiri.stb raises 0x4004 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). pray_kokiri.stb raises 0x4004 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). pray_kokiri.stb raises 0x4004 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). pray_kokiri.stb raises 0x4004 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
   }
  ]
 }

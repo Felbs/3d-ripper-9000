@@ -1,0 +1,1055 @@
+{
+ "_source": "Mined read-only from the zeldaret/tww decompilation at Z:/memRip/sources/tww and the ripped GZLE01 (Wind Waker USA) disc data at Z:/3d ripper/out/rip/GZLE01. Area: the numbered secret caves (Cave01-Cave11, TF_01-TF_06), the Great Fairy fountains (Fairy01-Fairy06), the Big Octo Great Fairy at Two-Eye Reef, and Otkura, the cave behind the Forest Haven waterfall. Same conventions as ww_story_fortress.json. Two things make this area different from the story chapters mined so far: (1) almost nothing here is driven by event bits - the caves record their state in the per-stage save block (dSv_memBit_c mTbox / mSwitch) and the Great Fairy upgrades are written straight into the player's item/status save, not into dSv_event_c; (2) the six fairy-fountain stages and every numbered cave have an EVNT table that is nothing but MapToolCamera, and not one PLYR spawn or TagEv volume in them orders an event (verified with tools/ww_story_mine.py over all 24 stages). The only real cutscene wiring in the area is BIGELF_ARRIVAL (in each Fairy0N event_list), BIGELF_ARRIVAL2 + DAIOCTA_DEAD_ELF (in sea), and awake_kokiri (Otkura). Event-bit ids are authoritative numbers; the UNK_xxxx names are placeholders invented by the decomp team (include/d/d_save_event_flag.inc says so itself), so numeric ids are used here.",
+ "_not_mine": {
+  "note": "The sea event list contains several fairy-named events that belong to the NEXT area, not this one. Recorded here so the next miner does not have to re-derive it.",
+  "SUPERELF / fairy / fairy_Jmp / fairy_flag_on / fairy_flag_on_Jmp": "All five are the FAIRY QUEEN at Mother & Child Isles (sea room 9), not a Great Fairy. sea room 9 carries one TagEv at (-167361, 674, -199303) with params 0x29FF6D0D: EVNT index 0x29 = 41 = fairy_Jmp, type 0x0D = SPE_ARRIVAL. daTag_Event_c::actionSpeArrival (src/d/actor/d_a_tag_event.cpp:358-376) picks the event: if 0x1001 is already set it does nothing; else if 0x1820 is clear it orders SUPERELF (the 'now is not yet the time' preview, messages 12018-12023) unless 0x2740 is set; else it orders fairy_flag_on_Jmp when 0x2740 is set and fairy_Jmp otherwise. fairy_Jmp / fairy_flag_on_Jmp are DIRECTOR NEXT hops to sea room 9 layer 8, start code 225 / 226, which then run the events 'fairy' / 'fairy_flag_on'. Those two are PACKAGE PLAY of fairy.stb / fairy_flag_on.stb, both carrying EventFlag 4097 = 0x1001, raised on cutscene START by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). The Fairy Queen's gift is fire and ice arrows (message 14362), which is not one of the seven Great Fairy upgrades.",
+  "BIGELF_ARRIVAL2 and DAIOCTA_DEAD_ELF": "These two ARE mine - they are the Big Octo Great Fairy at Two-Eye Reef. See steps bigocto_fairy_freed and bigocto_fairy_magic."
+ },
+ "_bits": {
+  "0x1610": {
+   "dec": 5648,
+   "byte_mask": [
+    22,
+    16
+   ],
+   "meaning": "Makar has been taught / has played the Wind God's Aria in Otkura. Raised together with 0x1604 the moment the cb_tact conversation ends. Once it is set Makar changes behaviour everywhere (he can be carried, he stops following, the sea BGM changes) and the game will let the Wind Temple sequence proceed.",
+   "set_by": "src/d/actor/d_a_npc_cb1.cpp:1595 (daNpc_Cb1_c::evInitEnd, only when EndMode == -2 and mMsgNo == 0x1526)",
+   "read_by": [
+    "src/d/actor/d_a_npc_cb1.cpp:286",
+    "src/d/actor/d_a_npc_cb1.cpp:1687",
+    "src/d/actor/d_a_npc_cb1.cpp:1735",
+    "src/d/actor/d_a_npc_cb1.cpp:2854",
+    "src/d/actor/d_a_npc_cb1.cpp:2894",
+    "src/d/actor/d_a_npc_cb1.cpp:2940",
+    "src/d/actor/d_a_npc_cb1.cpp:3335",
+    "src/d/actor/d_a_ship.cpp:446",
+    "src/d/actor/d_a_mmusic.cpp:43"
+   ],
+   "confidence": "high"
+  },
+  "0x1604": {
+   "dec": 5636,
+   "byte_mask": [
+    22,
+    4
+   ],
+   "meaning": "Companion bit to 0x1610, set by the same line pair. It is the one the sea consults: daNpc_Cb1_c::execute only keeps Makar alive on the sea stage while it is set, and daTag_Island_c::otherCheck gates its type-6 island arrival on it.",
+   "set_by": "src/d/actor/d_a_npc_cb1.cpp:1596 (daNpc_Cb1_c::evInitEnd)",
+   "read_by": [
+    "src/d/actor/d_a_npc_cb1.cpp:287",
+    "src/d/actor/d_a_npc_cb1.cpp:971",
+    "src/d/actor/d_a_npc_cb1.cpp:2220",
+    "src/d/actor/d_a_tag_island.cpp:103"
+   ],
+   "confidence": "high"
+  },
+  "0x1001": {
+   "dec": 4097,
+   "byte_mask": [
+    16,
+    1
+   ],
+   "meaning": "The Fairy Queen cutscene at Mother & Child Isles has started. Documented here only because it turns up in the sea event list next to the Great Fairy events - it is NOT a Great Fairy bit and nothing in this file sets or requires it. Raised from event data: the PACKAGE PLAY action of both 'fairy' and 'fairy_flag_on' carries EventFlag 4097, which dEvDtStaff_c::specialProcPackage passes to dComIfGs_onEventBit when the cutscene starts.",
+   "set_by": "event data - sea event_list 'fairy' / 'fairy_flag_on' PACKAGE PLAY EventFlag, via src/d/d_event_data.cpp:797-800",
+   "read_by": [
+    "src/d/actor/d_a_tag_event.cpp:359",
+    "src/d/actor/d_a_npc_photo.cpp:2207",
+    "src/d/actor/d_a_warphr.cpp:399"
+   ],
+   "confidence": "high"
+  }
+ },
+ "_storage": {
+  "note": "The whole point of this area is loot, and none of it is an event bit. This block records where each reward actually lives in the save, because a remake has to model these fields separately from dSv_event_c.",
+  "wallet": {
+   "field": "dSv_player_status_a_c::mWalletSize (offset 0x12, u8)",
+   "values": "0 -> 200 Rupees, 1 -> 1000, 2 -> 5000 (dSv_player_status_a_c::getRupeeMax)",
+   "written_by": [
+    "src/d/d_item.cpp:1359 item_func_max_rupee_up1 -> dComIfGs_setWalletSize(1)",
+    "src/d/d_item.cpp:1364 item_func_max_rupee_up2 -> dComIfGs_setWalletSize(2)"
+   ],
+   "source": "include/d/d_save.h:16-33, include/d/d_save.h:46-49",
+   "confidence": "high"
+  },
+  "bomb_bag": {
+   "field": "dSv_player_item_max_c::mItemMax2.mBombNum (u8) - the carry cap; the current count is dSv_player_item_record_c::mItemRecord2.mBombNum",
+   "values": "30 when the Bomb Bag itself is picked up (src/d/d_item.cpp:796), then 60, then 99",
+   "written_by": [
+    "src/d/d_item.cpp:1369-1370 item_func_max_bomb_up1 -> setBombNum(60), setBombMax(60)",
+    "src/d/d_item.cpp:1375-1376 item_func_max_bomb_up2 -> setBombNum(99), setBombMax(99)"
+   ],
+   "source": "include/d/d_save.h:171-200",
+   "confidence": "high"
+  },
+  "quiver": {
+   "field": "dSv_player_item_max_c::mItemMax2.mArrowNum (u8)",
+   "values": "30 with the Hero's Bow (src/d/d_item.cpp:737), then 60, then 99",
+   "written_by": [
+    "src/d/d_item.cpp:1381-1382 item_func_max_arrow_up1 -> setArrowNum(60), setArrowMax(60)",
+    "src/d/d_item.cpp:1387-1388 item_func_max_arrow_up2 -> setArrowNum(99), setArrowMax(99)"
+   ],
+   "source": "include/d/d_save.h:171-200",
+   "confidence": "high"
+  },
+  "magic": {
+   "field": "dSv_player_status_a_c::mMaxMagic (offset 0x13, u8), folded in from the runtime counter dComIfG_play_c::mItemMaxMagicCount",
+   "values": "16 when the Deku Leaf is picked up (src/d/d_item.cpp:813); item_func_max_mp_up1 adds 32 more via dComIfGp_setItemMaxMagicCount(32), and d_meter.cpp:4011-4017 does mMaxMagic = getMaxMagic() + count and clears the counter",
+   "written_by": [
+    "src/d/d_item.cpp:1397 item_func_max_mp_up1",
+    "src/d/d_meter.cpp:4011-4017"
+   ],
+   "source": "include/d/d_save.h:33-34, include/d/d_com_inf_game.h:422-423",
+   "confidence": "high",
+   "caveat": "setItemMaxMagicCount is '+=' (include/d/d_com_inf_game.h:423) and d_meter adds the counter to the existing max, so the literal arithmetic is 16 + 32 = 48, not the 32 the in-game message ('twice as much as what you had before', message 279) implies. Nothing in the decompiled path clamps it. Recorded as read rather than corrected."
+  },
+  "charts": {
+   "field": "dSv_player_map_c::field_0x0[4][4] - a 128-bit chart bitfield, set by onGetMap(chartNo - 1)",
+   "numbering": "chart 1..8 are the Triforce Charts (name strings, messages 12760-12767); 9 and up are Treasure Charts and the special charts. dItemNo_COLLECT_MAP_nn_e maps to chart nn.",
+   "written_by": [
+    "src/d/d_item.cpp:1972 item_func_collectmap06 -> dComIfGs_onGetCollectMap(6)",
+    "include/d/d_com_inf_game.h:1203-1205 dComIfGs_onGetCollectMap -> getMap().onGetMap(no - 1)"
+   ],
+   "source": "include/d/d_save.h:410-438",
+   "confidence": "high"
+  },
+  "heart_pieces": {
+   "field": "dSv_player_status_a_c::mMaxLife, via the runtime counter mItemMaxLifeCount",
+   "written_by": [
+    "src/d/d_item.cpp:583-585 item_func_kakera_heart -> dComIfGp_setItemMaxLifeCount(1)",
+    "src/d/d_meter.cpp:1401-1417"
+   ],
+   "source": "include/d/d_save.h:36-40",
+   "confidence": "high",
+   "caveat": "The save stores the resulting max life, not a count of quarter-hearts collected; the 'have I already taken this one' memory is the chest's own mTbox bit, not a heart-piece counter."
+  },
+  "chest_opened": {
+   "field": "dSv_memBit_c::mTbox (u32) - bit index = the chest's tboxNo = (params >> 7) & 0x1F",
+   "scope": "per stage-save slot: dSv_save_c::mMemory[stageNo], one of the 16 SaveStageTbl slots (include/d/d_save.h:864-905). Secret caves use STAGE_SUBDUNGEON (0x0C) / STAGE_SUBDUNGEON_NEW (0x0D) by name, but see the caveat.",
+   "source": "include/d/d_save.h:655-681, include/d/actor/d_a_tbox.h:35-37, include/d/d_com_inf_game.h:1606-1623",
+   "confidence": "high",
+   "caveat": "WHICH slot each cave stage uses is decided by the stage.dzs STAG chunk (dStage_stagInfo_GetSaveTbl). The current rip does not export STAG - out/rip/GZLE01/res/Stage/<stage>/Stage.arc holds only the extracted models - so the slot per stage could NOT be determined here. The tboxNo values collide across stages (Cave09 and TF_02 both use 11; TF_05 and TF_06 both use 0), which proves they cannot all share one slot."
+  },
+  "chest_switch": {
+   "field": "dSv_memBit_c::mSwitch[4] (128 room/stage switches), set with dComIfGs_onSwitch(swNo, roomNo)",
+   "source": "include/d/d_save.h:640-681",
+   "confidence": "high"
+  }
+ },
+ "_actors": {
+  "BigElf": {
+   "name": "Great Fairy",
+   "file": "src/d/actor/d_a_bigelf.cpp",
+   "decomp_status": "EVERY function body in d_a_bigelf.cpp is /* Nonmatching */ - 382 lines of empty stubs. Only the class layout (include/d/actor/d_a_bigelf.h:87-127) and the actor profile (src/d/actor/d_a_bigelf.cpp:367-382) carry real information. Nothing about her behaviour can be quoted from source; everything below is read off placement data and event data instead.",
+   "fields_of_interest": [
+    "0x346 u8 mGivenItem - the item she hands over",
+    "0x34C void* mpFairyActor - the Fa1 she splits into (makeFa1 / makeFa1S)",
+    "0x348 int mCurrentMessageId"
+   ],
+   "state_functions": "demoInitFlDelete / FlLink / FlDmAf / FlDmMd / FlDmBf / FlDemo / Exit / Talk / Appear / Fa1 / Wait / Com, plus hunt, oct_search, oct, oct_delete, ready0, event0. The demoInit* names line up one-for-one with the action names in the BIGELF_ARRIVAL event script (FL_DELETE, FL_LINK, FL_DM_AF, FL_DM_MD, FL_DM_BF, EXIT, TALK_0/1, APPEAR, FA1, WAIT), which is how the event drives her. The oct_* group is the Big Octo variant.",
+   "param_decode": {
+    "rule": "getType() = params & 0xFF, getSwbit() = (params >> 8) & 0xFF, getSwbit2() = (params >> 16) & 0xFF - INFERRED, because all four getters are stubs. The inference is corroborated: both sea BigElf copies carry a getSwbit that is exactly the switch number of the Daiocta standing on the same spot (18 and 16), which cannot be coincidence.",
+    "confidence": "medium"
+   },
+   "placements": [
+    {
+     "stage": "Fairy01",
+     "island": "Northern Fairy Island (sea room 3)",
+     "params": "0x00FFFF00",
+     "type": 0,
+     "pos": [
+      0,
+      81,
+      -852
+     ]
+    },
+    {
+     "stage": "Fairy04",
+     "island": "Outset Island (sea room 44)",
+     "params": "0x00FFFF01",
+     "type": 1,
+     "pos": [
+      0,
+      30,
+      -852
+     ]
+    },
+    {
+     "stage": "Fairy02",
+     "island": "Eastern Fairy Island (sea room 19)",
+     "params": "0x00FFFF02",
+     "type": 2,
+     "pos": [
+      0,
+      30,
+      -852
+     ]
+    },
+    {
+     "stage": "Fairy06",
+     "island": "Southern Fairy Island (sea room 39)",
+     "params": "0x00FFFF03",
+     "type": 3,
+     "pos": [
+      0,
+      30,
+      -852
+     ]
+    },
+    {
+     "stage": "Fairy03",
+     "island": "Western Fairy Island (sea room 15)",
+     "params": "0x00FFFF04",
+     "type": 4,
+     "pos": [
+      0,
+      30,
+      -852
+     ]
+    },
+    {
+     "stage": "Fairy05",
+     "island": "Thorned Fairy Island (sea room 28)",
+     "params": "0x00FFFF05",
+     "type": 5,
+     "pos": [
+      0,
+      30,
+      -852
+     ]
+    },
+    {
+     "stage": "sea",
+     "room": 46,
+     "island": "Two-Eye Reef",
+     "layer": -1,
+     "params": "0x00041206",
+     "type": 6,
+     "swbit": 18,
+     "swbit2": 4,
+     "pos": [
+      -4460,
+      0,
+      299700
+     ],
+     "note": "same position as the room-46 Daiocta, whose mSwitchNo is also 18"
+    },
+    {
+     "stage": "sea",
+     "room": 33,
+     "layer": 11,
+     "params": "0x00FF1006",
+     "type": 6,
+     "swbit": 16,
+     "swbit2": 255,
+     "pos": [
+      95540,
+      0,
+      99700
+     ],
+     "note": "UNREACHABLE. It sits in room 33's ACTb (layer 11) chunk, and gcrip/data/ww_layers.json records that layers 10 and 11 are never produced by dComIfG_play_c::getLayerNo's story rules - only an explicit setNextStage layer argument can select them, and no caller forces sea room 33 to layer 11. Its swbit 16 matches the room-33 Daiocta, but that Daiocta has rot.z = 255, so it plays DAIOCTA_DEAD, never DAIOCTA_DEAD_ELF. Read as a dev leftover."
+    }
+   ]
+  },
+  "Daiocta": {
+   "name": "Big Octo",
+   "file": "src/d/actor/d_a_daiocta.cpp",
+   "param_decode": "daDaiocta_c::getArg (src/d/actor/d_a_daiocta.cpp:1551-1596): mOctoType = params & 0xFF (0 = FOUR_EYED, 1 = EIGHT_EYED, 2 = TWELVE_EYED, anything > 3 clamps to 0); appear-radius multiplier = (params >> 8) & 0xFF (0xFF = HIO default, else value * 100); m575 = (params >> 16) & 0xFF; mSwitchNo = (params >> 24) & 0xFF; and m057C = home.angle.z. This one is real decompiled code, not an inference.",
+   "the_switch": "m057C is what decides the death event: src/d/actor/d_a_daiocta.cpp:1274-1282 - if m057C == 1 the octo orders DAIOCTA_DEAD_ELF, otherwise DAIOCTA_DEAD. On DEATH2 it also calls dComIfGs_onSwitch(mSwitchNo, roomNo).",
+   "placements": [
+    {
+     "room": 6,
+     "params": "0x0DFF2802",
+     "type": "TWELVE_EYED",
+     "switch": 13,
+     "rot_z": 255,
+     "elf": false
+    },
+    {
+     "room": 17,
+     "params": "0x0EFF2802",
+     "type": "TWELVE_EYED",
+     "switch": 14,
+     "rot_z": 255,
+     "elf": false
+    },
+    {
+     "room": 20,
+     "params": "0x0FFF2801",
+     "type": "EIGHT_EYED",
+     "switch": 15,
+     "rot_z": 255,
+     "elf": false
+    },
+    {
+     "room": 33,
+     "params": "0x10FF2801",
+     "type": "EIGHT_EYED",
+     "switch": 16,
+     "rot_z": 255,
+     "elf": false
+    },
+    {
+     "room": 36,
+     "params": "0x11FF2801",
+     "type": "EIGHT_EYED",
+     "switch": 17,
+     "rot_z": 255,
+     "elf": false
+    },
+    {
+     "room": 46,
+     "params": "0x12FF2800",
+     "type": "FOUR_EYED",
+     "switch": 18,
+     "rot_z": 1,
+     "elf": true,
+     "note": "the only one in the game with rot.z == 1, so the only one that frees a Great Fairy"
+    }
+   ],
+   "source": "out/rip/GZLE01/stages/sea/sea_report.json:actors"
+  },
+  "Fa1": {
+   "name": "Fairy (the small healing fairies in the fountain, and the ones in bottles)",
+   "file": "src/d/actor/d_a_npc_fa1.cpp",
+   "decomp_status": "fully decompiled - no /* Nonmatching */ in the file",
+   "param_decode": "mType = fopAcM_GetParam(this) (src/d/actor/d_a_npc_fa1.cpp:248); Type_e = NORMAL 0, TIMER 1, LINK 2, BABA 3, AREA 4, LINK_DOWN 5, HOVER 6 (include/d/actor/d_a_npc_fa1.h:33-41)",
+   "note": "Mode_e includes Mode_BIGELF_CHANGE_e = 7 (include/d/actor/d_a_npc_fa1.h:43-53), which is the mode the fountain fairies use when the Great Fairy gathers them into herself / scatters back out - the visual half of daBigelf_c::makeFa1 and demoProcFa1."
+  },
+  "Tbox": {
+   "name": "Treasure chest",
+   "file": "src/d/actor/d_a_tbox.cpp",
+   "param_decode": "getFuncType() = params & 0x7F (src/d/actor/d_a_tbox.cpp:403-405); getTboxNo() = (params >> 7) & 0x1F; getSwNo() = (params >> 12) & 0xFF (include/d/actor/d_a_tbox.h:35-36); getShapeType() = (params >> 20) & 0x0F, clamped to 0 if >= 4 (src/d/actor/d_a_tbox.cpp:397-400); and getItemNo() = (home.angle.z >> 8) & 0xFF (include/d/actor/d_a_tbox.h:37) - the ITEM IS IN rot.z, NOT in params.",
+   "func_types": {
+    "0": "NORMAL - always there",
+    "1": "SWITCH - hidden until dComIfGs_isSwitch(getSwNo(), roomNo)",
+    "2": "ENEMIES - hidden until the room is cleared",
+    "3": "SWITCH_VISIBLE",
+    "4": "SWITCH_TRANSPARENT",
+    "5": "GRAVITY - falls",
+    "6": "TACT - switch-gated and drawn standing on a Triforce platform",
+    "7": "EXTRA_SAVE_INFO",
+    "8": "EXTRA_SAVE_INFO_SPAWN"
+   },
+   "func_types_source": "src/d/actor/d_a_tbox.cpp:23-31"
+  }
+ },
+ "_instances": {
+  "note": "The 18 cave stages are near-identical in structure, so the steps below model the pattern once and this table records the instances. Island names come from gcrip/data/ww_stages.py; the sea room number is the dIsleRoom_* entry with the matching name (include/d/d_save.h:303-353) and is therefore derived, not read out of a link record - see the cave_entry step for why the actual entrance record could not be recovered. Every chest row is decoded from that stage's TRES chunk in out/rip/GZLE01/stages/<stage>/<stage>_report.json.",
+  "caves": [
+   {
+    "stage": "Cave01",
+    "name": "Bomb Island Cave",
+    "sea_room": 34,
+    "rooms": [
+     0,
+     1
+    ],
+    "chest": "takara3 func 0 NORMAL tboxNo 5 sw 0 item 0x07 HEART_PIECE at (3778, 124, -150)",
+    "enemies": "5 magtail (Magtails), 4 kotubo",
+    "other": "2 Kbota_B + 3 Kbota_A (breakable pots/jars)"
+   },
+   {
+    "stage": "Cave02",
+    "name": "Star Island Cave",
+    "sea_room": 2,
+    "rooms": [
+     0
+    ],
+    "chest": "takara8 func 2 ENEMIES tboxNo 6 sw 255 item 0x07 HEART_PIECE at (870, 27, 10)",
+    "enemies": "3 magtail, 2 mo2 (Moblins), 4 Bk (Bokoblins)"
+   },
+   {
+    "stage": "Cave03",
+    "name": "Cliff Plateau Isles Cave",
+    "sea_room": 42,
+    "rooms": [
+     0
+    ],
+    "chest": "takara2 func 0 NORMAL tboxNo 7 sw 0 item 0x1F JOY_PENDANT at (1817, 600, -575)",
+    "enemies": "4 bbaba (Boko Baba)",
+    "other": "50 s_turu vines, 9 Kmi02, 7 Kryu00, 1 Dsaku, and 7 loose 'item' actors (params 0x03FFFF01/02/03 = rupees)"
+   },
+   {
+    "stage": "Cave04",
+    "name": "Rock Spire Isle Cave",
+    "sea_room": 16,
+    "rooms": [
+     0
+    ],
+    "chest": "takara7 func 2 ENEMIES tboxNo 8 sw 255 item 0xD5 COLLECT_MAP_42 (Treasure Chart 42) at (691, 100, -402)",
+    "enemies": "27 keeth (Keese)"
+   },
+   {
+    "stage": "Cave05",
+    "name": "Horseshoe Island Cave",
+    "sea_room": 43,
+    "rooms": [
+     0
+    ],
+    "chest": "takara7 func 2 ENEMIES tboxNo 1 sw 255 item 0xD4 COLLECT_MAP_43 (Treasure Chart 43) at (648, 50, -404)",
+    "enemies": "3 gmos (Morths)"
+   },
+   {
+    "stage": "Cave06",
+    "name": "Unused",
+    "sea_room": null,
+    "rooms": [
+     0
+    ],
+    "chest": "takara6 func 1 SWITCH tboxNo 18 sw 18 item 0x07 HEART_PIECE at (759, 107, -431)",
+    "enemies": "none - the stage holds only the chest and one Ysdls00 water plane"
+   },
+   {
+    "stage": "Cave07",
+    "name": "Pawprint Isle Wizzrobe Cave",
+    "sea_room": 12,
+    "rooms": [
+     0
+    ],
+    "chest": "tkrAGc func 2 ENEMIES tboxNo 2 sw 255 item 0x0F SILVER_RUPEE at (870, 27, 10)",
+    "enemies": "6 wiz_r (Wizzrobes)"
+   },
+   {
+    "stage": "Cave08",
+    "name": "Unused",
+    "sea_room": null,
+    "rooms": "22 spawns, one room chain",
+    "chest": "TEN chests including 0x4C MAP, 0x4D COMPASS, 0x4E BOSS_KEY, two 0x15 SMALL_KEY, three 0x1F JOY_PENDANT, 0x05 PURPLE_RUPEE, 0xE8 COLLECT_MAP_23, 0xF2 COLLECT_MAP_13",
+    "note": "Not a secret cave at all. Its event_list carries AMI2_OPEN/AMI2_CLOSE/AMI3/LiftMove/cb_sow/MKNJD_K_* /SHOKUDAI_SWITCH/R03DOOROPEN, i.e. Wind Temple scripts (cb_sow is Makar sowing a seed), and it has a Map/Compass/Boss Key set. It reads as a dev copy of a dungeon parked in the Cave slot."
+   },
+   {
+    "stage": "Cave09",
+    "name": "Savage Labyrinth (final third)",
+    "sea_room": 44,
+    "rooms": "0-20, 27 spawns",
+    "chest": "tkrCTf func 6 TACT tboxNo 11 sw 11 item 0xF9 COLLECT_MAP_06 (Triforce Chart 6) in room 20 at (0, -70, -2271)",
+    "enemies": "Piwa, keeth, bable, Puti, Fkeeth, magtail, Bk, mo2, Tn (Darknuts), amos/amos2, wiz_r, BFlower"
+   },
+   {
+    "stage": "Cave10",
+    "name": "Savage Labyrinth (first third)",
+    "sea_room": 44,
+    "rooms": "0-20, 27 spawns",
+    "chest": "takara3 func 0 NORMAL tboxNo 12 sw 0 item 0x07 HEART_PIECE in room 20 at (0, -70, -2361)",
+    "enemies": "p_hat, Stal, Rdead1 (ReDeads), bbaba, Bk, gmos, mo2, Tn, Hcbh, wiz_r, BFlower, moZOU, Puti"
+   },
+   {
+    "stage": "Cave11",
+    "name": "Savage Labyrinth (middle third)",
+    "sea_room": 44,
+    "rooms": "0-20, 27 spawns",
+    "chest": "NONE - the only one of the three with no TRES chunk",
+    "enemies": "Rdead1/Rdead2, mo2, gmos, pow, Stal, bable, amos/amos2, Tn, magtail, Fkeeth, Bk"
+   },
+   {
+    "stage": "TF_01",
+    "name": "Stone Watcher Island Cave",
+    "sea_room": 31,
+    "rooms": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ],
+    "chest": "tkrCTf func 6 TACT tboxNo 10 sw 10 item 0xF8 COLLECT_MAP_07 (Triforce Chart 7) at (2603, 20, 0)",
+    "enemies": "2 Tn (Darknuts), 8 Hcbh, 5 Bk, 3 wiz_r, 4 amos2, 2 mo2"
+   },
+   {
+    "stage": "TF_02",
+    "name": "Overlook Island Cave",
+    "sea_room": 7,
+    "rooms": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ],
+    "chest": "tkrCTf func 6 TACT tboxNo 11 sw 11 item 0xF7 COLLECT_MAP_08 (Triforce Chart 8) at (2603, 20, 0)",
+    "enemies": "4 Tn, 8 Hcbh, 5 Bk, 2 wiz_r, 3 amos, 4 BFlower, 2 Stal"
+   },
+   {
+    "stage": "TF_03",
+    "name": "Bird's Peak Rock Cave",
+    "sea_room": 35,
+    "rooms": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ],
+    "chest": "tkrCTf func 6 TACT tboxNo 16 sw 16 item 0xFC COLLECT_MAP_03 (Triforce Chart 3) at (-142, 245, 0)",
+    "enemies": "4 Hyuf2, 4 mo2, 1 amos, 1 Bk",
+    "note": "the only stage in my set whose EVNT table is completely empty (0 entries)"
+   },
+   {
+    "stage": "TF_04",
+    "name": "Cabana Labyrinth",
+    "sea_room": 33,
+    "rooms": [
+     0
+    ],
+    "chest": "tkrCTf func 6 TACT tboxNo 17 sw 17 item 0xFD COLLECT_MAP_02 (Triforce Chart 2) at (2250, 50, 50); plus takara2 func 0 NORMAL tboxNo 22 item 0x06 ORANGE_RUPEE at (50, -490, -1450)",
+    "enemies": "8 nezumi (rats), 2 Rdead2",
+    "other": "4 MhmrSW0 hammer switches, 1 Mhsg9, 2 Otana"
+   },
+   {
+    "stage": "TF_05",
+    "name": "Unused",
+    "sea_room": null,
+    "rooms": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ],
+    "chest": "takara2 func 0 NORMAL tboxNo 0 item 0x06 ORANGE_RUPEE at (3900, 0, -1)",
+    "enemies": "1 amos, 5 Bk",
+    "note": "Its spawn 0 at (-3900, 1000, 1) is the ONE PLYR spawn in all 24 of my stages whose params >> 24 is not 0xFF: it carries EVNT index 0, which in TF_05 is MapToolCamera - a debug camera, not a story event. 9 MhmrSW0 hammer switches and a Ywarp00."
+   },
+   {
+    "stage": "TF_06",
+    "name": "Dragon Roost Island Secret Cave",
+    "sea_room": 13,
+    "rooms": [
+     0,
+     1,
+     2,
+     3,
+     4,
+     5,
+     6
+    ],
+    "chest": "takara2 func 0 NORMAL tboxNo 0 item 0x05 PURPLE_RUPEE at (4603, 20, 0)",
+    "enemies": "4 keeth, 2 gmos, 3 Bk",
+    "other": "32 TGDR doors and 19 kotubo - the multi-door maze"
+   },
+   {
+    "stage": "Otkura",
+    "name": "Cave Behind Forest Haven Waterfall",
+    "sea_room": 41,
+    "rooms": [
+     0
+    ],
+    "chest": "none",
+    "enemies": "none",
+    "other": "Cb1 (Makar) on layers 0 and 1 at (20, -222, 565); 4 Lamp on layer 7; 2 'ho' actors"
+   }
+  ],
+  "great_fairies": [
+   {
+    "stage": "Fairy01",
+    "island": "Northern Fairy Island",
+    "sea_room": 3,
+    "bigelf_type": 0,
+    "gift_item": "0xAB dItemNo_MAX_RUPEE_UP1_e",
+    "gift": "wallet -> 1000 Rupees",
+    "confidence": "high",
+    "why": "the pawn-shop hint message 14509 tells a player with the starter wallet to ask 'the fairy on the island north of here'; the item's own model uses TEXTURE_IDX_BIG_PURSE (src/d/d_item_data.cpp:3339-3343)"
+   },
+   {
+    "stage": "Fairy04",
+    "island": "Outset Island",
+    "sea_room": 44,
+    "bigelf_type": 1,
+    "gift_item": "0xAC dItemNo_MAX_RUPEE_UP2_e",
+    "gift": "wallet -> 5000 Rupees",
+    "confidence": "high",
+    "why": "hint message 14508 tells a player with the 1000 wallet to ask 'the fairy on the island where you were born'; message 13063 says the huge fairy lives 'in the forest on Outset Island'; the item uses TEXTURE_IDX_MAX_PURSE"
+   },
+   {
+    "stage": "Fairy02",
+    "island": "Eastern Fairy Island",
+    "sea_room": 19,
+    "bigelf_type": 2,
+    "gift_item": "0xAD dItemNo_MAX_BOMB_UP1_e",
+    "gift": "bomb bag -> 60",
+    "confidence": "medium",
+    "why": "position 2 in the type order matched to position 2 in the item order - see the great_fairy_upgrade step"
+   },
+   {
+    "stage": "Fairy06",
+    "island": "Southern Fairy Island",
+    "sea_room": 39,
+    "bigelf_type": 3,
+    "gift_item": "0xAE dItemNo_MAX_BOMB_UP2_e",
+    "gift": "bomb bag -> 99",
+    "confidence": "medium",
+    "why": "same ordering argument"
+   },
+   {
+    "stage": "Fairy03",
+    "island": "Western Fairy Island",
+    "sea_room": 15,
+    "bigelf_type": 4,
+    "gift_item": "0xAF dItemNo_MAX_ARROW_UP1_e",
+    "gift": "quiver -> 60",
+    "confidence": "medium",
+    "why": "same ordering argument"
+   },
+   {
+    "stage": "Fairy05",
+    "island": "Thorned Fairy Island",
+    "sea_room": 28,
+    "bigelf_type": 5,
+    "gift_item": "0xB0 dItemNo_MAX_ARROW_UP2_e",
+    "gift": "quiver -> 99",
+    "confidence": "medium",
+    "why": "same ordering argument"
+   },
+   {
+    "stage": "sea",
+    "island": "Two-Eye Reef (room 46), inside the Big Octo",
+    "sea_room": 46,
+    "bigelf_type": 6,
+    "gift_item": "0xB2 dItemNo_MAX_MP_UP1_e",
+    "gift": "magic meter doubled",
+    "confidence": "high",
+    "why": "the item number is written literally in the event data: BIGELF_ARRIVAL2's Link action 046pget carries prm0 = 178 = 0xB2. Message 13072 independently says the fairy 'who bestows magic power' stopped being seen once the Big Octos appeared."
+   }
+  ]
+ },
+ "steps": [
+  {
+   "id": "cave_entry",
+   "stage": "sea",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "warp",
+    "detail": "COULD NOT BE PINNED DOWN. Nothing in the exported sea data names a Cave/TF/Fairy stage: sea_report.json's exits list holds only 27 records and all of them are Windfall/Outset house doors (ma2room, Ojhous, Abesso...). That is because SCLS is a per-room chunk as well as a stage chunk - dLib_setNextStageBySclsNum(sclsNum, roomNo) reads dComIfGp_roomControl_getStatusRoomDt(roomNo)->getSclsInfo() when roomNo != -1 (src/d/d_lib.cpp:236-256) - and the rip only exports the stage-level SCLS. The best candidate actor is daObj_Hole_c ('Object - Grotto', archive 'Aana', src/d/actor/d_a_obj_hole.cpp:1-21): its getArg takes mExitIdx = params & 0xFF and a has-model flag = (params >> 8) & 0xFF (src/d/actor/d_a_obj_hole.cpp:234-247); when Link steps inside its circle it orders the boilerplate event DEFAULT_PITFALL and, on that event ending, calls dLib_setNextStageBySclsNum(mExitIdx, roomNo) (src/d/actor/d_a_obj_hole.cpp:120-135). But no Aana appears in sea_report.json's actor list either (that list holds the 2233 model-placed actors; 844 logic actors are skipped), so this is not proven for these caves."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "low",
+   "sources": [
+    "src/d/actor/d_a_obj_hole.cpp:21",
+    "src/d/actor/d_a_obj_hole.cpp:120-135",
+    "src/d/actor/d_a_obj_hole.cpp:234-247",
+    "src/d/d_lib.cpp:236-256",
+    "out/rip/GZLE01/stages/sea/sea_report.json:exits"
+   ],
+   "notes": "A remake needs the destination table this step could not recover. The workaround is the island->stage mapping in _instances (from gcrip/data/ww_stages.py names matched to dIsleRoom_* in include/d/d_save.h:303-353), which gives the right pairing even without the link record. Re-run once the exporter dumps per-room SCLS."
+  },
+  {
+   "id": "cave_clear_room",
+   "stage": "Cave02",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "defeat",
+    "detail": "THE CAVE PATTERN. A chest with func type 2 (FUNC_TYPE_ENEMIES) starts invisible in daTbox_c::actionGenocide. Every frame it checks mRoomNo == dComIfGp_roomControl_getStayNo() && fopAcM_myRoomSearchEnemy(mRoomNo) == NULL - i.e. Link is in the room and no enemy actor is left in it - counts a 65-frame delay down, then orders the event DEFAULT_TREASURE_APPEAR and calls dComIfGs_onSwitch(getSwNo(), mRoomNo). That is the whole 'kill everything, the chest rises' beat, and it is generic engine code: no event bit, no event script, nothing stage-specific."
+   },
+   "event": "DEFAULT_TREASURE_APPEAR",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_tbox.cpp:1034-1063",
+    "src/d/actor/d_a_tbox.cpp:23-31",
+    "src/d/actor/d_a_tbox.cpp:493-499"
+   ],
+   "notes": "Four instances: Cave02 (3 Magtails + 2 Moblins + 4 Bokoblins -> Piece of Heart), Cave04 (27 Keese -> Treasure Chart 42), Cave05 (3 Morths -> Treasure Chart 43), Cave07 (6 Wizzrobes -> Silver Rupee). All four use swNo 255; daTbox_c::checkNormal returns FALSE for any swNo >= 0xC0 (src/d/actor/d_a_tbox.cpp:407-419), which is exactly how they stay hidden on a fresh visit."
+  },
+  {
+   "id": "cave_switch_chest",
+   "stage": "TF_01",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "object",
+    "detail": "The other half of the cave pattern. Chests with func type 1 (SWITCH) or 6 (TACT) sit in daTbox_c::actionSwOnWait and simply wait for dComIfGs_isSwitch(getSwNo(), mRoomNo); when it goes on they order DEFAULT_TREASURE_APPEAR. Type 6 additionally gets a second model: CreateHeap loads Dalways/YTRIF00 and its BRK and draws the chest standing on a Triforce platform (src/d/actor/d_a_tbox.cpp:130-146, comment in the decomp: 'Set up Triforce platform for the type that spawns via Wind Waker song'). Every Triforce Chart chest in my area is a type 6 tkrCTf chest whose swNo equals its tboxNo."
+   },
+   "event": "DEFAULT_TREASURE_APPEAR",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_tbox.cpp:1006-1021",
+    "src/d/actor/d_a_tbox.cpp:130-146",
+    "src/d/actor/d_a_tbox.cpp:500-510"
+   ],
+   "notes": "Type 6 instances: TF_01 (sw 10), TF_02 (sw 11), TF_03 (sw 16), TF_04 (sw 17), Cave09 (sw 11). Type 1 instances: Cave06 (sw 18) and three of Cave08's chests. What turns the switch on is the room's own puzzle or gauntlet and is not recorded in the placement data the miner reads."
+  },
+  {
+   "id": "cave_open_chest",
+   "stage": "Cave01",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "chest",
+    "detail": "Opening the chest. The item is NOT in the chest's params: daTbox_c::getItemNo() returns (home.angle.z >> 8) & 0xFF, so the reward lives in the placement record's rot.z, with the low byte of rot.z used for something else. params carry funcType = & 0x7F, tboxNo = (>> 7) & 0x1F, swNo = (>> 12) & 0xFF, shapeType = (>> 20) & 0x0F. Once opened, the chest is remembered by setting bit tboxNo in dSv_memBit_c::mTbox for the stage's save slot (dComIfGs_onTbox)."
+   },
+   "event": "TREASURE",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "varies - see _instances.caves",
+   "confidence": "high",
+   "sources": [
+    "include/d/actor/d_a_tbox.h:35-37",
+    "src/d/actor/d_a_tbox.cpp:397-405",
+    "include/d/d_save.h:655-681",
+    "include/d/d_com_inf_game.h:1606-1623",
+    "out/rip/GZLE01/stages/Cave01/Cave01_report.json:actors"
+   ],
+   "notes": "'TREASURE' is the demo staff name the chest looks itself up under (dComIfGp_evmng_getMyStaffId(\"TREASURE\"), src/d/actor/d_a_tbox.cpp:1010 and 1038); the ordered event is the boilerplate DEFAULT_TREASURE_APPEAR / DEFAULT_TREASURE. Cave01's chest is the worked example: takara3, params 0xFF200280 -> func 0, tboxNo 5, swNo 0, shape 2; rot.z 0x0705 -> item 0x07 HEART_PIECE."
+  },
+  {
+   "id": "cave_heart_piece",
+   "stage": "Cave01",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "item",
+    "detail": "Taking dItemNo_HEART_PIECE_e (0x07) runs item_func_kakera_heart, which does one thing: dComIfGp_setItemMaxLifeCount(1). d_meter then folds that counter into dSv_player_status_a_c::mMaxLife and clears it."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "0x07 dItemNo_HEART_PIECE_e",
+   "confidence": "high",
+   "sources": [
+    "src/d/d_item.cpp:583-585",
+    "src/d/d_item.cpp:23",
+    "src/d/d_meter.cpp:1401-1417",
+    "out/rip/GZLE01/text/messages.json#id=404"
+   ],
+   "notes": "Four Pieces of Heart in my area: Cave01 (Bomb Island), Cave02 (Star Island), Cave06 (the unused cave) and Cave10 room 20 (the Savage Labyrinth's mid-point reward). There is no 'pieces collected' counter in the save - the memory is purely the four mTbox bits."
+  },
+  {
+   "id": "cave_triforce_chart",
+   "stage": "TF_01",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "item",
+    "detail": "The four TF_ caves that are finishable, plus the Savage Labyrinth, each hand over a Triforce Chart: dItemNo_COLLECT_MAP_nn_e runs item_func_collectmapnn, which calls dComIfGs_onGetCollectMap(nn) and clears the chart's open/complete flags. onGetCollectMap sets bit nn-1 in dSv_player_map_c::field_0x0. Charts 1-8 are the Triforce Charts (their name strings are messages 12760-12767) - which is what the TF_ stage prefix means."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "0xF8 COLLECT_MAP_07 (TF_01)",
+   "confidence": "high",
+   "sources": [
+    "src/d/d_item.cpp:1972-1979",
+    "include/d/d_com_inf_game.h:1203-1205",
+    "include/d/d_save.h:410-438",
+    "out/rip/GZLE01/text/messages.json#id=348",
+    "out/rip/GZLE01/stages/TF_01/TF_01_report.json:actors"
+   ],
+   "notes": "TF_01 Stone Watcher -> chart 7, TF_02 Overlook -> chart 8, TF_03 Bird's Peak -> chart 3, TF_04 Cabana Labyrinth -> chart 2, Cave09 Savage Labyrinth -> chart 6. Charts 1, 4 and 5 are not in my area. All five are tkrCTf chests on a Triforce platform; the get-message is 348 ('You got a Triforce Chart! You can't read it yourself...')."
+  },
+  {
+   "id": "cave_treasure_chart",
+   "stage": "Cave04",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "item",
+    "detail": "Two caves give Treasure Charts instead: Cave04 (Rock Spire Isle) gives dItemNo_COLLECT_MAP_42_e (0xD5) and Cave05 (Horseshoe Island) gives dItemNo_COLLECT_MAP_43_e (0xD4). Same storage as the Triforce Charts - onGetCollectMap(42) / (43) into dSv_player_map_c - just a chart number above 8."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "0xD5 COLLECT_MAP_42",
+   "confidence": "high",
+   "sources": [
+    "src/d/d_item.cpp:228-229",
+    "src/d/d_item.cpp:1637-1655",
+    "out/rip/GZLE01/stages/Cave04/Cave04_report.json:actors",
+    "out/rip/GZLE01/stages/Cave05/Cave05_report.json:actors"
+   ],
+   "notes": "Cave03 (Cliff Plateau Isles) breaks the pattern a third way: its chest holds dItemNo_JOY_PENDANT_e (0x1F), and the room additionally scatters 7 loose 'item' actors with params 0x03FFFF01/02/03. Cave07 gives a plain SILVER_RUPEE (0x0F); TF_04's second chest and TF_05 give ORANGE_RUPEE (0x06); TF_06 gives PURPLE_RUPEE (0x05)."
+  },
+  {
+   "id": "savage_labyrinth",
+   "stage": "Cave10",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "room_enter",
+    "detail": "Cave09, Cave10 and Cave11 are one 50-floor gauntlet split across three stages. Each has an identical skeleton: rooms 0-20 and 27 PLYR spawns, spawn 0 (params 0xFFFFF000) plus spawn 1 (0xFFFFD000) in room 0 and one spawn per room after that, six of them stacked on room 20. None of the 81 spawns auto-plays an event and none of the three stages has a TagEv volume. The one thing the engine special-cases is loot: fopAcM_createIball checks getStartStageName() against \"Cave09\", \"Cave10\" and \"Cave11\" by name and returns fpcM_ERROR_PROCESS_ID_e, so defeated enemies drop NOTHING in the Savage Labyrinth."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/f_op/f_op_actor_mng.cpp:1239-1244",
+    "out/rip/GZLE01/stages/Cave09/Cave09_report.json",
+    "out/rip/GZLE01/stages/Cave10/Cave10_report.json",
+    "out/rip/GZLE01/stages/Cave11/Cave11_report.json"
+   ],
+   "notes": "Rewards place the segments in order: Cave10 room 20 has the plain NORMAL chest with the Piece of Heart, Cave11 has no chest at all, Cave09 room 20 has the Triforce-platform chest with Triforce Chart 6. So Cave10 is the first stretch, Cave11 the middle, Cave09 the last - inferred from the reward layout, not from a link record (the segments' SCLS records are per-room and not exported). Cave09 also carries two enemy-death event scripts the other two lack, MkieB_die and MkieBAB_die, which nothing in the placement data orders."
+  },
+  {
+   "id": "cave08_unused",
+   "stage": "Cave08",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "room_enter",
+    "detail": "Cave08 is in the Cave numbering but is not a secret cave. It has 22 PLYR spawns, 9 EVNT entries (all MapToolCamera), ten chests including a Map, a Compass, a Boss Key and two Small Keys, and an event_list of 92 scripts carrying AMI2_OPEN/AMI2_CLOSE/AMI3/LiftMove/AMI4_OPEN/cb_sow/homen_down/MKNJD_K_CHECK..MKNJD_K_TALK/SHOKUDAI_SWITCH/R03DOOROPEN/R04DOOROPEN. cb_sow is Makar sowing a seed, so this is dungeon material (Wind Temple shaped) parked in a Cave slot. Its single AttTagB (room 3, type 2, swSave 33) is an attention marker, not a trigger."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "out/rip/GZLE01/stages/Cave08/Cave08_report.json",
+    "out/rip/GZLE01/godot/events/Cave08.json",
+    "gcrip/data/ww_stages.py:23"
+   ],
+   "notes": "gcrip/data/ww_stages.py already labels Cave06, Cave08, TF_05 and TF_07 'Unused'. Recorded so a remake does not try to place them on the map."
+  },
+  {
+   "id": "fairy_island_arrival",
+   "stage": "sea",
+   "room": 3,
+   "layer": -1,
+   "trigger": {
+    "kind": "room_enter",
+    "detail": "NEGATIVE RESULT, and a load-bearing one: sailing up to a fairy island plays no cutscene at all. Across sea rooms 3 (Northern), 15 (Western), 19 (Eastern), 28 (Thorned) and 39 (Southern) there is not one PLYR spawn whose params >> 24 is anything but 0xFF, not one TagEv volume and not one AttTag volume. There is no ARRIVAL_ event for a fairy island in the sea EVNT table either - the arrivals it does hold are ARRIVAL_DRG, ARRIVAL_BRK, ARRIVAL_FST, ARRIVAL_WND, ARRIVAL_GND and ARRIVAL_TWN, none of them a fairy island. Each of the five rooms carries only the standard island furniture: five TagSo plus one TagMSo (the fishman), one HyoiKam, one agbCSW and one agbA2, plus an agbMARK."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/sea/sea_report.json:spawns",
+    "out/rip/GZLE01/stages/sea/sea_report.json:tags",
+    "out/rip/GZLE01/stages/sea/sea_report.json:event_table",
+    "tools/ww_story_mine.py sea --rooms 3 15 19 28 39"
+   ],
+   "notes": "The sixth fairy, Fairy04, is reached from sea room 44 (Outset), which is busy for other reasons: its one TagEv (0x1FF0903) and its one TagIsl (0x35FF7407 -> EVNT 53 = PUROLO_RETURN, daTag_Island_c type 7, which arrivalTerms gates on dKy_checkEventNightStop() plus dComIfGs_checkGetItem(dItemNo_BOMB_BAG_e) and whose arrival flag is 0x3E10, src/d/actor/d_a_tag_island.cpp:85-129) belong to the Jabun chapter, not to the fairy. Also note that the FIVE fairy islands each hold a chest out on the island itself (room 15 tkrAOc, rooms 19/28/39 tkrAOs, room 39 also takara5); those are sea-stage chests, not fountain rewards, and are not modelled here."
+  },
+  {
+   "id": "fairy_fountain_enter",
+   "stage": "Fairy01",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "warp",
+    "detail": "All six fountain stages are the same two-actor room. Spawn 0, params 0xFFFFF000 (>> 24 = 0xFF, so no auto-event), sits at (0, 400, 1348) - 400 units up - directly over an Ysdls00 water plane at (0, 30, 1348) scaled (1, 0.3, 1): Link drops into the pool. The Great Fairy stands opposite at (0, 30, -852) (Fairy01 at y 81). The EVNT table is a single MapToolCamera and there are no TagEv or AttTag volumes anywhere in the six stages."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Fairy01/Fairy01_report.json",
+    "out/rip/GZLE01/stages/Fairy02/Fairy02_report.json",
+    "tools/ww_story_mine.py Fairy01 Fairy02 Fairy03 Fairy04 Fairy05 Fairy06"
+   ],
+   "notes": "Identical in Fairy01-Fairy06 down to the coordinates; the ONLY thing that differs between the six stages is the BigElf's params low byte. See _actors.BigElf.placements."
+  },
+  {
+   "id": "great_fairy_arrival",
+   "stage": "Fairy01",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "npc",
+    "detail": "The Great Fairy orders her own event. No spawn and no trigger volume in any Fairy0N stage carries an event index, and the stage EVNT table has no entry for BIGELF_ARRIVAL at all - it exists only in the stage's event_list, so it must be ordered by name from the actor (the fopAcM_orderOtherEvent path). daBigelf_c's function list contains hunt(), ready0() and event0(), the same shape other NPCs use to range-check Link and order their event, but every body is /* Nonmatching */, so the distance test cannot be quoted. The script itself is fully readable: BigElf plays WAIT_0 -> FA1 -> APPEAR -> TALK_0 (MsgNo 12008 'Young waker of the winds...') -> FL_DM_BF -> FL_DM_MD -> FL_DM_AF -> FL_LINK (Timer 120) -> FL_DELETE -> TALK_1 (MsgNo 12010, the 'fairies in this fountain shall ease your weariness' sign-off) -> EXIT, while Link plays 004init_wait -> 001n_wait -> 067pwait -> 011get_item -> 004init_wait -> 001n_wait -> 049s_surp."
+   },
+   "event": "BIGELF_ARRIVAL",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "out/rip/GZLE01/godot/events/Fairy01.json",
+    "src/d/actor/d_a_bigelf.cpp:265-292",
+    "include/d/actor/d_a_bigelf.h:31-56",
+    "out/rip/GZLE01/text/messages.json#id=12008",
+    "out/rip/GZLE01/text/messages.json#id=12010"
+   ],
+   "notes": "The event script is byte-for-byte the same in all six stages, including both message numbers - the Great Fairy says exactly the same words at all six fountains, so nothing in her speech identifies the gift. Message 12009 ('Allow me to aid you in your quest') sits between the two but is not named by the script; it is reached by the actor's own message chaining (daBigelf_c::next_msgStatus / getMsg, both stubs). The Great Fairy is NOT killable and raises no event bit; there is no onEventBit call anywhere in d_a_bigelf.cpp because there is no code in d_a_bigelf.cpp."
+  },
+  {
+   "id": "great_fairy_upgrade",
+   "stage": "Fairy01",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "item",
+    "detail": "How the gift is chosen - this is the one real puzzle in the area. Link's action in BIGELF_ARRIVAL is 011get_item with prm0 = 256 = 0x100, and 0x100 is a sentinel: daPy_lk_c::dProcGetItem_init reads mDemo.getParam0(), and if it is exactly 0x100 it takes the item from dComIfGp_event_getGtItm() instead of from the parameter (src/d/actor/d_a_player_dproc.inc:686-698). ('011' is the demo mode number: daPy_demo_c::DEMO_GET_ITEM_e = 11, include/d/actor/d_a_player.h:56.) So the fountain fairies do NOT name their item in the event data - the BigElf actor sets it, from its mGivenItem field at 0x346, which it fills in from getType(). Since every daBigelf_c body is a stub, the type->item table itself is not in the decomp and had to be reconstructed."
+   },
+   "event": "BIGELF_ARRIVAL",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "0xAB dItemNo_MAX_RUPEE_UP1_e (Fairy01); see _instances.great_fairies for all seven",
+   "confidence": "medium",
+   "sources": [
+    "src/d/actor/d_a_player_dproc.inc:656-700",
+    "include/d/actor/d_a_player.h:56",
+    "include/d/actor/d_a_bigelf.h:104",
+    "src/d/d_item.cpp:187-194",
+    "src/d/d_item.cpp:1358-1400",
+    "src/d/d_item_data.cpp:3337-3468",
+    "out/rip/GZLE01/text/messages.json#id=14508",
+    "out/rip/GZLE01/text/messages.json#id=14509",
+    "out/rip/GZLE01/godot/events/Fairy01.json"
+   ],
+   "notes": "The reconstruction, stated so it can be checked or overturned: (1) there are exactly seven upgrade items, dItemNo 0xAB..0xB0 plus 0xB2, and their get-messages sit in one block, ids 272-277 and 279, at itemNo + 101 - 0xAB->272 '1000 Rupees', 0xAC->273 '5000 Rupees', 0xAD->274 '60 bombs', 0xAE->275 '99 bombs', 0xAF->276 '60 arrows', 0xB0->277 '99 arrows', 0xB2->279 'magic power ... twice as much' (0xB1 MAGIC_POWER is a refill, not an upgrade, and has no model or texture). (2) there are exactly seven Great Fairies - the in-game figurine text 14361 says so outright, 'The seven Great Fairies ... are hiding in seven different reaches of the Great Sea'. (3) there are exactly seven BigElf types, 0-5 on the six fountains and 6 on the Big Octo one. (4) type 6 is nailed to 0xB2 by the event data (BIGELF_ARRIVAL2 hardcodes 178). (5) type 0 is nailed to 0xAB and type 1 to 0xAC by the pawn-shop hints, messages 14509 ('the fairy on the island north of here' when the wallet is still tiny) and 14508 ('the island where you were born' when it is merely 'a slightly larger wallet') - Fairy01 is Northern, Fairy04 is Outset, and their types are 0 and 1. That fixes both ends of the order; types 2,3,4,5 are then assigned to 0xAD,0xAE,0xAF,0xB0 in the same order, which is why the four middle rows in _instances.great_fairies are marked medium and not high. If a play-test shows Eastern giving arrows rather than bombs, the fix is to swap the (2,3) pair with the (4,5) pair - nothing else in this file depends on it. Storage of each upgrade is in _storage; none of them is an event bit."
+  },
+  {
+   "id": "fairy_fountain_heal",
+   "stage": "Fairy01",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "npc",
+    "detail": "After she leaves, the fountain keeps working: her closing line (message 12010) is 'The fairies in this fountain shall ease your weariness. When you grow fatigued from your battles, come here to be refreshed.' The small fairies are daNpc_Fa1_c, spawned by the Great Fairy herself (daBigelf_c::makeFa1 / makeFa1S, and the FA1 action in BIGELF_ARRIVAL). Unlike the Great Fairy this actor is fully decompiled: mType = fopAcM_GetParam(this), Type_e NORMAL/TIMER/LINK/BABA/AREA/LINK_DOWN/HOVER, and Mode_e includes Mode_BIGELF_CHANGE_e = 7, the mode used while the Great Fairy is gathering them into herself or scattering back out."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "src/d/actor/d_a_npc_fa1.cpp:248",
+    "include/d/actor/d_a_npc_fa1.h:33-53",
+    "include/d/actor/d_a_bigelf.h:61-62",
+    "out/rip/GZLE01/text/messages.json#id=12010"
+   ],
+   "notes": "No Fa1 is placed in any Fairy0N room.dzr - they only exist as actors the Great Fairy creates, which is why the ripped stage has just two placements. The heal itself is Fa1 behaviour (get_player_move / escape_move / bottle_appear_move) and is not gated on anything in the save."
+  },
+  {
+   "id": "bigocto_fairy_freed",
+   "stage": "sea",
+   "room": 46,
+   "layer": -1,
+   "trigger": {
+    "kind": "defeat",
+    "detail": "The seventh Great Fairy is inside a Big Octo. daDaiocta_c reads m057C from home.angle.z, and on death: if m057C == 1 it calls fopAcM_orderOtherEvent2(this, \"DAIOCTA_DEAD_ELF\"), otherwise \"DAIOCTA_DEAD\" (src/d/actor/d_a_daiocta.cpp:1274-1282). Of the six Daiocta placed in the sea, exactly ONE has rot.z == 1: room 46 (Two-Eye Reef), params 0x12FF2800 - mOctoType 0 FOUR_EYED, appear radius 0x28 * 100 = 4000, mSwitchNo 0x12 = 18. A BigElf with getSwbit 18 is placed at the identical position, (-4460, 0, 299700). DAIOCTA_DEAD_ELF itself is pure staging - CAMERA FIXEDFRM then a 120-frame UNITRANS pulling back from @STARTER, a TIMEKEEPER, the Daiocta's DEATH1/DEATH2 cuts (DEATH2 is where dComIfGs_onSwitch(18, 46) fires) and the Ship slowing from speed 6 to 2. No message, no item."
+   },
+   "event": "DAIOCTA_DEAD_ELF",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_daiocta.cpp:1274-1282",
+    "src/d/actor/d_a_daiocta.cpp:1551-1596",
+    "src/d/actor/d_a_daiocta.cpp:1262-1271",
+    "out/rip/GZLE01/stages/sea/sea_report.json:actors",
+    "out/rip/GZLE01/godot/events/sea.json"
+   ],
+   "notes": "The other five Big Octos (rooms 6 and 17 TWELVE_EYED, rooms 20, 33 and 36 EIGHT_EYED) all have rot.z 255 and play the plain DAIOCTA_DEAD. Room 33's layer-11 BigElf is keyed to room 33's switch 16 but can never run - see _actors.BigElf.placements. Note that the octo guarding the fairy is the FOUR_EYED one, the weakest type, which is the opposite of what its 4000-unit appear radius suggests; that is what the data says."
+  },
+  {
+   "id": "bigocto_fairy_magic",
+   "stage": "sea",
+   "room": 46,
+   "layer": -1,
+   "trigger": {
+    "kind": "item",
+    "detail": "With the octo gone the BigElf runs BIGELF_ARRIVAL2, the sea-side twin of BIGELF_ARRIVAL. She plays WAIT (Timer 30) -> APPEAR -> TALK_0 (MsgNo 12011, with Ship 0 so Link stays in the boat) -> FL_DM_BF -> FL_DM_MD -> FL_DM_AF -> FL_LINK (120) -> FL_DELETE -> TALK_1 (MsgNo 12014) -> EXIT; the Ship is pinned at speed 0; the camera does five UNITRANS moves relative to BigElf and then two relative to Link. Link's actions are 006n_talk -> 067pwait -> 046pget -> 006n_talk, and 046pget carries prm0 = 178. 178 = 0xB2 = dItemNo_MAX_MP_UP1_e: unlike the six fountain fairies, this one's gift IS written literally in the event data (046 = daPy_demo_c::DEMO_PGET_e = 46, include/d/actor/d_a_player.h:91)."
+   },
+   "event": "BIGELF_ARRIVAL2",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "0xB2 dItemNo_MAX_MP_UP1_e",
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/godot/events/sea.json",
+    "include/d/actor/d_a_player.h:91",
+    "src/d/d_item.cpp:1396-1398",
+    "src/d/d_item.cpp:194",
+    "out/rip/GZLE01/text/messages.json#id=12011",
+    "out/rip/GZLE01/text/messages.json#id=12014",
+    "out/rip/GZLE01/text/messages.json#id=279"
+   ],
+   "notes": "Her lines make the beat explicit: 12011 'Oh, waker of the winds...', 12012 'Thanks to you, I have been freed from that beast's foul grasp...', 12013 'As thanks, I shall give you just a little of my power...', 12014 'May the winds of fortune always blow across your bow...'. Message 13072 is the sailor's rumour that sets it up: 'lately no one around these waters has seen the beautiful fairy who bestows magic power ... All anyone ever sees anymore are the Big Octos'. item_func_max_mp_up1 is a single line, dComIfGp_setItemMaxMagicCount(32); the get-message is 279, 'Your magic power has increased! You now have twice as much as what you had before!'"
+  },
+  {
+   "id": "otkura_wind_gods_aria",
+   "stage": "Otkura",
+   "room": 0,
+   "layer": 0,
+   "trigger": {
+    "kind": "conduct",
+    "detail": "Otkura is not a treasure cave: it is where Makar is. daNpc_Cb1_c ('Player - Makar') is placed at (20, -222, 565) on layers 0 and 1, and Otkura's event_list carries cb_tact and cb_tactCancel. cb_tact runs Cb1 WAIT -> WAIT -> MSG_SET 5408 ('Why, is that a conductor's baton? ... Are you a maestro?!') -> MSG_END -> WAIT -> MSG_SET 1452 ('Conduct with C-stick. Change rhythm with left/right.') -> TACT prm0 4 -> WAIT -> CELLOPLAY -> WAIT -> MSG_SET -> MSG_END -> WAIT -> END EndMode -2, with Link doing 034tact (prm0 -4 then -3) and then 001n_wait. TACT prm0 = 4 becomes dComIfGs_onTact(4) via daPy_lk_c (src/d/actor/d_a_player_dproc.inc:2091-2092); song 4 is the Wind God's Aria (message 214 'You learned the Wind God's Aria!' is the fifth of the six 210-215 song-learned strings, and 1457 'You conducted the Wind God's Aria!' is the fifth of 1453-1458)."
+   },
+   "event": "cb_tact",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x1610",
+    "0x1604"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_cb1.cpp:1-3",
+    "src/d/actor/d_a_npc_cb1.cpp:1581-1600",
+    "src/d/actor/d_a_player_dproc.inc:2091-2092",
+    "out/rip/GZLE01/godot/events/Otkura.json",
+    "out/rip/GZLE01/stages/Otkura/Otkura_report.json:actors",
+    "out/rip/GZLE01/text/messages.json#id=5414",
+    "out/rip/GZLE01/text/messages.json#id=214"
+   ],
+   "notes": "daNpc_Cb1_c::evInitEnd is the whole hand-off: when an event ends with EndMode == -2 and the actor's last message was 0x1526 (5414, Makar's 'Strange... Why does it feel like I already know this song..?'), it calls dComIfGp_setNextStage(\"Otkura\", 0xE6, 0, 8) - Otkura, start code 230, room 0, LAYER 8 - and then raises 0x1610 and 0x1604 before dComIfGp_event_reset(). Forcing layer 8 is one of the handful of explicit layer overrides in the game (gcrip/data/ww_layers.json known_forced_layers lists this exact call site). Otkura's dzr has no layer-8 actors at all, so on re-entry Makar is gone and the room is empty for the cutscene. cb_tactCancel is the back-out: two messages and END EndMode 1, which takes the mode == -1 branch and changes nothing."
+  },
+  {
+   "id": "otkura_awake_kokiri",
+   "stage": "Otkura",
+   "room": 0,
+   "layer": 8,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "Otkura's EVNT table has exactly one entry, awake_kokiri, and spawn 230 at (-5, -222, 68) carries params 0x00FF0000, whose params >> 24 is 0, so arriving on that spawn auto-plays it. This is the only auto-playing spawn in all 24 of my stages. The event is a PACKAGE PLAY of awake_kokiri.stb followed by a DIRECTOR NEXT to stage 'sea', room 41 (Forest Haven), start code 230, layer -1, with the CAMERA just PAUSEd for the duration."
+   },
+   "event": "awake_kokiri",
+   "stb": "awake_kokiri.stb",
+   "requires_bits": [
+    "0x1610"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Otkura/Otkura_report.json:spawns",
+    "out/rip/GZLE01/godot/events/Otkura.json",
+    "tools/ww_story_mine.py Otkura"
+   ],
+   "notes": "Its PACKAGE PLAY action carries NO EventFlag property, so unlike fairy.stb / fairy_flag_on.stb this cutscene raises nothing on start - the bits were already raised by Makar's evInitEnd one step earlier. The 0x1610 requirement is therefore how the beat is ordered, not a gate found in the placement data. 'kokiri' is the old name for the Koroks; the cutscene is Makar being awakened as a sage after Link plays the Wind God's Aria for him."
+  }
+ ]
+}
