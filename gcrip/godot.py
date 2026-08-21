@@ -206,7 +206,7 @@ const CLIMB_OVER_FRAMES := 24          # ladderupedl / wallholdup climb-over
 
 const S16_TO_RAD := PI / 32768.0
 
-enum State { GROUND, AIR, ROLL, SWIM, LAND, ATTACK, JUMPCUT, JUMPCUT_LAND, DAMAGE, GLIDE, CARRY, GRAB, VJUMP, HANG, CLIMB, LADDER, CLIMBWALL, AIM, ITEM_WAIT, HOOKPULL, SHIP, ROPE_THROW, ROPE }
+enum State { GROUND, AIR, ROLL, SWIM, LAND, ATTACK, JUMPCUT, JUMPCUT_LAND, DAMAGE, GLIDE, CARRY, GRAB, VJUMP, HANG, CLIMB, LADDER, CLIMBWALL, AIM, ITEM_WAIT, HOOKPULL, SHIP, ROPE_THROW, ROPE, LOOK }
 var ship: Node3D = null           # the King of Red Lions while riding
 
 # --- X-button items (bow / boomerang / bombs / hookshot specs: projectile-items.md) ---
@@ -238,6 +238,23 @@ var rope_mode := "ready"      # ready / swing / hang / climb / slide
 var rope_pull := 0.0
 var rope_slide := 0.0
 var rope_dir := Vector3.FORWARD
+# --- first person / subject camera (d_camera.cpp subjectCamera SS01 / SX01 / SY01) ---
+const FP_EYE_HEIGHT := 105.0           # Link's eyePos above his feet
+const FP_EYE_BACK := 10.0              # Val5 = -10: eye sits 10 behind the head point
+const FP_YAW_RATE := deg_to_rad(90.0) * 0.04    # Val24 x Val21 per frame at full stick
+const FP_PITCH_RATE := deg_to_rad(70.0) * 0.04  # Val19 x Val21
+const FP_PITCH_MAX := deg_to_rad(70.0)
+const FP_FOV := 50.0                   # Val25
+const FP_BLEND_FRAMES := 7
+const FP_DEADBAND := 0.7
+const BOOM_LOCK_MAX := 5
+var fp_active := false
+var fp_pitch := 0.0                    # positive = looking up
+var fp_blend := 0
+var fp_from_eye := Vector3.ZERO
+var fp_from_center := Vector3.ZERO
+var cstick_armed := true
+var boom_locks: Array = []
 const BOW_HOLD_FRAMES := 10            # string can be released after 10 frames (m355E)
 const AIM_PITCH_CLAMP := 0x2000 * PI / 32768.0   # Z-target pitch limit
 const ARROW_MAX_LIVE := 5
@@ -534,6 +551,9 @@ func _camera_output(attn: Vector3) -> void:
             hud_reticle.visible = false
 
 func _camera_tick() -> void:
+    if fp_active and not Game.event_cam.has("eye"):
+        _fp_camera()
+        return
     if Game.event_cam.has("eye"):
         # an event owns the camera (FIXEDFRM / UNITRANS / TALK ...)
         var eye: Vector3 = Game.event_cam["eye"]
@@ -747,6 +767,7 @@ func _physics_process(_delta: float) -> void:
         State.SHIP: _ship()
         State.ROPE_THROW: _rope_throw()
         State.ROPE: _rope()
+        State.LOOK: _look()
         State.GROUND: _ground()
         State.AIR: _air()
         State.ROLL: _roll()
@@ -780,6 +801,13 @@ func _enter_ground() -> void:
 
 func _ground() -> void:
     if Input.is_action_just_pressed("action_x") and x_item != "leaf" and _use_item():
+        return
+    var cy := -Input.get_joy_axis(0, JOY_AXIS_RIGHT_Y)   # C-stick up = +
+    if cy < 0.2:
+        cstick_armed = true
+    if cstick_armed and cy > 0.95 and stick().length() < 0.5 and lock_target == null and speed < 1.0:
+        cstick_armed = false
+        _enter_look()
         return
     if in_water():
         _enter_swim()
@@ -1173,7 +1201,7 @@ func _find_post(d: Vector3) -> Node3D:
         var tol := maxf(atan(60.0 * 6.0 / maxf(dist, 1.0)), deg_to_rad(12.0))
         # no first-person aim yet: a near post well inside the view counts even if the
         # camera is not pitched at it (the game's narrow screen-space test needs that)
-        if ang > tol and not (dist <= ROPE_POST_RANGE and ang < deg_to_rad(75.0)):
+        if ang > tol and not (dist <= ROPE_POST_RANGE and ang < deg_to_rad(30.0)):
             continue
         var score := dist + ang * 2000.0
         if score < best_score:
@@ -1326,6 +1354,107 @@ func _rope() -> void:
             if not a_held or fwd_in >= -0.3 or global_position.y <= bottom:
                 rope_mode = "hang"
 
+# ---------------------------------------------------------------- first person (subjectCamera)
+
+func _fp_enter() -> void:
+    fp_active = true
+    fp_pitch = 0.0
+    fp_blend = FP_BLEND_FRAMES
+    fp_from_eye = camera.global_position
+    fp_from_center = cam_center
+    if model:
+        model.visible = false
+
+func _fp_exit() -> void:
+    if not fp_active:
+        return
+    fp_active = false
+    if model:
+        model.visible = true
+    camera.fov = cam_fov
+    # the follow camera resumes behind Link
+    cam_center = global_position + Vector3(0, CAM_ATTN_HEIGHT, 0)
+    cam_eye = cam_center - forward() * 380.0 + Vector3(0, 120.0, 0)
+    if hud_reticle and lock_target == null:
+        hud_reticle.visible = false
+
+func _fp_stick() -> void:
+    # CalcSubjectAngle: main stick past the 0.7 dead-band turns the body / pitches the eye
+    var s := stick()
+    var sx := 0.0
+    var sy := 0.0
+    if absf(s.x) > FP_DEADBAND * 0.5:
+        sx = clampf((absf(s.x) - FP_DEADBAND * 0.5) / (1.0 - FP_DEADBAND * 0.5), 0.0, 1.0) * signf(s.x)
+    if absf(s.y) > FP_DEADBAND * 0.5:
+        sy = clampf((absf(s.y) - FP_DEADBAND * 0.5) / (1.0 - FP_DEADBAND * 0.5), 0.0, 1.0) * signf(s.y)
+    # C-stick / mouse also look around
+    sx += Input.get_joy_axis(0, JOY_AXIS_RIGHT_X)
+    sy += -Input.get_joy_axis(0, JOY_AXIS_RIGHT_Y)
+    facing -= clampf(sx, -1.0, 1.0) * FP_YAW_RATE
+    fp_pitch = clampf(fp_pitch + clampf(sy, -1.0, 1.0) * FP_PITCH_RATE, -FP_PITCH_MAX, FP_PITCH_MAX)
+
+func fp_eye() -> Vector3:
+    return global_position + Vector3(0, FP_EYE_HEIGHT, 0) - forward() * FP_EYE_BACK
+
+func fp_look_dir() -> Vector3:
+    return Vector3(sin(facing) * cos(fp_pitch), sin(fp_pitch), cos(facing) * cos(fp_pitch))
+
+func _fp_camera() -> void:
+    var eye := fp_eye()
+    var center := eye + fp_look_dir() * 300.0
+    var fov := FP_FOV
+    if fp_blend > 0:
+        var k := 1.0 - float(fp_blend) / FP_BLEND_FRAMES
+        fp_blend -= 1
+        eye = fp_from_eye.lerp(eye, k)
+        center = fp_from_center.lerp(center, k)
+        fov = lerpf(cam_fov, FP_FOV, k)
+    camera.global_position = eye
+    camera.look_at(center, Vector3.UP)
+    camera.fov = fov
+    cam_eye = eye
+    cam_center = center
+    if hud_reticle:
+        hud_reticle.visible = true
+        hud_reticle.text = "+" if boom_locks.is_empty() else "+ %d" % boom_locks.size()
+        var vp := get_viewport().get_visible_rect().size
+        hud_reticle.position = vp * 0.5 - hud_reticle.size * 0.5
+
+func _paint_boom_locks(d: Vector3) -> void:
+    # boomerang in first person: everything the reticle line crosses gets a lock (max 5)
+    boom_locks = boom_locks.filter(func(l): return l != null and is_instance_valid(l))
+    if boom_locks.size() >= BOOM_LOCK_MAX:
+        return
+    var space := get_world_3d().direct_space_state
+    var from := fp_eye()
+    var q := PhysicsRayQueryParameters3D.create(from, from + d * 2500.0, 8 | 16)
+    q.collide_with_areas = true
+    var hit := space.intersect_ray(q)
+    if hit:
+        var c = hit.collider
+        if c and (c.is_in_group("enemy") or c.is_in_group("interact")) and not boom_locks.has(c):
+            boom_locks.append(c)
+
+func _enter_look() -> void:
+    state = State.LOOK
+    speed = 0.0
+    velocity = Vector3.ZERO
+    _fp_enter()
+    play_clip("wait")
+
+func _look() -> void:
+    _apply(Vector3.ZERO, -1.0)
+    _fp_stick()
+    var cy := -Input.get_joy_axis(0, JOY_AXIS_RIGHT_Y)
+    if Input.is_action_just_pressed("action_b") or Input.is_action_just_pressed("action_a") or cy < -0.74:
+        _fp_exit()
+        _enter_ground()
+        return
+    if Input.is_action_just_pressed("action_x") and x_item != "leaf":
+        _fp_exit()
+        if _use_item():
+            return
+
 # ---------------------------------------------------------------- cutscenes (event_runner.gd)
 
 var ev_walk_target := Vector3.ZERO
@@ -1441,7 +1570,7 @@ const _ST_SCRIPT := {
     # grappling hook: stand 500 in front of the nearest post, throw, pump, let go
     920: ["to_post", true],
     922: ["item_next", true], 923: ["item_next", false],
-    990: ["action_x", true], 1005: ["action_x", false],
+    990: ["action_x", true], 992: ["move_forward", true], 1004: ["move_forward", false], 1005: ["action_x", false],
     1080: ["move_forward", true], 1200: ["move_forward", false],
     1230: ["action_b", true], 1231: ["action_b", false],
 }
@@ -1502,6 +1631,8 @@ func _selftest_tick() -> void:
         var boat_info := ""
         if state == State.ROPE:
             boat_info = " rope mode=%s amp=%.0f phase=%.2f len=%.0f" % [rope_mode, rope_amp, rope_phase, rope_len]
+        if fp_active:
+            boat_info += " fp pitch=%.0fdeg" % rad_to_deg(fp_pitch)
         if ship and is_instance_valid(ship):
             boat_info = " ship mode=%d sail=%s speed=%.1f yaw=%.0f tiller=%.0f y=%.1f pitch=%.0f" % [
                 ship.mode, str(ship.sail_on), ship.speed_f, rad_to_deg(ship.yaw), ship.tiller,
@@ -1546,6 +1677,9 @@ func _enter_aim() -> void:
     aim_frames = 0
     speed = 0.0
     velocity = Vector3.ZERO
+    boom_locks = []
+    if lock_target == null or not is_instance_valid(lock_target):
+        _fp_enter()
     match x_item:
         "bow": play_clip("bowwait", 4.0 / 30.0)
         "boomerang": play_clip("boomwait", 4.0 / 30.0)
@@ -1553,7 +1687,13 @@ func _enter_aim() -> void:
         "rope": play_clip("ropethrowwait", 4.0 / 30.0)
 
 func _aim_dir() -> Vector3:
-    # Z-target: at the target's eyes (pitch clamped 22.5 deg); else where the camera looks
+    # first person: the subject camera's look angles; Z-target: at the target's eyes (pitch
+    # clamped 22.5 deg); otherwise where the follow camera looks
+    if fp_active:
+        _fp_stick()
+        aim_yaw = facing
+        aim_pitch = -fp_pitch
+        return Vector3(sin(aim_yaw) * cos(aim_pitch), -sin(aim_pitch), cos(aim_yaw) * cos(aim_pitch))
     if lock_target and is_instance_valid(lock_target):
         var to := _target_attn() - hook_root()
         var yaw := atan2(to.x, to.z)
@@ -1571,11 +1711,15 @@ func _aim() -> void:
     var d := _aim_dir()
     facing = aim_yaw
     _apply(Vector3.ZERO, -1.0)
+    if x_item == "boomerang" and fp_active:
+        _paint_boom_locks(d)
     if Input.is_action_just_pressed("action_b") or Input.is_action_just_pressed("action_a"):
+        _fp_exit()
         _enter_ground()   # cancelItemUpperReadyAnime
         return
     if Input.is_action_pressed("action_x"):
         return
+    _fp_exit()
     # released
     match x_item:
         "bow":
@@ -1636,6 +1780,10 @@ func _throw_boomerang() -> void:
     var locks: Array = []
     if lock_target and is_instance_valid(lock_target):
         locks.append(lock_target)
+    for l in boom_locks:
+        if l != null and is_instance_valid(l) and not locks.has(l):
+            locks.append(l)
+    boom_locks = []
     b.launch(hook_root(), aim_yaw, aim_pitch, self, locks)
     projectile = b
 
