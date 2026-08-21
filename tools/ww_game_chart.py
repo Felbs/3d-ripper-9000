@@ -27,8 +27,14 @@ IMPLEMENTED = {
     "npc": "Game.story_npc_tick - proximity, or ordered as the actor is placed",
     "look": "Game.telescope_look - the Telescope's scope look at the step's target",
     "board": "player.gd board() raises RODE_KORL the first time Link boards the boat",
+    "bits": "Game.story_bits_tick - fires as soon as every requires_bits entry is set",
 }
-UNIMPLEMENTED: dict[str, str] = {}
+# mechanisms the mined chapters need that the engine has not built yet
+UNIMPLEMENTED = {
+    "boss": "no boss fight raises its clear flag - there are no boss actors at all yet",
+    "actor": "a placed object resolves the event by name through the event manager; the engine "
+             "has no equivalent yet",
+}
 
 MODELLED_STATE = {"collect[0] bit0": 'has_item("sword")', "collect[1] bit0": 'has_item("shield")'}
 

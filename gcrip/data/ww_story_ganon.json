@@ -1,0 +1,479 @@
+{
+ "_source": "Mined read-only from the zeldaret/tww decompilation at Z:/memRip/sources/tww and the ripped GZLE01 (Wind Waker USA) disc data at Z:/3d ripper/out/rip/GZLE01. Final chapter: Ganon's Tower - the four boss rematches behind the trial doors, the maze, Phantom Ganon, Puppet Ganon, the roof, and the ending. Same conventions and schema as ww_story_outset.json and ww_story_fortress.json. Placement data dumped with tools/ww_story_mine.py; event names come from each stage's stage.dzs EVNT table and Stage.arc/event_list.dat. Event-bit ids are authoritative; the UNK_xxxx names are placeholders invented by the decomp team, but this chapter is unusually well named - d_a_obj_vgnfd.cpp carries real names for all eight trial flags.",
+ "_actors": {
+  "obj_vgnfd": {
+   "name": "The four trial doors in Ganon's Tower",
+   "file": "src/d/actor/d_a_obj_vgnfd.cpp",
+   "demo_table": [
+    "4_door_dn",
+    "4_door_mr",
+    "4_door_dc",
+    "4_door_kz"
+   ],
+   "door_light_flags": [
+    "TRIALS_DOOR_LIGHT_GOHMA",
+    "TRIALS_DOOR_LIGHT_KALLE_DEMOS",
+    "TRIALS_DOOR_LIGHT_JALHALLA",
+    "TRIALS_DOOR_LIGHT_MOLGERA"
+   ],
+   "trial_clear_flags": [
+    "GOHMA_TRIALS_CLEAR",
+    "KALLE_DEMOS_TRIALS_CLEAR",
+    "JALHALLA_TRIALS_CLEAR",
+    "MOLGERA_TRIALS_CLEAR"
+   ],
+   "index_rule": "M_door_ev_table, M_boss_ev_table and l_daObjVgnfd_demo_name are three parallel arrays in the same order, so index i is one boss: 0 = Gohma (dn, dragon), 1 = Kalle Demos (mr, mori/woods), 2 = Jalhalla (dc, daichi/earth), 3 = Molgera (kz, kaze/wind). is_door_open(i) reads M_door_ev_table[i]; open_door(i) raises it; is_boss_clear(i) reads M_boss_ev_table[i].",
+   "source": "src/d/actor/d_a_obj_vgnfd.cpp:25-49, 236-244, 316"
+  },
+  "warpgn": {
+   "name": "The warp that carries Link between Ganon's Tower and the Forsaken Fortress",
+   "file": "src/d/actor/d_a_warpgn.cpp",
+   "events": [
+    "TO_MAJYUU_WARP",
+    "APPEAR_WARP"
+   ],
+   "gate": "UNK_3D02 - the warp is already active when it is set, and the actor raises it at line 407",
+   "source": "src/d/actor/d_a_warpgn.cpp:130-131, 178, 190, 407, 511"
+  }
+ },
+ "_bits": {
+  "0x3904": {
+   "dec": 14596,
+   "byte_mask": [
+    57,
+    4
+   ],
+   "meaning": "TRIALS_DOOR_LIGHT_GOHMA - the Gohma trial door in Ganon's Tower is lit and open.",
+   "set_by": "src/d/actor/d_a_obj_vgnfd.cpp:240 (open_door, index 0)",
+   "read_by": [
+    "src/d/actor/d_a_obj_vgnfd.cpp:236"
+   ],
+   "confidence": "high"
+  },
+  "0x3902": {
+   "dec": 14594,
+   "byte_mask": [
+    57,
+    2
+   ],
+   "meaning": "TRIALS_DOOR_LIGHT_KALLE_DEMOS - the Kalle Demos trial door is lit and open.",
+   "set_by": "src/d/actor/d_a_obj_vgnfd.cpp:240 (open_door, index 1)",
+   "read_by": [
+    "src/d/actor/d_a_obj_vgnfd.cpp:236"
+   ],
+   "confidence": "high"
+  },
+  "0x3901": {
+   "dec": 14593,
+   "byte_mask": [
+    57,
+    1
+   ],
+   "meaning": "TRIALS_DOOR_LIGHT_JALHALLA - the Jalhalla trial door is lit and open.",
+   "set_by": "src/d/actor/d_a_obj_vgnfd.cpp:240 (open_door, index 2)",
+   "read_by": [
+    "src/d/actor/d_a_obj_vgnfd.cpp:236"
+   ],
+   "confidence": "high"
+  },
+  "0x3A80": {
+   "dec": 14976,
+   "byte_mask": [
+    58,
+    128
+   ],
+   "meaning": "TRIALS_DOOR_LIGHT_MOLGERA - the Molgera trial door is lit and open.",
+   "set_by": "src/d/actor/d_a_obj_vgnfd.cpp:240 (open_door, index 3)",
+   "read_by": [
+    "src/d/actor/d_a_obj_vgnfd.cpp:236"
+   ],
+   "confidence": "high"
+  },
+  "0x3240": {
+   "dec": 12864,
+   "byte_mask": [
+    50,
+    64
+   ],
+   "meaning": "GOHMA_TRIALS_CLEAR - the Gohma rematch behind the trial door is beaten.",
+   "set_by": "(the rematch boss room; not raised inside d_a_obj_vgnfd.cpp, which only reads it)",
+   "read_by": [
+    "src/d/actor/d_a_obj_vgnfd.cpp:244"
+   ],
+   "confidence": "high"
+  },
+  "0x3220": {
+   "dec": 12832,
+   "byte_mask": [
+    50,
+    32
+   ],
+   "meaning": "KALLE_DEMOS_TRIALS_CLEAR - the Kalle Demos rematch is beaten.",
+   "set_by": "(the rematch boss room)",
+   "read_by": [
+    "src/d/actor/d_a_obj_vgnfd.cpp:244"
+   ],
+   "confidence": "high"
+  },
+  "0x3210": {
+   "dec": 12816,
+   "byte_mask": [
+    50,
+    16
+   ],
+   "meaning": "JALHALLA_TRIALS_CLEAR - the Jalhalla rematch is beaten.",
+   "set_by": "(the rematch boss room)",
+   "read_by": [
+    "src/d/actor/d_a_obj_vgnfd.cpp:244"
+   ],
+   "confidence": "high"
+  },
+  "0x3208": {
+   "dec": 12808,
+   "byte_mask": [
+    50,
+    8
+   ],
+   "meaning": "MOLGERA_TRIALS_CLEAR - the Molgera rematch is beaten.",
+   "set_by": "(the rematch boss room)",
+   "read_by": [
+    "src/d/actor/d_a_obj_vgnfd.cpp:244"
+   ],
+   "confidence": "high"
+  },
+  "0x3204": {
+   "dec": 12804,
+   "byte_mask": [
+    50,
+    4
+   ],
+   "meaning": "All four trials are finished and the final door has opened - daObjVgnfd_c::on_fin raises it right after ordering the \"4_door_fin\" demo.",
+   "set_by": "src/d/actor/d_a_obj_vgnfd.cpp:278 (on_fin)",
+   "read_by": [],
+   "confidence": "high"
+  },
+  "0x3D02": {
+   "dec": 15618,
+   "byte_mask": [
+    61,
+    2
+   ],
+   "meaning": "The Ganon's Tower / Forsaken Fortress warp is active. daWarpgn_c skips its appear sequence when it is already set, and raises it once the warp has appeared.",
+   "set_by": "src/d/actor/d_a_warpgn.cpp:407",
+   "read_by": [
+    "src/d/actor/d_a_warpgn.cpp:178",
+    "src/d/actor/d_a_warpgn.cpp:190",
+    "src/d/actor/d_a_warpgn.cpp:511"
+   ],
+   "confidence": "high"
+  }
+ },
+ "steps": [
+  {
+   "id": "gt_warp_appears",
+   "stage": "GanonM",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "actor",
+    "detail": "daWarpgn_c owns the warp between the Forsaken Fortress and Ganon's Tower. It looks up the event indices for TO_MAJYUU_WARP and APPEAR_WARP on create, plays the appear sequence unless UNK_3D02 is already set, and raises UNK_3D02 when the warp has appeared. GanonM's event scripts include both APPEAR_WARP and TO_MAJYUU_WARP. Recorded as kind 'actor': daWarpgn_c resolves the event by NAME through dComIfGp_evmng_getEventIdx, so no trigger volume points at it."
+   },
+   "event": "APPEAR_WARP",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x3D02"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_warpgn.cpp:130-131",
+    "src/d/actor/d_a_warpgn.cpp:178",
+    "src/d/actor/d_a_warpgn.cpp:407",
+    "out/rip/GZLE01/godot/events/GanonM.json"
+   ],
+   "notes": "daWarpgn_c is a placed, switch-gated object (it also tests fopAcM_isSwitch at line 511) that resolves its events by name, so nothing in the placement data points at them."
+  },
+  {
+   "id": "gt_tower_intro",
+   "stage": "GanonA",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "tag",
+    "detail": "A TagEv at (4, 1151, 117) with switch 13 orders GanonA's EVNT entry 1 = \"Gintro2\", the look up at Ganon's Tower as Link enters."
+   },
+   "event": "Gintro2",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/GanonA/GanonA_report.json:tags",
+    "src/d/actor/d_a_tag_event.cpp:18-45"
+   ],
+   "notes": "Nothing in src/ references \"Gintro2\" by name, so the trigger volume is the whole of its wiring."
+  },
+  {
+   "id": "gt_trial_gohma",
+   "stage": "GanonB",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "boss",
+    "detail": "Behind the first trial door: the Gohma rematch. daObjVgnfd_c holds three parallel arrays - l_daObjVgnfd_demo_name[0] = \"4_door_dn\" (dn = dragon), M_door_ev_table[0] = TRIALS_DOOR_LIGHT_GOHMA and M_boss_ev_table[0] = GOHMA_TRIALS_CLEAR - so index 0 is Gohma throughout. is_boss_clear(0) reads the clear flag; open_door(0) raises the door light."
+   },
+   "event": "4_door_dn",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x3240",
+    "0x3904"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_obj_vgnfd.cpp:25-49",
+    "src/d/actor/d_a_obj_vgnfd.cpp:236-244",
+    "out/rip/GZLE01/stages/GanonB/GanonB_report.json"
+   ],
+   "notes": "GanonB is 'Ganon's Tower Before Gohma Rematch'; the rematch itself is Xboss0. GanonB has an empty EVNT table and three AttTagB volumes, so its trigger volumes cannot order an event - the boss room does the work."
+  },
+  {
+   "id": "gt_trial_kalle_demos",
+   "stage": "GanonD",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "boss",
+    "detail": "Index 1 of the same three arrays: \"4_door_mr\" (mr = mori, the woods), TRIALS_DOOR_LIGHT_KALLE_DEMOS and KALLE_DEMOS_TRIALS_CLEAR. GanonD is the approach; Xboss1 is the rematch."
+   },
+   "event": "4_door_mr",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x3220",
+    "0x3902"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_obj_vgnfd.cpp:25-49",
+    "src/d/actor/d_a_obj_vgnfd.cpp:236-244"
+   ],
+   "notes": null
+  },
+  {
+   "id": "gt_trial_jalhalla",
+   "stage": "GanonE",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "boss",
+    "detail": "Index 2: \"4_door_dc\" (dc = daichi, the earth), TRIALS_DOOR_LIGHT_JALHALLA and JALHALLA_TRIALS_CLEAR. GanonE is the approach; Xboss2 is the rematch."
+   },
+   "event": "4_door_dc",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x3210",
+    "0x3901"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_obj_vgnfd.cpp:25-49",
+    "src/d/actor/d_a_obj_vgnfd.cpp:236-244"
+   ],
+   "notes": null
+  },
+  {
+   "id": "gt_trial_molgera",
+   "stage": "GanonC",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "boss",
+    "detail": "Index 3: \"4_door_kz\" (kz = kaze, the wind), TRIALS_DOOR_LIGHT_MOLGERA and MOLGERA_TRIALS_CLEAR. GanonC is the approach; Xboss3 is the rematch."
+   },
+   "event": "4_door_kz",
+   "stb": null,
+   "requires_bits": [
+    "0x3208",
+    "0x3A80"
+   ],
+   "sets_bits": [
+    "0x3208",
+    "0x3A80"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_obj_vgnfd.cpp:25-49",
+    "src/d/actor/d_a_obj_vgnfd.cpp:236-244"
+   ],
+   "notes": "requires_bits is left listing its own bits deliberately: the four trials can be done in any order, so no trial requires another. The engine reads this step as 'available once its own flags are not yet set'."
+  },
+  {
+   "id": "gt_four_doors_open",
+   "stage": "GanonA",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "bits",
+    "detail": "When the last of the four is done, daObjVgnfd_c looks up the event index for \"4_door_fin\" and plays it, then on_fin() raises UNK_3204 (0x3204). That is the final door of the tower opening. Recorded as kind 'bits': it fires as soon as its four requires_bits are all set, which is exactly what daObjVgnfd_c checks."
+   },
+   "event": "4_door_fin",
+   "stb": null,
+   "requires_bits": [
+    "0x3240",
+    "0x3220",
+    "0x3210",
+    "0x3208"
+   ],
+   "sets_bits": [
+    "0x3204"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_obj_vgnfd.cpp:316",
+    "src/d/actor/d_a_obj_vgnfd.cpp:276-279"
+   ],
+   "notes": "\"4_door_fin\" is not in GanonA's stage.dzs EVNT table - the actor resolves it by name through dComIfGp_evmng_getEventIdx, which is why no trigger volume points at it. Its trigger is a pure bit test, so the engine can run it without an actor."
+  },
+  {
+   "id": "gt_phantom_ganon",
+   "stage": "GanonM",
+   "room": 2,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "GanonM room 2 spawn 1 at (-2699, -37, -17) carries EVNT index 2 = \"GANON_ARRIVE\". Two more spawns in room 0 carry fg_warp0 and fg_warp1 (EVNT 0 and 1), and TagEv volumes with switches 28 and 29 order \"Look\" and \"Look2\" on the way in."
+   },
+   "event": "GANON_ARRIVE",
+   "stb": null,
+   "requires_bits": [
+    "0x3204"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "out/rip/GZLE01/stages/GanonM/GanonM_report.json",
+    "tools/ww_story_mine.py GanonM"
+   ],
+   "notes": "GanonM is 'Ganon's Tower Phantom Ganon'. Nothing in src/ names GANON_ARRIVE, so the spawn params are its whole wiring. The 0x3204 requirement is the chapter order, not a gate present in the data."
+  },
+  {
+   "id": "gt_puppet_ganon",
+   "stage": "GanonK",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "GanonK room 0 spawn 0 at (-1, 0, 1424) carries EVNT index 2 = \"kugutu_ganon\" - kugutu is a puppet. The baked cutscene kugutu_ganon.stb matches. A TagEv with switch 27 orders StartCam2 as Link enters, and a ring of AttTag / TagEv volumes order WarpCam during the fight."
+   },
+   "event": "kugutu_ganon",
+   "stb": "kugutu_ganon.stb",
+   "requires_bits": [
+    "0x3204"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/GanonK/GanonK_report.json",
+    "out/rip/GZLE01/godot/cutscenes/kugutu_ganon.json"
+   ],
+   "notes": null
+  },
+  {
+   "id": "gt_to_the_roof",
+   "stage": "GanonK",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "GanonK room 0 spawn 4 at (-1, 0, 1710) carries EVNT index 3 = \"to_roof\", and to_roof.stb is baked. Puppet Ganon's defeat opens the way up the tower."
+   },
+   "event": "to_roof",
+   "stb": "to_roof.stb",
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/GanonK/GanonK_report.json:spawns",
+    "out/rip/GZLE01/godot/cutscenes/to_roof.json"
+   ],
+   "notes": null
+  },
+  {
+   "id": "gt_rooftop_confrontation",
+   "stage": "GTower",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "GTower's EVNT table is exactly two entries, g2before and endhr, and spawn 0 at (-5, 1, 2644) carries index 0 = \"g2before\" - the rooftop scene before the last fight. g2before.stb is baked, and d_a_kytag07.cpp and d_a_obj_gnnbtltaki.cpp both reference the name (the sky and the waterfall change for it)."
+   },
+   "event": "g2before",
+   "stb": "g2before.stb",
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/GTower/GTower_report.json",
+    "src/d/actor/d_a_kytag07.cpp",
+    "src/d/actor/d_a_obj_gnnbtltaki.cpp",
+    "out/rip/GZLE01/godot/cutscenes/g2before.json"
+   ],
+   "notes": "GTower also carries AHEAHE, the shared boss-defeat event every boss stage has, and PZ_TALK."
+  },
+  {
+   "id": "gt_endhr",
+   "stage": "GTower",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "GTower spawn 2 at (-5, 0, 2638) carries EVNT index 1 = \"endhr\", and endhr.stb is baked - the end of the fight on the roof."
+   },
+   "event": "endhr",
+   "stb": "endhr.stb",
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/GTower/GTower_report.json:spawns",
+    "out/rip/GZLE01/godot/cutscenes/endhr.json"
+   ],
+   "notes": "Nothing in src/ names endhr, so the spawn params are its whole wiring."
+  },
+  {
+   "id": "gt_ending",
+   "stage": "ENDumi",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "ENDumi ('Ending') has a one-entry EVNT table, \"ending\", and its single spawn 0 at (-21100, 300, 28300) carries index 0. ending.stb is baked at 2860 frames. The same position is used by ADMumi's tower cutscene spawns, so this is a cutscene-only stage."
+   },
+   "event": "ending",
+   "stb": "ending.stb",
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/ENDumi/ENDumi_report.json",
+    "out/rip/GZLE01/godot/cutscenes/ending.json"
+   ],
+   "notes": "epilogue.stb (5225 frames, 17 actors) is also baked but no stage EVNT table names it; what orders it has not been determined."
+  }
+ ]
+}

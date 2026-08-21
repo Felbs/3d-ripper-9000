@@ -5,7 +5,7 @@ the mined data - the player's own state machine, the item list, the enemy table,
 baked cutscenes, the story graph - so this cannot drift from what the engine does.
 
 **Systems:** 9 working, 3 partial, 2 not started.  
-**Story:** 41 of 42 mined steps reachable (1 partial, 0 missing) across 2 chapters: outset, fortress.
+**Story:** 49 of 55 mined steps reachable (1 partial, 5 missing) across 3 chapters: outset, fortress, ganon.
 
 ## 1. Systems
 
@@ -163,6 +163,33 @@ flowchart TD
         ff_board_korl["ff_board_korl<br/>sets 0x2A08<br/><i>board - OK</i>"]
         ff_meet_korl --> ff_board_korl
     end
+    subgraph ganon["ganon"]
+        gt_warp_appears["gt_warp_appears<br/>APPEAR_WARP<br/>sets 0x3D02<br/><i>actor - MISSING</i>"]
+        gt_tower_intro["gt_tower_intro<br/>Gintro2<br/><i>tag - OK</i>"]
+        gt_warp_appears --> gt_tower_intro
+        gt_trial_gohma["gt_trial_gohma<br/>4_door_dn<br/>sets 0x3240 0x3904<br/><i>boss - MISSING</i>"]
+        gt_tower_intro --> gt_trial_gohma
+        gt_trial_kalle_demos["gt_trial_kalle_demos<br/>4_door_mr<br/>sets 0x3220 0x3902<br/><i>boss - MISSING</i>"]
+        gt_trial_gohma --> gt_trial_kalle_demos
+        gt_trial_jalhalla["gt_trial_jalhalla<br/>4_door_dc<br/>sets 0x3210 0x3901<br/><i>boss - MISSING</i>"]
+        gt_trial_kalle_demos --> gt_trial_jalhalla
+        gt_trial_molgera["gt_trial_molgera<br/>4_door_kz<br/>sets 0x3208 0x3A80<br/><i>boss - MISSING</i>"]
+        gt_trial_jalhalla --> gt_trial_molgera
+        gt_four_doors_open["gt_four_doors_open<br/>4_door_fin<br/>sets 0x3204<br/><i>bits - OK</i>"]
+        gt_trial_molgera --> gt_four_doors_open
+        gt_phantom_ganon["gt_phantom_ganon<br/>GANON_ARRIVE<br/><i>spawn - OK</i>"]
+        gt_four_doors_open --> gt_phantom_ganon
+        gt_puppet_ganon["gt_puppet_ganon<br/>kugutu_ganon.stb<br/><i>spawn - OK</i>"]
+        gt_phantom_ganon --> gt_puppet_ganon
+        gt_to_the_roof["gt_to_the_roof<br/>to_roof.stb<br/><i>spawn - OK</i>"]
+        gt_puppet_ganon --> gt_to_the_roof
+        gt_rooftop_confrontation["gt_rooftop_confrontation<br/>g2before.stb<br/><i>spawn - OK</i>"]
+        gt_to_the_roof --> gt_rooftop_confrontation
+        gt_endhr["gt_endhr<br/>endhr.stb<br/><i>spawn - OK</i>"]
+        gt_rooftop_confrontation --> gt_endhr
+        gt_ending["gt_ending<br/>ending.stb<br/><i>spawn - OK</i>"]
+        gt_endhr --> gt_ending
+    end
     tale_demo_hero_clothes -.->|0x2A80| aryll_omedeto
     telescope_watch_quill -.->|0x0310| zelda_fly_helmaroc
     zelda_fly_helmaroc -.->|0x0001| aryll_etalk
@@ -183,8 +210,15 @@ flowchart TD
     ff_infiltration -.->|0x0801| ff_interior_cells
     ff_infiltration -.->|0x0801| ff_find_sister
     ff_meet_korl -.->|0x0F80| ff_board_korl
-    class opening_lookout_awake,aryll_tower_first_talk,grandma_birthday_talk,tale_demo_hero_clothes,aryll_omedeto,aryll_get_telescope,telescope_watch_quill,zelda_fly_helmaroc,aryll_etalk,grandma_after_prologue,orca_first_talk,orca_sparring_lesson,orca_gives_hero_sword,orca_spin_attack_lesson,grandma_after_sword,amori_bokoblin_dropin,amori_meet_tetra,outset_ridge_layer9,stolen_sister,outset_village_layer2,look_shield,grandma_gives_shield,grandma_after_kidnap,tetra_dock_conversation,tetra_board_ship,departure,post_outset_note,ff_ride_to_fortress,ff_launched_at_fortress,ff_arrive_exterior,ff_tower_looks,ff_tetra_ooi,ff_infiltration,ff_searchlight_look,ff_push_barrel,ff_interior_cells,ff_door_looks,ff_moblin_patrol,ff_find_sister,ff_meet_korl,ff_board_korl ok;
+    gt_trial_gohma -.->|0x3240| gt_four_doors_open
+    gt_trial_kalle_demos -.->|0x3220| gt_four_doors_open
+    gt_trial_jalhalla -.->|0x3210| gt_four_doors_open
+    gt_trial_molgera -.->|0x3208| gt_four_doors_open
+    gt_four_doors_open -.->|0x3204| gt_phantom_ganon
+    gt_four_doors_open -.->|0x3204| gt_puppet_ganon
+    class opening_lookout_awake,aryll_tower_first_talk,grandma_birthday_talk,tale_demo_hero_clothes,aryll_omedeto,aryll_get_telescope,telescope_watch_quill,zelda_fly_helmaroc,aryll_etalk,grandma_after_prologue,orca_first_talk,orca_sparring_lesson,orca_gives_hero_sword,orca_spin_attack_lesson,grandma_after_sword,amori_bokoblin_dropin,amori_meet_tetra,outset_ridge_layer9,stolen_sister,outset_village_layer2,look_shield,grandma_gives_shield,grandma_after_kidnap,tetra_dock_conversation,tetra_board_ship,departure,post_outset_note,ff_ride_to_fortress,ff_launched_at_fortress,ff_arrive_exterior,ff_tower_looks,ff_tetra_ooi,ff_infiltration,ff_searchlight_look,ff_push_barrel,ff_interior_cells,ff_door_looks,ff_moblin_patrol,ff_find_sister,ff_meet_korl,ff_board_korl,gt_tower_intro,gt_four_doors_open,gt_phantom_ganon,gt_puppet_ganon,gt_to_the_roof,gt_rooftop_confrontation,gt_endhr,gt_ending ok;
     class aj_speak_ambient partial;
+    class gt_warp_appears,gt_trial_gohma,gt_trial_kalle_demos,gt_trial_jalhalla,gt_trial_molgera missing;
 ```
 
 | chapter | step | trigger | event | sets | status | why |
@@ -231,6 +265,19 @@ flowchart TD
 | fortress | ff_find_sister | spawn | FIND_SISTER |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | fortress | ff_meet_korl | spawn | MEETSHISHIOH | 0x0F80 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | fortress | ff_board_korl | board |  | 0x2A08 | ok | player.gd board() raises RODE_KORL the first time Link boards the boat |
+| ganon | gt_warp_appears | actor | APPEAR_WARP | 0x3D02 | missing | a placed object resolves the event by name through the event manager; the engine has no equivalent yet |
+| ganon | gt_tower_intro | tag | Gintro2 |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| ganon | gt_trial_gohma | boss | 4_door_dn | 0x3240 0x3904 | missing | no boss fight raises its clear flag - there are no boss actors at all yet |
+| ganon | gt_trial_kalle_demos | boss | 4_door_mr | 0x3220 0x3902 | missing | no boss fight raises its clear flag - there are no boss actors at all yet |
+| ganon | gt_trial_jalhalla | boss | 4_door_dc | 0x3210 0x3901 | missing | no boss fight raises its clear flag - there are no boss actors at all yet |
+| ganon | gt_trial_molgera | boss | 4_door_kz | 0x3208 0x3A80 | missing | no boss fight raises its clear flag - there are no boss actors at all yet |
+| ganon | gt_four_doors_open | bits | 4_door_fin | 0x3204 | ok | Game.story_bits_tick - fires as soon as every requires_bits entry is set |
+| ganon | gt_phantom_ganon | spawn | GANON_ARRIVE |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| ganon | gt_puppet_ganon | spawn | kugutu_ganon |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| ganon | gt_to_the_roof | spawn | to_roof |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| ganon | gt_rooftop_confrontation | spawn | g2before |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| ganon | gt_endhr | spawn | endhr |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| ganon | gt_ending | spawn | ending |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 
 ## 3. What is not mined yet
 

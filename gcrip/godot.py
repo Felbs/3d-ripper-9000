@@ -3722,6 +3722,7 @@ func _process(delta: float) -> void:
     story_tick += 1
     if story_tick % 15 == 0:
         story_npc_tick()
+        story_bits_tick()
     if dialogue_test:
         event_frames += 1
         if event_frames == 20:
@@ -4484,6 +4485,28 @@ func scripted() -> bool:
     # any headless harness run: nobody is holding the pad, so "press any key" waits must pass
     return selftest or story_test or newgame_test or dialogue_test or door_test         or talk_test != "" or event_test != "" or shot_actor != "" or scope_test or near_test or opening_test or sweep_test or doors_test \
         or models_test or cuts_test
+
+func story_bits_tick() -> void:
+    # a step whose trigger is a pure bit test: it fires the moment every bit it requires is set.
+    # Ganon's Tower uses one - daObjVgnfd_c opens the last door once all four trials are clear.
+    if event_running or cutscene_running() or dialog_open:
+        return
+    for step in story.get("steps", []):
+        var trig = step.get("trigger", {})
+        if not (trig is Dictionary) or str(trig.get("kind", "")) != "bits":
+            continue
+        var id := sfield(step, "id")
+        if story_done(id) or not _story_bits_ok(step):
+            continue
+        if (step.get("requires_bits", []) as Array).is_empty():
+            continue        # a bits trigger with no bits would fire immediately, for ever
+        _mark_story_done(id)
+        var ev := sfield(step, "event")
+        print("gcrip story: bits complete -> ", id, " (event ", ev, ")")
+        if ev != "" and events.has(ev) and run_event(ev):
+            return
+        story_event_done(id)
+        return
 
 func story_npc_tick() -> void:
     # an NPC orders its own event: Aryll greets Link in his new clothes when he comes within
@@ -6618,7 +6641,18 @@ def _dialogue_with_conditions(path: Path) -> dict:
 
 
 # the chapters in story order; anything else matching ww_story_*.json is appended after them
-_STORY_CHAPTERS = ["outset", "fortress"]
+_STORY_CHAPTERS = [
+    "outset",
+    "fortress",
+    "dragonroost",
+    "forbiddenwoods",
+    "jabun",
+    "towerofgods",
+    "hyrule",
+    "temples",
+    "fortress2",
+    "ganon",
+]
 
 
 def _story_all_chapters(data_dir: Path) -> dict:
