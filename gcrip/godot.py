@@ -535,6 +535,13 @@ _GAME_GD = """extends Node
 
 const PAD_CFG := "user://gcpad.cfg"
 
+# Pads we have measured (GUID -> SDL mapping). DragonRise 0079:0006 is the chip in most
+# GameCube-shaped USB pads; this one reports the C-stick X on axes 2 AND 3, Y on axis 4.
+const PRESET_PADS := {
+    "0300457e790000000600000000000000":
+        "0300457e790000000600000000000000,DragonRise GameCube USB,a:b2,b:b3,x:b1,y:b0,start:b9,rightshoulder:b6,lefttrigger:b4,righttrigger:b5,leftx:a0,lefty:a1,rightx:a2,righty:a4,dpup:b11,dpdown:b12,dpleft:b13,dpright:b14,platform:Windows,",
+}
+
 var stage_data: Dictionary = {}
 var pending: Dictionary = {}
 var last_warp_ms := -100000
@@ -558,6 +565,8 @@ func _apply_saved_pad_mappings() -> void:
         var guid := Input.get_joy_guid(id)
         if cfg.has_section_key("mappings", guid):
             Input.add_joy_mapping(cfg.get_value("mappings", guid), true)
+        elif PRESET_PADS.has(guid):
+            Input.add_joy_mapping(PRESET_PADS[guid], true)
         elif not Input.is_joy_known(id):
             unknown.append(Input.get_joy_name(id))
     if unknown.size() > 0:
@@ -646,97 +655,7 @@ func _place_player() -> void:
     pending = {}
 """
 
-_CALIB_GD = """extends CanvasLayer
-# gcrip controller calibration: press each GameCube input in turn; writes an SDL
-# mapping for this pad's GUID so Godot's standard button/axis ids work afterwards.
-
-signal done(guid: String, mapping: String)
-
-const STEPS := [
-    ["A", "a"], ["B", "b"], ["X", "x"], ["Y", "y"],
-    ["Z", "rightshoulder"], ["L (press fully)", "lefttrigger"], ["R (press fully)", "righttrigger"],
-    ["Start", "start"],
-    ["push the LEFT stick RIGHT", "leftx"], ["push the LEFT stick UP", "lefty"],
-    ["push the C-stick RIGHT", "rightx"], ["push the C-stick UP", "righty"],
-    ["D-pad UP", "dpup"], ["D-pad DOWN", "dpdown"], ["D-pad LEFT", "dpleft"], ["D-pad RIGHT", "dpright"],
-]
-
-var step := 0
-var device := -1
-var parts: Array[String] = []
-var used_buttons := {}
-var used_axes := {}
-var cooldown := 0.0
-@onready var label: Label = $Panel/Label
-
-func _ready() -> void:
-    layer = 60
-    process_mode = Node.PROCESS_MODE_ALWAYS
-    _prompt()
-
-func _prompt() -> void:
-    if step >= STEPS.size():
-        _finish()
-        return
-    label.text = "Controller calibration  (%d/%d)\\n\\nPress  %s\\n\\nEsc: cancel     Backspace: skip this one" % [step + 1, STEPS.size(), STEPS[step][0]]
-
-func _process(delta: float) -> void:
-    cooldown = maxf(cooldown - delta, 0.0)
-
-func _input(event: InputEvent) -> void:
-    if event is InputEventKey and event.pressed:
-        if event.keycode == KEY_ESCAPE:
-            done.emit("", "")
-        elif event.keycode == KEY_BACKSPACE:
-            step += 1
-            _prompt()
-        get_viewport().set_input_as_handled()
-        return
-    if cooldown > 0.0 or step >= STEPS.size():
-        return
-    var sdl: String = STEPS[step][1]
-    var is_axis_step: bool = sdl.ends_with("x") or sdl.ends_with("y")
-    if event is InputEventJoypadButton and event.pressed and not is_axis_step:
-        if used_buttons.has(event.button_index):
-            return
-        device = event.device
-        used_buttons[event.button_index] = true
-        parts.append("%s:b%d" % [sdl, event.button_index])
-        _advance()
-    elif event is InputEventJoypadMotion and absf(event.axis_value) > 0.6:
-        if is_axis_step:
-            if used_axes.has(event.axis):
-                return
-            device = event.device
-            used_axes[event.axis] = true
-            # SDL axes: +right / +down. We asked for RIGHT and UP, so UP arriving as a
-            # positive value means the axis is inverted (the '~' suffix flips it).
-            var inverted: bool = (sdl.ends_with("y") and event.axis_value > 0.0) or (sdl.ends_with("x") and event.axis_value < 0.0)
-            parts.append("%s:a%d%s" % [sdl, event.axis, "~" if inverted else ""])
-            _advance()
-        elif sdl.ends_with("trigger") and not used_axes.has(event.axis):
-            device = event.device
-            used_axes[event.axis] = true
-            parts.append("%s:a%d" % [sdl, event.axis])
-            _advance()
-        get_viewport().set_input_as_handled()
-
-func _advance() -> void:
-    cooldown = 0.5
-    step += 1
-    _prompt()
-
-func _finish() -> void:
-    if device < 0:
-        done.emit("", "")
-        return
-    var guid := Input.get_joy_guid(device)
-    var name := Input.get_joy_name(device).replace(",", " ")
-    var mapping := "%s,%s,%s,platform:Windows," % [guid, name, ",".join(parts)]
-    label.text = "Saved mapping for %s\\n\\n%s" % [name, mapping]
-    await get_tree().create_timer(1.5).timeout
-    done.emit(guid, mapping)
-"""
+_CALIB_GD = """extends CanvasLayer\n# gcrip controller calibration: press each GameCube input in turn; writes an SDL\n# mapping for this pad's GUID so Godot's standard button/axis ids work afterwards.\n# Polls Input directly instead of listening to events: raw buttons 0/1 of an unknown pad\n# double as ui_accept/ui_cancel and their events never reach us.\n\nsignal done(guid: String, mapping: String)\n\nconst STEPS := [\n    ["A", "a"], ["B", "b"], ["X", "x"], ["Y", "y"],\n    ["Z", "rightshoulder"], ["L (press fully)", "lefttrigger"], ["R (press fully)", "righttrigger"],\n    ["Start", "start"],\n    ["push the LEFT stick RIGHT", "leftx"], ["push the LEFT stick UP", "lefty"],\n    ["push the C-stick RIGHT", "rightx"], ["push the C-stick UP", "righty"],\n    ["D-pad UP", "dpup"], ["D-pad DOWN", "dpdown"], ["D-pad LEFT", "dpleft"], ["D-pad RIGHT", "dpright"],\n]\nconst MAX_BUTTONS := 32\nconst MAX_AXES := 10\n\nvar step := 0\nvar device := -1\nvar parts: Array[String] = []\nvar used_buttons := {}\nvar used_axes := {}\nvar cooldown := 0.0\nvar was_down := {}\nvar last_seen := ""\n@onready var label: Label = $Panel/Label\n\nfunc _ready() -> void:\n    layer = 60\n    process_mode = Node.PROCESS_MODE_ALWAYS\n    var pads := Input.get_connected_joypads()\n    if pads.is_empty():\n        label.text = "No controller detected.\n\nPlug one in, then press F1 again.  (Esc closes)"\n        return\n    device = pads[0]\n    # settle: remember what is held right now so a resting trigger is not taken as a press\n    for b in MAX_BUTTONS:\n        was_down[b] = Input.is_joy_button_pressed(device, b)\n    _prompt()\n\nfunc _prompt() -> void:\n    if step >= STEPS.size():\n        _finish()\n        return\n    label.text = "Controller calibration  (%d/%d)   %s\n\nPress  %s\n\n%s\n\nEsc: cancel     Backspace: skip this one" % [\n        step + 1, STEPS.size(), Input.get_joy_name(device), STEPS[step][0], last_seen]\n\nfunc _input(event: InputEvent) -> void:\n    if event is InputEventKey and event.pressed:\n        if event.keycode == KEY_ESCAPE:\n            done.emit("", "")\n        elif event.keycode == KEY_BACKSPACE:\n            step += 1\n            _prompt()\n        get_viewport().set_input_as_handled()\n    elif event is InputEventJoypadButton or event is InputEventJoypadMotion:\n        get_viewport().set_input_as_handled()  # keep the game from reacting while we map\n\nfunc _process(delta: float) -> void:\n    cooldown = maxf(cooldown - delta, 0.0)\n    if device < 0 or step >= STEPS.size():\n        return\n    var sdl: String = STEPS[step][1]\n    var is_axis_step: bool = sdl.ends_with("x") or sdl.ends_with("y")\n    var is_trigger: bool = sdl.ends_with("trigger")\n    # buttons: rising edge\n    for b in MAX_BUTTONS:\n        var down := Input.is_joy_button_pressed(device, b)\n        var rose: bool = down and not was_down.get(b, false)\n        was_down[b] = down\n        if rose and cooldown <= 0.0 and not is_axis_step and not used_buttons.has(b):\n            used_buttons[b] = true\n            last_seen = "got raw button %d" % b\n            parts.append("%s:b%d" % [sdl, b])\n            _advance()\n            return\n    if cooldown > 0.0:\n        return\n    # axes: first one pushed past 0.6\n    for a in MAX_AXES:\n        var v := Input.get_joy_axis(device, a)\n        if absf(v) < 0.6 or used_axes.has(a):\n            continue\n        if is_axis_step:\n            used_axes[a] = true\n            # SDL axes are +right / +down; we asked for RIGHT and UP, so UP arriving positive\n            # (or RIGHT arriving negative) means the axis is inverted ('~' flips it)\n            var inverted: bool = (sdl.ends_with("y") and v > 0.0) or (sdl.ends_with("x") and v < 0.0)\n            last_seen = "got raw axis %d (%+.2f)" % [a, v]\n            parts.append("%s:a%d%s" % [sdl, a, "~" if inverted else ""])\n            _advance()\n            return\n        elif is_trigger:\n            used_axes[a] = true\n            last_seen = "got raw axis %d" % a\n            parts.append("%s:a%d" % [sdl, a])\n            _advance()\n            return\n\nfunc _advance() -> void:\n    cooldown = 0.6\n    step += 1\n    _prompt()\n\nfunc _finish() -> void:\n    if device < 0 or parts.is_empty():\n        done.emit("", "")\n        return\n    var guid := Input.get_joy_guid(device)\n    var name := Input.get_joy_name(device).replace(",", " ")\n    var mapping := "%s,%s,%s,platform:Windows," % [guid, name, ",".join(parts)]\n    label.text = "Saved mapping for %s\n\n%s" % [name, mapping]\n    await get_tree().create_timer(1.5).timeout\n    done.emit(guid, mapping)\n"""
 
 _CALIB_TSCN = """[gd_scene load_steps=2 format=3]
 
