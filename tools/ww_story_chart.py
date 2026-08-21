@@ -27,6 +27,12 @@ IMPLEMENTED = {
     "talk": "story-graph talk steps (Game.story_talk) via actors/npc.gd",
 }
 
+# save-file state the engine models beyond the raw event bits
+MODELLED_STATE = {
+    "collect[0] bit0": "Game.has_item(\"sword\")",
+    "collect[1] bit0": "Game.has_item(\"shield\")",
+}
+
 # actor each talk step is about, read out of the mined trigger prose
 ACTOR_RE = re.compile(r"\b(Ba1|Ls1|Ji1|Zl1|ZL1|Aj1|Ko1|Ko2|Ob1|Yw1|Ym1|Ym2|Bm1|Dk)\b")
 ID_HINTS = {"grandma": "Ba1", "aryll": "Ls1", "orca": "Ji1", "tetra": "Zl1", "aj_": "Aj1"}
@@ -61,7 +67,11 @@ def status(step: dict) -> tuple[str, str]:
         return "partial", "talk step whose actor could not be identified"
     if step.get("stb") and not step.get("event"):
         return "partial", "cutscene with no event to launch it"
-    unresolved = [b for b in (step.get("requires_bits") or []) if not str(b).startswith("0x")]
+    unresolved = [
+        b
+        for b in (step.get("requires_bits") or [])
+        if not str(b).startswith("0x") and str(b).strip() not in MODELLED_STATE
+    ]
     if unresolved:
         return "partial", f"gated on non-bit state: {', '.join(str(u) for u in unresolved)}"
     if step.get("confidence") == "low":

@@ -2902,9 +2902,22 @@ fov = 60.0
 # climbs 37.5 per clip, the shimmy slides, the ledge climb rises 111 - played raw on top of
 # our movement they double up and snap back every loop (the "jittery ladder")
 _PLAYER_ROOT_MOTION_CLIPS = (
-    "ladderltor", "ladderrtol", "ladderupedl", "ladderdwst", "ladderupst",
-    "wallpl", "walldw", "wallwl", "wallwr", "wallholdup",
-    "vjmpcl", "hangmovel", "hangmover", "ropeclimb", "ropedown", "mstepover",
+    "ladderltor",
+    "ladderrtol",
+    "ladderupedl",
+    "ladderdwst",
+    "ladderupst",
+    "wallpl",
+    "walldw",
+    "wallwl",
+    "wallwr",
+    "wallholdup",
+    "vjmpcl",
+    "hangmovel",
+    "hangmover",
+    "ropeclimb",
+    "ropedown",
+    "mstepover",
 )
 _PLAYER_CLIPS = (
     "wait", "walk", "dash", "mjmp", "jmped", "mrolll", "swimwait", "swiming",
@@ -2962,6 +2975,21 @@ var event_test := ""  # --event=<NAME>: run that stage event and report what it 
 var event_frames := 0
 var newgame_test: bool = "--newgame" in OS.get_cmdline_user_args()   # fresh save from the top
 var talk_test := ""   # --talk=<actor>: stand in front of that NPC, talk, report the story step
+# --dialogue: replay the opening's story states and print every villager's line at each one
+var dialogue_test: bool = "--dialogue" in OS.get_cmdline_user_args()
+var start_stage := ""   # --stage=<key>[:<spawn>]: boot straight into that stage
+var start_spawn := 0
+const DLG_STATES := [
+    ["fresh file", [], []],
+    ["after the storybook (Hero's Clothes)", [0x2A80], ["clothes"]],
+    ["after the telescope scene", [0x2A80, 0x0310, 0x0001], ["clothes", "telescope"]],
+    ["after Orca's sword", [0x2A80, 0x0310, 0x0001, 0x2F10, 0x0501],
+     ["clothes", "telescope", "sword"]],
+    ["after Aryll is taken", [0x2A80, 0x0310, 0x0001, 0x2F10, 0x0501, 0x0101, 0x0E20],
+     ["clothes", "telescope", "sword"]],
+    ["with Grandma's shield", [0x2A80, 0x0310, 0x0001, 0x2F10, 0x0501, 0x0101, 0x0E20, 0x3202],
+     ["clothes", "telescope", "sword", "shield"]],
+]
 var auto_a := 0
 var story_idx := -1
 var story_frames := 0
@@ -2981,7 +3009,8 @@ var event_cam: Dictionary = {}     # {eye, center, fov} while an event drives th
 var world_offset := Vector3.ZERO   # stage recentring offset (event positions are authored unshifted)
 var fade_rect: ColorRect = null
 # persistent player state (survives stage warps; the Player node is rebuilt per stage)
-var save := {"hearts": 12, "hearts_max": 12, "magic": 16, "rupees": 0, "heavy": false}
+var save := {"hearts": 12, "hearts_max": 12, "magic": 16, "rupees": 0, "heavy": false,
+             "items": {}}
 
 func _ready() -> void:
     var f := FileAccess.open("res://stage_data.json", FileAccess.READ)
@@ -3041,16 +3070,22 @@ func _ready() -> void:
             event_test = a.substr(8)
         elif a.begins_with("--talk="):
             talk_test = a.substr(7)
+        elif a.begins_with("--stage="):
+            var want := a.substr(8).split(":")
+            start_stage = want[0]
+            start_spawn = int(want[1]) if want.size() > 1 else 0
         elif a.begins_with("--door"):
             door_test = true
             if a.begins_with("--door="):
                 door_want = a.substr(7)
+    if start_stage != "":
+        go_to_stage.call_deferred(start_stage, start_spawn)
     # pad mappings at boot (was only done on a menu warp: a shortcut launch ran the pad raw)
     _apply_saved_pad_mappings.call_deferred()
     Input.joy_connection_changed.connect(func(_id, _c): _apply_saved_pad_mappings())
     if load_game():
         print("gcrip: save file loaded (", str(save.get("saved_at", "?")), ")")
-        if not selftest and shot_actor == "" and not door_test and not story_test and menu_test == "" and event_test == "" and not newgame_test and talk_test == "":
+        if start_stage == "" and not selftest and shot_actor == "" and not door_test and not story_test and menu_test == "" and event_test == "" and not newgame_test and talk_test == "" and not dialogue_test:
             _continue_saved.call_deferred()
     bgm_player = AudioStreamPlayer.new()
     bgm_player.bus = "Master"
@@ -3071,6 +3106,8 @@ func _ready() -> void:
 # ---- save file (the game's quest status: hearts, items, event bits, switches, place)
 
 func save_game(reason := "") -> void:
+    if dialogue_test:
+        return      # --dialogue rewrites `save` to walk the story: never let that hit the disk
     var link := player()
     var cs := get_tree().current_scene
     if link and cs:
@@ -3097,7 +3134,8 @@ func load_game() -> bool:
     return true
 
 func new_game() -> void:
-    save = {"hearts": 12, "hearts_max": 12, "magic": 16, "rupees": 0, "heavy": false}
+    save = {"hearts": 12, "hearts_max": 12, "magic": 16, "rupees": 0, "heavy": false,
+            "items": {}}
     if FileAccess.file_exists(SAVE_PATH):
         DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
     get_tree().paused = false
@@ -3133,7 +3171,35 @@ func _restore_position() -> void:
         link.set("facing", float(save.get("last_facing", 0.0)))
         link.set("start_pos", link.global_position)
 
+func _dlg_peek(ids: Array) -> String:
+    if ids.is_empty():
+        return "(nothing)"
+    var t := str(messages.get(int(ids[0]), "?")).replace(String.chr(10), " ")
+    return t.substr(0, 64)
+
+func _dialogue_report() -> void:
+    # every villager, at every story state of the opening: first talk, then a repeat talk
+    var who: Array = ["Ba1", "Ls1", "Ji1", "Aj1", "Ko1", "Ko2", "Ob1", "Yw1", "Ym1", "Bm1"]
+    for st in DLG_STATES:
+        print("--- ", str(st[0]), " ---")
+        for actor in who:
+            save = {"items": {}}
+            for b in st[1]:
+                set_event_bit(int(b))
+            for it in st[2]:
+                (save["items"] as Dictionary)[str(it)] = true
+            _npc_spawn_bits(str(actor))
+            var a: Array = npc_messages(str(actor))
+            var b2: Array = npc_messages(str(actor))
+            print("  %-4s %s then %s  |  %s" % [actor, str(a), str(b2), _dlg_peek(a)])
+
 func _process(delta: float) -> void:
+    if dialogue_test:
+        event_frames += 1
+        if event_frames == 20:
+            _dialogue_report()
+            get_tree().quit()
+        return
     if shot_actor != "":
         _shot_tick()
     if newgame_test or event_test != "" or talk_test != "":
@@ -3358,6 +3424,24 @@ func event_flags() -> Array:
         save["event_flags"] = f
     return f
 
+# ---- inventory (only the opening's quest items; the decomp gates these on collect[] bits)
+
+const ITEM_NAMES := {"sword": "Hero's Sword", "shield": "Hero's Shield",
+                     "telescope": "Telescope", "clothes": "Hero's Clothes"}
+const COLLECT_ITEMS := {"collect[0] bit0": "sword", "collect[1] bit0": "shield"}
+
+func has_item(name: String) -> bool:
+    return bool((save.get("items", {}) as Dictionary).get(name, false))
+
+func give_item(name: String) -> void:
+    if name == "" or has_item(name):
+        return
+    var items: Dictionary = save.get("items", {})
+    items[name] = true
+    save["items"] = items
+    print("gcrip: got the ", ITEM_NAMES.get(name, name))
+    save_game("item")
+
 func event_bit(id: int) -> bool:
     var mask := id & 0xFF
     if mask == 0:
@@ -3381,8 +3465,12 @@ func _story_bits_ok(step: Dictionary) -> bool:
     # every requirement must be an event bit we can test, and it must be set
     for b in step.get("requires_bits", []):
         var t := str(b).strip_edges()
+        if COLLECT_ITEMS.has(t):
+            if not has_item(str(COLLECT_ITEMS[t])):
+                return false
+            continue
         if not t.begins_with("0x"):
-            return false          # gated on inventory / counters we do not model yet
+            return false          # gated on a counter we do not model yet
         if not event_bit(_bit_value(t)):
             return false
     return true
@@ -3441,6 +3529,7 @@ func story_event_done(name: String) -> void:
             if id != 0 and not event_bit(id):
                 set_event_bit(id)
                 raised.append("0x%04X" % id)
+        give_item(str(step.get("item_key", "")))
     if not raised.is_empty():
         save_game("story")
         print("gcrip story: '", name, "' set ", ", ".join(raised))
@@ -3807,10 +3896,77 @@ func burst(pos: Vector3, color: Color) -> void:
 
 # ---- dialogue
 
+func _npc_spawn_bits(actor: String) -> void:
+    # some NPCs raise a flag simply by being placed (Sturgeon's type-1 variant sets 0x0502);
+    # their own later lines are conditioned on it
+    var info: Dictionary = npc_dialogue.get(actor, {})
+    for b in info.get("spawn_bits", []):
+        var id := _bit_value(b)
+        if id != 0 and not event_bit(id):
+            set_event_bit(id)
+
+func _dlg_cond_ok(c: Dictionary) -> bool:
+    for b in c.get("bits", []):
+        if not event_bit(_bit_value(b)):
+            return false
+    for b in c.get("not_bits", []):
+        if event_bit(_bit_value(b)):
+            return false
+    for it in c.get("needs", []):
+        if not has_item(str(it)):
+            return false
+    for it in c.get("not_needs", []):
+        if has_item(str(it)):
+            return false
+    var alts: Array = c.get("type_conds", [])
+    if not alts.is_empty():
+        # the NPC's "type" is a placement variant: any of the listed ones will do
+        var any_ok := false
+        for t in alts:
+            if _dlg_cond_ok(t):
+                any_ok = true
+                break
+        if not any_ok:
+            return false
+    return true
+
+func _npc_rule_messages(actor: String, info: Dictionary) -> Array:
+    # the mined story-conditional lines: once their event bits / items are in place they beat
+    # the fresh-file conversation, so Grandma stops asking for Aryll after the pirates take her
+    var said: Dictionary = save.get("npc_said", {})
+    var best: Dictionary = {}
+    var best_score := -1
+    for rule in info.get("rules", []):
+        var phase := str(rule.get("phase", ""))
+        var key: String = actor + "#" + str(rule.get("key", ""))
+        if phase == "first" and said.has(key) and not bool(rule.get("solo", false)):
+            continue        # its "repeat" half takes over from here
+        var pair := str(rule.get("pair_key", ""))
+        if phase == "repeat" and pair != "" and not said.has(actor + "#" + pair):
+            continue        # never played the first half of this pair
+        if not _dlg_cond_ok(rule):
+            continue
+        var sc := int(rule.get("score", 0))
+        if sc >= best_score:   # ties go to the later rule: the list runs in story order
+            best_score = sc
+            best = rule
+    if best_score < 0:
+        return []
+    said[actor + "#" + str(best.get("key", ""))] = true
+    save["npc_said"] = said
+    var out: Array = []
+    for id in best.get("ids", []):
+        if messages.has(int(id)):
+            out.append(int(id))
+    return out
+
 func npc_messages(actor: String) -> Array:
     # first conversation per NPC from the decomp sweep (data/ww_npc_dialogue.json)
     # "first" is a list of talk sessions (successive talks; the NPC remembers it was talked to)
     var info: Dictionary = npc_dialogue.get(actor, {})
+    var by_story := _npc_rule_messages(actor, info)
+    if not by_story.is_empty():
+        return by_story
     var sessions: Array = info.get("first", [])
     if sessions.is_empty():
         return []
@@ -5310,7 +5466,9 @@ func _wrap_actors() -> void:
         else:
             node.setup(params, mesh, rot_y)
         n += 1
+        Game._npc_spawn_bits(actor)
     print("gcrip: ", n, " actors wrapped in ", name, " (", hidden, " on other story layers)")
+
 
 func _attach_head(rig: Node3D, head_path: String) -> void:
     # the head model rides the body's "head" bone (J3D joint names survive the glTF export)
@@ -5438,9 +5596,7 @@ def _stage_tscn(
         if has_col
         else ""
     )
-    col_node = (
-        '\n[node name="Collision" parent="." instance=ExtResource("3")]\n' if has_col else ""
-    )
+    col_node = '\n[node name="Collision" parent="." instance=ExtResource("3")]\n' if has_col else ""
     warp_res = '[ext_resource type="Script" path="res://warp.gd" id="4"]\n' if exits else ""
     stage_res = '[ext_resource type="Script" path="res://stage.gd" id="5"]\n'
     warp_shape = (
@@ -5524,6 +5680,170 @@ _STORY_ACTOR_RE = re.compile(r"\b(Ba1|Ls1|Ji1|Zl1|ZL1|Aj1|Ko1|Ko2|Ob1|Yw1|Ym1|Ym
 _STORY_ID_HINTS = {"grandma": "Ba1", "aryll": "Ls1", "orca": "Ji1", "tetra": "Zl1", "aj_": "Aj1"}
 
 
+# The opening hands out four things the later steps and NPC lines are gated on.  The decomp
+# gates them on the save file's collect[] bits; we model them as named items.
+_STORY_ITEMS = {
+    "tale_demo_hero_clothes": "clothes",
+    "aryll_get_telescope": "telescope",
+    "orca_gives_hero_sword": "sword",
+    "grandma_gives_shield": "shield",
+}
+
+_DLG_BIT_RE = re.compile(r"UNK_([0-9A-Fa-f]{4})")
+_DLG_TYPE_RE = re.compile(r"type\s*([0-9](?:\s*/\s*[0-9])*)")
+_DLG_PAREN_RE = re.compile(r"\(([^)]*)\)")
+# lines whose condition is a counter, a menu choice or a sub-quest we do not model at all
+_DLG_SKIP_RE = re.compile(
+    r"eventReg|soup|fairy|pig|Crest|delivered|choice|prompts|stomping|showing|rolled into"
+    r"|telescope on|event data|cutscene chain|master|scope",
+    re.I,
+)
+_DLG_NEG_BEFORE = ("!", "not ", "until ", "no ", "before ", "without ", "unless ")
+_DLG_ITEM_WORDS = {
+    "sword": "sword",
+    "shield": "shield",
+    "clothes": "clothes",
+    "telescope": "telescope",
+}
+_DLG_PHASE_WORDS = ("first talk", "first", "repeat", "just set", "second", "same session")
+# hand-wired conditions for lines whose prose says something the parser cannot
+_DLG_OVERRIDE = {
+    "Ba1|right after tale_1 cutscene (same session)": {"bits": ["0x2A80"], "phase": "first"},
+}
+
+
+def _dlg_strip_notes(key: str) -> str:
+    """Drop parentheticals that annotate which bit a line SETS rather than requires."""
+
+    def keep(m: re.Match[str]) -> str:
+        inner = m.group(1).strip()
+        low = inner.lower()
+        if "set by" in low or low.startswith("sets ") or re.fullmatch(r"UNK_[0-9A-Fa-f]{4}", inner):
+            return " "
+        return m.group(0)
+
+    return _DLG_PAREN_RE.sub(keep, key)
+
+
+def _dlg_condition(text: str, flags: dict) -> dict:
+    """Pull event bits and item requirements out of one prose condition."""
+    bits: list[str] = []
+    nbits: list[str] = []
+    for m in _DLG_BIT_RE.finditer(text):
+        before = text[max(0, m.start() - 10) : m.start()].lower()
+        after = text[m.end() : m.end() + 8].lower()
+        neg = any(w in before for w in _DLG_NEG_BEFORE) or "clear" in after
+        (nbits if neg else bits).append("0x" + m.group(1).upper())
+    for name, value in flags.items():
+        idx = text.find(name)
+        if idx < 0:
+            continue
+        before = text[max(0, idx - 10) : idx].lower()
+        neg = any(w in before for w in _DLG_NEG_BEFORE)
+        (nbits if neg else bits).append(value)
+    needs: list[str] = []
+    nneeds: list[str] = []
+    low = text.lower()
+    for word, item in _DLG_ITEM_WORDS.items():
+        idx = low.find(word)
+        if idx < 0:
+            continue
+        before = low[max(0, idx - 8) : idx]
+        (nneeds if any(w in before for w in _DLG_NEG_BEFORE) else needs).append(item)
+    for m in re.finditer(r"checkCollect\((\d)\)", text):
+        needs.append("sword" if m.group(1) == "0" else "shield")
+    cond: dict = {}
+    if bits:
+        cond["bits"] = sorted(set(bits))
+    if nbits:
+        cond["not_bits"] = sorted(set(nbits))
+    if needs:
+        cond["needs"] = sorted(set(needs))
+    if nneeds:
+        cond["not_needs"] = sorted(set(nneeds))
+    return cond
+
+
+def _dlg_base(key: str) -> str:
+    """The key with its first/repeat wording removed, so the two halves of a pair match."""
+    b = key.lower()
+    for w in _DLG_PHASE_WORDS:
+        b = b.replace(w, " ")
+    return re.sub(r"[^a-z0-9_]+", " ", b).strip()
+
+
+def _dialogue_with_conditions(path: Path) -> dict:
+    """Turn each NPC's prose "alternatives" keys into conditions the engine can test, so a
+    villager's line follows the story instead of being a fixed list (Grandma stops asking for
+    Aryll once the pirates have her)."""
+    data = json.loads(path.read_text(encoding="utf-8"))
+    flags = {
+        name: str(desc).split(",")[0].strip()
+        for name, desc in (data.get("_meta", {}).get("story_flags", {}) or {}).items()
+        if str(desc).strip().startswith("0x")
+    }
+    for actor, info in data.items():
+        if actor.startswith("_") or not isinstance(info, dict):
+            continue
+        type_conds = {
+            t: _dlg_condition(str(desc), flags) for t, desc in (info.get("types", {}) or {}).items()
+        }
+        # a variant that "sets UNK_xxxx on spawn" conditions its own later lines on that bit
+        spawn_bits = sorted(
+            {
+                "0x" + m.group(1).upper()
+                for desc in (info.get("types", {}) or {}).values()
+                for m in re.finditer(r"sets UNK_([0-9A-Fa-f]{4}) on spawn", str(desc))
+            }
+        )
+        if spawn_bits:
+            info["spawn_bits"] = spawn_bits
+        rules = []
+        for key, ids in (info.get("alternatives", {}) or {}).items():
+            if not isinstance(ids, list) or not ids:
+                continue
+            over = _DLG_OVERRIDE.get(f"{actor}|{key}")
+            if over is None and _DLG_SKIP_RE.search(key):
+                continue
+            text = _dlg_strip_notes(key)
+            cond = dict(over) if over else _dlg_condition(text, flags)
+            phase = str(cond.pop("phase", ""))
+            if not phase:
+                if "repeat" in key.lower():
+                    phase = "repeat"
+                elif any(w in key.lower() for w in ("first", "just set", "same session")):
+                    phase = "first"
+            tm = _DLG_TYPE_RE.search(key)
+            if tm and not over:
+                wanted = [t.strip() for t in tm.group(1).split("/")]
+                alts = [type_conds[t] for t in wanted if type_conds.get(t)]
+                if alts:
+                    cond["type_conds"] = alts
+            if not cond:
+                continue  # nothing testable: never fire it blind
+            score = 10 * (len(cond.get("bits", [])) + len(cond.get("not_bits", [])))
+            score += 4 * (len(cond.get("needs", [])) + len(cond.get("not_needs", [])))
+            score += 6 * len(cond.get("type_conds", []))
+            msgs = [int(i) for i in ids if isinstance(i, int)]
+            if not msgs:
+                continue  # a prose note ("2513 if ... else ..."), not a message chain
+            cond.update(
+                {"key": key, "ids": msgs, "phase": phase, "score": score, "base": _dlg_base(text)}
+            )
+            rules.append(cond)
+        firsts = {r["base"]: r["key"] for r in rules if r["phase"] == "first"}
+        repeats = {r["base"] for r in rules if r["phase"] == "repeat"}
+        for r in rules:
+            if r["phase"] == "repeat" and r["base"] in firsts:
+                r["pair_key"] = firsts[r["base"]]
+            elif r["phase"] == "first" and r["base"] not in repeats:
+                r["solo"] = True
+            r.pop("base", None)
+        if rules:
+            info["rules"] = rules
+    return data
+
+
 def _story_with_actors(path: Path) -> dict:
     """The mined opening graph, with each talk step's actor pulled out of its prose trigger
     detail so the engine can match "Link talked to Ba1" without parsing English."""
@@ -5542,6 +5862,11 @@ def _story_with_actors(path: Path) -> dict:
                     actor = name
                     break
         step["actor"] = actor
+    for step in data.get("steps", []):
+        # the mined "gives_item" is the game's dItemNo prose; the engine wants a plain name
+        item = _STORY_ITEMS.get(str(step.get("id", "")))
+        if item:
+            step["item_key"] = item
     # some steps are reached by the previous one calling setNextStage(stage, spawn, room, layer):
     # that re-entry is what auto-plays their cutscene (Grandma's tale, the shield, the ship)
     warp_re = re.compile(
@@ -5737,11 +6062,15 @@ def _godot_col_glb(col_gltf: Path, out_glb: Path) -> int:
             n_solid += 1
         elif surface in ("ladder", "ladder_top", "climb", "nohang", "hookshot") and "mesh" in node:
             # wall codes Link reads (ladders / vines / no-hang); stage.gd puts them on layer 32
-            node["name"] = f"wall_{surface}_" + node.get("name", "col").replace("/", "_") + "-colonly"
+            node["name"] = (
+                f"wall_{surface}_" + node.get("name", "col").replace("/", "_") + "-colonly"
+            )
         elif surface and "mesh" in node:
             # liquid surfaces become colliders too; stage.gd moves them to the water /
             # hazard physics layers at runtime (Godot's import suffixes can't set layers)
-            node["name"] = f"liquid_{surface}_" + node.get("name", "col").replace("/", "_") + "-colonly"
+            node["name"] = (
+                f"liquid_{surface}_" + node.get("name", "col").replace("/", "_") + "-colonly"
+            )
     tmp = col_gltf.with_suffix(".godot.gltf")
     tmp.write_text(json.dumps(doc), encoding="utf-8")
     try:
@@ -5777,8 +6106,12 @@ def _trim_animations(
             if a.get("name") not in drop_root_motion:
                 continue
             a["channels"] = [
-                c for c in a.get("channels", [])
-                if not (c["target"].get("path") == "translation" and c["target"].get("node") in root_nodes)
+                c
+                for c in a.get("channels", [])
+                if not (
+                    c["target"].get("path") == "translation"
+                    and c["target"].get("node") in root_nodes
+                )
             ]
     for node in doc.get("nodes", []):
         # hidden expression-variant clones: Godot ignores KHR_node_visibility and
@@ -5884,7 +6217,9 @@ def _item_models(rip_dir: Path, out_dir: Path) -> int:
     models = json.loads(results.read_text(encoding="utf-8"))["models"]
     n = 0
     for name, suffix in _ITEM_MODELS.items():
-        rel = next((m["out_rel"] for m in models if (m.get("out_rel") or "").endswith(suffix)), None)
+        rel = next(
+            (m["out_rel"] for m in models if (m.get("out_rel") or "").endswith(suffix)), None
+        )
         if rel is None or not (rip_dir / rel).exists():
             continue
         out_glb = out_dir / "items" / f"{name}.glb"
@@ -5926,12 +6261,74 @@ def _player_model_glb(rip_dir: Path, out_glb: Path) -> bool:
 # Clip choice: anything whose name contains one of these words, capped, so an NPC archive
 # with 60 cutscene clips still exports small.
 _ANIMATED_ACTORS = {
-    "Aj1", "Ls1", "Ob1", "Ko1", "Ko2", "Yw1", "Ym1", "Ym2", "Bm1", "Ji1", "Ba1", "Kg1", "Kg2",
-    "Dk", "Zl1", "NpcSo", "Bk", "Pig", "Kamome", "kani", "Ac1", "Cb1", "Hi1", "Md1", "De1",
-    "Co1", "Zk1", "Tc", "Bs1", "Bs2", "Kp1", "Mt", "Ds1", "Sa1", "Gk1", "Um1", "Uo1", "Uo2",
-    "Uo3", "Ub1", "Ub2", "Ub3", "Ub4", "Bj1", "Jb1", "Mk", "Hr", "Aj2", "Bmcon1", "Bms1",
-    "Ah", "Auzu", "Puti", "c_green", "c_red", "c_blue", "c_black", "c_kiiro", "keeth", "Fkeeth",
-    "mo2", "Tn", "Stal", "amos2", "Bb", "p_hat", "Oq", "wiz_r",
+    "Aj1",
+    "Ls1",
+    "Ob1",
+    "Ko1",
+    "Ko2",
+    "Yw1",
+    "Ym1",
+    "Ym2",
+    "Bm1",
+    "Ji1",
+    "Ba1",
+    "Kg1",
+    "Kg2",
+    "Dk",
+    "Zl1",
+    "NpcSo",
+    "Bk",
+    "Pig",
+    "Kamome",
+    "kani",
+    "Ac1",
+    "Cb1",
+    "Hi1",
+    "Md1",
+    "De1",
+    "Co1",
+    "Zk1",
+    "Tc",
+    "Bs1",
+    "Bs2",
+    "Kp1",
+    "Mt",
+    "Ds1",
+    "Sa1",
+    "Gk1",
+    "Um1",
+    "Uo1",
+    "Uo2",
+    "Uo3",
+    "Ub1",
+    "Ub2",
+    "Ub3",
+    "Ub4",
+    "Bj1",
+    "Jb1",
+    "Mk",
+    "Hr",
+    "Aj2",
+    "Bmcon1",
+    "Bms1",
+    "Ah",
+    "Auzu",
+    "Puti",
+    "c_green",
+    "c_red",
+    "c_blue",
+    "c_black",
+    "c_kiiro",
+    "keeth",
+    "Fkeeth",
+    "mo2",
+    "Tn",
+    "Stal",
+    "amos2",
+    "Bb",
+    "p_hat",
+    "Oq",
+    "wiz_r",
 }
 _ANIM_WORDS = ("wait", "talk", "walk", "run", "attack", "damage", "dead", "fly", "swim", "idle")
 _ANIM_CAP = 12
@@ -5979,7 +6376,9 @@ def _actor_models(rip_dir: Path, out_dir: Path, stage_data: dict) -> dict:
                 if "head" not in table[rel]:  # older table: add the separate head model
                     head = _head_model(src)
                     if head is not None:
-                        head_glb = f"{Path(rel).parent.parent.parent.name}_{head.stem}.glb".replace(".arc", "")
+                        head_glb = f"{Path(rel).parent.parent.parent.name}_{head.stem}.glb".replace(
+                            ".arc", ""
+                        )
                         try:
                             _animated_glb(head, out_dir / "actors" / "models" / head_glb, ())
                             table[rel]["head"] = f"res://actors/models/{head_glb}"
@@ -5998,14 +6397,18 @@ def _actor_models(rip_dir: Path, out_dir: Path, stage_data: dict) -> dict:
             # plus whatever the cutscenes make this actor play
             want = cut_clips.get(str(rec.get("actor", "")), set())
             picked += [n for n in names if n in want and n not in picked]
-            glb_name = f"{Path(rel).parent.parent.parent.name}_{Path(rel).stem}.glb".replace(".arc", "")
+            glb_name = f"{Path(rel).parent.parent.parent.name}_{Path(rel).stem}.glb".replace(
+                ".arc", ""
+            )
             kept = _animated_glb(src, out_dir / "actors" / "models" / glb_name, tuple(picked))
             table[rel] = {"glb": f"res://actors/models/{glb_name}", "clips": kept}
             # NPCs ship their head as a separate model in the same archive (ywhead01, oba_head,
             # kohead01 ...) attached to the body's "head" joint at runtime
             head = _head_model(src)
             if head is not None:
-                head_glb = f"{Path(rel).parent.parent.parent.name}_{head.stem}.glb".replace(".arc", "")
+                head_glb = f"{Path(rel).parent.parent.parent.name}_{head.stem}.glb".replace(
+                    ".arc", ""
+                )
                 try:
                     _animated_glb(head, out_dir / "actors" / "models" / head_glb, ())
                     table[rel]["head"] = f"res://actors/models/{head_glb}"
@@ -6081,7 +6484,9 @@ def export_godot(
         # per-stage water volumes come with the dzb liquid surfaces later
         water = 0.0 if name.lower().startswith("sea") else -1.0e9
         (out_dir / "scenes" / f"{name}.tscn").write_text(
-            _stage_tscn(name, spawn, has_col=has_col, exits=exits, water_level=water, spawns=spawns),
+            _stage_tscn(
+                name, spawn, has_col=has_col, exits=exits, water_level=water, spawns=spawns
+            ),
             encoding="utf-8",
         )
         stage_data[name] = {
@@ -6109,7 +6514,9 @@ def export_godot(
         print(f"  {n_models} animated actor models in actors/models/")
     dlg = Path(__file__).parent / "data" / "ww_npc_dialogue.json"
     if dlg.exists():
-        shutil.copyfile(dlg, out_dir / "npc_dialogue.json")
+        (out_dir / "npc_dialogue.json").write_text(
+            json.dumps(_dialogue_with_conditions(dlg)), encoding="utf-8"
+        )
     merged: dict = {}
     for part in sorted((Path(__file__).parent / "data").glob("ww_enemies_*.json")):
         try:
@@ -6140,10 +6547,15 @@ def export_godot(
     if not quiet and n_cuts:
         print(f"  {n_cuts} baked cutscenes in cutscenes/")
     (out_dir / "items").mkdir(parents=True, exist_ok=True)
-    for fname, src in (("arrow.gd", _ARROW_GD), ("boomerang.gd", _BOOMERANG_GD),
-                       ("bomb.gd", _BOMB_GD), ("hookshot.gd", _HOOKSHOT_GD),
-                       ("ship.gd", _SHIP_GD), ("rope.gd", _ROPE_GD),
-                       ("enemy_shot.gd", _ENEMY_SHOT_GD)):
+    for fname, src in (
+        ("arrow.gd", _ARROW_GD),
+        ("boomerang.gd", _BOOMERANG_GD),
+        ("bomb.gd", _BOMB_GD),
+        ("hookshot.gd", _HOOKSHOT_GD),
+        ("ship.gd", _SHIP_GD),
+        ("rope.gd", _ROPE_GD),
+        ("enemy_shot.gd", _ENEMY_SHOT_GD),
+    ):
         (out_dir / "items" / fname).write_text(src, encoding="utf-8")
     n_items = _item_models(rip_dir, out_dir)
     if not quiet:
