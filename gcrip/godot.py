@@ -206,12 +206,38 @@ const CLIMB_OVER_FRAMES := 24          # ladderupedl / wallholdup climb-over
 
 const S16_TO_RAD := PI / 32768.0
 
-enum State { GROUND, AIR, ROLL, SWIM, LAND, ATTACK, JUMPCUT, JUMPCUT_LAND, DAMAGE, GLIDE, CARRY, GRAB, VJUMP, HANG, CLIMB, LADDER, CLIMBWALL, AIM, ITEM_WAIT, HOOKPULL, SHIP }
+enum State { GROUND, AIR, ROLL, SWIM, LAND, ATTACK, JUMPCUT, JUMPCUT_LAND, DAMAGE, GLIDE, CARRY, GRAB, VJUMP, HANG, CLIMB, LADDER, CLIMBWALL, AIM, ITEM_WAIT, HOOKPULL, SHIP, ROPE_THROW, ROPE }
 var ship: Node3D = null           # the King of Red Lions while riding
 
 # --- X-button items (bow / boomerang / bombs / hookshot specs: projectile-items.md) ---
-const X_ITEMS := ["leaf", "bow", "boomerang", "bomb", "hookshot"]
-const ITEM_NAMES := {"leaf": "Deku Leaf", "bow": "Bow", "boomerang": "Boomerang", "bomb": "Bombs", "hookshot": "Hookshot"}
+const X_ITEMS := ["leaf", "bow", "boomerang", "bomb", "hookshot", "rope"]
+const ITEM_NAMES := {"leaf": "Deku Leaf", "bow": "Bow", "boomerang": "Boomerang", "bomb": "Bombs", "hookshot": "Hookshot", "rope": "Grappling Hook"}
+# --- grappling hook (d_a_player_rope.inc): aim, post search, pendulum ---
+const ROPE_AIM_RANGE := 2200.0
+const ROPE_POST_RANGE := 1000.0
+const ROPE_PULL_ACCEL := 5.0
+const ROPE_PULL_MAX := 50.0
+const ROPE_AMP_START := 0x1800
+const ROPE_AMP_MAX := 12000.0
+const ROPE_PUMP := 0x40
+const ROPE_DECAY := 0x20
+const ROPE_DECAY_A := 0x200
+const ROPE_RELEASE_XZ := 15.0
+const ROPE_RELEASE_Y := 30.0
+const ROPE_CLIMB := 5.0
+const ROPE_SLIDE_ACCEL := 1.5
+const ROPE_SLIDE_MAX := 27.0
+const ROPE_TOP_MARGIN := 100.0
+var rope: Node3D = null
+var rope_hook := Vector3.ZERO
+var rope_hang := Vector3.ZERO
+var rope_len := 1.0
+var rope_phase := 0.0
+var rope_amp := 0.0
+var rope_mode := "ready"      # ready / swing / hang / climb / slide
+var rope_pull := 0.0
+var rope_slide := 0.0
+var rope_dir := Vector3.FORWARD
 const BOW_HOLD_FRAMES := 10            # string can be released after 10 frames (m355E)
 const AIM_PITCH_CLAMP := 0x2000 * PI / 32768.0   # Z-target pitch limit
 const ARROW_MAX_LIVE := 5
@@ -719,6 +745,8 @@ func _physics_process(_delta: float) -> void:
         State.ITEM_WAIT: _item_wait()
         State.HOOKPULL: _hookpull()
         State.SHIP: _ship()
+        State.ROPE_THROW: _rope_throw()
+        State.ROPE: _rope()
         State.GROUND: _ground()
         State.AIR: _air()
         State.ROLL: _roll()
@@ -1124,6 +1152,180 @@ func _jumpcut_land() -> void:
     if cut_frame >= JATTACK_LAND["end"]:
         _enter_ground()
 
+# ---------------------------------------------------------------- grappling hook (d_a_player_rope.inc / d_a_himo2.cpp)
+
+func rope_hand() -> Vector3:
+    return global_position + Vector3(0, 120.0, 0) + Basis(Vector3.UP, facing) * Vector3(-20.0, 0.0, 10.0)
+
+func _find_post(d: Vector3) -> Node3D:
+    # search_target: the nearest post in front, within range, close to the aim line
+    var best: Node3D = null
+    var best_score := 1.0e9
+    for n in get_tree().get_nodes_in_group("grapple_post"):
+        if not is_instance_valid(n) or not n.has_method("hook_point"):
+            continue
+        var hp: Vector3 = n.hook_point()
+        var to := hp - rope_hand()
+        var dist := to.length()
+        if dist > ROPE_AIM_RANGE or dist < 100.0 or absf(to.y) > 1500.0:
+            continue
+        var ang := acos(clampf(to.normalized().dot(d), -1.0, 1.0))
+        var tol := maxf(atan(60.0 * 6.0 / maxf(dist, 1.0)), deg_to_rad(12.0))
+        # no first-person aim yet: a near post well inside the view counts even if the
+        # camera is not pitched at it (the game's narrow screen-space test needs that)
+        if ang > tol and not (dist <= ROPE_POST_RANGE and ang < deg_to_rad(75.0)):
+            continue
+        var score := dist + ang * 2000.0
+        if score < best_score:
+            best_score = score
+            best = n
+    return best
+
+func _throw_rope(d: Vector3) -> void:
+    var r := Node3D.new()
+    r.set_script(load("res://items/rope.gd"))
+    get_tree().current_scene.add_child(r)
+    r.launch(self, rope_hand(), aim_yaw, aim_pitch, _find_post(d))
+    rope = r
+    projectile = r
+
+func _rope_throw() -> void:
+    # ROPE_THROW / ROPE_THROW_CATCH: Link stands in the throw pose until the rope is back
+    facing = aim_yaw
+    velocity = Vector3.ZERO
+    _apply(Vector3.ZERO, -1.0)
+    if rope == null or not is_instance_valid(rope):
+        rope = null
+        projectile = null
+        _enter_ground()
+
+func rope_done() -> void:
+    rope = null
+    projectile = null
+    if state == State.ROPE_THROW:
+        play_clip("ropethrowcatch", 2.0 / 30.0)
+        state = State.ITEM_WAIT
+        aim_frames = 0
+    elif state == State.ROPE:
+        _enter_air(Vector3.ZERO, 0.0, GRAVITY)
+
+func rope_hooked(r: Node3D, hook: Vector3) -> void:
+    # procRopeReady: the hang point sits under the hook; pull Link to it, then swing
+    rope = r
+    rope_hook = hook
+    var space := get_world_3d().direct_space_state
+    var q := PhysicsRayQueryParameters3D.create(hook, hook - Vector3(0, 4000.0, 0), 1)
+    var hit := space.intersect_ray(q)
+    var hang_y := global_position.y + 95.0
+    if hit and hook.y - hit.position.y < 1200.0:
+        hang_y = hit.position.y + 175.0
+    hang_y = minf(hang_y, hook.y - ROPE_TOP_MARGIN)
+    rope_hang = Vector3(hook.x, hang_y, hook.z)
+    rope_len = maxf(hook.y - hang_y, 50.0)
+    rope_mode = "ready"
+    rope_pull = 0.0
+    rope_dir = forward()
+    state = State.ROPE
+    velocity = Vector3.ZERO
+    play_clip("ropewait", 3.0 / 30.0)
+
+func _rope_release(force_fall: bool) -> void:
+    var r := rope
+    rope = null
+    projectile = null
+    if r and is_instance_valid(r) and r.has_method("release"):
+        r.release()
+    if force_fall:
+        _enter_air(Vector3.ZERO, 0.0, GRAVITY)
+        return
+    # swing release: 15 / 30 x (amp / max) x max(1, len / 5000), along the swing direction
+    var factor := (rope_amp / ROPE_AMP_MAX) * maxf(1.0, rope_len / 5000.0)
+    var moving := signf(cos(rope_phase))
+    if moving == 0.0:
+        moving = 1.0
+    var h := rope_dir * moving * ROPE_RELEASE_XZ * factor
+    facing = heading_of(rope_dir * moving) if h.length() > 0.1 else facing
+    _enter_air(h, ROPE_RELEASE_Y * factor, GRAVITY)
+    play_clip("jmped", 0.1)
+
+func _rope() -> void:
+    if rope == null or not is_instance_valid(rope):
+        rope = null
+        _enter_air(Vector3.ZERO, 0.0, GRAVITY)
+        return
+    velocity = Vector3.ZERO
+    var s := stick()
+    var fwd_in := 0.0
+    if s.length() > 0.3:
+        fwd_in = stick_world_dir(s).dot(rope_dir)
+    var a_held := Input.is_action_pressed("action_a")
+    match rope_mode:
+        "ready":
+            # pulled toward the hang point, +5 per frame up to 50
+            rope_pull = minf(rope_pull + ROPE_PULL_ACCEL, ROPE_PULL_MAX)
+            var to := rope_hang - global_position
+            if to.length() <= 2.0 * rope_pull:
+                global_position = rope_hang
+                rope_mode = "swing"
+                rope_amp = ROPE_AMP_START
+                rope_phase = 0.0
+                rope_len = maxf(rope_hook.y - rope_hang.y, 50.0)
+            else:
+                global_position += to.normalized() * rope_pull
+            play_clip("ropewait")
+        "swing":
+            var omega := sqrt(2.0 / rope_len)
+            rope_phase += omega
+            if absf(fwd_in) > 0.3:
+                rope_amp += ROPE_PUMP * absf(cos(rope_phase))
+            elif a_held:
+                rope_amp -= ROPE_DECAY_A
+            else:
+                rope_amp -= ROPE_DECAY
+            rope_amp = clampf(rope_amp, 0.0, ROPE_AMP_MAX)
+            var theta := rope_amp * S16_TO_RAD * sin(rope_phase)
+            global_position = rope_hook + rope_dir * (sin(theta) * rope_len) - Vector3(0, cos(theta) * rope_len, 0)
+            play_clip("ropeswingf" if cos(rope_phase) > 0.0 else "ropeswingb", 4.0 / 30.0)
+            if Input.is_action_just_pressed("action_b") or Input.is_action_just_pressed("action_x"):
+                _rope_release(false)
+                return
+            if rope_amp <= 0.0:
+                rope_mode = "hang"
+        "hang":
+            global_position = Vector3(rope_hook.x, global_position.y, rope_hook.z)
+            play_clip("ropewait")
+            if a_held and fwd_in > 0.3:
+                rope_mode = "climb"
+            elif a_held and fwd_in < -0.3:
+                rope_mode = "slide"
+                rope_slide = 0.0
+            elif not a_held and absf(fwd_in) > 0.3:
+                rope_mode = "swing"
+                rope_amp = 2048.0 * minf(1.0, 500.0 / rope_len)
+                rope_phase = 0.0
+                rope_len = maxf(rope_hook.y - global_position.y, 50.0)
+            elif Input.is_action_just_pressed("action_b"):
+                _rope_release(true)
+                return
+        "climb":
+            var top := rope_hook.y - ROPE_TOP_MARGIN
+            global_position.y = minf(global_position.y + ROPE_CLIMB, top)
+            play_clip("ropeclimb", 2.0 / 30.0)
+            if not a_held or fwd_in <= 0.3:
+                rope_mode = "hang"
+        "slide":
+            rope_slide = minf(rope_slide + ROPE_SLIDE_ACCEL, ROPE_SLIDE_MAX)
+            var bottom := rope_hang.y - 300.0
+            var space := get_world_3d().direct_space_state
+            var q := PhysicsRayQueryParameters3D.create(global_position + Vector3(0, 10.0, 0), global_position - Vector3(0, 400.0, 0), 1)
+            var hit := space.intersect_ray(q)
+            if hit:
+                bottom = maxf(bottom, hit.position.y + 175.0)
+            global_position.y = maxf(global_position.y - rope_slide, bottom)
+            play_clip("ropedown", 2.0 / 30.0)
+            if not a_held or fwd_in >= -0.3 or global_position.y <= bottom:
+                rope_mode = "hang"
+
 # ---------------------------------------------------------------- cutscenes (event_runner.gd)
 
 var ev_walk_target := Vector3.ZERO
@@ -1236,11 +1438,17 @@ const _ST_SCRIPT := {
     720: ["action_x", true], 721: ["action_x", false],
     760: ["action_a", true], 860: ["action_a", false],
     900: ["action_a", true], 901: ["action_a", false],
+    # grappling hook: stand 500 in front of the nearest post, throw, pump, let go
+    920: ["to_post", true],
+    922: ["item_next", true], 923: ["item_next", false],
+    990: ["action_x", true], 1005: ["action_x", false],
+    1080: ["move_forward", true], 1200: ["move_forward", false],
+    1230: ["action_b", true], 1231: ["action_b", false],
 }
 
 func _selftest_tick() -> void:
     _st_frame += 1
-    if _st_frame >= 960:
+    if _st_frame >= 1300:
         print("selftest done")
         get_tree().quit()
         return
@@ -1250,12 +1458,50 @@ func _selftest_tick() -> void:
             var boat := get_tree().current_scene.get_node_or_null("KingOfRedLions")
             if boat:
                 board(boat)
+        elif a[0] == "to_post":
+            # a post with solid (not lava) ground somewhere around it: the pit's edge
+            var best: Node3D = null
+            var stand := Vector3.ZERO
+            var space := get_world_3d().direct_space_state
+            for n in get_tree().get_nodes_in_group("grapple_post"):
+                var hp0: Vector3 = n.hook_point()
+                for dist_i in [500.0, 700.0, 900.0, 1100.0, 1300.0]:
+                    for k in 8:
+                        var ang := k * PI / 4.0
+                        var spot: Vector3 = hp0 + Vector3(sin(ang), 0.0, cos(ang)) * float(dist_i)
+                        var q := PhysicsRayQueryParameters3D.create(spot + Vector3(0, 100.0, 0), spot - Vector3(0, 900.0, 0), 1 | 4)
+                        var hit := space.intersect_ray(q)
+                        if hit and hit.collider and not hit.collider.has_meta("liquid") and hp0.y - hit.position.y > 150.0 and hp0.y - hit.position.y < 900.0:
+                            best = n
+                            stand = hit.position + Vector3(0, 5.0, 0)
+                            break
+                    if best:
+                        break
+                if best:
+                    break
+            if best:
+                if state == State.SHIP and ship:
+                    ship.clear_rider()
+                    ship = null
+                var hp: Vector3 = best.hook_point()
+                global_position = stand
+                var back := stand - hp
+                back.y = 0.0
+                back = back.normalized()
+                facing = heading_of(-back)
+                velocity = Vector3.ZERO
+                state = State.GROUND
+                cam_center = global_position + Vector3(0, CAM_ATTN_HEIGHT, 0)
+                cam_eye = cam_center - forward() * 380.0 + Vector3(0, 120.0, 0)
+                print("selftest: at post ", hp.round())
         elif a[1]:
             Input.action_press(a[0])
         else:
             Input.action_release(a[0])
     if _st_frame % 30 == 0:
         var boat_info := ""
+        if state == State.ROPE:
+            boat_info = " rope mode=%s amp=%.0f phase=%.2f len=%.0f" % [rope_mode, rope_amp, rope_phase, rope_len]
         if ship and is_instance_valid(ship):
             boat_info = " ship mode=%d sail=%s speed=%.1f yaw=%.0f tiller=%.0f y=%.1f pitch=%.0f" % [
                 ship.mode, str(ship.sail_on), ship.speed_f, rad_to_deg(ship.yaw), ship.tiller,
@@ -1269,7 +1515,7 @@ func _selftest_tick() -> void:
 
 func _use_item() -> bool:
     match x_item:
-        "bow", "boomerang", "hookshot":
+        "bow", "boomerang", "hookshot", "rope":
             if x_item == "bow" and arrows <= 0:
                 return false
             if projectile != null and is_instance_valid(projectile):
@@ -1304,6 +1550,7 @@ func _enter_aim() -> void:
         "bow": play_clip("bowwait", 4.0 / 30.0)
         "boomerang": play_clip("boomwait", 4.0 / 30.0)
         "hookshot": play_clip("hookshotwait", 4.0 / 30.0)
+        "rope": play_clip("ropethrowwait", 4.0 / 30.0)
 
 func _aim_dir() -> Vector3:
     # Z-target: at the target's eyes (pitch clamped 22.5 deg); else where the camera looks
@@ -1347,6 +1594,11 @@ func _aim() -> void:
         "hookshot":
             _shoot_hook(d)
             state = State.HOOKPULL   # frozen until the hook comes back or pulls us
+            aim_frames = 0
+        "rope":
+            _throw_rope(d)
+            play_clip("ropethrow", 2.0 / 30.0)
+            state = State.ROPE_THROW
             aim_frames = 0
 
 func _item_wait() -> void:
@@ -2165,6 +2417,7 @@ _PLAYER_CLIPS = (
     "grabup", "grabwait", "grabthrow", "walkbarrel",
     "vjmp", "vjmpcha", "vjmpchb", "vjmpcl", "mstepover", "hangmovel", "hangmover", "jmpeds",
     "bowwait", "arrowshoot", "boomwait", "boomthrow", "boomcatch", "hookshotwait", "hookshotjmp",
+    "ropethrow", "ropethrowwait", "ropethrowcatch", "ropewait", "ropeswingf", "ropeswingb", "ropeclimb", "ropedown",
     "ladderupst", "ladderltor", "ladderrtol", "ladderupedl", "ladderdwst",
     "wall", "wallpl", "walldw", "wallwl", "wallwr", "wallholdup",
 )  # fmt: skip
@@ -3666,6 +3919,7 @@ const SCRIPTS := {
     "kotubo": "res://actors/carriable.gd", "ootubo1": "res://actors/carriable.gd",
     "koisi1": "res://actors/carriable.gd", "Ktaru": "res://actors/carriable.gd",
     "item": "res://actors/item.gd", "Kanban": "res://actors/sign.gd",
+    "Kui": "res://actors/kui.gd",
     "Pig": "res://actors/pig.gd", "Kamome": "res://actors/gull.gd",
     "NpcSo": "res://actors/npc.gd", "Bk": "res://actors/bokoblin.gd",
     # villagers and friends: generic talkable NPC with their own rig + wait/talk clips
@@ -3839,6 +4093,10 @@ _HOOKSHOT_GD = 'extends Node3D\n# gcrip: Hookshot (d_a_hookshot.cpp). 105 units/
 _SHIP_GD = 'extends CharacterBody3D\n# gcrip: the King of Red Lions (d_a_ship.cpp). Tiller / yaw, wind-driven sail speed,\n# paddling, buoyancy spring on the wave heightfield, four-probe wave tilt, hull circles.\n# Units per frame at 30 Hz; s16 angles kept as floats where the decomp uses them.\n\nconst S16 := PI / 32768.0\nconst TILLER_MAX := 0x2000\nconst TILLER_SPEED := 700.0\nconst WIND_INC_SPEED := 55.0\nconst PADDLE_SPEED := 10.0\nconst BURST_CAP := 80.0\nconst HULL_R := 250.0\nconst SEAT := Vector3(0.0, 15.0, -35.0)\nconst LEDGE_L := Vector3(57.0, 35.0, -35.0)\nconst LEDGE_R := Vector3(-57.0, 35.0, -35.0)\n\nenum Mode { WAIT, PADDLE, STEER }\nvar mode: int = Mode.WAIT\nvar rider: Node3D = null\nvar yaw := 0.0              # radians, atan2(x, z) convention like Link\'s facing\nvar tiller := 0.0           # s16 units\nvar speed_f := 0.0\nvar burst_target := 1.0e9\nvar sail_on := false\nvar braking := false\nvar vy := 0.0\nvar bob := 0.0\nvar pitch := 0.0            # s16 units (positive = nose down)\nvar roll := 0.0\nvar pitch_vel := 0.0\nvar roll_vel := 0.0\nvar noise_a := 0.0\nvar noise_b := 0.0\nvar heel := 0.0\nvar heel_vel := 0.0\nvar prev_yaw := 0.0\nvar landing := 0\nvar model: Node3D = null\n\nfunc setup(rot_y_deg: float) -> void:\n    yaw = deg_to_rad(rot_y_deg)\n    prev_yaw = yaw\n    collision_layer = 0\n    collision_mask = 1\n    var shape := CollisionShape3D.new()\n    var cyl := CylinderShape3D.new()\n    cyl.radius = HULL_R\n    cyl.height = 150.0\n    shape.shape = cyl\n    shape.position.y = 150.0   # wall circles only: keep the hull clear of the seabed\n    add_child(shape)\n    motion_mode = CharacterBody3D.MOTION_MODE_FLOATING\n    add_to_group("interact")\n    model = Node3D.new()\n    add_child(model)\n    for part in ["ship", "ship_head"]:\n        var path := "res://items/%s.glb" % part\n        if ResourceLoader.exists(path):\n            model.add_child(load(path).instantiate())\n    global_position.y = Game.sea_height(global_position.x, global_position.z)\n    _update_transform()\n\nfunc forward() -> Vector3:\n    return Vector3(sin(yaw), 0.0, cos(yaw))\n\nfunc right() -> Vector3:\n    return forward().cross(Vector3.UP)\n\n# --- Link-side interaction API ---\nfunc interact_prompt(link: Node3D) -> String:\n    if rider != null or mode != Mode.WAIT:\n        return ""\n    return "Ride" if link.global_position.distance_to(global_position) < 420.0 else ""\n\nfunc interact(link: Node3D) -> void:\n    if rider == null and link.has_method("board"):\n        link.board(self)\n\nfunc set_rider(link: Node3D) -> void:\n    rider = link\n    mode = Mode.PADDLE\n    sail_on = false\n\nfunc clear_rider() -> void:\n    rider = null\n    mode = Mode.WAIT\n    sail_on = false\n\nfunc toggle_sail() -> void:\n    if sail_on:\n        sail_on = false\n        mode = Mode.PADDLE\n        return\n    sail_on = true\n    mode = Mode.STEER\n    # raising the sail: instant burst to 2x the wind speed (cap 80), decays to the wind speed\n    var ws := _wind_speed()\n    speed_f = maxf(speed_f, minf(ws * 2.0, BURST_CAP))\n    burst_target = ws\n\nfunc seat_point() -> Vector3:\n    return global_transform * SEAT\n\nfunc ledge_point(left: bool) -> Vector3:\n    return global_transform * (LEDGE_L if left else LEDGE_R)\n\n# --- cLib helpers ---\nstatic func add_calc(v: float, target: float, scale: float, max_step: float, min_step: float) -> float:\n    var step := (target - v) * scale\n    step = clampf(step, -max_step, max_step)\n    if absf(step) < min_step:\n        step = signf(target - v) * minf(min_step, absf(target - v))\n    return v + step\n\nstatic func add_calc_angle(v: float, target: float, scale: float, max_step: float, min_step: float) -> float:\n    var diff := target - v\n    var step := clampf(diff / scale, -max_step, max_step)\n    if absf(step) <= min_step:\n        step = signf(diff) * minf(min_step, absf(diff))\n    return v + step\n\nfunc _wind_speed() -> float:\n    var w: Vector3 = Game.wind_vec()\n    var pow01: float = minf(1.0, Game.wind_power / 0.5)\n    var a := absf(wrapf(atan2(w.x, w.z) - yaw, -PI, PI)) / S16   # 0..0x8000\n    var f: float\n    if a < 0x4000:\n        f = 1.0 - a / 65536.0\n    elif a <= 0x6000:\n        f = 0.75 - (a - 0x4000) * 5.493164e-5\n    else:\n        f = maxf(0.0, 0.3 - (a - 0x6000) * 3.2967e-4)\n    return pow01 * f * WIND_INC_SPEED\n\nfunc _decrement(target: float) -> void:\n    speed_f = add_calc(speed_f, target, 0.05, 0.1, 0.015)\n\nfunc _first_decrement(target: float) -> void:\n    speed_f = add_calc(speed_f, target, 0.1, 5.0, 1.0)\n\nfunc _physics_process(_delta: float) -> void:\n    var stick_fwd := 0.0\n    var stick_right := 0.0\n    if rider and is_instance_valid(rider):\n        var s: Vector2 = rider.stick()   # raw pad: x right, y forward (the ship ignores the camera)\n        if s.length() > 0.1:\n            stick_fwd = clampf(s.y, -1.0, 1.0)\n            stick_right = clampf(s.x, -1.0, 1.0)\n    else:\n        mode = Mode.WAIT\n    # tiller and yaw (setSelfMove / setMoveAngle)\n    var tiller_target := stick_right * TILLER_MAX if mode != Mode.WAIT else 0.0\n    tiller = add_calc_angle(tiller, tiller_target, 4.0, TILLER_SPEED, 0x100)\n    var turn_rate := clampf(4.0 - absf(speed_f) / 55.0 * 3.0, 0.1, 3.6)\n    if landing > 0:\n        landing -= 1\n        turn_rate += (3.6 - turn_rate) * minf(landing, 15) / 15.0\n    prev_yaw = yaw\n    yaw -= turn_rate * (tiller / 64.0) * S16\n    # forward speed\n    match mode:\n        Mode.WAIT:\n            speed_f = add_calc(speed_f, 0.0, 0.1, 1.0, 0.05)\n        Mode.PADDLE:\n            if braking and speed_f >= 3.0:\n                speed_f = add_calc(speed_f, 0.0, 0.1, 1.0, 0.1)\n            else:\n                _decrement(maxf(stick_fwd, 0.0) * PADDLE_SPEED)\n        Mode.STEER:\n            var ws := _wind_speed()\n            if burst_target < speed_f:\n                _first_decrement(burst_target)\n                if speed_f - burst_target < 3.0:\n                    burst_target = 1.0e9\n            elif not sail_on or ws <= 0.0:\n                _decrement(stick_fwd * PADDLE_SPEED)\n            elif speed_f >= ws:\n                _decrement(ws)\n            else:\n                speed_f = add_calc(speed_f, ws, 0.1, 0.5, 0.1)\n    # hull against the islands\n    var before := global_position\n    velocity = forward() * speed_f * 30.0\n    move_and_slide()\n    global_position.y = before.y   # the water, not the collider, owns the height\n    if is_on_wall():\n        var n := get_wall_normal()\n        if n.dot(forward()) < cos(0x5000 * S16):   # normal > 112.5 deg off the heading: head-on\n            _first_decrement(0.0)\n    # follow the water (setYPos): proportional pull + buoyancy spring, bob, clamp\n    var water_y: float = Game.sea_height(global_position.x, global_position.z)\n    var r := minf(1.0, absf(speed_f) / 55.0)\n    var y := global_position.y\n    y += r * (water_y - y) * 0.1\n    vy += (water_y - y) * 0.05\n    vy = clampf(vy, -20.0, 20.0)\n    y += vy\n    bob += (1000.0 + randf() * 1000.0 + 500.0 * r) * S16\n    y += r * 0.25 * sin(bob) + 0.6\n    vy = add_calc(vy, 0.0, 0.05, 1.0, 0.05)\n    y = clampf(y, water_y - 60.0, water_y + 40.0)\n    global_position.y = y\n    # wave tilt (setWaveAngle): four probes, second-order follow\n    var xf := global_transform\n    var front := Game.sea_height((xf * Vector3(0, 0, 180)).x, (xf * Vector3(0, 0, 180)).z)\n    var back := Game.sea_height((xf * Vector3(0, 0, -190)).x, (xf * Vector3(0, 0, -190)).z)\n    var rgt := Game.sea_height((xf * Vector3(-80, 0, 0)).x, (xf * Vector3(-80, 0, 0)).z)\n    var lft := Game.sea_height((xf * Vector3(80, 0, 0)).x, (xf * Vector3(80, 0, 0)).z)\n    var pitch_t := atan2(-(front - back), 370.0) / S16\n    var roll_t := atan2(-(rgt - lft), 160.0) / S16\n    pitch_vel += (pitch_t - pitch) * 0.045\n    pitch += pitch_vel\n    pitch_vel = add_calc_angle(pitch_vel, 0.0, 0x14, 0x1000, 4)\n    roll_vel += (roll_t - roll) * 0.045\n    roll += roll_vel\n    roll_vel = add_calc_angle(roll_vel, 0.0, 0x14, 0x1000, 4)\n    noise_a += (0.5 * r + 1.0) * (800.0 + randf() * 800.0) * S16\n    noise_b += (0.5 * r + 1.0) * (600.0 + randf() * 600.0) * S16\n    var pitch_noise := r * 100.0 * sin(noise_a) + 30.0\n    var roll_noise := r * 115.0 * sin(noise_b) + 35.0\n    # steering heel spring\n    var heel_t := clampf(wrapf(yaw - prev_yaw, -PI, PI) / S16 * 7.0, -0x600, 0x600)\n    heel_vel += 0.05 * (heel_t - heel)\n    heel += heel_vel\n    heel_vel = add_calc_angle(heel_vel, 0.0, 0x14, 0x1000, 4)\n    _update_transform((pitch + pitch_noise) * S16, (roll + roll_noise + heel) * S16)\n    if before.distance_to(global_position) > 1.0e6:\n        global_position = before\n\nfunc _update_transform(p := 0.0, r := 0.0) -> void:\n    rotation = Vector3(p, yaw, r)\n'
 
 _EVENT_GD = 'extends Node\n# gcrip: runs one event_list.dat event (d_event_manager.cpp semantics, simplified).\n# Every staff (cast member) walks its cut list; a cut starts when its start flags are set\n# (or, with start flag -1, when the previous cut of that staff ended) and sets its end flag\n# when its action completes. The event ends when every staff is out of cuts (or 60 s).\n\nsignal finished\n\nconst TIMEOUT := 30 * 60\nconst LINK_EVENT_WALK := 8.0\n\nvar ev: Dictionary = {}\nvar flags: Dictionary = {}\nvar staffs: Array = []\nvar frames := 0\nvar link: Node3D = null\nvar fade_dir := 1   # alternate FADE cuts: out, then in\n\nfunc start(event: Dictionary) -> void:\n    ev = event\n    link = Game.player()\n    for sf in ev.get("actors", []):\n        staffs.append({"data": sf, "idx": 0, "cur": null, "node": _find_node(sf)})\n    Game.event_running = true\n    if link and link.has_method("event_begin"):\n        link.event_begin()\n\nfunc _find_node(sf: Dictionary) -> Node:\n    var nm: String = sf.get("name", "")\n    if nm == "Link":\n        return link\n    if sf.get("type", "") != "NORMAL":\n        return null\n    for grp in ["interact", "enemy"]:\n        for n in get_tree().get_nodes_in_group(grp):\n            if is_instance_valid(n) and str(n.get("actor")) == nm:\n                return n\n    return null\n\nfunc _set_flag(flag: int) -> void:\n    if flag >= 0:\n        flags[flag] = true\n\nfunc _ready_to_start(st: Dictionary, cut: Dictionary) -> bool:\n    var sfl: Array = cut.get("start_flags", [-1, -1, -1])\n    if int(sfl[0]) == -1:\n        return true   # follows the previous cut of this staff\n    for f in sfl:\n        if int(f) >= 0 and not flags.has(int(f)):\n            return false\n    return true\n\nfunc _physics_process(_delta: float) -> void:\n    frames += 1\n    var alive := false\n    for st in staffs:\n        var acts: Array = st["data"].get("actions", [])\n        if st["cur"] == null:\n            if st["idx"] >= acts.size():\n                continue\n            var cut: Dictionary = acts[st["idx"]]\n            if not _ready_to_start(st, cut):\n                alive = true\n                continue\n            st["cur"] = {"cut": cut, "t": 0, "dialog_seen": false, "from_eye": Vector3.ZERO,\n                         "from_center": Vector3.ZERO, "from_fov": 60.0}\n            _begin(st, st["cur"])\n        var cur: Dictionary = st["cur"]\n        alive = true\n        if _tick(st, cur):\n            _set_flag(int(cur["cut"].get("end_flag", -1)))\n            st["cur"] = null\n            st["idx"] += 1\n    if not alive or frames > TIMEOUT:\n        _finish()\n\nfunc _prop(cut: Dictionary, key: String, default = null):\n    var props: Dictionary = cut.get("properties", {})\n    if props.has(key):\n        return props[key]["value"]\n    return default\n\nfunc _vec(v) -> Vector3:\n    if v is Array and v.size() >= 3:\n        var p := Vector3(float(v[0]), float(v[1]), float(v[2]))\n        if v[0] is Array:\n            p = Vector3(float(v[0][0]), float(v[0][1]), float(v[0][2]))\n        return p - Game.world_offset\n    return Vector3.ZERO\n\nfunc _begin(st: Dictionary, cur: Dictionary) -> void:\n    var cut: Dictionary = cur["cut"]\n    var kind: String = st["data"].get("type", "")\n    var name: String = cut.get("name", "")\n    var node: Node = st["node"]\n    match kind:\n        "CAMERA":\n            cur["from_eye"] = Game.event_cam_eye()\n            cur["from_center"] = Game.event_cam_center()\n            cur["from_fov"] = Game.event_cam_fov()\n            match name:\n                "FIXEDPOS":\n                    var c: Vector3 = (link.global_position + Vector3(0, 100.0, 0)) if link else cur["from_center"]\n                    Game.set_event_cam(_vec(_prop(cut, "Eye")), c, float(_prop(cut, "Fovy", 60.0)))\n                "FIXEDFRM":\n                    Game.set_event_cam(_vec(_prop(cut, "Eye")), _vec(_prop(cut, "Center")), float(_prop(cut, "Fovy", 60.0)))\n                "PAUSE", "CHECK", "RESTOREPOS", "STYLE":\n                    Game.set_event_cam(cur["from_eye"], cur["from_center"], cur["from_fov"])\n                "TALK", "TURNTOACTOR":\n                    var who := _talker()\n                    if who and link:\n                        var a: Vector3 = link.global_position + Vector3(0, 100.0, 0)\n                        var b: Vector3 = who.global_position + Vector3(0, 100.0, 0)\n                        var mid := (a + b) * 0.5\n                        var side := (b - a).cross(Vector3.UP).normalized()\n                        if side.length() < 0.5:\n                            side = Vector3.RIGHT\n                        Game.set_event_cam(mid + side * 300.0 + Vector3(0, 60.0, 0), mid, 50.0)\n                    else:\n                        Game.set_event_cam(cur["from_eye"], cur["from_center"], cur["from_fov"])\n                "GETITEM", "USEITEM0":\n                    if link:\n                        var c2: Vector3 = link.global_position + Vector3(0, 110.0, 0)\n                        var fwd: Vector3 = link.forward()\n                        Game.set_event_cam(c2 + fwd * 260.0 + Vector3(0, 40.0, 0), c2, 55.0)\n        "DIRECTOR":\n            if name == "FADE":\n                var t := int(_prop(cut, "Timer", 30))\n                Game.fade(1.0 if fade_dir > 0 else 0.0, maxi(t, 1))\n                fade_dir = -fade_dir\n        "SOUND":\n            if name == "BGMSTOP" and Game.bgm_player:\n                Game.bgm_player.stop()\n        "PACKAGE":\n            if name == "PLAY":\n                print("gcrip event: .stb cutscene \'", _prop(cut, "FileName", "?"), "\' not supported yet")\n        "NORMAL":\n            if node == link and link:\n                _begin_link(cur, name, cut)\n            else:\n                _begin_actor(node, cur, name, cut)\n\nfunc _talker() -> Node3D:\n    for st in staffs:\n        if st["data"].get("type", "") == "NORMAL" and st["node"] != null and st["node"] != link:\n            return st["node"]\n    return null\n\nfunc _begin_link(cur: Dictionary, name: String, cut: Dictionary) -> void:\n    if name.begins_with("002") or name.contains("walk"):\n        var pos = _prop(cut, "pos")\n        if pos != null:\n            link.event_walk_to(_vec(pos))\n        else:\n            link.event_clip("walk")\n    elif name.contains("talk"):\n        link.event_clip("talka")\n    elif name.contains("get_item"):\n        var item := int(_prop(cut, "prm0", -1))\n        link.event_clip("wait")\n        if item >= 0 and Game.messages.has(101 + item):\n            Game.show_message(101 + item)\n    elif name.contains("dash"):\n        link.event_clip("dash")\n    elif name.contains("jump"):\n        link.event_clip("mjmp")\n    else:\n        link.event_clip("wait")\n\nfunc _begin_actor(node: Node, cur: Dictionary, name: String, cut: Dictionary) -> void:\n    var msg = _prop(cut, "MsgNo")\n    if msg == null:\n        msg = _prop(cut, "msg_no")\n    if msg != null and (name.begins_with("MES_SET") or name.contains("TALK") or name.contains("MSG")):\n        if node and node.has_method("event_talk"):\n            node.event_talk(true)\n        Game.show_message(int(msg))\n    elif name == "SETANM" and node and node.has_method("play_clip"):\n        var anm = _prop(cut, "AnmName")\n        if anm != null:\n            node.play_clip(str(anm))\n\nfunc _tick(st: Dictionary, cur: Dictionary) -> bool:\n    cur["t"] += 1\n    var cut: Dictionary = cur["cut"]\n    var kind: String = st["data"].get("type", "")\n    var name: String = cut.get("name", "")\n    var timer := int(_prop(cut, "Timer", 0))\n    match kind:\n        "TIMEKEEPER":\n            return cur["t"] >= timer\n        "CAMERA":\n            if name == "UNITRANS":\n                var k := clampf(float(cur["t"]) / maxf(float(timer), 1.0), 0.0, 1.0)\n                Game.set_event_cam(cur["from_eye"].lerp(_vec(_prop(cut, "Eye")), k),\n                                   cur["from_center"].lerp(_vec(_prop(cut, "Center")), k),\n                                   lerpf(cur["from_fov"], float(_prop(cut, "Fovy", cur["from_fov"])), k))\n                return cur["t"] >= timer\n            if name == "PAUSE" and int(_prop(cut, "WaitAnyKey", 0)) == 1:\n                return Input.is_action_just_pressed("action_a") or Game.selftest\n            return cur["t"] >= timer\n        "DIRECTOR":\n            return cur["t"] >= (timer if name == "FADE" else 0)\n        "NORMAL":\n            if _waits_dialog(name, cut):\n                if Game.dialog_open:\n                    cur["dialog_seen"] = true\n                    return false\n                if cur["dialog_seen"] or cur["t"] > 2:\n                    var node: Node = st["node"]\n                    if node and node != link and node.has_method("event_talk"):\n                        node.event_talk(false)\n                    return true\n                return false\n            if st["node"] == link and link and (name.begins_with("002") or name.contains("walk")):\n                return link.event_reached() or cur["t"] > 600\n            return cur["t"] >= timer\n        _:\n            return cur["t"] >= timer\n\nfunc _waits_dialog(name: String, cut: Dictionary) -> bool:\n    if name.contains("get_item"):\n        return true\n    var props: Dictionary = cut.get("properties", {})\n    return (props.has("MsgNo") or props.has("msg_no")) and (name.begins_with("MES_SET") or name.contains("TALK") or name.contains("MSG"))\n\nfunc _finish() -> void:\n    Game.event_running = false\n    Game.clear_event_cam()\n    Game.fade(0.0, 15)\n    if link and is_instance_valid(link) and link.has_method("event_end"):\n        link.event_end()\n    finished.emit()\n    queue_free()\n'
+
+_ROPE_GD = 'extends Node3D\n# gcrip: Grappling Hook rope (d_a_himo2.cpp). Free flight 20 u/f for 40 frames, lobbed by a\n# pitch bias; locked flight to a grapple post at 30 u/f homing; a hooked rope hands Link the\n# pendulum (player.gd ROPE states). Returns at 50 u/f x a ramp after a miss.\n\nconst FLY_SPEED := 20.0\nconst FLY_FRAMES := 40\nconst LOCK_SPEED := 30.0\nconst LOCK_TURN := 0x800 * PI / 32768.0\nconst LOCK_ARRIVE := 50.0\nconst LOCK_FRAMES := 70\nconst PITCH_BIAS_PER_UNIT := -5.0        # s16 per unit of distance\nconst PITCH_BIAS_MIN := -3000.0\nconst S16 := PI / 32768.0\n\nenum State { FLY_FREE, FLY_LOCK, RETURN, HOOKED }\nvar state: int = State.FLY_FREE\nvar player: Node3D = null\nvar post: Node3D = null\nvar target := Vector3.ZERO\nvar yaw := 0.0\nvar pitch := 0.0          # positive = down\nvar t := 0\nvar ramp := 0.0\nvar line: MeshInstance3D = null\nvar tip: Node3D = null\n\nstatic func fwd(y: float, p: float) -> Vector3:\n    return Vector3(sin(y) * cos(p), -sin(p), cos(y) * cos(p))\n\nfunc launch(link: Node3D, from: Vector3, aim_yaw: float, aim_pitch: float, post_node: Node3D) -> void:\n    player = link\n    post = post_node\n    global_position = from\n    yaw = aim_yaw\n    pitch = aim_pitch\n    if post and is_instance_valid(post):\n        state = State.FLY_LOCK\n        target = post.hook_point()\n    else:\n        state = State.FLY_FREE\n        var d := from.distance_to(from + fwd(yaw, pitch) * 800.0)\n        pitch += maxf(PITCH_BIAS_PER_UNIT * d, PITCH_BIAS_MIN) * S16\n    line = MeshInstance3D.new()\n    var cyl := CylinderMesh.new()\n    cyl.top_radius = 1.8\n    cyl.bottom_radius = 1.8\n    cyl.height = 1.0\n    line.mesh = cyl\n    var mat := StandardMaterial3D.new()\n    mat.albedo_color = Color(0.55, 0.42, 0.25)\n    line.material_override = mat\n    line.top_level = true\n    add_child(line)\n    var scene := load("res://items/ropeend.glb") if ResourceLoader.exists("res://items/ropeend.glb") else null\n    if scene:\n        tip = scene.instantiate()\n        add_child(tip)\n\nfunc root() -> Vector3:\n    if player and is_instance_valid(player) and player.has_method("rope_hand"):\n        return player.rope_hand()\n    return global_position\n\nfunc _physics_process(_delta: float) -> void:\n    t += 1\n    match state:\n        State.FLY_FREE:\n            var old := global_position\n            var next := old + fwd(yaw, pitch) * FLY_SPEED\n            var space := get_world_3d().direct_space_state\n            var q := PhysicsRayQueryParameters3D.create(old, next, 1 | 8)\n            q.collide_with_areas = true\n            var hit := space.intersect_ray(q)\n            if hit:\n                var c = hit.collider\n                if c and c.has_method("take_hit"):\n                    c.take_hit(1, old)\n                global_position = hit.position\n                _start_return()\n            else:\n                global_position = next\n                if t >= FLY_FRAMES:\n                    _start_return()\n        State.FLY_LOCK:\n            var to := target - global_position\n            if to.length() < LOCK_ARRIVE or t > LOCK_FRAMES:\n                global_position = target\n                state = State.HOOKED\n                if player and is_instance_valid(player) and player.has_method("rope_hooked"):\n                    player.rope_hooked(self, target)\n            else:\n                var want_yaw := atan2(to.x, to.z)\n                var want_pitch := atan2(-to.y, Vector2(to.x, to.z).length())\n                yaw += clampf(wrapf(want_yaw - yaw, -PI, PI), -LOCK_TURN, LOCK_TURN)\n                pitch += clampf(want_pitch - pitch, -LOCK_TURN, LOCK_TURN)\n                global_position += fwd(yaw, pitch) * LOCK_SPEED\n        State.RETURN:\n            ramp += 0.01\n            var to := root() - global_position\n            var step := 400.0 * ramp\n            if to.length() <= maxf(step, 5.0):\n                if player and is_instance_valid(player) and player.has_method("rope_done"):\n                    player.rope_done()\n                queue_free()\n                return\n            global_position += to.normalized() * step\n        State.HOOKED:\n            pass\n    _draw(root())\n\nfunc _start_return() -> void:\n    state = State.RETURN\n    ramp = 0.0\n\nfunc release() -> void:\n    # Link let go: the rope comes back to the hand\n    _start_return()\n\nfunc _draw(r: Vector3) -> void:\n    if line == null:\n        return\n    var a := r\n    var b := global_position\n    var d := b - a\n    var l := d.length()\n    if l < 1.0:\n        line.visible = false\n        return\n    line.visible = true\n    line.global_position = (a + b) * 0.5\n    line.look_at(b, Vector3.UP if absf(d.normalized().y) < 0.99 else Vector3.FORWARD)\n    line.rotate_object_local(Vector3.RIGHT, PI / 2.0)\n    line.scale = Vector3(1.0, l, 1.0)\n'
+
+_KUI_GD = 'extends Node3D\n# gcrip: grapple post (d_a_kui). Marks where the grappling hook can catch: the hook point is\n# the top of the post\'s mesh. Group "grapple_post"; hook_point() for the rope\'s target search.\n\nvar params := 0\nvar mesh: Node3D = null\nvar top := 170.0\n\nfunc setup(p: int, mesh_node: Node3D, _rot_y: float) -> void:\n    params = p\n    mesh = mesh_node\n    add_to_group("grapple_post")\n    if mesh is MeshInstance3D:\n        var aabb: AABB = (mesh as MeshInstance3D).get_aabb()\n        var hi := mesh.global_transform * (aabb.position + aabb.size)\n        var lo := mesh.global_transform * aabb.position\n        top = maxf(hi.y, lo.y) - global_position.y\n\nfunc hook_point() -> Vector3:\n    return global_position + Vector3(0, top, 0)\n'
 
 _WARP_GD = """extends Area3D
 # gcrip: walking into this (a door) loads the destination stage.
@@ -4190,6 +4448,7 @@ _ITEM_MODELS = {
     "bow": "Link.arc/archive/bdl/bow.gltf",
     "ship": "Ship.arc/archive/bdl/fn_body.gltf",
     "ship_head": "Ship.arc/archive/bdl/fn_head_h.gltf",
+    "ropeend": "Link.arc/archive/bdlc/ropeend.gltf",
 }
 
 
@@ -4383,7 +4642,7 @@ def export_godot(
     (out_dir / "items").mkdir(parents=True, exist_ok=True)
     for fname, src in (("arrow.gd", _ARROW_GD), ("boomerang.gd", _BOOMERANG_GD),
                        ("bomb.gd", _BOMB_GD), ("hookshot.gd", _HOOKSHOT_GD),
-                       ("ship.gd", _SHIP_GD)):
+                       ("ship.gd", _SHIP_GD), ("rope.gd", _ROPE_GD)):
         (out_dir / "items" / fname).write_text(src, encoding="utf-8")
     n_items = _item_models(rip_dir, out_dir)
     if not quiet:
@@ -4400,6 +4659,7 @@ def export_godot(
         "carriable.gd": _ACTOR_BASE_GD,
         "item.gd": _ACTOR_ITEM_GD,
         "sign.gd": _ACTOR_SIGN_GD,
+        "kui.gd": _KUI_GD,
         "chest.gd": _ACTOR_CHEST_GD,
         "pig.gd": _ACTOR_PIG_GD,
         "gull.gd": _ACTOR_GULL_GD,
