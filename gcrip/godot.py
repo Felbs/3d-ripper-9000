@@ -186,9 +186,34 @@ enum State { GROUND, AIR, ROLL, SWIM, LAND, ATTACK, JUMPCUT, JUMPCUT_LAND, DAMAG
 
 @export var water_level := -1.0e9   # stage sets this (sea stages: 0)
 
-@onready var cam_yaw: Node3D = $CamYaw
-@onready var arm: SpringArm3D = $CamYaw/SpringArm3D
+@onready var cam_rig: Node3D = $CamRig
+@onready var camera: Camera3D = $CamRig/Camera3D
 @onready var model: Node3D = get_node_or_null("Model")
+
+# --- camera (d_camera.cpp followCamera, style FN01 "Field"; see memRip camera-spec.md) ---
+const CAM_ATTN_HEIGHT := 92.5          # Link attention point above the feet
+const CAM_OFF := Vector3(0.0, 10.0, 1.0)  # style offset (side, height, fwd) rotated by Link yaw
+const CAM_R_MIN := 280.0
+const CAM_R_MAX := 480.0
+const CAM_R_CUSH := 0.66
+const CAM_PITCH_DEG := 10.0
+const CAM_H_RATE := 0.7                # center follows at 0.7 when Link faces the camera, 0.1 running away
+const CAM_V_RATE := 0.25
+const CAM_YAW_GAIN := 0.2
+const CAM_EYE_SMOOTH := 0.75
+const CAM_FOV := 60.0
+const CAM_WALL_MARGIN := 10.5
+const CAM_MIN_DIST := 40.0
+var cam_center := Vector3.ZERO
+var cam_eye := Vector3.ZERO
+var cam_pitch_tgt := deg_to_rad(CAM_PITCH_DEG)
+var cam_pitch_rate := 0.01
+var cam_r_cush := 1.0
+var cam_recenter_gain := 0.05
+var cam_was_recenter := false
+var cam_manual := 0                    # frames of C-stick / mouse control left
+var cam_manual_yaw := 0.0
+var cam_manual_pitch := 0.0
 var anim: AnimationPlayer = null
 var current_clip := ""
 var start_pos := Vector3.ZERO
@@ -244,6 +269,10 @@ func _ready() -> void:
     add_to_group("player")
     _sword_active(false)
     _update_hud()
+    cam_center = global_position + Vector3(0, CAM_ATTN_HEIGHT, 0)
+    cam_eye = cam_center + _sph(380.0, deg_to_rad(CAM_PITCH_DEG), facing + PI)
+    camera.global_position = cam_eye
+    camera.look_at(cam_center, Vector3.UP)
 
 func _unhandled_input(event: InputEvent) -> void:
     if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
@@ -255,8 +284,129 @@ func _unhandled_input(event: InputEvent) -> void:
             Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func _orbit(dx: float, dy: float) -> void:
-    cam_yaw.rotation.y -= dx
-    arm.rotation.x = clampf(arm.rotation.x - dy, -1.4, 1.4)
+    # manual camera (C-stick / mouse): the decomp's manualCamera is a stub, so this is ours -
+    # orbit the eye around the center and hold off the auto-yaw for a moment
+    cam_manual_yaw -= dx
+    cam_manual_pitch = clampf(cam_manual_pitch - dy, -1.0, 1.0)
+    cam_manual = 45
+
+# -- camera math (ported from d_cam_param.cpp / d_camera.cpp)
+
+static func _rb(x: float, w: float) -> float:
+    var sgn := 1.0
+    if x < 0.0:
+        sgn = -1.0
+        x = -x
+    var a := 2.0 * x
+    var b := 2.0 * w
+    var c := a * w - a - b
+    var d := -c - 1.0
+    var disc := c * c - 4.0 * d * x
+    var num := -c - (sqrt(disc) if disc > 0.0 else 0.0)
+    var den := d * 2.0
+    if absf(den) <= 1e-7:
+        return 0.0
+    var t := num / den
+    var t2 := t * t
+    var u := 1.0 - t
+    var q := t2 + u * u + w * 2.0 * u * t
+    return sgn * (t2 / q) if q > 1e-7 else 0.0
+
+static func _sph(r: float, pitch: float, yaw: float) -> Vector3:
+    var c := cos(pitch)
+    return Vector3(r * c * sin(yaw), r * sin(pitch), r * c * cos(yaw))
+
+static func _to_sph(v: Vector3) -> Vector3:  # (R, pitch, yaw)
+    var h := Vector2(v.x, v.z).length()
+    return Vector3(v.length(), atan2(v.y, h), atan2(v.x, v.z))
+
+func _camera_tick() -> void:
+    var recenter: bool = Input.is_action_pressed("target")
+    var attn := global_position + Vector3(0, CAM_ATTN_HEIGHT, 0)
+    # center target: attention point + style offset rotated by Link's yaw
+    var off := Vector3(CAM_OFF.x, CAM_OFF.y, CAM_OFF.z).rotated(Vector3.UP, facing)
+    var c_tgt := attn + off
+    var d := _to_sph(cam_eye - cam_center)
+    var facing_cam: bool = absf(wrapf(facing - d.z, -PI, PI)) < PI / 2.0
+    var h_rate := CAM_H_RATE if facing_cam else 0.1
+    if recenter and h_rate > 0.25:
+        h_rate = 0.25
+    var dc := c_tgt - cam_center
+    cam_center += Vector3(dc.x * h_rate, dc.y * CAM_V_RATE, dc.z * h_rate)
+    d = _to_sph(cam_eye - cam_center)
+
+    # yaw gain: ~0 when running straight, up to 0.02/frame when strafing; Z with no target swings behind
+    var raw := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+    var sx := raw.x
+    var mag := raw.length()
+    var g := 0.0
+    if recenter:
+        g = 0.05 if not cam_was_recenter else cam_recenter_gain + (1.0 - cam_recenter_gain) * 0.2
+        cam_recenter_gain = g
+    else:
+        if -raw.y >= 0.0:
+            g = 1.0 - (cos(_rb(sx, 1.0) * PI) * 0.5 + 0.5)
+        else:
+            g = 1.0 - (cos(_rb(sx, 0.18) * PI) * 0.25 + 0.75)
+        g *= mag * 0.1 * CAM_YAW_GAIN
+    cam_was_recenter = recenter
+    if cam_manual > 0:
+        cam_manual -= 1
+        g = 0.0
+    var yaw_tgt := facing + PI
+    var yaw := d.z + wrapf(yaw_tgt - d.z, -PI, PI) * g * cos(d.y) + cam_manual_yaw
+    cam_manual_yaw = 0.0
+
+    # pitch: eases toward the style pitch with a rate that ramps up while grounded
+    var pitch_style := deg_to_rad(CAM_PITCH_DEG)
+    if recenter:
+        cam_pitch_tgt += g * (pitch_style - cam_pitch_tgt)
+        cam_pitch_rate = 0.7
+    elif is_on_floor():
+        cam_pitch_tgt += 0.05 * (pitch_style + cam_manual_pitch * 0.9 - cam_pitch_tgt)
+        cam_pitch_rate += (0.9 - cam_pitch_rate) * 0.01
+    else:
+        cam_pitch_tgt = d.y
+        cam_pitch_rate = 0.3
+    cam_pitch_tgt = clampf(cam_pitch_tgt, deg_to_rad(-60.0), deg_to_rad(60.0))
+    var pitch := d.y + (cam_pitch_tgt - d.y) * cam_pitch_rate
+    pitch = minf(pitch, deg_to_rad(80.0))
+
+    # radius leash 280..480 with cushion
+    var r := d.x
+    if r < CAM_R_MIN:
+        cam_r_cush += (CAM_R_CUSH - cam_r_cush) * 0.01
+        r = CAM_R_MIN
+    elif r > CAM_R_MAX:
+        cam_r_cush += (CAM_R_CUSH - cam_r_cush) * 0.01
+        r = CAM_R_MAX
+    else:
+        cam_r_cush = 1.0
+    var R := d.x + cam_r_cush * (r - d.x)
+
+    var eye_tgt := cam_center + _sph(R, pitch, yaw)
+    cam_eye += (eye_tgt - cam_eye) * CAM_EYE_SMOOTH
+
+    # collision (bumpCheck): keep the eye out of walls, never closer than 40 to Link
+    var out_center := cam_center
+    out_center.y = maxf(out_center.y, global_position.y + 32.0)
+    var out_eye := cam_eye
+    var space := get_world_3d().direct_space_state
+    var q := PhysicsRayQueryParameters3D.create(out_center, cam_eye, 1)
+    var hit := space.intersect_ray(q)
+    if hit:
+        var back: Vector3 = (out_center - cam_eye).normalized() * CAM_WALL_MARGIN
+        out_eye = hit.position + back
+    if out_eye.distance_to(attn) < CAM_MIN_DIST:
+        out_eye = attn + (out_eye - attn).normalized() * CAM_MIN_DIST
+    camera.global_position = out_eye
+    if out_eye.distance_to(out_center) > 1.0:
+        camera.look_at(out_center, Vector3.UP)
+    camera.fov = CAM_FOV
+
+func cam_yaw_angle() -> float:
+    var f := cam_center - cam_eye
+    return atan2(f.x, f.z)
 
 func play_clip(name: String, blend := ANIM_BLEND, rate := 1.0) -> void:
     if anim == null:
@@ -277,8 +427,11 @@ func stick() -> Vector2:
     return s * HEAVY_SPEED_SCALE if heavy else s
 
 func stick_world_dir(s: Vector2) -> Vector3:
-    var d := cam_yaw.global_transform.basis * Vector3(s.x, 0.0, -s.y)
-    d.y = 0.0
+    # camera-relative: forward = the direction the camera looks (flattened)
+    var cy := cam_yaw_angle()
+    var fwd := Vector3(sin(cy), 0.0, cos(cy))
+    var right := Vector3(fwd.z, 0.0, -fwd.x)
+    var d := right * s.x + fwd * s.y
     return d.normalized() if d.length() > 0.001 else Vector3.ZERO
 
 func heading_of(dir: Vector3) -> float:
@@ -373,6 +526,7 @@ func _physics_process(_delta: float) -> void:
         model.rotation.y = facing
     if sword_pivot:
         sword_pivot.rotation.y = facing
+    _camera_tick()
 
     if global_position.y < start_pos.y - 50000.0:  # fell out of the world
         global_position = start_pos
@@ -463,9 +617,7 @@ func _decel_to(target: float) -> void:
 
 func _ground_strafe(s: Vector2, dist: float) -> void:
     # Z-target: face the camera direction, strafe with atnMove constants
-    var cam_fwd := -cam_yaw.global_transform.basis.z
-    cam_fwd.y = 0.0
-    facing = heading_of(cam_fwd.normalized())
+    facing = cam_yaw_angle()
     var want := Vector2(s.x * STRAFE_SPEED_MAX, s.y * (STRAFE_BACK_MAX if s.y < 0.0 else STRAFE_SPEED_MAX))
     var accel := STRAFE_BACK_ACCEL if s.y < 0.0 else STRAFE_ACCEL
     strafe = strafe.move_toward(want, accel)
@@ -482,15 +634,13 @@ func _ground_strafe(s: Vector2, dist: float) -> void:
             _enter_air(-forward() * BACKFLIP_SPEED, BACKFLIP_SPEED_Y, BACKFLIP_GRAVITY)
             return
         if absf(s.x) > 0.5:
-            var side := cam_yaw.global_transform.basis.x * signf(s.x)
-            side.y = 0.0
+            var side := stick_world_dir(Vector2(signf(s.x), 0.0))
             var a := SIDEHOP_ANGLE * S16_TO_RAD
-            _enter_air(side.normalized() * SIDEHOP_SPEED * cos(a), SIDEHOP_SPEED * sin(a), SIDEHOP_GRAVITY)
+            _enter_air(side * SIDEHOP_SPEED * cos(a), SIDEHOP_SPEED * sin(a), SIDEHOP_GRAVITY)
             return
 
-    var right := cam_yaw.global_transform.basis.x
-    right.y = 0.0
-    var h := right.normalized() * strafe.x + forward() * strafe.y
+    var right := stick_world_dir(Vector2(1.0, 0.0))
+    var h := right * strafe.x + forward() * strafe.y
     _apply(h, -1.0)
     if not is_on_floor():
         _enter_air(h, 0.0, GRAVITY)
@@ -1089,16 +1239,13 @@ theme_override_font_sizes/font_size = 16
 theme_override_colors/font_color = Color(0.85, 0.85, 0.85, 0.85)
 text = ""
 
-[node name="CamYaw" type="Node3D" parent="."]
+[node name="CamRig" type="Node3D" parent="."]
+top_level = true
 
-[node name="SpringArm3D" type="SpringArm3D" parent="CamYaw"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 160, 0)
-spring_length = 450.0
-collision_mask = 1
-
-[node name="Camera3D" type="Camera3D" parent="CamYaw/SpringArm3D"]
+[node name="Camera3D" type="Camera3D" parent="CamRig"]
 near = 5.0
 far = 1000000.0
+fov = 60.0
 """
 
 
