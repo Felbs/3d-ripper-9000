@@ -526,7 +526,7 @@ def _build_collision(disc, stage_name, room_nos, out_dir, offset) -> dict:
             )
             stats[surface] += len(tris)
         # wall codes the player code reads: ladders (4/5), vine walls (1), no-hang (2)
-        for tag in ("ladder", "ladder_top", "climb", "nohang"):
+        for tag in ("ladder", "ladder_top", "climb", "nohang", "hookshot"):
             try:
                 verts, tris = d.tagged(tag)
             except (KeyError, ValueError, AttributeError):

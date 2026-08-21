@@ -33,7 +33,7 @@ from gcrip.export import glb as glbmod
 # Godot physical keycodes
 _KEYS = {
     "W": 87, "A": 65, "S": 83, "D": 68, "E": 69, "Q": 81, "SPACE": 32, "SHIFT": 4194325,
-    "CTRL": 4194326, "ESC": 4194305, "F1": 4194332,
+    "CTRL": 4194326, "ESC": 4194305, "F1": 4194332, "TAB": 4194306, "R": 82,
     "LEFT": 4194319, "UP": 4194320, "RIGHT": 4194321, "DOWN": 4194322,
 }  # fmt: skip
 
@@ -71,6 +71,7 @@ def _action(*events: int | str, deadzone: float = 0.5) -> str:
 # Godot's SDL-mapped joypad ids (valid once the pad is known or calibrated)
 JOY_A, JOY_B, JOY_X, JOY_Y = 0, 1, 2, 3
 JOY_START, JOY_LSHOULDER, JOY_RSHOULDER = 6, 9, 10
+JOY_DPAD_UP, JOY_DPAD_DOWN, JOY_DPAD_LEFT, JOY_DPAD_RIGHT = 11, 12, 13, 14
 AXIS_LX, AXIS_LY, AXIS_RX, AXIS_RY, AXIS_LT, AXIS_RT = 0, 1, 2, 3, 4, 5
 
 
@@ -205,7 +206,25 @@ const CLIMB_OVER_FRAMES := 24          # ladderupedl / wallholdup climb-over
 
 const S16_TO_RAD := PI / 32768.0
 
-enum State { GROUND, AIR, ROLL, SWIM, LAND, ATTACK, JUMPCUT, JUMPCUT_LAND, DAMAGE, GLIDE, CARRY, GRAB, VJUMP, HANG, CLIMB, LADDER, CLIMBWALL }
+enum State { GROUND, AIR, ROLL, SWIM, LAND, ATTACK, JUMPCUT, JUMPCUT_LAND, DAMAGE, GLIDE, CARRY, GRAB, VJUMP, HANG, CLIMB, LADDER, CLIMBWALL, AIM, ITEM_WAIT, HOOKPULL }
+
+# --- X-button items (bow / boomerang / bombs / hookshot specs: projectile-items.md) ---
+const X_ITEMS := ["leaf", "bow", "boomerang", "bomb", "hookshot"]
+const ITEM_NAMES := {"leaf": "Deku Leaf", "bow": "Bow", "boomerang": "Boomerang", "bomb": "Bombs", "hookshot": "Hookshot"}
+const BOW_HOLD_FRAMES := 10            # string can be released after 10 frames (m355E)
+const AIM_PITCH_CLAMP := 0x2000 * PI / 32768.0   # Z-target pitch limit
+const ARROW_MAX_LIVE := 5
+const BOMB_MAX_LIVE := 3
+const HOOK_ROOT_OFFSET := Vector3(22.0, 110.0, 0.0)   # left hand + (22,0,0), roughly
+var x_item := "leaf"
+var arrows := 30
+var bombs := 30
+var aim_frames := 0
+var aim_yaw := 0.0
+var aim_pitch := 0.0              # positive = down
+var projectile: Node3D = null     # live boomerang / hookshot
+var live_arrows: Array = []
+var live_bombs: Array = []
 
 @export var water_level := -1.0e9   # stage sets this (sea stages: 0)
 
@@ -330,6 +349,9 @@ func _ready() -> void:
     magic = int(Game.save["magic"])
     rupees = int(Game.save["rupees"])
     heavy = bool(Game.save["heavy"])
+    x_item = str(Game.save.get("x_item", "leaf"))
+    arrows = int(Game.save.get("arrows", 30))
+    bombs = int(Game.save.get("bombs", 30))
     _update_hud()
     cam_center = global_position + Vector3(0, CAM_ATTN_HEIGHT, 0)
     cam_eye = cam_center + _sph(380.0, deg_to_rad(CAM_PITCH_DEG), facing + PI)
@@ -652,12 +674,19 @@ func _physics_process(_delta: float) -> void:
         if combo_timer == 0 and state != State.ATTACK:
             combo = 0
 
+    if Game.selftest:
+        _selftest_tick()
     if Game.dialog_open:  # text box up: Link stands still
         _apply(Vector3.ZERO, -1.0)
         play_clip("wait")
         return
     if Input.is_action_just_pressed("action_y") and state in [State.GROUND, State.SWIM]:
         heavy = not heavy  # Iron Boots toggle (procBootsEquip; 19-frame anim skipped)
+        _update_hud()
+    if Input.is_action_just_pressed("item_next") or Input.is_action_just_pressed("item_prev"):
+        var i := X_ITEMS.find(x_item)
+        i = (i + (1 if Input.is_action_just_pressed("item_next") else -1) + X_ITEMS.size()) % X_ITEMS.size()
+        x_item = X_ITEMS[i]
         _update_hud()
     _update_prompt()
 
@@ -669,6 +698,9 @@ func _physics_process(_delta: float) -> void:
         State.CLIMB: _climb()
         State.LADDER: _ladder()
         State.CLIMBWALL: _climbwall()
+        State.AIM: _aim()
+        State.ITEM_WAIT: _item_wait()
+        State.HOOKPULL: _hookpull()
         State.GROUND: _ground()
         State.AIR: _air()
         State.ROLL: _roll()
@@ -701,6 +733,8 @@ func _enter_ground() -> void:
     gravity = GRAVITY
 
 func _ground() -> void:
+    if Input.is_action_just_pressed("action_x") and x_item != "leaf" and _use_item():
+        return
     if in_water():
         _enter_swim()
         return
@@ -1071,6 +1105,202 @@ func _jumpcut_land() -> void:
         return
     if cut_frame >= JATTACK_LAND["end"]:
         _enter_ground()
+
+# ---------------------------------------------------------------- X items
+
+var _st_frame := 0
+const _ST_SCRIPT := {
+    # frame: [action, pressed]  -- bow, boomerang, bombs, hookshot in turn
+    10: ["item_next", true], 11: ["item_next", false],
+    20: ["action_x", true], 40: ["action_x", false],
+    70: ["item_next", true], 71: ["item_next", false],
+    80: ["action_x", true], 95: ["action_x", false],
+    200: ["item_next", true], 201: ["item_next", false],
+    210: ["action_x", true], 211: ["action_x", false],
+    235: ["action_a", true], 236: ["action_a", false],
+    420: ["item_next", true], 421: ["item_next", false],
+    430: ["action_x", true], 445: ["action_x", false],
+}
+
+func _selftest_tick() -> void:
+    _st_frame += 1
+    if _st_frame >= 600:
+        print("selftest done")
+        get_tree().quit()
+        return
+    if _ST_SCRIPT.has(_st_frame):
+        var a: Array = _ST_SCRIPT[_st_frame]
+        if a[1]:
+            Input.action_press(a[0])
+        else:
+            Input.action_release(a[0])
+    if _st_frame % 30 == 0:
+        print("selftest f%d state=%s item=%s arrows=%d bombs=%d projectile=%s live_arrows=%d live_bombs=%d pos=%s" % [
+            _st_frame, State.keys()[state], x_item, arrows, bombs,
+            str(projectile != null and is_instance_valid(projectile)),
+            live_arrows.filter(func(x): return x != null and is_instance_valid(x)).size(),
+            live_bombs.filter(func(x): return x != null and is_instance_valid(x)).size(),
+            str(global_position.round())])
+
+func _use_item() -> bool:
+    match x_item:
+        "bow", "boomerang", "hookshot":
+            if x_item == "bow" and arrows <= 0:
+                return false
+            if projectile != null and is_instance_valid(projectile):
+                if x_item == "boomerang" and projectile.has_method("cancel"):
+                    projectile.cancel()   # pressing again recalls it
+                return false
+            _enter_aim()
+            return true
+        "bomb":
+            if bombs <= 0:
+                return false
+            live_bombs = live_bombs.filter(func(b): return b != null and is_instance_valid(b))
+            if live_bombs.size() >= BOMB_MAX_LIVE:
+                return false
+            var b := CharacterBody3D.new()
+            b.set_script(load("res://items/bomb.gd"))
+            get_tree().current_scene.add_child(b)
+            b.global_position = carry_point()
+            live_bombs.append(b)
+            bombs -= 1
+            carry(b)
+            _update_hud()
+            return true
+    return false
+
+func _enter_aim() -> void:
+    state = State.AIM
+    aim_frames = 0
+    speed = 0.0
+    velocity = Vector3.ZERO
+    match x_item:
+        "bow": play_clip("bowwait", 4.0 / 30.0)
+        "boomerang": play_clip("boomwait", 4.0 / 30.0)
+        "hookshot": play_clip("hookshotwait", 4.0 / 30.0)
+
+func _aim_dir() -> Vector3:
+    # Z-target: at the target's eyes (pitch clamped 22.5 deg); else where the camera looks
+    if lock_target and is_instance_valid(lock_target):
+        var to := _target_attn() - hook_root()
+        var yaw := atan2(to.x, to.z)
+        var pitch := clampf(atan2(-to.y, Vector2(to.x, to.z).length()), -AIM_PITCH_CLAMP, AIM_PITCH_CLAMP)
+        aim_yaw = yaw
+        aim_pitch = pitch
+    else:
+        var f := -camera.global_transform.basis.z
+        aim_yaw = atan2(f.x, f.z)
+        aim_pitch = clampf(atan2(-f.y, Vector2(f.x, f.z).length()), deg_to_rad(-70.0), deg_to_rad(60.0))
+    return Vector3(sin(aim_yaw) * cos(aim_pitch), -sin(aim_pitch), cos(aim_yaw) * cos(aim_pitch))
+
+func _aim() -> void:
+    aim_frames += 1
+    var d := _aim_dir()
+    facing = aim_yaw
+    _apply(Vector3.ZERO, -1.0)
+    if Input.is_action_just_pressed("action_b") or Input.is_action_just_pressed("action_a"):
+        _enter_ground()   # cancelItemUpperReadyAnime
+        return
+    if Input.is_action_pressed("action_x"):
+        return
+    # released
+    match x_item:
+        "bow":
+            if aim_frames < BOW_HOLD_FRAMES:
+                _enter_ground()
+                return
+            _shoot_arrow(d)
+            play_clip("arrowshoot", 2.0 / 30.0, 0.9)
+            state = State.ITEM_WAIT
+            aim_frames = 0
+        "boomerang":
+            _throw_boomerang()
+            play_clip("boomthrow", 2.0 / 30.0)
+            state = State.ITEM_WAIT
+            aim_frames = 0
+        "hookshot":
+            _shoot_hook(d)
+            state = State.HOOKPULL   # frozen until the hook comes back or pulls us
+            aim_frames = 0
+
+func _item_wait() -> void:
+    # the short release / throw animation, then back to normal play
+    aim_frames += 1
+    _apply(Vector3.ZERO, -1.0)
+    if aim_frames >= 10:
+        _enter_ground()
+
+func hook_root() -> Vector3:
+    return global_position + Basis(Vector3.UP, facing) * HOOK_ROOT_OFFSET
+
+func _shoot_arrow(d: Vector3) -> void:
+    live_arrows = live_arrows.filter(func(a): return a != null and is_instance_valid(a))
+    if live_arrows.size() >= ARROW_MAX_LIVE:
+        var oldest: Node = live_arrows.pop_front()
+        if oldest:
+            oldest.queue_free()
+    var a := Node3D.new()
+    a.set_script(load("res://items/arrow.gd"))
+    get_tree().current_scene.add_child(a)
+    a.launch(hook_root() + d * 30.0, d, self)
+    live_arrows.append(a)
+    arrows -= 1
+    _update_hud()
+
+func add_arrows(n: int) -> void:
+    arrows = mini(arrows + n, 99)
+    _update_hud()
+
+func _throw_boomerang() -> void:
+    var b := Node3D.new()
+    b.set_script(load("res://items/boomerang.gd"))
+    get_tree().current_scene.add_child(b)
+    var locks: Array = []
+    if lock_target and is_instance_valid(lock_target):
+        locks.append(lock_target)
+    b.launch(hook_root(), aim_yaw, aim_pitch, self, locks)
+    projectile = b
+
+func catch_boomerang() -> void:
+    projectile = null
+    if state in [State.GROUND, State.AIR]:
+        play_clip("boomcatch", 2.0 / 30.0)
+
+func _shoot_hook(d: Vector3) -> void:
+    var h := Node3D.new()
+    h.set_script(load("res://items/hookshot.gd"))
+    get_tree().current_scene.add_child(h)
+    h.launch(self, hook_root(), d)
+    projectile = h
+
+func _hookpull() -> void:
+    # either waiting in the aim pose (hook flying / returning) or being pulled by it
+    if projectile == null or not is_instance_valid(projectile):
+        projectile = null
+        _enter_air(Vector3.ZERO, 0.0, GRAVITY)
+        return
+    facing = aim_yaw
+    velocity = Vector3.ZERO
+
+func hook_pull(step: Vector3) -> void:
+    play_clip("hookshotjmp", 2.0 / 30.0)
+    var old := global_position
+    global_position += step
+    # don't tunnel through walls on the way
+    var space := get_world_3d().direct_space_state
+    var q := PhysicsRayQueryParameters3D.create(old + Vector3(0, 60.0, 0), global_position + Vector3(0, 60.0, 0), 1)
+    if space.intersect_ray(q):
+        global_position = old
+
+func hook_done(landed: bool, hook_pos: Vector3, d: Vector3) -> void:
+    projectile = null
+    if state != State.HOOKPULL:
+        return
+    if landed:
+        var back := Vector3(d.x, 0.0, d.z).normalized()
+        global_position = hook_pos - back * 35.0 - Vector3(0, 60.0, 0)
+    _enter_air(Vector3.ZERO, 0.0, GRAVITY)
 
 # ---------------------------------------------------------------- ladders / vines
 
@@ -1596,6 +1826,17 @@ func _update_hud() -> void:
     Game.save["magic"] = magic
     Game.save["rupees"] = rupees
     Game.save["heavy"] = heavy
+    Game.save["x_item"] = x_item
+    Game.save["arrows"] = arrows
+    Game.save["bombs"] = bombs
+    if hud_items:
+        var ammo := ""
+        if x_item == "bow":
+            ammo = " (%d)" % arrows
+        elif x_item == "bomb":
+            ammo = " (%d)" % bombs
+        hud_items.text = "X: %s%s   Y: Iron Boots%s   Tab/D-pad: next item" % [
+            ITEM_NAMES.get(x_item, x_item), ammo, " [on]" if heavy else ""]
     if hud_hearts == null:
         return
     var s := ""
@@ -1798,6 +2039,7 @@ _PLAYER_CLIPS = (
     "damf", "damb", "daml", "damr", "dam", "damff", "damfb", "talka",
     "grabup", "grabwait", "grabthrow", "walkbarrel",
     "vjmp", "vjmpcha", "vjmpchb", "vjmpcl", "mstepover", "hangmovel", "hangmover", "jmpeds",
+    "bowwait", "arrowshoot", "boomwait", "boomthrow", "boomcatch", "hookshotwait", "hookshotjmp",
     "ladderupst", "ladderltor", "ladderrtol", "ladderupedl", "ladderdwst",
     "wall", "wallpl", "walldw", "wallwl", "wallwr", "wallholdup",
 )  # fmt: skip
@@ -1832,6 +2074,7 @@ var menu: Node = null
 var bgm: Dictionary = {}           # data/ww_bgm.json: stages / sea_rooms -> song
 var bgm_player: AudioStreamPlayer = null
 var bgm_song := ""
+var selftest: bool = "--selftest" in OS.get_cmdline_user_args()   # scripted input run
 # persistent player state (survives stage warps; the Player node is rebuilt per stage)
 var save := {"hearts": 12, "hearts_max": 12, "magic": 16, "rupees": 0, "heavy": false}
 
@@ -3281,7 +3524,7 @@ func _tag_liquids() -> void:
         elif n.begins_with("wall_"):
             # wall_<tag>_... : ladder / ladder_top / climb / nohang (dzb wall codes 4 / 5 / 1 / 2)
             var tag := n.substr(5)
-            for t in ["ladder_top", "ladder", "climb", "nohang"]:
+            for t in ["ladder_top", "ladder", "climb", "nohang", "hookshot"]:
                 if tag.begins_with(t):
                     tag = t
                     break
@@ -3289,6 +3532,14 @@ func _tag_liquids() -> void:
             body.collision_mask = 0
             body.set_meta("wall", tag)
 """
+
+_ARROW_GD = 'extends Node3D\n# gcrip: Hero\'s Bow arrow (d_a_arrow.cpp). 200 units/frame dead straight (gravity only\n# after 25000 units), capsule r5 over 1.25 steps, sticks 50 back from the hit point with a\n# 40-frame wobble, then a 300-frame pickup (+1 arrow) blinking its last 60 frames.\n\nconst SPEED := 200.0\nconst STICK_BACK := 50.0\nconst WOBBLE_FRAMES := 40\nconst WOBBLE_AMP := 0x400 * PI / 32768.0\nconst WOBBLE_FREQ := 0x52FB * PI / 32768.0\nconst PICKUP_LIFE := 300\nconst PICKUP_BLINK := 60\nconst PICKUP_R := 25.0\nconst MAX_RANGE := 25000.0\nconst ATP := 2\n\nenum State { FLYING, STUCK, DONE }\nvar state: int = State.FLYING\nvar vel := Vector3.ZERO\nvar start := Vector3.ZERO\nvar base: Basis = Basis.IDENTITY\nvar wobble := 0\nvar life := 0\nvar player: Node3D = null\nvar model: Node3D = null\n\nfunc launch(pos: Vector3, dir: Vector3, link: Node3D) -> void:\n    player = link\n    start = pos\n    global_position = pos\n    vel = dir.normalized() * SPEED\n    var scene := load("res://items/arrow.glb") if ResourceLoader.exists("res://items/arrow.glb") else null\n    if scene:\n        model = scene.instantiate()\n        add_child(model)\n    _face(vel)\n\nfunc _face(d: Vector3) -> void:\n    if d.length() > 0.001:\n        look_at(global_position - d, Vector3.UP)  # the model points down +Z\n\nfunc _physics_process(_delta: float) -> void:\n    match state:\n        State.FLYING: _fly()\n        State.STUCK: _stuck()\n\nfunc _fly() -> void:\n    var old := global_position\n    var next := old + vel\n    var space := get_world_3d().direct_space_state\n    # actors (hittable layer 8) along the step + a quarter step ahead\n    var qa := PhysicsRayQueryParameters3D.create(old, next + vel * 0.25, 8)\n    qa.collide_with_areas = true\n    var ha := space.intersect_ray(qa)\n    if ha:\n        var c = ha.collider\n        if c and c.has_method("take_hit"):\n            c.take_hit(ATP, old)\n        state = State.DONE\n        queue_free()\n        return\n    var qb := PhysicsRayQueryParameters3D.create(old, next + vel * 0.25, 1)\n    var hb := space.intersect_ray(qb)\n    if hb:\n        global_position = hb.position - vel.normalized() * STICK_BACK\n        _face(vel)\n        base = global_transform.basis\n        state = State.STUCK\n        wobble = WOBBLE_FRAMES\n        life = PICKUP_LIFE\n        return\n    global_position = next\n    if global_position.distance_to(start) > MAX_RANGE:\n        queue_free()\n\nfunc _stuck() -> void:\n    if wobble > 0:\n        wobble -= 1\n        var t := float(wobble)\n        var ang := sin(t * WOBBLE_FREQ) * WOBBLE_AMP * pow(t / WOBBLE_FRAMES, 2.0)\n        global_transform.basis = base.rotated(base.x, ang)\n    life -= 1\n    if life <= 0:\n        queue_free()\n        return\n    if life < PICKUP_BLINK and model:\n        model.visible = (life % 2) == 0\n    if player and is_instance_valid(player):\n        var feet: Vector3 = player.global_position\n        var d := global_position.distance_to(feet + Vector3(0, 50.0, 0))\n        if d < PICKUP_R + 40.0 and player.has_method("add_arrows"):\n            player.add_arrows(1)\n            queue_free()\n'
+
+_BOOMERANG_GD = 'extends Node3D\n# gcrip: Boomerang (d_a_boomerang.cpp). 60 units/frame, steers toward its target with a\n# turn rate that tightens near it (wide arc, snaps at the end), sweeps through up to five\n# locked targets, returns to Link\'s catch point; walls on the way out reverse it.\n\nconst SPEED := 60.0\nconst FLY_MAX := 2500.0\nconst FREE_YAW_OFFSET := 0x3000 * PI / 32768.0\nconst JUST_HIT_OFFSET := 0x3000 * PI / 32768.0\nconst TURN_THIRD := 0x4000 * PI / 32768.0\nconst HIT_R := 30.0\nconst ATP := 1\nconst SPIN := 0x1F00 * PI / 32768.0\nconst CATCH_OFFSET := Vector3(12.5, 47.5, 36.6)\nconst S16 := PI / 32768.0\n\nenum State { OUT, RETURN }\nvar state: int = State.OUT\nvar player: Node3D = null\nvar targets: Array = []\nvar cur := 0\nvar target_pos := Vector3.ZERO\nvar yaw := 0.0\nvar pitch := 0.0   # positive = down (game convention)\nvar free_out := true\nvar third_person := false\nvar just_hit := false\nvar hit_once: Dictionary = {}\nvar model: Node3D = null\nvar spin := 0.0\n\nstatic func fwd(y: float, p: float) -> Vector3:\n    return Vector3(sin(y) * cos(p), -sin(p), cos(y) * cos(p))\n\nfunc launch(pos: Vector3, aim_yaw: float, aim_pitch: float, link: Node3D, locks: Array) -> void:\n    player = link\n    global_position = pos\n    targets = locks.filter(func(t): return t != null and is_instance_valid(t))\n    free_out = targets.is_empty()\n    third_person = not free_out\n    if free_out:\n        target_pos = pos + fwd(aim_yaw, aim_pitch) * FLY_MAX\n        yaw = aim_yaw + FREE_YAW_OFFSET\n        pitch = aim_pitch\n    else:\n        _aim_at_target()\n        var to := target_pos - pos\n        yaw = atan2(to.x, to.z)\n        pitch = atan2(-to.y, Vector2(to.x, to.z).length())\n    var scene := load("res://items/boomerang.glb") if ResourceLoader.exists("res://items/boomerang.glb") else null\n    if scene:\n        model = scene.instantiate()\n        add_child(model)\n\nfunc _aim_at_target() -> void:\n    var t: Node3D = targets[cur]\n    if t and is_instance_valid(t):\n        target_pos = t.global_position + Vector3(0, 60.0, 0)\n\nfunc _catch_pos() -> Vector3:\n    if player == null or not is_instance_valid(player):\n        return global_position\n    var f: float = player.get("facing")\n    var b := Basis(Vector3.UP, f)\n    return player.global_position + b * CATCH_OFFSET\n\nfunc cancel() -> void:\n    if state == State.OUT:\n        state = State.RETURN\n\nfunc _physics_process(_delta: float) -> void:\n    spin -= SPIN\n    if model:\n        model.rotation = Vector3(0, spin, 0x2000 * S16)\n    if state == State.RETURN:\n        target_pos = _catch_pos()\n    elif not free_out and cur < targets.size():\n        _aim_at_target()\n    var to := target_pos - global_position\n    var dist := to.length()\n    var want_yaw := atan2(to.x, to.z)\n    var want_pitch := atan2(-to.y, Vector2(to.x, to.z).length())\n    var max_turn: float\n    if third_person and state == State.OUT:\n        max_turn = TURN_THIRD\n    else:\n        var a := clampf(20.0 - dist * 2.0 / SPEED, 0.0, 18.0)\n        max_turn = (a * 0x100 + 0x400) * S16\n    if just_hit:\n        # after a hit, swing wide of the next target before homing again\n        yaw += JUST_HIT_OFFSET * (1.0 if randf() < 0.5 else -1.0)\n        just_hit = false\n    else:\n        yaw += clampf(wrapf(want_yaw - yaw, -PI, PI), -max_turn, max_turn)\n    pitch = want_pitch\n    var old := global_position\n    var next := old + fwd(yaw, pitch) * SPEED\n    var space := get_world_3d().direct_space_state\n    # things it hits on the way (capsule r30 approximated by a ray through the sweep)\n    var qa := PhysicsRayQueryParameters3D.create(old, next, 8 | 16)\n    qa.collide_with_areas = true\n    var ha := space.intersect_ray(qa)\n    if ha:\n        var c = ha.collider\n        if c and not hit_once.has(c.get_instance_id()):\n            hit_once[c.get_instance_id()] = true\n            if c.has_method("take_hit"):\n                c.take_hit(ATP, old)\n            if state == State.OUT and not free_out and cur < targets.size() and c == targets[cur]:\n                _next_target()\n    if state == State.OUT:\n        var qb := PhysicsRayQueryParameters3D.create(old, next, 1)\n        var hb := space.intersect_ray(qb)\n        if hb:\n            global_position = hb.position\n            yaw += PI\n            state = State.RETURN\n            return\n        if dist < SPEED:\n            if free_out:\n                state = State.RETURN\n            else:\n                _next_target()\n    global_position = next\n    if state == State.RETURN and dist < 2.0 * SPEED:\n        if player and is_instance_valid(player) and player.has_method("catch_boomerang"):\n            player.catch_boomerang()\n        queue_free()\n\nfunc _next_target() -> void:\n    just_hit = true\n    cur += 1\n    if cur >= targets.size():\n        state = State.RETURN\n'
+
+_BOMB_GD = 'extends CharacterBody3D\n# gcrip: Link\'s bomb (d_a_bomb3.inc). Carried with the grab system, thrown 19 / 34 at\n# GRABTHROW frame 2, gravity -2.9, bounces -0.6 (stops below 19.5), wall 0.8, 150-frame\n# fuse, blast r200 Atp 4 (one frame), hurt sphere r30. Explodes when hit by anything.\n\nconst GRAVITY := -2.9\nconst MAX_FALL := -100.0\nconst FUSE := 150\nconst THROW_XZ := 19.0\nconst THROW_Y := 34.0\nconst BOUNCE := -0.6\nconst BOUNCE_MIN_VY := 19.5\nconst BOUNCE_VY_CAP := 13.0\nconst LAND_FRICTION := 0.9\nconst WALL_FRICTION := 0.8\nconst HURT_R := 30.0\nconst EXPLODE_R := 200.0\nconst ATP := 4\n\nenum Mode { WAIT, CARRY, DROP }\nvar mode: int = Mode.WAIT\nvar kind := "bomb"\nvar carrier: Node3D = null\nvar fuse := FUSE\nvar h_vel := Vector3.ZERO\nvar vy := 0.0\nvar model: Node3D = null\nvar lit := true\n\nfunc _ready() -> void:\n    collision_layer = 8\n    collision_mask = 1\n    var shape := CollisionShape3D.new()\n    var sph := SphereShape3D.new()\n    sph.radius = HURT_R\n    shape.shape = sph\n    shape.position.y = HURT_R\n    add_child(shape)\n    add_to_group("interact")\n    var scene := load("res://items/bomb.glb") if ResourceLoader.exists("res://items/bomb.glb") else null\n    if scene:\n        model = scene.instantiate()\n        add_child(model)\n        var anim := model.find_child("AnimationPlayer", true, false)\n        if anim and anim.get_animation_list().size() > 0:\n            anim.play(anim.get_animation_list()[0])\n\n# --- Link-side interaction API (same as the pots) ---\nfunc interact_prompt(link: Node3D) -> String:\n    if mode != Mode.WAIT:\n        return ""\n    return "Grab" if link.global_position.distance_to(global_position) < 80.0 else ""\n\nfunc interact(link: Node3D) -> void:\n    if mode == Mode.WAIT:\n        link.call("carry", self)\n\nfunc picked_up(by: Node3D) -> void:\n    mode = Mode.CARRY\n    carrier = by\n    collision_layer = 0\n    collision_mask = 0\n\nfunc thrown(direction: Vector3, _link_speed: float) -> void:\n    mode = Mode.DROP\n    carrier = null\n    collision_layer = 8\n    collision_mask = 1\n    var d := direction.normalized()\n    h_vel = Vector3(d.x, 0.0, d.z) * THROW_XZ\n    vy = THROW_Y\n\nfunc take_hit(_damage: int, _from: Vector3) -> void:\n    explode()\n\nfunc _physics_process(_delta: float) -> void:\n    if lit:\n        fuse -= 1\n        if model and fuse < 45:\n            model.visible = (fuse / 3) % 2 == 0  # flashing before it blows\n        if fuse <= 0:\n            explode()\n            return\n    match mode:\n        Mode.CARRY:\n            if carrier and is_instance_valid(carrier) and carrier.has_method("carry_point"):\n                global_position = carrier.carry_point()\n        Mode.DROP, Mode.WAIT:\n            vy = maxf(vy + GRAVITY, MAX_FALL)\n            velocity = (h_vel + Vector3(0, vy, 0)) * 30.0\n            move_and_slide()\n            if is_on_wall():\n                var n := get_wall_normal()\n                n.y = 0.0\n                if n.length() > 0.01:\n                    h_vel = h_vel.bounce(n.normalized()) * WALL_FRICTION\n            if is_on_floor():\n                if vy < 0.0:\n                    var b := -BOUNCE * vy\n                    if b < BOUNCE_MIN_VY:\n                        vy = 0.0\n                        h_vel *= 0.5\n                    else:\n                        vy = minf(b, BOUNCE_VY_CAP)\n                        h_vel *= LAND_FRICTION\n                if vy == 0.0:\n                    h_vel = h_vel.move_toward(Vector3.ZERO, 0.5)\n            if Game.has_method("ground_height") and global_position.y < -20000.0:\n                queue_free()\n\nfunc explode() -> void:\n    if mode == Mode.CARRY and carrier and is_instance_valid(carrier):\n        carrier.set("held", null)\n    var centre := global_position + Vector3(0, HURT_R, 0)\n    var space := get_world_3d().direct_space_state\n    var q := PhysicsShapeQueryParameters3D.new()\n    var sph := SphereShape3D.new()\n    sph.radius = EXPLODE_R\n    q.shape = sph\n    q.transform = Transform3D(Basis.IDENTITY, centre)\n    q.collision_mask = 8 | 16\n    q.collide_with_areas = true\n    q.exclude = [get_rid()]\n    for hit in space.intersect_shape(q, 32):\n        var c = hit.collider\n        if c and c != self and c.has_method("take_hit"):\n            c.take_hit(ATP, centre)\n    var link := Game.player()\n    if link and link.global_position.distance_to(centre) < EXPLODE_R + 40.0 and link.has_method("take_damage"):\n        link.take_damage(ATP, centre, true)\n    if Game.has_method("burst"):\n        Game.burst(centre, Color(1.0, 0.8, 0.4))\n    var light := OmniLight3D.new()\n    light.light_color = Color(1.0, 1.0, 0.8)\n    light.light_energy = 6.0\n    light.omni_range = 600.0\n    light.position = centre\n    get_tree().current_scene.add_child(light)\n    get_tree().create_timer(0.15).timeout.connect(light.queue_free)\n    queue_free()\n'
+
+_HOOKSHOT_GD = 'extends Node3D\n# gcrip: Hookshot (d_a_hookshot.cpp). 105 units/frame out over 1500, capsule r5; a\n# hookshot-stick polygon (dzb pass flag 0x10) or an anchor pulls Link in at 63/frame,\n# anything else sends it back at 63/frame. Link is frozen in the aim pose while it\'s out.\n\nconst RANGE := 1500.0\nconst SHOT_SPEED := 105.0\nconst RETRACT_SPEED := 63.0\nconst PULL_SPEED := 63.0\nconst LINK_LEN := 7.0\nconst STOP_LINKS := 9\nconst LAND_BACK := 35.0\nconst ATP := 1\n\nenum State { SHOT, RETURN, PULL }\nvar state: int = State.SHOT\nvar player: Node3D = null\nvar dir := Vector3.FORWARD\nvar root := Vector3.ZERO\nvar chain: MeshInstance3D = null\nvar tip: Node3D = null\n\nfunc launch(link: Node3D, from: Vector3, aim: Vector3) -> void:\n    player = link\n    root = from\n    dir = aim.normalized()\n    global_position = from\n    chain = MeshInstance3D.new()\n    var cyl := CylinderMesh.new()\n    cyl.top_radius = 2.5\n    cyl.bottom_radius = 2.5\n    cyl.height = 1.0\n    chain.mesh = cyl\n    var mat := StandardMaterial3D.new()\n    mat.albedo_color = Color(0.45, 0.45, 0.5)\n    chain.material_override = mat\n    chain.top_level = true\n    add_child(chain)\n    var scene := load("res://items/hookshot.glb") if ResourceLoader.exists("res://items/hookshot.glb") else null\n    if scene:\n        tip = scene.instantiate()\n        add_child(tip)\n        tip.scale = Vector3.ONE * 0.6\n\nfunc _root_now() -> Vector3:\n    if player and is_instance_valid(player) and player.has_method("hook_root"):\n        return player.hook_root()\n    return root\n\nfunc _physics_process(_delta: float) -> void:\n    var r := _root_now()\n    match state:\n        State.SHOT:\n            var old := global_position\n            var next := old + dir * SHOT_SPEED\n            var space := get_world_3d().direct_space_state\n            var q := PhysicsRayQueryParameters3D.create(old, next, 1 | 8 | 32)\n            q.collide_with_areas = true\n            var hit := space.intersect_ray(q)\n            if hit:\n                var c = hit.collider\n                global_position = hit.position\n                var sticks: bool = c != null and ((c.has_meta("wall") and str(c.get_meta("wall")) == "hookshot") or c.is_in_group("hook_anchor"))\n                if sticks:\n                    state = State.PULL\n                else:\n                    if c and c.has_method("take_hit"):\n                        c.take_hit(ATP, old)\n                    state = State.RETURN\n            else:\n                global_position = next\n                if global_position.distance_to(r) >= RANGE:\n                    state = State.RETURN\n        State.RETURN:\n            var to := r - global_position\n            if to.length() <= RETRACT_SPEED:\n                _finish(false)\n                return\n            global_position += to.normalized() * RETRACT_SPEED\n        State.PULL:\n            if player == null or not is_instance_valid(player):\n                queue_free()\n                return\n            var to := global_position - r\n            if to.length() <= PULL_SPEED:\n                _finish(true)\n                return\n            player.hook_pull(to.normalized() * PULL_SPEED)\n    _draw_chain(_root_now())\n\nfunc _draw_chain(r: Vector3) -> void:\n    if chain == null:\n        return\n    var a := r\n    var b := global_position\n    var d := b - a\n    var l := d.length()\n    if l < 1.0:\n        chain.visible = false\n        return\n    chain.visible = true\n    chain.global_position = (a + b) * 0.5\n    chain.look_at(b, Vector3.UP if absf(d.normalized().y) < 0.99 else Vector3.FORWARD)\n    chain.rotate_object_local(Vector3.RIGHT, PI / 2.0)\n    chain.scale = Vector3(1.0, l, 1.0)\n\nfunc _finish(landed: bool) -> void:\n    if player and is_instance_valid(player) and player.has_method("hook_done"):\n        player.hook_done(landed, global_position, dir)\n    queue_free()\n'
 
 _WARP_GD = """extends Area3D
 # gcrip: walking into this (a door) loads the destination stage.
@@ -3463,6 +3714,8 @@ action_x={_action(k["E"], _joy_button(JOY_X))}
 action_y={_action(k["Q"], _joy_button(JOY_Y))}
 target={_action(k["SHIFT"], _joy_button(JOY_RSHOULDER), _joy_axis(AXIS_RT, 1.0))}
 pause={_action(k["ESC"], _joy_button(JOY_START))}
+item_next={_action(k["TAB"], _joy_button(JOY_DPAD_RIGHT))}
+item_prev={_action(k["R"], _joy_button(JOY_DPAD_LEFT))}
 calibrate={_action(k["F1"])}
 
 [physics]
@@ -3525,7 +3778,7 @@ def _godot_col_glb(col_gltf: Path, out_glb: Path) -> int:
         if surface == "solid" and "mesh" in node:
             node["name"] = node.get("name", "col").replace("/", "_") + "-colonly"
             n_solid += 1
-        elif surface in ("ladder", "ladder_top", "climb", "nohang") and "mesh" in node:
+        elif surface in ("ladder", "ladder_top", "climb", "nohang", "hookshot") and "mesh" in node:
             # wall codes Link reads (ladders / vines / no-hang); stage.gd puts them on layer 32
             node["name"] = f"wall_{surface}_" + node.get("name", "col").replace("/", "_") + "-colonly"
         elif surface and "mesh" in node:
@@ -3627,6 +3880,41 @@ def _animated_glb(src: Path, out_glb: Path, clips: tuple[str, ...]) -> list[str]
         tmp_gltf.unlink(missing_ok=True)
         tmp_bin.unlink(missing_ok=True)
     return kept
+
+
+_ITEM_MODELS = {
+    "arrow": "Link.arc/archive/bdlm/arrow.gltf",
+    "boomerang": "Link.arc/archive/bdl/boomerang.gltf",
+    "bomb": "Link.arc/archive/bdlm/bomb.gltf",
+    "hookshot": "Link.arc/archive/bdl/hookshot.gltf",
+    "bow": "Link.arc/archive/bdl/bow.gltf",
+}
+
+
+def _item_models(rip_dir: Path, out_dir: Path) -> int:
+    """Link's item models (arrow, boomerang, bomb, hookshot, bow) -> items/<name>.glb."""
+    results = rip_dir / "rip_results.json"
+    if not results.exists():
+        return 0
+    models = json.loads(results.read_text(encoding="utf-8"))["models"]
+    n = 0
+    for name, suffix in _ITEM_MODELS.items():
+        rel = next((m["out_rel"] for m in models if (m.get("out_rel") or "").endswith(suffix)), None)
+        if rel is None or not (rip_dir / rel).exists():
+            continue
+        out_glb = out_dir / "items" / f"{name}.glb"
+        src = rip_dir / rel
+        if out_glb.exists() and out_glb.stat().st_mtime >= src.stat().st_mtime:
+            n += 1
+            continue
+        try:
+            doc = json.loads(src.read_text(encoding="utf-8"))
+            clips = tuple(a.get("name", "") for a in doc.get("animations", [])[:1])
+            _animated_glb(src, out_glb, clips)
+            n += 1
+        except (OSError, ValueError, KeyError):
+            continue
+    return n
 
 
 def _player_model_glb(rip_dir: Path, out_glb: Path) -> bool:
@@ -3779,6 +4067,13 @@ def export_godot(
     (out_dir / "player.tscn").write_text(_player_tscn(has_model), encoding="utf-8")
     (out_dir / "game.gd").write_text(_GAME_GD, encoding="utf-8")
     (out_dir / "warp.gd").write_text(_WARP_GD, encoding="utf-8")
+    (out_dir / "items").mkdir(parents=True, exist_ok=True)
+    for fname, src in (("arrow.gd", _ARROW_GD), ("boomerang.gd", _BOOMERANG_GD),
+                       ("bomb.gd", _BOMB_GD), ("hookshot.gd", _HOOKSHOT_GD)):
+        (out_dir / "items" / fname).write_text(src, encoding="utf-8")
+    n_items = _item_models(rip_dir, out_dir)
+    if not quiet:
+        print(f"  {n_items} item models in items/")
     (out_dir / "calib.gd").write_text(_CALIB_GD, encoding="utf-8")
     (out_dir / "calib.tscn").write_text(_CALIB_TSCN, encoding="utf-8")
     (out_dir / "stage.gd").write_text(_STAGE_GD, encoding="utf-8")
