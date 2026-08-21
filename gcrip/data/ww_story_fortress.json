@@ -1,0 +1,311 @@
+{
+ "_source": "Mined read-only from the zeldaret/tww decompilation at Z:/memRip/sources/tww and the ripped GZLE01 (Wind Waker USA) disc data at Z:/3d ripper/out/rip/GZLE01. Chapter 2: the pirates carry Link to the Forsaken Fortress, he is caught, thrown into the sea, and meets the King of Red Lions at Windfall. Same conventions as ww_story_outset.json. Event names come from each stage's Stage.arc/event_list.dat and from the stage.dzs EVNT table (dumped by tools/ww_story_mine.py). Triggers come from stage.dzs / room.dzr placement chunks: PLYR spawn points (params>>24 = index into the stage's EVNT table -> auto-started event) and TagEv volumes (params: >>24 EVNT index, >>16&0xFF switch2, >>8&0xFF switch, &0xFF daTag_Event_c::Action_e; rot.z = required event bit). The chapter's checkpoints are stated outright by the game in dComIfGs_setGameStartStage (src/d/d_com_inf_game.cpp:1294-1311), which is the strongest evidence in this file: it lists, in order, which event bit sends a continuing save to which stage and spawn. Event-bit ids are authoritative numbers; the UNK_xxxx names are placeholders invented by the decomp team (include/d/d_save_event_flag.inc says so itself), so numeric ids are used here.",
+
+ "_checkpoints": {
+  "source": "src/d/d_com_inf_game.cpp:1294-1311 dComIfGs_setGameStartStage, l_checkData[] - walked in order, the FIRST bit that is set wins",
+  "order": [
+   {"bit": "RODE_KORL (0x2A08)", "stage": "(none - resume wherever the file was saved)", "meaning": "Link has boarded the King of Red Lions at least once: the game is open"},
+   {"bit": "MET_KORL (0x0F80)", "stage": "sea", "room": "dIsleRoom_WindfallIsland_e (11)", "start_code": 128, "meaning": "met the King of Red Lions"},
+   {"bit": "UNK_0801 (0x0801)", "stage": "MajyuE", "room": 0, "start_code": 0, "meaning": "the infiltration cutscene is done - Link is inside the fortress grounds"},
+   {"bit": "UNK_0808 (0x0808)", "stage": "MajyuE", "room": 0, "start_code": 18, "meaning": "Link has been launched at the fortress"},
+   {"bit": "UNK_2401 (0x2401)", "stage": "A_umikz", "room": 0, "start_code": 204, "meaning": "the ship has left Outset (set by the departure step of ww_story_outset.json)"},
+   {"bit": "(default)", "stage": "sea", "room": "dIsleRoom_OutsetIsland_e (44)", "start_code": 128, "meaning": "a fresh file"}
+  ]
+ },
+
+ "_bits": {
+  "0x2401": {
+   "dec": 9217,
+   "byte_mask": [36, 1],
+   "meaning": "The pirate ship has left Outset with Link aboard. Raised by the departure step of the Outset chapter; it is what sends a continuing save to A_umikz.",
+   "set_by": "ww_story_outset.json step 'departure'",
+   "read_by": ["src/d/d_com_inf_game.cpp:1309"],
+   "confidence": "high"
+  },
+  "0x0808": {
+   "dec": 2056,
+   "byte_mask": [8, 8],
+   "meaning": "Link has been launched at the Forsaken Fortress by the pirates' catapult. Sends a continuing save to MajyuE spawn 18. No onEventBit call for it exists in src/, so it is raised by event data (the launch demo), the same way 0x0520 is in the Outset chapter.",
+   "set_by": "(event data - no setter in src/)",
+   "read_by": ["src/d/d_com_inf_game.cpp:1308", "src/d/d_stage.cpp:2324", "src/d/actor/d_a_npc_p1.cpp:435", "src/d/actor/d_a_npc_p1.cpp:1069"],
+   "confidence": "medium"
+  },
+  "0x0802": {
+   "dec": 2050,
+   "byte_mask": [8, 2],
+   "meaning": "Tetra's dock conversation on Outset ('yuukaigo') has finished.",
+   "set_by": "src/d/actor/d_a_npc_zl1.cpp:1844 (event_proc case 0)",
+   "read_by": [],
+   "confidence": "high"
+  },
+  "0x0804": {
+   "dec": 2052,
+   "byte_mask": [8, 4],
+   "meaning": "Tetra's 'ooi' call at the fortress has finished. On that event ending she also moves herself to (-37692, 2200, 8016) facing -0x5C72, ready for the infiltration.",
+   "set_by": "src/d/actor/d_a_npc_zl1.cpp:1850 (event_proc case 1)",
+   "read_by": [],
+   "confidence": "high"
+  },
+  "0x0801": {
+   "dec": 2049,
+   "byte_mask": [8, 1],
+   "meaning": "The infiltration cutscene ('majyuu_shinnyuu') is done. Tetra deletes herself when it is set, the fortress stage type changes behaviour, and a continuing save resumes at MajyuE spawn 0.",
+   "set_by": "src/d/actor/d_a_npc_zl1.cpp:1860 (event_proc case 2)",
+   "read_by": ["src/d/actor/d_a_npc_zl1.cpp:322", "src/d/actor/d_a_npc_zl1.cpp:2248", "src/d/d_com_inf_game.cpp:1307", "src/d/d_s_play.cpp:1370", "src/d/d_meter.cpp:4540", "src/d/d_meter.cpp:5884"],
+   "confidence": "high"
+  },
+  "0x0340": {
+   "dec": 832,
+   "byte_mask": [3, 64],
+   "meaning": "Gates the SerchLook1 trigger volume in MajyuE (the searchlight look). Read only from placement data - no reference to it exists in src/, so what raises it is event data.",
+   "set_by": "(event data - no setter in src/)",
+   "read_by": ["MajyuE room.dzr TagEv rot.z"],
+   "confidence": "low"
+  },
+  "0x0F80": {
+   "dec": 3968,
+   "byte_mask": [15, 128],
+   "meaning": "MET_KORL: Link has met the King of Red Lions. Raised by the event manager the moment the event named MEETSHISHIOH starts - not when it ends.",
+   "set_by": "src/d/d_event_manager.cpp:599",
+   "read_by": ["src/d/d_com_inf_game.cpp:1306", "src/d/actor/d_a_ship.cpp:4549", "src/d/actor/d_a_player_main.cpp:12474", "src/d/actor/d_a_agb.cpp:1166", "src/d/actor/d_a_agbsw0.cpp:1704"],
+   "confidence": "high"
+  },
+  "0x2A08": {
+   "dec": 10760,
+   "byte_mask": [42, 8],
+   "meaning": "RODE_KORL: Link has boarded the King of Red Lions. Once it is set the continue table stops forcing a stage and the file resumes wherever it was saved - the point at which the game becomes open.",
+   "set_by": "src/d/actor/d_a_ship.cpp:1570",
+   "read_by": ["src/d/d_com_inf_game.cpp:1305", "src/d/actor/d_a_ship.cpp:599", "src/d/actor/d_a_player_main.cpp:10872"],
+   "confidence": "high"
+  }
+ },
+
+ "_actors": {
+  "Zl1": {
+   "name": "Tetra",
+   "file": "src/d/actor/d_a_npc_zl1.cpp",
+   "event_table": ["yuukaigo", "ooi", "majyuu_shinnyuu", "nakaniwa"],
+   "table_source": "src/d/actor/d_a_npc_zl1.cpp:127-131 (l_evn_tbl)",
+   "index_rule": "field_0x84A is a state byte; when it is >= 3 the event index is field_0x84A - 3 and the actor calls fopAcM_orderOtherEventId (src/d/actor/d_a_npc_zl1.cpp:1059-1069). Same shape as Aryll's m850.",
+   "how_each_is_ordered": {
+    "yuukaigo": "demo_4 sets field_0x84A = 3 with no distance test at all - the copy placed for that story state orders it as it spawns (src/d/actor/d_a_npc_zl1.cpp:2259)",
+    "ooi": "demo_2 chk_areaIN(mPrmTbl.field_24 = 200.0f, 100.0f, 0x7FFF) sets field_0x84A = 4 (src/d/actor/d_a_npc_zl1.cpp:2233-2241)",
+    "majyuu_shinnyuu": "demo_3: deletes Tetra outright if 0x0801 is already set, otherwise field_0x764.abs(player pos) < mPrmTbl.field_28 = 200.0f sets field_0x84A = 5 (src/d/actor/d_a_npc_zl1.cpp:2243-2257)",
+    "nakaniwa": "field_0x84A = 6 at src/d/actor/d_a_npc_zl1.cpp:350"
+   }
+  }
+ },
+
+ "steps": [
+  {
+   "id": "ff_ride_to_fortress",
+   "stage": "A_umikz",
+   "room": 0,
+   "layer": -1,
+   "trigger": {"kind": "spawn", "detail": "The continue table sends a save with 0x2401 set to stage \"A_umikz\", room 0, start code 204 (src/d/d_com_inf_game.cpp:1309). A_umikz is the sea during the pirate ship's run to the Forsaken Fortress; its EVNT table holds a single entry, \"dummy\", and none of its 71 event scripts is story-specific, so the ride itself is scenery plus the ship actor - there is no event to order here."},
+   "event": null,
+   "stb": null,
+   "requires_bits": ["0x2401"],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": ["src/d/d_com_inf_game.cpp:1294-1311", "out/rip/GZLE01/stages/A_umikz/A_umikz_report.json:event_table"],
+   "notes": "Stage name per gcrip/data/ww_stages.py: \"Sea During Pirate Ship Ride To Forsaken Fortress\"."
+  },
+  {
+   "id": "ff_launched_at_fortress",
+   "stage": "MajyuE",
+   "room": 0,
+   "layer": -1,
+   "trigger": {"kind": "spawn", "detail": "The pirates fire Link over the wall. The continue table sends a save with 0x0808 set to MajyuE room 0, start code 18 (src/d/d_com_inf_game.cpp:1308), so 0x0808 is what the launch raises. No onEventBit for 0x0808 exists in src/, so it comes from event data, the way 0x0520 does in the Outset chapter."},
+   "event": null,
+   "stb": null,
+   "requires_bits": ["0x2401"],
+   "sets_bits": ["0x0808"],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": ["src/d/d_com_inf_game.cpp:1308", "src/d/d_stage.cpp:2324"],
+   "notes": "The launch demo itself has not been identified; MajyuE's EVNT table has no entry for it and none of its scripts is obviously the catapult."
+  },
+  {
+   "id": "ff_arrive_exterior",
+   "stage": "MajyuE",
+   "room": 0,
+   "layer": -1,
+   "trigger": {"kind": "spawn", "detail": "MajyuE spawn 9 at (716, -500, -3691) carries EVNT index 1 = \"Go_00\", the arrival camera for the fortress exterior."},
+   "event": "Go_00",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": ["out/rip/GZLE01/stages/MajyuE/MajyuE_report.json:spawns", "tools/ww_story_mine.py MajyuE"],
+   "notes": "MajyuE's EVNT table (22): StartCamera, Go_00, TowerLook2, TowerLook3, TowerLook4, TowerLook4, enemy_appear, TowerLook4, push, FIRST_HINT, MAJU_SHINNYU, SerchLook1, Goal, TowerLook5..9, TL10, TL11, TL12, MJ_push2."
+  },
+  {
+   "id": "ff_tower_looks",
+   "stage": "MajyuE",
+   "room": 0,
+   "layer": -1,
+   "trigger": {"kind": "spawn", "detail": "Three more spawns auto-play a camera look at the tower: spawn 6 -> TowerLook3 at (-2370, 702, -1921), spawn 10 -> TowerLook2 at (617, 1745, -7959), spawn 15 -> TowerLook4 at (3390, 710, -1625). Six further TagEv volumes on layer -1 order TowerLook5..TowerLook9 and TL10 as Link crosses the courtyard, and three volumes around (361/940/-116, 1428, ~1960) all order TL11 with switch 226."},
+   "event": "TowerLook3",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": ["out/rip/GZLE01/stages/MajyuE/MajyuE_report.json", "tools/ww_story_mine.py MajyuE"],
+   "notes": "Pure camera flavour - none of these carries an event bit. Grouped as one step because they are the same beat: the fortress tower looming over the courtyard."
+  },
+  {
+   "id": "ff_tetra_ooi",
+   "stage": "MajyuE",
+   "room": 0,
+   "layer": -1,
+   "trigger": {"kind": "npc", "detail": "Tetra orders it herself. daNpc_Zl1_c::demo_2 runs chk_areaIN(l_HIO.mPrmTbl.field_24 = 200.0f XZ, 100.0f dy, any angle) and sets field_0x84A = 4, so the event index is 4 - 3 = 1 = l_evn_tbl[1] = \"ooi\". No TagEv is involved."},
+   "event": "ooi",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": ["0x0804"],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": ["src/d/actor/d_a_npc_zl1.cpp:127-131", "src/d/actor/d_a_npc_zl1.cpp:1059-1069", "src/d/actor/d_a_npc_zl1.cpp:2233-2241", "src/d/actor/d_a_npc_zl1.cpp:1850"],
+   "notes": "When the event ends she moves to (-37692, 2200, 8016) facing -0x5C72 and raises 0x0804 (event_proc case 1)."
+  },
+  {
+   "id": "ff_infiltration",
+   "stage": "MajyuE",
+   "room": 0,
+   "layer": -1,
+   "trigger": {"kind": "npc", "detail": "Also Tetra: daNpc_Zl1_c::demo_3 deletes her outright if 0x0801 is already set, otherwise field_0x764.abs(player pos) < l_HIO.mPrmTbl.field_28 = 200.0f sets field_0x84A = 5, so the event index is 2 = l_evn_tbl[2] = \"majyuu_shinnyuu\". MajyuE's EVNT table entry 10 is MAJU_SHINNYU, the demo name for maju_shinnyu.stb."},
+   "event": "majyuu_shinnyuu",
+   "stb": "maju_shinnyu.stb",
+   "requires_bits": [],
+   "sets_bits": ["0x0801"],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": ["src/d/actor/d_a_npc_zl1.cpp:2243-2257", "src/d/actor/d_a_npc_zl1.cpp:1860", "out/rip/GZLE01/stages/MajyuE/MajyuE_report.json:event_table[10]"],
+   "notes": "0x0801 is the chapter's real checkpoint: with it set, a continuing save resumes at MajyuE spawn 0 and Tetra is gone."
+  },
+  {
+   "id": "ff_searchlight_look",
+   "stage": "MajyuE",
+   "room": 0,
+   "layer": -1,
+   "trigger": {"kind": "tag", "detail": "A TagEv at (-2787, 1306, 1202) with switch 25 orders EVNT entry 11 = \"SerchLook1\", gated on event bit 0x0340 in its rot.z. It is the only gated volume in the stage."},
+   "event": "SerchLook1",
+   "stb": null,
+   "requires_bits": ["0x0340"],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": ["out/rip/GZLE01/stages/MajyuE/MajyuE_report.json:tags", "src/d/actor/d_a_tag_event.cpp:18-45"],
+   "notes": "Nothing in src/ raises 0x0340, so what turns the searchlight look on is event data. The stage also carries Search_Light_Find, Search_Light_Find_With_Barrel, Search_Light_Find_Wall and Search_Light_Up scripts, which is the caught-by-the-searchlight flow."
+  },
+  {
+   "id": "ff_push_barrel",
+   "stage": "MajyuE",
+   "room": 0,
+   "layer": -1,
+   "trigger": {"kind": "tag", "detail": "A TagEv at (3253, 1413, -3264) with switch 2 orders EVNT entry 8 = \"push\"; a second at (4627, 2858, -701) with switch 13 orders entry 21 = \"MJ_push2\"."},
+   "event": "push",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": ["out/rip/GZLE01/stages/MajyuE/MajyuE_report.json:tags"],
+   "notes": "The barrel Link hides in and pushes across the searchlight yard."
+  },
+  {
+   "id": "ff_interior_cells",
+   "stage": "majroom",
+   "room": 0,
+   "layer": -1,
+   "trigger": {"kind": "spawn", "detail": "majroom spawns 0, 1 and 18 all sit at (-2634, 2215, 8658) and carry EVNT index 0 = \"kankin1\" (the cell block). Four AttTag volumes with switch 3, one each in rooms 0, 1, 2 and 4, order the same event as Link moves between cell rooms. Room arrivals also auto-play Go_00 (room 2 spawn 15), Go_01 (room 3 spawn 10) and Go_02 (room 3 spawn 9)."},
+   "event": "kankin1",
+   "stb": null,
+   "requires_bits": ["0x0801"],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": ["out/rip/GZLE01/stages/majroom/majroom_report.json", "tools/ww_story_mine.py majroom"],
+   "notes": "majroom's EVNT table (9): kankin1, Go_00, Go_01, Go_02, FIRST_HINT2, FIRST_HINT3, DoorLook1, DoorLook2, moro_cam. 'kankin' is imprisonment - these are the cells Link searches for Aryll. The 0x0801 requirement is inferred from the chapter order, not from a gate in the data."
+  },
+  {
+   "id": "ff_door_looks",
+   "stage": "majroom",
+   "room": 3,
+   "layer": -1,
+   "trigger": {"kind": "tag", "detail": "Two TagEv volumes in room 3 with switch 224 order DoorLook1 at (3246, 1689, -5953) and DoorLook2 at (-206, 1696, -5902)."},
+   "event": "DoorLook1",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": ["out/rip/GZLE01/stages/majroom/majroom_report.json:tags"],
+   "notes": "Camera looks at the doors Link has to reach."
+  },
+  {
+   "id": "ff_moblin_patrol",
+   "stage": "majroom",
+   "room": 0,
+   "layer": -1,
+   "trigger": {"kind": "tag", "detail": "A TagEv at (-2376, 728, 3800) with switch 6 orders EVNT entry 8 = \"moro_cam\"."},
+   "event": "moro_cam",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": ["out/rip/GZLE01/stages/majroom/majroom_report.json:tags"],
+   "notes": "'moro' is the Moblin (mo2). The stage also carries a MOZO_CAM script that is not in the EVNT table, so nothing in the placement data orders it."
+  },
+  {
+   "id": "ff_find_sister",
+   "stage": "Mjtower",
+   "room": 0,
+   "layer": -1,
+   "trigger": {"kind": "spawn", "detail": "Mjtower's EVNT table has exactly one entry, FIND_SISTER, and spawn 16 at (2721, 4059, -4424) carries index 0, so arriving at the top of the tower auto-plays it. The baked cutscene find_sister.stb is 2985 frames."},
+   "event": "FIND_SISTER",
+   "stb": "find_sister.stb",
+   "requires_bits": ["0x0801"],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": ["out/rip/GZLE01/stages/Mjtower/Mjtower_report.json", "out/rip/GZLE01/godot/cutscenes/find_sister.json"],
+   "notes": "Link finds Aryll in the cell at the top of the tower - and the Helmaroc King finds him. Mjtower's only other story script is AHEAHE, the shared boss-defeat event every boss stage carries."
+  },
+  {
+   "id": "ff_meet_korl",
+   "stage": "sea",
+   "room": 11,
+   "layer": -1,
+   "trigger": {"kind": "spawn", "detail": "The Helmaroc drops Link into the sea and he washes up at Windfall. sea room 11 spawn 200 at (10449, 5, -202313) carries EVNT index 2 = MEETSHISHIOH, so arriving there auto-plays the King of Red Lions' introduction. The event manager raises MET_KORL (0x0F80) the moment that event STARTS, not when it ends (src/d/d_event_manager.cpp:596-600)."},
+   "event": "MEETSHISHIOH",
+   "stb": "meetshishioh.stb",
+   "requires_bits": [],
+   "sets_bits": ["0x0F80"],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": ["src/d/d_event_manager.cpp:596-600", "src/d/d_com_inf_game.cpp:1306", "out/rip/GZLE01/stages/sea/sea_report.json:spawns", "out/rip/GZLE01/godot/cutscenes/meetshishioh.json"],
+   "notes": "'shishioh' is lion king. With MET_KORL set the continue table sends a save to sea room 11 (Windfall) start code 128."
+  },
+  {
+   "id": "ff_board_korl",
+   "stage": "sea",
+   "room": 11,
+   "layer": -1,
+   "trigger": {"kind": "board", "detail": "Boarding the King of Red Lions raises RODE_KORL (0x2A08) in daShip_c (src/d/actor/d_a_ship.cpp:1570). The ship actor itself gates on it (line 599), and the player checks it before allowing sea behaviour on a SEA-type stage (src/d/actor/d_a_player_main.cpp:10872)."},
+   "event": null,
+   "stb": null,
+   "requires_bits": ["0x0F80"],
+   "sets_bits": ["0x2A08"],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": ["src/d/actor/d_a_ship.cpp:1570", "src/d/actor/d_a_ship.cpp:599", "src/d/actor/d_a_player_main.cpp:10872", "src/d/d_com_inf_game.cpp:1305"],
+   "notes": "This is the end of the chapter and the point the game opens up: once 0x2A08 is set the continue table stops forcing a stage and the file resumes wherever it was saved."
+  }
+ ]
+}

@@ -1737,6 +1737,12 @@ func _boat_camera() -> void:
 
 func board(boat: Node3D) -> void:
     ship = boat
+    # daShip_c raises RODE_KORL the first time Link boards the King of Red Lions; the continue
+    # table stops forcing a stage once it is set, which is the moment the game opens up
+    # (src/d/actor/d_a_ship.cpp:1570, src/d/d_com_inf_game.cpp:1305)
+    if not Game.event_bit(0x2A08):
+        Game.set_event_bit(0x2A08)
+        Game.story_event_done("ff_board_korl")
     boat_cam_yaw = boat.yaw + PI
     boat.set_rider(self)
     state = State.SHIP
@@ -6611,6 +6617,30 @@ def _dialogue_with_conditions(path: Path) -> dict:
     return data
 
 
+# the chapters in story order; anything else matching ww_story_*.json is appended after them
+_STORY_CHAPTERS = ["outset", "fortress"]
+
+
+def _story_all_chapters(data_dir: Path) -> dict:
+    """Every mined chapter merged into one graph, in story order.
+
+    Each file is self-contained (its own _bits, _source and steps); the engine only needs the
+    steps, but the merged file keeps the per-chapter provenance so the graph stays traceable.
+    """
+    found = {f.stem[len("ww_story_") :]: f for f in sorted(data_dir.glob("ww_story_*.json"))}
+    order = [c for c in _STORY_CHAPTERS if c in found]
+    order += [c for c in sorted(found) if c not in order]
+    merged: dict = {"chapters": order, "_bits": {}, "_sources": {}, "steps": []}
+    for chapter in order:
+        data = _story_with_actors(found[chapter])
+        merged["_bits"].update(data.get("_bits") or {})
+        merged["_sources"][chapter] = data.get("_source", "")
+        for step in data.get("steps", []):
+            step["chapter"] = chapter
+            merged["steps"].append(step)
+    return merged
+
+
 def _story_with_actors(path: Path) -> dict:
     """The mined opening graph, with each talk step's actor pulled out of its prose trigger
     detail so the engine can match "Link talked to Ba1" without parsing English."""
@@ -7305,11 +7335,9 @@ def export_godot(
         except (OSError, ValueError):
             continue
     (out_dir / "enemies.json").write_text(json.dumps(merged, indent=1), encoding="utf-8")
-    story_src = Path(__file__).parent / "data" / "ww_story_outset.json"
-    if story_src.exists():
-        (out_dir / "story.json").write_text(
-            json.dumps(_story_with_actors(story_src)), encoding="utf-8"
-        )
+    story = _story_all_chapters(Path(__file__).parent / "data")
+    if story["steps"]:
+        (out_dir / "story.json").write_text(json.dumps(story), encoding="utf-8")
     layers_src = Path(__file__).parent / "data" / "ww_layers.json"
     if layers_src.exists():
         (out_dir / "layers.json").write_text(
