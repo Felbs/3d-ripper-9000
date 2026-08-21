@@ -2954,6 +2954,8 @@ var door_test := false   # --door[=<dest stage>]: take the first (matching) door
 var door_want := ""
 var door_legs := 0
 var story_test: bool = "--story" in OS.get_cmdline_user_args()   # walk every story state
+var menu_test := ""   # --menu: open the Start menu, cycle every tab, screenshot each
+var menu_frames := 0
 var story_idx := -1
 var story_frames := 0
 var door_frames := 0
@@ -3020,6 +3022,8 @@ func _ready() -> void:
             shot_actor = a.substr(7)
         elif a == "--story":
             story_test = true
+        elif a == "--menu":
+            menu_test = "stages"
         elif a.begins_with("--door"):
             door_test = true
             if a.begins_with("--door="):
@@ -3029,12 +3033,13 @@ func _ready() -> void:
     Input.joy_connection_changed.connect(func(_id, _c): _apply_saved_pad_mappings())
     if load_game():
         print("gcrip: save file loaded (", str(save.get("saved_at", "?")), ")")
-        if not selftest and shot_actor == "" and not door_test and not story_test:
+        if not selftest and shot_actor == "" and not door_test and not story_test and menu_test == "":
             _continue_saved.call_deferred()
     bgm_player = AudioStreamPlayer.new()
     bgm_player.bus = "Master"
     bgm_player.volume_db = -6.0
     add_child(bgm_player)
+    process_mode = Node.PROCESS_MODE_ALWAYS   # the pause menu must not freeze the autoload
     var fade_layer := CanvasLayer.new()
     fade_layer.layer = 40
     add_child(fade_layer)
@@ -3112,6 +3117,22 @@ func _restore_position() -> void:
 func _process(delta: float) -> void:
     if shot_actor != "":
         _shot_tick()
+    if menu_test != "":
+        menu_frames += 1
+        if menu_frames == 30:
+            open_menu()
+        elif menu_frames > 30 and menu_frames % 40 == 0 and menu != null:
+            var img := get_viewport().get_texture().get_image()
+            img.save_png("user://menu_%s.png" % str(menu.mode))
+            var rows: int = (menu.list.item_count if menu.list else -1)
+            print("gcrip menu: tab '", menu.mode, "' rows=", rows,
+                  " first='", (menu.list.get_item_text(0) if rows > 0 else ""), "'")
+            if str(menu.mode) == "game":
+                print("gcrip menu: done")
+                get_tree().quit()
+                return
+            menu.mode = {"stages": "events", "events": "story", "story": "game"}[str(menu.mode)]
+            menu._fill()
     if story_test:
         story_frames += 1
         if story_frames % 40 == 0:
@@ -3173,7 +3194,7 @@ func _process(delta: float) -> void:
             else:
                 door_frames = 0   # go back through the door and do it again
     autosave_frames += 1
-    if autosave_frames >= 30 * 60 and not dialog_open and not event_running and not selftest and shot_actor == "" and not door_test and not story_test:
+    if autosave_frames >= 30 * 60 and not dialog_open and not event_running and not selftest and shot_actor == "" and not door_test and not story_test and menu_test == "":
         autosave_frames = 0
         save_game("autosave")
 
@@ -3264,12 +3285,21 @@ func set_event_bit(id: int) -> void:
     save["event_flags"] = f
 
 func story_states(stage: String) -> Array:
-    # every layer rule that applies to this stage, in the decomp's order, plus the default
+    # every layer rule that applies to this scene, in the decomp's order. A "sea_rNN" scene is
+    # one island, so drop the rules that belong to the other islands' rooms.
     var base := stage.split("_r")[0]
+    var room := -1
+    var i := stage.rfind("_r")
+    if i >= 0 and stage.substr(i + 2).is_valid_int():
+        room = int(stage.substr(i + 2))
     var out: Array = []
     for rule in layers.get("rules", []):
-        if str(rule.get("stage", "")) == base:
-            out.append(rule)
+        if str(rule.get("stage", "")) != base:
+            continue
+        var r = rule.get("room")
+        if room >= 0 and r != null and int(r) != room:
+            continue
+        out.append(rule)
     return out
 
 func apply_story_state(rule: Dictionary) -> void:
@@ -4635,7 +4665,11 @@ func _fill() -> void:
         var cs := get_tree().current_scene
         var stage := String(cs.name) if cs else ""
         keys = Game.story_states(stage)
-        var live := Game.story_layer(stage, 44 if stage.begins_with("sea") else 0)
+        var room := -1
+        var ri := stage.rfind("_r")
+        if ri >= 0 and stage.substr(ri + 2).is_valid_int():
+            room = int(stage.substr(ri + 2))
+        var live := Game.story_layer(stage, room)
         for rule in keys:
             var bits: Array = []
             for t in rule.get("tests", []):
