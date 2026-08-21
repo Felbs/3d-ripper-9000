@@ -23,6 +23,7 @@ from __future__ import annotations
 import contextlib
 import json
 import math
+import re
 import shutil
 import time
 from pathlib import Path
@@ -1601,6 +1602,8 @@ var actor_models: Dictionary = {}  # model rel path -> {glb, clips} (animated ac
 var npc_dialogue: Dictionary = {}  # actor name -> {first: [ids], alternatives: {...}}
 var dialog: Node = null
 var dialog_open := false
+var stage_names: Dictionary = {}
+var menu: Node = null
 # persistent player state (survives stage warps; the Player node is rebuilt per stage)
 var save := {"hearts": 12, "hearts_max": 12, "magic": 16, "rupees": 0, "heavy": false}
 
@@ -1626,6 +1629,40 @@ func _ready() -> void:
         var parsed_n = JSON.parse_string(nd.get_as_text())
         if parsed_n is Dictionary:
             npc_dialogue = parsed_n
+    var sn := FileAccess.open("res://stage_names.json", FileAccess.READ)
+    if sn:
+        var parsed_s = JSON.parse_string(sn.get_as_text())
+        if parsed_s is Dictionary:
+            stage_names = parsed_s
+
+# ---- stage select menu
+
+func open_menu() -> void:
+    if menu != null or calib != null:
+        return
+    menu = load("res://menu.tscn").instantiate()
+    add_child(menu)
+    get_tree().paused = true
+    Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+func close_menu() -> void:
+    if menu == null:
+        return
+    menu.queue_free()
+    menu = null
+    get_tree().paused = false
+    Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+func go_to_stage(stage: String) -> void:
+    var info: Dictionary = stage_data.get(stage, {})
+    var spawns: Array = info.get("spawns", [])
+    var room := 0
+    var spawn := 0
+    if spawns.size() > 0:
+        room = int(spawns[0].get("room", 0))
+        spawn = int(spawns[0].get("id", 0))
+    last_warp_ms = -100000
+    warp(stage, room, spawn)
     _apply_saved_pad_mappings()
     Input.joy_connection_changed.connect(func(_id, _c): _apply_saved_pad_mappings())
 
@@ -1784,6 +1821,9 @@ func _unhandled_input(event: InputEvent) -> void:
     var start_pressed: bool = event is InputEventJoypadButton and event.pressed and not Input.is_joy_known(event.device) and banner != null and banner.visible
     if event.is_action_pressed("calibrate") or start_pressed:
         open_calibration()
+    elif event.is_action_pressed("pause") and menu == null and not dialog_open:
+        open_menu()
+        get_viewport().set_input_as_handled()
 
 func open_calibration() -> void:
     if calib != null:
@@ -2657,6 +2697,91 @@ func _physics_process(_delta: float) -> void:
         mesh.rotation.y = facing
 """
 
+_MENU_GD = """extends CanvasLayer
+# gcrip stage select (Start / Esc): every exported stage with its place name; A/Enter warps.
+
+@onready var list: ItemList = $Panel/VBox/List
+@onready var title: Label = $Panel/VBox/Title
+var keys: Array = []
+
+func _ready() -> void:
+    layer = 45
+    process_mode = Node.PROCESS_MODE_ALWAYS
+    var names: Dictionary = Game.stage_names
+    keys = Game.stage_data.keys()
+    keys.sort_custom(func(a, b): return str(names.get(a, a)).to_lower() < str(names.get(b, b)).to_lower())
+    for k in keys:
+        var n: String = str(names.get(k, ""))
+        list.add_item((n + "   (" + k + ")") if n != "" else k)
+    title.text = "Where to?   %d stages   -   Enter / A: go   Esc / Start: back" % keys.size()
+    if list.item_count > 0:
+        list.select(0)
+        list.grab_focus()
+
+func _unhandled_input(event: InputEvent) -> void:
+    if event.is_action_pressed("pause") or event.is_action_pressed("ui_cancel"):
+        Game.close_menu()
+        get_viewport().set_input_as_handled()
+    elif event.is_action_pressed("action_a") or event.is_action_pressed("ui_accept"):
+        var sel := list.get_selected_items()
+        if sel.size() > 0:
+            Game.close_menu()
+            Game.go_to_stage(str(keys[sel[0]]))
+        get_viewport().set_input_as_handled()
+    elif event.is_action_pressed("move_back") or event.is_action_pressed("ui_down"):
+        _move(1)
+        get_viewport().set_input_as_handled()
+    elif event.is_action_pressed("move_forward") or event.is_action_pressed("ui_up"):
+        _move(-1)
+        get_viewport().set_input_as_handled()
+
+func _move(d: int) -> void:
+    var sel := list.get_selected_items()
+    var i: int = (sel[0] if sel.size() > 0 else 0) + d
+    i = clampi(i, 0, list.item_count - 1)
+    list.select(i)
+    list.ensure_current_is_visible()
+"""
+
+_MENU_TSCN = """[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://menu.gd" id="1"]
+
+[node name="Menu" type="CanvasLayer"]
+script = ExtResource("1")
+
+[node name="Panel" type="Panel" parent="."]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -340.0
+offset_top = -300.0
+offset_right = 340.0
+offset_bottom = 300.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="Panel"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = 12.0
+offset_right = -16.0
+offset_bottom = -12.0
+
+[node name="Title" type="Label" parent="Panel/VBox"]
+layout_mode = 2
+theme_override_font_sizes/font_size = 20
+
+[node name="List" type="ItemList" parent="Panel/VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_override_font_sizes/font_size = 18
+"""
+
 _DIALOG_GD = """extends CanvasLayer
 # gcrip text box: shows BMG messages (tags already decoded by gcrip msg);
 # {name} -> the player's name, other tags stripped for now. A advances pages.
@@ -3284,6 +3409,17 @@ def export_godot(
     (out_dir / "stage.gd").write_text(_STAGE_GD, encoding="utf-8")
     (out_dir / "dialog.gd").write_text(_DIALOG_GD, encoding="utf-8")
     (out_dir / "dialog.tscn").write_text(_DIALOG_TSCN, encoding="utf-8")
+    (out_dir / "menu.gd").write_text(_MENU_GD, encoding="utf-8")
+    (out_dir / "menu.tscn").write_text(_MENU_TSCN, encoding="utf-8")
+    from gcrip.data.ww_stages import WW_STAGE_NAMES
+
+    names = {}
+    for st in stage_data:
+        m = re.match(r"^(.*)_r(\d+)$", st)
+        key = f"{m.group(1)}/Room{m.group(2)}" if m else st
+        if key in WW_STAGE_NAMES:
+            names[st] = WW_STAGE_NAMES[key]
+    (out_dir / "stage_names.json").write_text(json.dumps(names, indent=1), encoding="utf-8")
     (out_dir / "actors").mkdir(exist_ok=True)
     for fname, src_text in {
         "carriable.gd": _ACTOR_BASE_GD,
