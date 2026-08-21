@@ -224,8 +224,31 @@ func turn_toward(target: float, max_step: int, min_step: int, divisor: float) ->
 func forward() -> Vector3:
     return Vector3(sin(facing), 0.0, cos(facing))
 
+func water_surface() -> float:
+    # Height of the water surface above Link's feet, or -1e9 if none. Probes the liquid
+    # colliders (layer 2) exported from the game's .dzb, with the stage's flat water
+    # level (the open sea) as a fallback.
+    var best := water_level
+    var space := get_world_3d().direct_space_state
+    var from := global_position + Vector3(0, 4000.0, 0)
+    var to := global_position - Vector3(0, 20.0, 0)
+    var q := PhysicsRayQueryParameters3D.create(from, to, 2)
+    q.hit_from_inside = true
+    var hit := space.intersect_ray(q)
+    if hit:
+        best = maxf(best, hit.position.y)
+    return best
+
 func in_water() -> bool:
-    return global_position.y < water_level - SWIM_START_DEPTH
+    return global_position.y < water_surface() - SWIM_START_DEPTH
+
+func on_hazard() -> String:
+    # standing on lava / poison (layer 4 colliders carry a "liquid" meta)
+    for i in get_slide_collision_count():
+        var c := get_slide_collision(i).get_collider()
+        if c and c.has_meta("liquid") and c.get_meta("liquid") != "water":
+            return c.get_meta("liquid")
+    return ""
 
 # ---------------------------------------------------------------- states
 
@@ -263,6 +286,11 @@ func _enter_ground() -> void:
 func _ground() -> void:
     if in_water():
         _enter_swim()
+        return
+    if on_hazard() != "":  # lava / poison: no hearts yet, so back to the start point
+        global_position = start_pos
+        velocity = Vector3.ZERO
+        speed = 0.0
         return
     var s := stick()
     var dist := minf(s.length(), 1.0)
@@ -446,7 +474,7 @@ func _enter_swim() -> void:
     play_clip("swimwait", 0.2)
 
 func _swim() -> void:
-    var surface := water_level
+    var surface := water_surface()
     var s := stick()
     var dist := minf(s.length(), 1.0)
     if dist > 0.05:
@@ -499,6 +527,7 @@ radius = 40.0
 height = 160.0
 
 [node name="Player" type="CharacterBody3D"]
+collision_mask = 5
 script = ExtResource("1")
 
 [node name="Collision" type="CollisionShape3D" parent="."]
@@ -680,6 +709,27 @@ vertical_alignment = 1
 theme_override_font_sizes/font_size = 28
 """
 
+_STAGE_GD = """extends Node3D
+# gcrip stage root: puts the game's liquid collision (from the .dzb) on its own physics
+# layers so Link can probe for water and hazards without colliding with them.
+#   layer 1 = solid ground   layer 2 = water surfaces   layer 4 = lava / poison
+
+func _ready() -> void:
+    var col := get_node_or_null("Collision")
+    if col == null:
+        return
+    for body in col.find_children("*", "StaticBody3D", true, false):
+        var n: String = body.name
+        if n.begins_with("liquid_water"):
+            body.collision_layer = 2
+            body.collision_mask = 0
+            body.set_meta("liquid", "water")
+        elif n.begins_with("liquid_lava") or n.begins_with("liquid_poison"):
+            body.collision_layer = 4
+            body.collision_mask = 0
+            body.set_meta("liquid", "lava" if n.begins_with("liquid_lava") else "poison")
+"""
+
 _WARP_GD = """extends Area3D
 # gcrip: walking into this (a door) loads the destination stage.
 
@@ -730,6 +780,7 @@ def _stage_tscn(
         '\n[node name="Collision" parent="." instance=ExtResource("3")]\n' if has_col else ""
     )
     warp_res = '[ext_resource type="Script" path="res://warp.gd" id="4"]\n' if exits else ""
+    stage_res = '[ext_resource type="Script" path="res://stage.gd" id="5"]\n'
     warp_shape = (
         '\n[sub_resource type="BoxShape3D" id="warpbox"]\nsize = Vector3(220, 320, 220)\n'
         if exits
@@ -750,11 +801,11 @@ def _stage_tscn(
             f'\n[node name="Shape" type="CollisionShape3D" parent="{nm}"]\n'
             f'shape = SubResource("warpbox")\n'
         )
-    return f"""[gd_scene load_steps={6 + int(has_col) + (2 if exits else 0)} format=3]
+    return f"""[gd_scene load_steps={7 + int(has_col) + (2 if exits else 0)} format=3]
 
 [ext_resource type="PackedScene" path="res://stages/{name}.glb" id="1"]
 [ext_resource type="PackedScene" path="res://player.tscn" id="2"]
-{col_res}{warp_res}
+{col_res}{warp_res}{stage_res}
 
 {warp_shape}
 [sub_resource type="ProceduralSkyMaterial" id="sky"]
@@ -771,6 +822,7 @@ ambient_light_source = 3
 tonemap_mode = 2
 
 [node name="{name}" type="Node3D"]
+script = ExtResource("5")
 
 [node name="Level" parent="." instance=ExtResource("1")]
 {col_node}
@@ -868,7 +920,9 @@ def _godot_col_glb(col_gltf: Path, out_glb: Path) -> int:
             node["name"] = node.get("name", "col").replace("/", "_") + "-colonly"
             n_solid += 1
         elif surface and "mesh" in node:
-            del node["mesh"]  # liquid: keep the node, drop the render/collision mesh
+            # liquid surfaces become colliders too; stage.gd moves them to the water /
+            # hazard physics layers at runtime (Godot's import suffixes can't set layers)
+            node["name"] = f"liquid_{surface}_" + node.get("name", "col").replace("/", "_") + "-colonly"
     tmp = col_gltf.with_suffix(".godot.gltf")
     tmp.write_text(json.dumps(doc), encoding="utf-8")
     try:
@@ -1052,6 +1106,7 @@ def export_godot(
     (out_dir / "warp.gd").write_text(_WARP_GD, encoding="utf-8")
     (out_dir / "calib.gd").write_text(_CALIB_GD, encoding="utf-8")
     (out_dir / "calib.tscn").write_text(_CALIB_TSCN, encoding="utf-8")
+    (out_dir / "stage.gd").write_text(_STAGE_GD, encoding="utf-8")
     sd_path = out_dir / "stage_data.json"
     if sd_path.exists():  # partial re-exports must not clobber other stages' spawn data
         with contextlib.suppress(OSError, ValueError):
