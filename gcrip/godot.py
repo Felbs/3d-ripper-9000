@@ -309,6 +309,12 @@ func _ready() -> void:
         anim = model.find_child("AnimationPlayer", true, false)
     add_to_group("player")
     _sword_active(false)
+    # restore the persistent state (hearts/rupees/magic/boots survive stage warps)
+    hearts = int(Game.save["hearts"])
+    hearts_max = int(Game.save["hearts_max"])
+    magic = int(Game.save["magic"])
+    rupees = int(Game.save["rupees"])
+    heavy = bool(Game.save["heavy"])
     _update_hud()
     cam_center = global_position + Vector3(0, CAM_ATTN_HEIGHT, 0)
     cam_eye = cam_center + _sph(380.0, deg_to_rad(CAM_PITCH_DEG), facing + PI)
@@ -1361,6 +1367,11 @@ func _die() -> void:
     _enter_ground()
 
 func _update_hud() -> void:
+    Game.save["hearts"] = hearts
+    Game.save["hearts_max"] = hearts_max
+    Game.save["magic"] = magic
+    Game.save["rupees"] = rupees
+    Game.save["heavy"] = heavy
     if hud_hearts == null:
         return
     var s := ""
@@ -1446,6 +1457,9 @@ height = 170.0
 
 [node name="Player" type="CharacterBody3D"]
 collision_mask = 5
+floor_snap_length = 30.0
+floor_max_angle = 0.873
+safe_margin = 1.0
 script = ExtResource("1")
 
 [node name="Collision" type="CollisionShape3D" parent="."]
@@ -1587,6 +1601,8 @@ var actor_models: Dictionary = {}  # model rel path -> {glb, clips} (animated ac
 var npc_dialogue: Dictionary = {}  # actor name -> {first: [ids], alternatives: {...}}
 var dialog: Node = null
 var dialog_open := false
+# persistent player state (survives stage warps; the Player node is rebuilt per stage)
+var save := {"hearts": 12, "hearts_max": 12, "magic": 16, "rupees": 0, "heavy": false}
 
 func _ready() -> void:
     var f := FileAccess.open("res://stage_data.json", FileAccess.READ)
@@ -2154,6 +2170,11 @@ func setup(rot_z: int, mesh_node: Node3D, rot_y_deg: float) -> void:
     item_id = (rot_z >> 8) & 0xFF
     mesh = mesh_node
     facing = deg_to_rad(rot_y_deg)
+    # opened chests stay open (the game keeps a per-stage tbox bit in the save file)
+    var key := "tbox:%s:%s" % [get_tree().current_scene.name, name]
+    if Game.save.get("flags", {}).has(key):
+        opened = true
+    set_meta("save_key", key)
     collision_layer = 1
     var shape := CollisionShape3D.new()
     var box := BoxShape3D.new()
@@ -2178,6 +2199,9 @@ func interact_prompt(link: Node3D) -> String:
 
 func interact(link: Node3D) -> void:
     opened = true
+    if not Game.save.has("flags"):
+        Game.save["flags"] = {}
+    Game.save["flags"][get_meta("save_key")] = true
     if mesh:
         var t := mesh.create_tween()
         t.tween_property(mesh, "scale", mesh.scale * Vector3(1.05, 1.2, 1.05), 0.25)
