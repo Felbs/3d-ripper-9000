@@ -1634,6 +1634,7 @@
    ],
    "sets_bits": [
     "0x2110",
+    "0x2110",
     "0x2110"
    ],
    "gives_item": null,
@@ -1643,7 +1644,7 @@
     "tools/ww_stb_flags.py",
     "gcrip/data/ww_story_jabun.json"
    ],
-   "notes": "Listed so the Windfall graph is complete for the island; the authority for this beat is ww_story_jabun.json. Obombh's other story scripts are BMS_GET_DEMO and BMS_LAND_DEMO. bombshop.stb raises 0x2110 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+   "notes": "Listed so the Windfall graph is complete for the island; the authority for this beat is ww_story_jabun.json. Obombh's other story scripts are BMS_GET_DEMO and BMS_LAND_DEMO. bombshop.stb raises 0x2110 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). bombshop.stb raises 0x2110 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
   },
   {
    "id": "wf_hollo_shop_is_not_windfall",

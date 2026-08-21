@@ -383,6 +383,7 @@
    "sets_bits": [
     "0x3B02",
     "0x3B02",
+    "0x3B02",
     "0x3B02"
    ],
    "gives_item": null,
@@ -391,7 +392,7 @@
     "out/rip/GZLE01/stages/GanonK/GanonK_report.json",
     "out/rip/GZLE01/godot/cutscenes/kugutu_ganon.json"
    ],
-   "notes": "kugutu_ganon.stb raises 0x3B02 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). kugutu_ganon.stb raises 0x3B02 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). kugutu_ganon.stb raises 0x3B02 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+   "notes": "kugutu_ganon.stb raises 0x3B02 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). kugutu_ganon.stb raises 0x3B02 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). kugutu_ganon.stb raises 0x3B02 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). kugutu_ganon.stb raises 0x3B02 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
   },
   {
    "id": "gt_to_the_roof",
@@ -429,6 +430,7 @@
    "sets_bits": [
     "0x4002",
     "0x4002",
+    "0x4002",
     "0x4002"
    ],
    "gives_item": null,
@@ -439,7 +441,7 @@
     "src/d/actor/d_a_obj_gnnbtltaki.cpp",
     "out/rip/GZLE01/godot/cutscenes/g2before.json"
    ],
-   "notes": "GTower also carries AHEAHE, the shared boss-defeat event every boss stage has, and PZ_TALK. g2before.stb raises 0x4002 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). g2before.stb raises 0x4002 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). g2before.stb raises 0x4002 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+   "notes": "GTower also carries AHEAHE, the shared boss-defeat event every boss stage has, and PZ_TALK. g2before.stb raises 0x4002 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). g2before.stb raises 0x4002 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). g2before.stb raises 0x4002 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). g2before.stb raises 0x4002 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
   },
   {
    "id": "gt_endhr",
@@ -456,6 +458,7 @@
    "sets_bits": [
     "0x3F40",
     "0x3F40",
+    "0x3F40",
     "0x3F40"
    ],
    "gives_item": null,
@@ -464,7 +467,7 @@
     "out/rip/GZLE01/stages/GTower/GTower_report.json:spawns",
     "out/rip/GZLE01/godot/cutscenes/endhr.json"
    ],
-   "notes": "Nothing in src/ names endhr, so the spawn params are its whole wiring. endhr.stb raises 0x3F40 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). endhr.stb raises 0x3F40 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). endhr.stb raises 0x3F40 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+   "notes": "Nothing in src/ names endhr, so the spawn params are its whole wiring. endhr.stb raises 0x3F40 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). endhr.stb raises 0x3F40 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). endhr.stb raises 0x3F40 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). endhr.stb raises 0x3F40 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
   },
   {
    "id": "gt_ending",

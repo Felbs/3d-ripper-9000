@@ -1,0 +1,1179 @@
+{
+ "_source": "Mined read-only from the zeldaret/tww decompilation at Z:/memRip/sources/tww and the ripped GZLE01 (Wind Waker USA) disc data at Z:/3d ripper/out/rip/GZLE01. Area: the Triforce hunt - the eight Triforce Charts, Tingle deciphering them for rupees, the King of Red Lions' salvage crane, hauling the shards off the sea floor, and the gate to Hyrule that the assembled Triforce opens; plus the treasure-chart and salvage system generally, which shares every part of that mechanism. Same conventions as ww_story_fortress.json. This area is CODE-driven rather than TagEv-driven: the sea's 21 TagEv volumes have nothing to do with salvage and tools/ww_story_mine.py sea prints none of it. The placement side had to be read straight out of res/Stage/sea/Room*.arc room.dzr on the disc image, because gcrip/stage.py classifies Salvage / Salvag2 / SalvagN / SalvagE / SalvFM / SwSlvg as logic actors and drops them before the report is written - they appear in neither sea_report.json's 'actors' nor its 'tags'. Every salvage placement quoted here was decoded with the param layout in namespace daSalvage_prm (src/d/d_salvage.cpp:14-22): kind = params>>28, saveNo = (params>>20)&0xFF, roomNo = (params>>12)&0xFF, itemNo = (params>>4)&0xFF, type = params&0xF, switchNo = home.angle.z & 0xFF, candidate index = home.angle.z & 0x03. Event-bit ids are authoritative numbers; the UNK_xxxx names are placeholders invented by the decomp team (include/d/d_save_event_flag.inc says so itself), so numeric ids are used here.",
+ "_trigger_kind_note": "This file introduces one new trigger.kind: \"salvage\" - lower the King of Red Lions' crane onto a registered salvage point. It is not a volume in the placement data and it is not an actor per point: the single daSalvage_c actor holds a table of points and, every frame, tests the crane hook against each one (daSalvage_c::checkDistance -> checkArea). To implement it, an engine needs (a) the per-stage point table built from the six dzr actor names, (b) the boat's crane position and swing angle, (c) a depth test - the hook must be at least l_salvage_depth[0..2] below the water surface - and (d) the four gating rules per kind listed in _mechanism.kinds. Existing kinds did not fit: it is not a tag volume, not a talk, not a chest, and the trigger is the tool rather than the place.",
+ "_mechanism": {
+  "summary": "A salvage point is not an actor per point. Every 'Salvage'-family placement in a room registers itself into one shared dSalvage_control_c table owned by the single daSalvage_c actor, which then does all the work: 128 slots for stage-level points and 32 for the current room (dSalvage_control_c::MAX_SEA / MAX_ROOM, include/d/d_salvage.h:66-77). In the sea stage every point has a nonzero room number, so they all land in slots 128..159 and dSalvage_control_c::init_room wipes them on every sea-cell change.",
+  "kinds": {
+   "0": "chart-driven ('Salvage'): live only while isOpenCollectMap(chartNo) && !isCompleteCollectMap(chartNo), and for a Triforce item also isCollectMapTriforce(itemNo - 0x60). Four candidate positions per chart, one chosen per save file. Completion -> onCompleteCollectMap + event bit 0x3E02.",
+   "1": "declared in the code paths (getType() == 1 is the 'there is treasure here' TYPE) but no kind-1 PLACEMENT exists anywhere on the disc.",
+   "2": "switch-gated ('SwSlvg'): opens when its room switch is set - sunken Warship drops and Big Octo drops. Completion -> dSv_ocean_c bit.",
+   "3": "always available ('Salvag2'). Completion -> dSv_ocean_c bit.",
+   "4": "night only ('SalvagN'). Completion -> dSv_ocean_c bit.",
+   "5": "invisible decoy ('SalvagE'): isEffectKind() is FALSE so nothing is drawn, checkDistance prefers any real point over it, and dredging it spawns fpcNm_OQ_e param 2. No saved state at all.",
+   "6": "full-moon night only ('SalvFM'). Completion -> one of the 16 event bits in daSalvage_c::m_savelabel, all cleared again weekly."
+  },
+  "type_field": "params & 0xF. type 1 -> the crane finds something (SALVAGE_GETITEM / SLVG_GETITEM_LEFT); type 0 / 2 / 3 and any kind-5 point -> SALVAGE_HAZURE / SLVG_HAZURE_LEFT. The _LEFT twin is chosen purely by daShip_c::getCraneAngle() < 0, i.e. which side the arm is swung to (src/d/actor/d_a_salvage.cpp:420-438).",
+  "state_storage": {
+   "chart held": "dSv_player_map_c::field_0x0[4][4] via onGetMap / isGetMap (dComIfGs_isGetCollectMap, 1-based chart number)",
+   "chart opened on the Sea Chart": "same table via onOpenMap / isOpenMap (dComIfGs_isOpenCollectMap)",
+   "chart's point emptied": "same table via onCompleteMap / isCompleteMap (dComIfGs_isCompleteCollectMap)",
+   "Triforce Chart deciphered by Tingle": "dSv_player_map_c::field_0x81, one byte, bit (chartNo - 1), via dComIfGs_onCollectMapTriforce",
+   "Triforce Shard owned": "dSv_player_collect_c::mTriforce, one byte, bit (shardNo - 1), via item_func_triforceN -> dComIfGs_onTriforce; counted by getTriforceNum()",
+   "which of the four candidate spots this file uses": "dSv_player_info_c::mRandomSalvagePoint, one byte, cM_rndF(3.0f) clamped to 0..2 at file creation, forced to 3 by dSv_info_c::reinit (second quest)",
+   "non-chart point emptied": "dSv_ocean_c::field_0x0[50], 16 bits per sea grid cell",
+   "full-moon point emptied": "event bits daSalvage_c::m_savelabel[0..15]"
+  },
+  "sources": [
+   "include/d/d_salvage.h",
+   "src/d/d_salvage.cpp",
+   "src/d/actor/d_a_salvage.cpp",
+   "include/d/actor/d_a_salvage.h",
+   "src/d/d_com_static.cpp:115-132",
+   "src/d/d_save.cpp:780-830",
+   "src/d/d_save.cpp:899-990",
+   "src/d/d_save.cpp:1157-1176",
+   "include/d/d_com_inf_game.h:1195-1245",
+   "include/d/d_com_inf_game.h:1663-1670",
+   "include/d/d_com_inf_game.h:1995-2003"
+  ]
+ },
+ "_actors": {
+  "Tc": {
+   "name": "Tingle (also Ankle, Knuckle and David Jr. - one actor, five types)",
+   "file": "src/d/actor/d_a_npc_tc.cpp",
+   "type_from_params": "mType = fopAcM_GetParam(this) & 0xF, and 0xF is remapped to TYPE_NORMAL (src/d/actor/d_a_npc_tc.cpp:958-965)",
+   "types": {
+    "0 TYPE_NORMAL2": "Tingle on Tingle Island - deciphers Triforce Charts. Needs event bit 0x0B80.",
+    "1 TYPE_RED": "Ankle",
+    "2 TYPE_WHITE": "Knuckle",
+    "3 TYPE_BLUE": "David Jr. - needs event bit 0x1708",
+    "4 TYPE_NORMAL": "the caged Tingle in the Windfall jail (Pnezumi)"
+   },
+   "event_table": [
+    "TC_JUMP_DEMO",
+    "TC_RESCUE",
+    "TC_TALK_NEAR_JAIL",
+    "TC_TALK_NEAR_JAIL_S",
+    "TC_TALK_NEAR_JAIL2",
+    "TC_GET_RUPEE",
+    "TC_PAY_RUPEE"
+   ],
+   "table_source": "src/d/actor/d_a_npc_tc.cpp:638-646 (a_demo_name_tbl)",
+   "index_rule": "mEventIdx 1 = ordinary speak event, 2 = 'can talk' condition only, >= 3 = a_demo_name_tbl[mEventIdx - 3]; 8 and 9 also pass flag 0x14F (src/d/actor/d_a_npc_tc.cpp:637-660)",
+   "cut_actions": [
+    "SIT_TO_JUMP",
+    "PRESENT",
+    "SET_ANM",
+    "BACKJUMP",
+    "EFFECT",
+    "DOOR_OPEN",
+    "DOOR_CLOSE",
+    "DOOR_CLOSE2",
+    "PAY"
+   ],
+   "cut_source": "src/d/actor/d_a_npc_tc_cut.inc:8-18 (action_table)",
+   "placements": {
+    "Pnezumi Room0": "ACTR Tc params 0xFFFFFFFF at (344.2, 64.6, 919.6) -> TYPE_NORMAL",
+    "sea Room17": "four ACTR Tc at about (-100000, 1707.5, -79800): params ...FF00 TYPE_NORMAL2, ...FF01 TYPE_RED, ...FF02 TYPE_WHITE, ...FF03 TYPE_BLUE"
+   }
+  },
+  "Salvage": {
+   "name": "the salvage-point table (one actor drives every point in the stage)",
+   "file": "src/d/actor/d_a_salvage.cpp",
+   "dzr_names": {
+    "Salvage": "kind 0",
+    "SwSlvg": "kind 2",
+    "Salvag2": "kind 3",
+    "SalvagN": "kind 4",
+    "SalvagE": "kind 5",
+    "SalvFM": "kind 6"
+   },
+   "dzr_name_source": "src/d/d_stage.cpp:535-540 - all six map to fpcNm_Salvage_e; the kind nibble of the params is what tells them apart",
+   "events": [
+    "SALVAGE_GETITEM",
+    "SLVG_GETITEM_LEFT",
+    "SALVAGE_HAZURE",
+    "SLVG_HAZURE_LEFT"
+   ],
+   "events_source": "src/d/actor/d_a_salvage.cpp:75-79 (CreateInit caches all four event indices)",
+   "placement_counts_in_sea": {
+    "Salvage": 196,
+    "Salvag2": 112,
+    "SalvagE": 66,
+    "SwSlvg": 64,
+    "SalvagN": 35,
+    "SalvFM": 16
+   },
+   "placement_note": "489 salvage placements exist on the whole disc and every one of them is in the sea stage."
+  },
+  "TagWp": {
+   "name": "the Tower of the Gods warp gate (same actor as TagMk)",
+   "file": "src/d/actor/d_a_tag_mk.cpp",
+   "profile": "fpcNm_TAG_MK_e; OBJNAME(\"TagMk\", ..., 0, 0) and OBJNAME(\"TagWp\", ..., 1, 0) at src/d/d_stage.cpp:584-585",
+   "events": [
+    "tagwp",
+    "tagwp2",
+    "tagwp3"
+   ],
+   "events_source": "src/d/actor/d_a_tag_mk.cpp:134-140 (setTagWpEvId)"
+  },
+  "Oship": {
+   "name": "Warship (Great Sea enemy ship) - some guard a charted Triforce point",
+   "file": "src/d/actor/d_a_oship.cpp",
+   "params": "mSubMode = prms & 0xFF, mTriforce = (prms>>8)&0xF, mRandomSalvagePoint = (prms>>12)&0xF, mPathId = (prms>>16)&0xFF, mSwitchA = (prms>>24)&0xFF (src/d/actor/d_a_oship.cpp:993-1010)",
+   "events": [
+    "GOLD_SHIP_DELETE"
+   ]
+  }
+ },
+ "_not_mine": {
+  "note": "Event names from the sea list that the brief flagged as candidates but that this pass established belong elsewhere.",
+  "MK_TALK / MK_TALK2 / MK_TALK3 / MK_TALK4 / MK_GAMESTART / MK_DROP / MK_GAMESET": "daNpc_Mk_c = Ivan, the Windfall fireworks man (src/d/actor/d_a_npc_mk.cpp:1-4, and the setEventName calls at 1051-1214). Not salvage.",
+  "MK_PENDANT": "daTag_Mk_c::actionHunt - rolling into the tree at Windfall for a Joy Pendant (src/d/actor/d_a_tag_mk.cpp:283-291). Touches this area only indirectly: 20 Joy Pendants buy the Cabana Deed, and the Cabana is where the Tingle Tuner points Link for Triforce Chart 2.",
+  "TACT_TEARCH0..TACT_TEARCH4": "daTag_Island_c, the Wind Waker conducting prompts on islands (src/d/actor/d_a_tag_island.cpp:225-256 and 386). Its messages 1459/1460 read 'Conduct with the C stick'. Not salvage.",
+  "UkB_FOUND / UkC_FOUND / UkD_FOUND / UkD_FOUND2": "NOT IDENTIFIED. No string literal 'UkB_FOUND' (or UkC_/UkD_) exists anywhere in src/, so whichever actor orders them is either stubbed or builds the name at runtime. Left out of this file rather than guessed at."
+ },
+ "_bits": {
+  "0x1820": {
+   "dec": 6176,
+   "byte_mask": [
+    24,
+    32
+   ],
+   "meaning": "The Forsaken Fortress has been cleared a second time and Link has been warped out. It is what lets the King of Red Lions start the Triforce-of-Courage briefing.",
+   "set_by": "src/d/actor/d_a_warpdm20.cpp:126",
+   "read_by": [
+    "src/d/actor/d_a_ship.cpp:4241",
+    "src/d/actor/d_a_agbsw0.cpp:98",
+    "src/d/actor/d_a_agbsw0.cpp:829",
+    "src/d/actor/d_a_lod_bg.cpp:169",
+    "src/d/d_com_inf_game.cpp:208"
+   ],
+   "confidence": "high"
+  },
+  "0x3380": {
+   "dec": 13184,
+   "byte_mask": [
+    51,
+    128
+   ],
+   "meaning": "The King of Red Lions has given the Triforce-of-Courage briefing - the message chain 0x164D 'do you know the legend of the Hero of Time?' -> 0x164E -> 0x164F 'the Triforce of Courage was split into eight shards' -> 0x1650 / 0x1651. This bit IS the start of the Triforce hunt, and it is what arms the TagWp gate at the Tower of the Gods.",
+   "set_by": "src/d/actor/d_a_ship.cpp:728 (raised as message 0x164F closes)",
+   "read_by": [
+    "src/d/actor/d_a_ship.cpp:467",
+    "src/d/actor/d_a_ship.cpp:4241",
+    "src/d/actor/d_a_tag_mk.cpp:495"
+   ],
+   "confidence": "high"
+  },
+  "0x0B40": {
+   "dec": 2880,
+   "byte_mask": [
+    11,
+    64
+   ],
+   "meaning": "Link has been spoken to by the caged Tingle in the Windfall jail at least once (the TC_TALK_NEAR_JAIL family).",
+   "set_by": "src/d/actor/d_a_npc_tc.cpp:1231, src/d/actor/d_a_npc_tc.cpp:1291",
+   "read_by": [
+    "src/d/actor/d_a_npc_tc.cpp:921",
+    "src/d/actor/d_a_npc_tc.cpp:1221",
+    "src/d/actor/d_a_npc_tc.cpp:1285"
+   ],
+   "confidence": "high"
+  },
+  "0x0B80": {
+   "dec": 2944,
+   "byte_mask": [
+    11,
+    128
+   ],
+   "meaning": "Tingle has been freed from the Windfall jail (the TC_RESCUE event finished). The jailed Tingle (Tc TYPE_NORMAL) deletes himself once it is set, and the chart-deciphering Tingle on Tingle Island (Tc TYPE_NORMAL2) refuses to spawn until it is set - so this single bit gates the whole chart-deciphering service.",
+   "set_by": "src/d/actor/d_a_npc_tc.cpp:1464 (daNpc_Tc_c::statusDemoRescue, on TC_RESCUE ending)",
+   "read_by": [
+    "src/d/actor/d_a_npc_tc.cpp:1485",
+    "src/d/actor/d_a_npc_tc.cpp:1838 (isCreate for TYPE_NORMAL2)",
+    "src/d/actor/d_a_npc_tc.cpp:71",
+    "src/d/actor/d_a_npc_people.cpp:5983"
+   ],
+   "confidence": "high"
+  },
+  "0x1A20": {
+   "dec": 6688,
+   "byte_mask": [
+    26,
+    32
+   ],
+   "meaning": "The Tingle Tuner has been linked to a Game Boy Advance at least once. Only changes which greeting Tingle uses; it does not gate the chart service.",
+   "set_by": "src/d/actor/d_a_agb.cpp:543",
+   "read_by": [
+    "src/d/actor/d_a_npc_tc.cpp:72",
+    "src/d/actor/d_a_npc_tc_msg_normal2.inc:126"
+   ],
+   "confidence": "medium"
+  },
+  "0x1708": {
+   "dec": 5896,
+   "byte_mask": [
+    23,
+    8
+   ],
+   "meaning": "A second Tingle Tuner state (raised from daAgb_c when mGbaFlg.field_0x2.m3 goes up). Chooses Tingle's greeting and gates David Jr. (Tc TYPE_BLUE) spawning.",
+   "set_by": "src/d/actor/d_a_agb.cpp:814",
+   "read_by": [
+    "src/d/actor/d_a_npc_tc.cpp:73",
+    "src/d/actor/d_a_npc_tc.cpp:1832",
+    "src/d/actor/d_a_agbsw0.cpp:2009"
+   ],
+   "confidence": "medium"
+  },
+  "0x3E02": {
+   "dec": 15874,
+   "byte_mask": [
+    62,
+    2
+   ],
+   "meaning": "At least one CHARTED salvage point has been dredged. daSalvage_c::end_salvage raises it every time a kind-0 (chart) point is emptied; the only reader is the Tingle Tuner's hint machine, which uses it to pick between two 'you have a deciphered chart but no shard yet' hints.",
+   "set_by": "src/d/actor/d_a_salvage.cpp:511 (end_salvage case 0)",
+   "read_by": [
+    "src/d/actor/d_a_agbsw0.cpp:866"
+   ],
+   "confidence": "high"
+  },
+  "0x3E80": {
+   "dec": 16000,
+   "byte_mask": [
+    62,
+    128
+   ],
+   "meaning": "The golden Warship has been sunk (its GOLD_SHIP_DELETE event finished). The Tingle Tuner switches its Triforce Chart 5 hint on this bit.",
+   "set_by": "src/d/actor/d_a_oship.cpp:732",
+   "read_by": [
+    "src/d/actor/d_a_agbsw0.cpp:991"
+   ],
+   "confidence": "high"
+  },
+  "0x3D04": {
+   "dec": 15620,
+   "byte_mask": [
+    61,
+    4
+   ],
+   "meaning": "The King of Red Lions has delivered the 'the Triforce of Courage is now complete at last! We must make for Hyrule' line (message 0x1682 = 5762). Raised as that message closes, so it only ever fires once.",
+   "set_by": "src/d/actor/d_a_ship.cpp:660",
+   "read_by": [
+    "src/d/actor/d_a_ship.cpp:4244"
+   ],
+   "confidence": "high"
+  },
+  "0x2D02": {
+   "dec": 11522,
+   "byte_mask": [
+    45,
+    2
+   ],
+   "meaning": "Zelda has been awakened under Hyrule (awake_zelda.stb in kenroom raises it on cutscene start). The TagWp gate at the Tower of the Gods will not speak until it is set.",
+   "set_by": "awake_zelda.stb PACKAGE PLAY EventFlag (tools/ww_stb_flags.py; raised on cutscene start by src/d/d_event_data.cpp:797-800)",
+   "read_by": [
+    "src/d/actor/d_a_tag_mk.cpp:499",
+    "src/d/actor/d_a_ship.cpp:4238"
+   ],
+   "confidence": "high"
+  },
+  "0x2D08": {
+   "dec": 11528,
+   "byte_mask": [
+    45,
+    8
+   ],
+   "meaning": "The whirlpool passage down to Hyrule has been opened (warphole.stb in ADMumi raises it on cutscene start). Once set the TagWp gate goes silent and the warp actors (Warpdm20 / Warphr) take over.",
+   "set_by": "warphole.stb PACKAGE PLAY EventFlag (tools/ww_stb_flags.py; raised on cutscene start by src/d/d_event_data.cpp:797-800)",
+   "read_by": [
+    "src/d/actor/d_a_tag_mk.cpp:497",
+    "src/d/actor/d_a_ship.cpp:427",
+    "src/d/actor/d_a_warpdm20.cpp:118",
+    "src/d/actor/d_a_warphr.cpp:132"
+   ],
+   "confidence": "high"
+  },
+  "0x2C01": {
+   "dec": 11265,
+   "byte_mask": [
+    44,
+    1
+   ],
+   "meaning": "Read together with getTriforceNum() == 8 when picking the story layer for Hyrule / Hyroom / kenroom: while eight shards are held AND this bit is CLEAR those stages load layer 4 - the assembled Triforce in the chamber under the pedestal. Nothing in src/ raises it, so it comes from event data, most likely the Triforce-restored scene itself.",
+   "set_by": "(event data - no onEventBit for it exists in src/)",
+   "read_by": [
+    "src/d/d_com_inf_game.cpp:220",
+    "src/d/d_com_inf_game.cpp:230",
+    "src/d/d_com_inf_game.cpp:239",
+    "src/d/d_com_inf_game.cpp:241",
+    "src/d/actor/d_a_ship.cpp:424"
+   ],
+   "confidence": "medium"
+  },
+  "0x2D80": {
+   "dec": 11648,
+   "byte_mask": [
+    45,
+    128
+   ],
+   "meaning": "The Cabana Deed has been handed to the man at the Windfall dock (daTag_Mk_c::getMsg raises it when the event's pre-item is dItemNo_CABANA_DEED_e). Listed here only because the Cabana is where the Tingle Tuner points Link for Triforce Chart 2.",
+   "set_by": "src/d/actor/d_a_tag_mk.cpp:82",
+   "read_by": [
+    "src/d/actor/d_a_tag_mk.cpp:311",
+    "src/d/actor/d_a_tag_mk.cpp:479"
+   ],
+   "confidence": "medium"
+  },
+  "0x2080": {
+   "dec": 8320,
+   "byte_mask": [
+    32,
+    128
+   ],
+   "meaning": "daSalvage_c::m_savelabel[0] - the full-moon salvage point with save number 0 has been dredged. These sixteen are the ONLY salvage points whose state is an event bit; every other point uses the chart table or the per-grid ocean mask. All sixteen are wiped again by the day-change proc whenever dKy_get_dayofweek() == 5, so they come back every week.",
+   "set_by": "src/d/actor/d_a_salvage.cpp:521 (end_salvage case 6)",
+   "read_by": [
+    "src/d/actor/d_a_salvage.cpp:334",
+    "src/d/d_salvage.cpp:110",
+    "src/d/d_kankyo_dayproc.inc:83-99 (offEventBit, weekly reset)"
+   ],
+   "confidence": "high"
+  },
+  "0x2004": {
+   "dec": 8196,
+   "byte_mask": [
+    32,
+    4
+   ],
+   "meaning": "daSalvage_c::m_savelabel[1] - the full-moon salvage point with save number 1 has been dredged. These sixteen are the ONLY salvage points whose state is an event bit; every other point uses the chart table or the per-grid ocean mask. All sixteen are wiped again by the day-change proc whenever dKy_get_dayofweek() == 5, so they come back every week.",
+   "set_by": "src/d/actor/d_a_salvage.cpp:521 (end_salvage case 6)",
+   "read_by": [
+    "src/d/actor/d_a_salvage.cpp:334",
+    "src/d/d_salvage.cpp:110",
+    "src/d/d_kankyo_dayproc.inc:83-99 (offEventBit, weekly reset)"
+   ],
+   "confidence": "high"
+  },
+  "0x2002": {
+   "dec": 8194,
+   "byte_mask": [
+    32,
+    2
+   ],
+   "meaning": "daSalvage_c::m_savelabel[2] - the full-moon salvage point with save number 2 has been dredged. These sixteen are the ONLY salvage points whose state is an event bit; every other point uses the chart table or the per-grid ocean mask. All sixteen are wiped again by the day-change proc whenever dKy_get_dayofweek() == 5, so they come back every week.",
+   "set_by": "src/d/actor/d_a_salvage.cpp:521 (end_salvage case 6)",
+   "read_by": [
+    "src/d/actor/d_a_salvage.cpp:334",
+    "src/d/d_salvage.cpp:110",
+    "src/d/d_kankyo_dayproc.inc:83-99 (offEventBit, weekly reset)"
+   ],
+   "confidence": "high"
+  },
+  "0x2804": {
+   "dec": 10244,
+   "byte_mask": [
+    40,
+    4
+   ],
+   "meaning": "daSalvage_c::m_savelabel[3] - the full-moon salvage point with save number 3 has been dredged. These sixteen are the ONLY salvage points whose state is an event bit; every other point uses the chart table or the per-grid ocean mask. All sixteen are wiped again by the day-change proc whenever dKy_get_dayofweek() == 5, so they come back every week.",
+   "set_by": "src/d/actor/d_a_salvage.cpp:521 (end_salvage case 6)",
+   "read_by": [
+    "src/d/actor/d_a_salvage.cpp:334",
+    "src/d/d_salvage.cpp:110",
+    "src/d/d_kankyo_dayproc.inc:83-99 (offEventBit, weekly reset)"
+   ],
+   "confidence": "high"
+  },
+  "0x2802": {
+   "dec": 10242,
+   "byte_mask": [
+    40,
+    2
+   ],
+   "meaning": "daSalvage_c::m_savelabel[4] - the full-moon salvage point with save number 4 has been dredged. These sixteen are the ONLY salvage points whose state is an event bit; every other point uses the chart table or the per-grid ocean mask. All sixteen are wiped again by the day-change proc whenever dKy_get_dayofweek() == 5, so they come back every week.",
+   "set_by": "src/d/actor/d_a_salvage.cpp:521 (end_salvage case 6)",
+   "read_by": [
+    "src/d/actor/d_a_salvage.cpp:334",
+    "src/d/d_salvage.cpp:110",
+    "src/d/d_kankyo_dayproc.inc:83-99 (offEventBit, weekly reset)"
+   ],
+   "confidence": "high"
+  },
+  "0x2801": {
+   "dec": 10241,
+   "byte_mask": [
+    40,
+    1
+   ],
+   "meaning": "daSalvage_c::m_savelabel[5] - the full-moon salvage point with save number 5 has been dredged. These sixteen are the ONLY salvage points whose state is an event bit; every other point uses the chart table or the per-grid ocean mask. All sixteen are wiped again by the day-change proc whenever dKy_get_dayofweek() == 5, so they come back every week.",
+   "set_by": "src/d/actor/d_a_salvage.cpp:521 (end_salvage case 6)",
+   "read_by": [
+    "src/d/actor/d_a_salvage.cpp:334",
+    "src/d/d_salvage.cpp:110",
+    "src/d/d_kankyo_dayproc.inc:83-99 (offEventBit, weekly reset)"
+   ],
+   "confidence": "high"
+  },
+  "0x2980": {
+   "dec": 10624,
+   "byte_mask": [
+    41,
+    128
+   ],
+   "meaning": "daSalvage_c::m_savelabel[6] - the full-moon salvage point with save number 6 has been dredged. These sixteen are the ONLY salvage points whose state is an event bit; every other point uses the chart table or the per-grid ocean mask. All sixteen are wiped again by the day-change proc whenever dKy_get_dayofweek() == 5, so they come back every week.",
+   "set_by": "src/d/actor/d_a_salvage.cpp:521 (end_salvage case 6)",
+   "read_by": [
+    "src/d/actor/d_a_salvage.cpp:334",
+    "src/d/d_salvage.cpp:110",
+    "src/d/d_kankyo_dayproc.inc:83-99 (offEventBit, weekly reset)"
+   ],
+   "confidence": "high"
+  },
+  "0x2940": {
+   "dec": 10560,
+   "byte_mask": [
+    41,
+    64
+   ],
+   "meaning": "daSalvage_c::m_savelabel[7] - the full-moon salvage point with save number 7 has been dredged. These sixteen are the ONLY salvage points whose state is an event bit; every other point uses the chart table or the per-grid ocean mask. All sixteen are wiped again by the day-change proc whenever dKy_get_dayofweek() == 5, so they come back every week.",
+   "set_by": "src/d/actor/d_a_salvage.cpp:521 (end_salvage case 6)",
+   "read_by": [
+    "src/d/actor/d_a_salvage.cpp:334",
+    "src/d/d_salvage.cpp:110",
+    "src/d/d_kankyo_dayproc.inc:83-99 (offEventBit, weekly reset)"
+   ],
+   "confidence": "high"
+  },
+  "0x3B01": {
+   "dec": 15105,
+   "byte_mask": [
+    59,
+    1
+   ],
+   "meaning": "daSalvage_c::m_savelabel[8] - the full-moon salvage point with save number 8 has been dredged. These sixteen are the ONLY salvage points whose state is an event bit; every other point uses the chart table or the per-grid ocean mask. All sixteen are wiped again by the day-change proc whenever dKy_get_dayofweek() == 5, so they come back every week.",
+   "set_by": "src/d/actor/d_a_salvage.cpp:521 (end_salvage case 6)",
+   "read_by": [
+    "src/d/actor/d_a_salvage.cpp:334",
+    "src/d/d_salvage.cpp:110",
+    "src/d/d_kankyo_dayproc.inc:83-99 (offEventBit, weekly reset)"
+   ],
+   "confidence": "high"
+  },
+  "0x3C80": {
+   "dec": 15488,
+   "byte_mask": [
+    60,
+    128
+   ],
+   "meaning": "daSalvage_c::m_savelabel[9] - the full-moon salvage point with save number 9 has been dredged. These sixteen are the ONLY salvage points whose state is an event bit; every other point uses the chart table or the per-grid ocean mask. All sixteen are wiped again by the day-change proc whenever dKy_get_dayofweek() == 5, so they come back every week.",
+   "set_by": "src/d/actor/d_a_salvage.cpp:521 (end_salvage case 6)",
+   "read_by": [
+    "src/d/actor/d_a_salvage.cpp:334",
+    "src/d/d_salvage.cpp:110",
+    "src/d/d_kankyo_dayproc.inc:83-99 (offEventBit, weekly reset)"
+   ],
+   "confidence": "high"
+  },
+  "0x3C40": {
+   "dec": 15424,
+   "byte_mask": [
+    60,
+    64
+   ],
+   "meaning": "daSalvage_c::m_savelabel[10] - the full-moon salvage point with save number 10 has been dredged. These sixteen are the ONLY salvage points whose state is an event bit; every other point uses the chart table or the per-grid ocean mask. All sixteen are wiped again by the day-change proc whenever dKy_get_dayofweek() == 5, so they come back every week.",
+   "set_by": "src/d/actor/d_a_salvage.cpp:521 (end_salvage case 6)",
+   "read_by": [
+    "src/d/actor/d_a_salvage.cpp:334",
+    "src/d/d_salvage.cpp:110",
+    "src/d/d_kankyo_dayproc.inc:83-99 (offEventBit, weekly reset)"
+   ],
+   "confidence": "high"
+  },
+  "0x3C20": {
+   "dec": 15392,
+   "byte_mask": [
+    60,
+    32
+   ],
+   "meaning": "daSalvage_c::m_savelabel[11] - the full-moon salvage point with save number 11 has been dredged. These sixteen are the ONLY salvage points whose state is an event bit; every other point uses the chart table or the per-grid ocean mask. All sixteen are wiped again by the day-change proc whenever dKy_get_dayofweek() == 5, so they come back every week.",
+   "set_by": "src/d/actor/d_a_salvage.cpp:521 (end_salvage case 6)",
+   "read_by": [
+    "src/d/actor/d_a_salvage.cpp:334",
+    "src/d/d_salvage.cpp:110",
+    "src/d/d_kankyo_dayproc.inc:83-99 (offEventBit, weekly reset)"
+   ],
+   "confidence": "high"
+  },
+  "0x3C10": {
+   "dec": 15376,
+   "byte_mask": [
+    60,
+    16
+   ],
+   "meaning": "daSalvage_c::m_savelabel[12] - the full-moon salvage point with save number 12 has been dredged. These sixteen are the ONLY salvage points whose state is an event bit; every other point uses the chart table or the per-grid ocean mask. All sixteen are wiped again by the day-change proc whenever dKy_get_dayofweek() == 5, so they come back every week.",
+   "set_by": "src/d/actor/d_a_salvage.cpp:521 (end_salvage case 6)",
+   "read_by": [
+    "src/d/actor/d_a_salvage.cpp:334",
+    "src/d/d_salvage.cpp:110",
+    "src/d/d_kankyo_dayproc.inc:83-99 (offEventBit, weekly reset)"
+   ],
+   "confidence": "high"
+  },
+  "0x3C08": {
+   "dec": 15368,
+   "byte_mask": [
+    60,
+    8
+   ],
+   "meaning": "daSalvage_c::m_savelabel[13] - the full-moon salvage point with save number 13 has been dredged. These sixteen are the ONLY salvage points whose state is an event bit; every other point uses the chart table or the per-grid ocean mask. All sixteen are wiped again by the day-change proc whenever dKy_get_dayofweek() == 5, so they come back every week.",
+   "set_by": "src/d/actor/d_a_salvage.cpp:521 (end_salvage case 6)",
+   "read_by": [
+    "src/d/actor/d_a_salvage.cpp:334",
+    "src/d/d_salvage.cpp:110",
+    "src/d/d_kankyo_dayproc.inc:83-99 (offEventBit, weekly reset)"
+   ],
+   "confidence": "high"
+  },
+  "0x3C04": {
+   "dec": 15364,
+   "byte_mask": [
+    60,
+    4
+   ],
+   "meaning": "daSalvage_c::m_savelabel[14] - the full-moon salvage point with save number 14 has been dredged. These sixteen are the ONLY salvage points whose state is an event bit; every other point uses the chart table or the per-grid ocean mask. All sixteen are wiped again by the day-change proc whenever dKy_get_dayofweek() == 5, so they come back every week.",
+   "set_by": "src/d/actor/d_a_salvage.cpp:521 (end_salvage case 6)",
+   "read_by": [
+    "src/d/actor/d_a_salvage.cpp:334",
+    "src/d/d_salvage.cpp:110",
+    "src/d/d_kankyo_dayproc.inc:83-99 (offEventBit, weekly reset)"
+   ],
+   "confidence": "high"
+  },
+  "0x3C02": {
+   "dec": 15362,
+   "byte_mask": [
+    60,
+    2
+   ],
+   "meaning": "daSalvage_c::m_savelabel[15] - the full-moon salvage point with save number 15 has been dredged. These sixteen are the ONLY salvage points whose state is an event bit; every other point uses the chart table or the per-grid ocean mask. All sixteen are wiped again by the day-change proc whenever dKy_get_dayofweek() == 5, so they come back every week.",
+   "set_by": "src/d/actor/d_a_salvage.cpp:521 (end_salvage case 6)",
+   "read_by": [
+    "src/d/actor/d_a_salvage.cpp:334",
+    "src/d/d_salvage.cpp:110",
+    "src/d/d_kankyo_dayproc.inc:83-99 (offEventBit, weekly reset)"
+   ],
+   "confidence": "high"
+  }
+ },
+ "steps": [
+  {
+   "id": "tf_korl_briefing",
+   "stage": "sea",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "Talking to the King of Red Lions after the second Forsaken Fortress. daShip_c's talk picker (src/d/actor/d_a_ship.cpp:4241) offers message 0x164D when 0x1820 is set and 0x3380 is not; the chain runs 0x164D -> 0x164E -> 0x164F, and closing 0x164F raises 0x3380 and branches on getTriforceNum(): > 0 goes to 0x1650, otherwise 0x1651 (src/d/actor/d_a_ship.cpp:715-731)."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x1820"
+   ],
+   "sets_bits": [
+    "0x3380"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_ship.cpp:4241-4243",
+    "src/d/actor/d_a_ship.cpp:715-731",
+    "out/rip/GZLE01/text/messages.json:id 5709-5713"
+   ],
+   "notes": "0x164F reads 'the Triforce of Courage was split into eight shards and hidden throughout the land'. room is null because the King of Red Lions is wherever Link's boat is - this is not a placed trigger volume."
+  },
+  {
+   "id": "tf_tingle_jail_talk",
+   "stage": "Pnezumi",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "npc",
+    "detail": "The caged Tingle (Tc, ACTR params 0xFFFFFFFF -> mType 0xF -> TYPE_NORMAL, at (344, 65, 920)) walks to the bars himself: statusWalkToJail / statusWaitNearJail see a wall hit while mTalkingNearJail and set mEventIdx to 5, 6 or 7, which eventOrder turns into TC_TALK_NEAR_JAIL, TC_TALK_NEAR_JAIL_S or TC_TALK_NEAR_JAIL2 (a_demo_name_tbl[mEventIdx - 3], src/d/actor/d_a_npc_tc.cpp:638-659). Index 6 is used only when getClearCount() != 0."
+   },
+   "event": "TC_TALK_NEAR_JAIL",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x0B40"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_tc.cpp:636-660",
+    "src/d/actor/d_a_npc_tc.cpp:1207-1250",
+    "src/d/actor/d_a_npc_tc.cpp:1276-1300",
+    "tools/ww_story_mine.py Pnezumi"
+   ],
+   "notes": "Pnezumi's EVNT table has only two entries, OpenDoor and First; the TC_* scripts are in its event_list.dat but are ordered by NAME through fopAcM_orderOtherEvent, not by EVNT index."
+  },
+  {
+   "id": "tf_rescue_tingle",
+   "stage": "Pnezumi",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "tag",
+    "detail": "A TagEv at (-738, 59, 1275) with switch 5 orders EVNT entry 0 = 'OpenDoor' - the cell door opening. daNpc_Tc_c::help_action polls dComIfGp_evmng_endCheck(\"OpenDoor\") and, when it ends, sets mEventIdx = 4 -> TC_RESCUE and STATUS_DEMO_RESCUE. statusDemoRescue then raises 0x0B80 and deletes Tingle (src/d/actor/d_a_npc_tc.cpp:1462-1467)."
+   },
+   "event": "TC_RESCUE",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x0B80"
+   ],
+   "gives_item": "TINGLE_TUNER (dItemNo 0x21) and COLLECT_MAP_35 (dItemNo 0xDC) - the IN-credible Chart",
+   "confidence": "high",
+   "sources": [
+    "tools/ww_story_mine.py Pnezumi",
+    "src/d/actor/d_a_npc_tc.cpp:1480-1500",
+    "src/d/actor/d_a_npc_tc.cpp:1462-1467",
+    "src/d/actor/d_a_npc_tc_cut.inc:126-205",
+    "out/rip/GZLE01/godot/events/Pnezumi.json:TC_RESCUE"
+   ],
+   "notes": "Pnezumi's TC_RESCUE script carries TWO Tc PRESENT actions, ItemType 0 and ItemType 1. daNpc_Tc_c::cutPresentProc maps ItemType 0 -> dItemNo_TINGLE_TUNER_e and ItemType 1 -> dItemNo_COLLECT_MAP_35_e (src/d/actor/d_a_npc_tc_cut.inc:135-141). Chart 35 is the IN-credible Chart: message 3510 calls it 'an IN-credible Chart... this chart will show you where you can find the Triforce Charts', and dSv_player_map_c::getCollectMapNum deliberately skips exactly charts 35 and 36 when counting the player's charts (src/d/d_save.cpp:918-928)."
+  },
+  {
+   "id": "tf_find_the_eight_charts",
+   "stage": null,
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "item",
+    "detail": "The eight Triforce Charts are collect-map slots 1..8, i.e. items dItemNo_COLLECT_MAP_01_e (0xFE) down to dItemNo_COLLECT_MAP_08_e (0xF7); picking one up runs item_func_collectmap01..08, which call dComIfGs_onGetCollectMap(n) and clear that chart's 'opened' and 'complete' flags (src/d/d_item.cpp:1884-2022). The Tingle Tuner's hint machine, daAgbsw0_c::TriforceCheck, walks the eight in order and states each one's requirement outright: chart 1 - no condition, a plain hint (msg 0x309); chart 2 - needs the Skull Hammer, then the Cabana Deed (room == dIsleRoom_PrivateOasis_e) or 20 Joy Pendants; chart 3 - needs the Bait Bag and a Hyoi Pear, room == dIsleRoom_BirdsPeakRock_e; chart 4 - needs the Hookshot and the Ghost Ship Chart (chart 36) opened (see tf_ghost_ship_chart); chart 5 - room == dIsleRoom_NeedleRockIsle_e until 0x3E80 (the golden Warship) is sunk; chart 6 - room == dIsleRoom_OutsetIsland_e; chart 7 - room == dIsleRoom_StoneWatcherIsland_e; chart 8 - needs the Hookshot, room == dIsleRoom_OverlookIsland_e."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x3380"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "src/d/actor/d_a_agbsw0.cpp:861-1051",
+    "src/d/d_item.cpp:1884-2022",
+    "include/d/d_item_data.h:128-135",
+    "include/d/d_item_data.h:255-263",
+    "include/d/d_com_inf_game.h:1195-1240",
+    "include/d/d_save.h:303-353"
+   ],
+   "notes": "stage and room are null: this one step covers eight chests across eight stages, and the decompilation only states the ISLAND each hint points at, not the chest placement. Marked medium for that reason - the room equality tests in TriforceCheck are strong evidence but they are hint conditions, not placements. The Tingle Tuner message texts (ids 0x303-0x32D) could NOT be read: the rip carries only zel_00.bmg and the GBA-side BMG is not in it."
+  },
+  {
+   "id": "tf_ghost_ship_chart",
+   "stage": "sea",
+   "room": 36,
+   "layer": -1,
+   "trigger": {
+    "kind": "bits",
+    "detail": "Triforce Chart 4 comes off the Ghost Ship, which is why it needs the Ghost Ship Chart. daAgbsw0_c::TriforceCheck gates the branch on dComIfGs_checkGetItem(dItemNo_HOOKSHOT_e) and dComIfGs_isOpenCollectMap(0x24) - chart 36 - then requires the hour to be < 6 or >= 19 and reads dKy_moon_type_chk() to say which island the ship is at tonight: moon 1 -> room 0x24 DiamondSteppeIsland, 2 -> 0x22 BombIsland, 3 -> 0x0A SpectacleIsland, 4 -> 0x31 FiveStarIsles, 5 -> 0x15 StarBeltArchipelago, 6 -> 0x17 GreatfishIsle, 0 -> 0x05 CrescentMoonIsland. dKy_moon_type_chk() is simply the day of the week, shifted back one before 3am (src/d/d_kankyo.cpp:3602-3615). daGhostship_c checks the same pairing at src/d/actor/d_a_ghostship.cpp:292-307."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_agbsw0.cpp:924-985",
+    "src/d/actor/d_a_ghostship.cpp:292-307",
+    "src/d/d_kankyo.cpp:3602-3615",
+    "include/d/d_save.h:303-353"
+   ],
+   "notes": "room 36 is DiamondSteppeIsland, only the first row of the table - the Ghost Ship is in a different sea room every night. Charts 35 and 36 are exactly the two the chart counter ignores (src/d/d_save.cpp:918-928)."
+  },
+  {
+   "id": "tf_tingle_decipher_chart",
+   "stage": "sea",
+   "room": 17,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "Tingle Island (dIsleRoom_TingleIsland_e = 17) carries four Tc actors at about (-100000, 1708, -79800): params ...FF00 = TYPE_NORMAL2 (Tingle), ...FF01 = TYPE_RED (Ankle), ...FF02 = TYPE_WHITE (Knuckle), ...FF03 = TYPE_BLUE (David Jr.); mType = params & 0xF (src/d/actor/d_a_npc_tc.cpp:958-965). TYPE_NORMAL2 refuses to spawn unless 0x0B80 is set (isCreate, src/d/actor/d_a_npc_tc.cpp:1829-1841). The sale is a message state machine: getMsgNormal2 offers 0xDBB -> 0xDBC -> 0xDBD -> 0xDBE ('Would you like me to decipher it for you? For 398 Rupees?') whenever existUnknownCollectMap() finds a chart in 1..8 that is held but not deciphered. Choosing 'Sure' with >= 398 rupees sets mStatus = STATUS_PAY_RUPEE, which sets mEventIdx = 9 -> a_demo_name_tbl[6] = TC_PAY_RUPEE."
+   },
+   "event": "TC_PAY_RUPEE",
+   "stb": null,
+   "requires_bits": [
+    "0x0B80"
+   ],
+   "sets_bits": [],
+   "gives_item": "TRIFORCE_MAP_1..8 (dItemNo 0x79-0x80) - the deciphered chart, one per purchase",
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_tc.cpp:1829-1841",
+    "src/d/actor/d_a_npc_tc.cpp:958-965",
+    "src/d/actor/d_a_npc_tc.cpp:1397-1404",
+    "src/d/actor/d_a_npc_tc.cpp:636-660",
+    "src/d/actor/d_a_npc_tc_msg_normal2.inc:60-107",
+    "src/d/actor/d_a_npc_tc_msg_normal2.inc:177-205",
+    "src/d/actor/d_a_npc_tc_cut.inc:126-205",
+    "src/d/actor/d_a_npc_tc_cut.inc:306-313",
+    "out/rip/GZLE01/godot/events/sea.json:TC_PAY_RUPEE",
+    "out/rip/GZLE01/text/messages.json:id 3518, 3522, 3524",
+    "res/Stage/sea/Room17.arc room.dzr ACTR 'Tc' (4 placements)"
+   ],
+   "notes": "The TC_PAY_RUPEE script's Tc track is DUMMY, PAY, TALK_MSG msgNo 3522 ('Tingle! Tingle! Kooloo-limpah! Become... READABLE!'), PRESENT ItemType 2, WAIT 27, SET_ANM 'GET'. cutPayStart runs dComIfGp_setItemRupeeCount(-398); cutPresentProc with ItemType 2 and mType TYPE_NORMAL2 calls analysisCollectMap(), which finds the LOWEST-numbered chart in 1..8 that is held and undeciphered, calls dComIfGs_onCollectMapTriforce(i) and returns i, then hands over TRIFORCE_MAP_i. So the shards unlock in chart order, never in the order Link found the charts."
+  },
+  {
+   "id": "tf_chart_state_is_not_an_event_bit",
+   "stage": null,
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "bits",
+    "detail": "There is NO event bit for any Triforce Chart or shard. Three save fields carry the state: (1) dSv_player_map_c::field_0x0[4][4], a 512-bit table with GET / OPEN / COMPLETE per chart, reached through dComIfGs_isGetCollectMap / isOpenCollectMap / isCompleteCollectMap - all of which subtract 1 from the chart number first; (2) dSv_player_map_c::field_0x81, ONE byte, bit (n-1) = 'Triforce Chart n has been deciphered by Tingle', set by dComIfGs_onCollectMapTriforce (src/d/d_save.cpp:899-916); (3) dSv_player_collect_c::mTriforce, one byte, bit (n-1) = 'Link owns Triforce Shard n', set by item_func_triforce1..8 -> dComIfGs_onTriforce(0..7) and counted by getTriforceNum() (src/d/d_save.cpp:780-825). Loose salvage points that are not chart-driven use a fourth store, dSv_ocean_c::field_0x0[50], sixteen bits per sea grid cell (src/d/d_save.cpp:1157-1176)."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "include/d/d_save.h:273-297",
+    "include/d/d_save.h:410-432",
+    "include/d/d_save.h:684-693",
+    "src/d/d_save.cpp:780-830",
+    "src/d/d_save.cpp:899-928",
+    "src/d/d_save.cpp:1157-1176",
+    "include/d/d_com_inf_game.h:1195-1245",
+    "include/d/d_com_inf_game.h:1663-1670",
+    "src/d/d_item.cpp:1029-1068"
+   ],
+   "notes": "A bookkeeping step, not a playable beat - it is here because the brief asked where the shard state really lives. Chart numbers are 1-based in the API and 0-based in storage."
+  },
+  {
+   "id": "tf_open_chart_on_sea_chart",
+   "stage": null,
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "conduct",
+    "detail": "A deciphered chart does nothing until Link OPENS it on the Sea Chart - Tingle says so in message 3524: 'when you open this chart by pressing Y on your Sea Chart, the place where the treasure is will shine forth'. daSalvage_c::proc_wait only makes a kind-0 (chart) point live when dComIfGs_isOpenCollectMap(chartNo) is true and isCompleteCollectMap(chartNo) is false, AND - if the buried item is a Triforce shard, isTriforce(itemNo) for items 0x61..0x68 - dComIfGs_isCollectMapTriforce(itemNo - 0x60) is true as well (src/d/actor/d_a_salvage.cpp:304-320)."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "src/d/actor/d_a_salvage.cpp:304-320",
+    "src/d/d_item.cpp:2839-2848",
+    "include/d/d_com_inf_game.h:1219-1234",
+    "out/rip/GZLE01/text/messages.json:id 3524"
+   ],
+   "notes": "Medium because dComIfGs_onOpenCollectMap has NO caller anywhere in src/: the call lives in the Sea Chart menu, and dMenu_Fmap2_c::isOpenCollectMap / isOpenCollectMapTriforce (src/d/d_menu_fmap2.cpp:544-562) are empty /* Nonmatching */ stubs in this decompilation. The read side is fully decompiled, so what the flag DOES is certain; who sets it is inferred from Tingle's own instructions."
+  },
+  {
+   "id": "tf_salvage_arm",
+   "stage": null,
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "conduct",
+    "detail": "The salvage arm is not a separate item - it is the King of Red Lions' crane, swung out by equipping the Grappling Hook while aboard. daPy_lk_c's on-boat item check runs checkSetItemTrigger(dItemNo_GRAPPLING_HOOK_e, 1) -> procShipCrane_init(), which calls ship->setCrane() (MODE_CRANE_e) (src/d/actor/d_a_player_ship.inc:355-361 and 1002-1020). daShip_c::procCrane pays out rope while a Grappling Hook button is held and speedF < 3.0, and the stick swings the arm to mCraneBaseAngle +0x3000 or -0x3000 - which is the whole reason every salvage event has a LEFT twin. The arm model is VFNCR in Ship.arc (src/d/actor/d_a_ship.cpp:4437-4441)."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_player_ship.inc:355-361",
+    "src/d/actor/d_a_player_ship.inc:1002-1020",
+    "src/d/actor/d_a_ship.cpp:1889-1975",
+    "src/d/actor/d_a_ship.cpp:4437-4441",
+    "include/d/actor/d_a_ship.h:125-158"
+   ],
+   "notes": "daSalvage_c::send_agb marks every live salvage point on the Tingle Tuner map with the Grappling Hook icon: fopAcM_setGbaName(this, dItemNo_GRAPPLING_HOOK_e, 0x40, 0x3F), src/d/actor/d_a_salvage.cpp:605-618."
+  },
+  {
+   "id": "tf_salvage_shard",
+   "stage": "sea",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "salvage",
+    "detail": "ONE mechanism, eight instances. Every sea room 1..49 carries FOUR 'Salvage' SCOB placements with identical params and rot.z = 0, 1, 2, 3 - four candidate spots for that room's single charted treasure (196 placements = 49 x 4). Params decode per namespace daSalvage_prm (src/d/d_salvage.cpp:14-22): kind = params>>28, chartNo = (params>>20)&0xFF, itemNo = (params>>4)&0xFF, type = params&0xF, and rot.z & 0x03 is the candidate index. dSalvage_control_c::entry keeps a kind-0 point only when (rot.z & 3) == dComIfGs_getRandomSalvagePoint(), so the spot is picked ONCE PER SAVE FILE: dSv_player_info_c::init sets mRandomSalvagePoint = cM_rndF(3.0f) clamped to 0..2, and dSv_info_c::reinit (second quest) forces 3. Dredging: daShip_c::getCraneTop is tested by daSalvage_c::checkArea, which needs the hook inside the ring radius AND below the water by l_salvage_depth[mRndDepthIdx] = 1000 / 1500 / 2000, rerolled every time the hook leaves a ring. A hit on a type-1 point sets m2E9 to 2 (arm right) or 1 (arm left) and eventOrder fires SALVAGE_GETITEM or SLVG_GETITEM_LEFT; the event spawns an SBOX plus a SALVAGE_TBOX carrying the buried itemNo, and end_salvage runs dComIfGs_onCompleteCollectMap(chartNo) and dComIfGs_onEventBit(0x3E02). The eight Triforce instances are chart 1 -> sea room 23 GreatfishIsle, item 0x61; chart 2 -> room 4 GaleIsle, 0x62; chart 3 -> room 31 StoneWatcherIsland, 0x63; chart 4 -> room 44 OutsetIsland, 0x64; chart 5 -> room 42 CliffPlateauIsles, 0x65; chart 6 -> room 32 SouthernTriangleIsland, 0x66; chart 7 -> room 6 SevenStarIsles, 0x67; chart 8 -> room 46 TwoEyeReef, 0x68. Picking the item up runs item_func_triforceN -> dComIfGs_onTriforce(N-1)."
+   },
+   "event": "SALVAGE_GETITEM",
+   "stb": null,
+   "requires_bits": [
+    "0x0B80"
+   ],
+   "sets_bits": [
+    "0x3E02"
+   ],
+   "gives_item": "TRIFORCE1..TRIFORCE8 (dItemNo 0x61-0x68), one per charted point",
+   "confidence": "high",
+   "sources": [
+    "src/d/d_salvage.cpp:14-22",
+    "src/d/d_salvage.cpp:44-150",
+    "src/d/actor/d_a_salvage.cpp:70-82",
+    "src/d/actor/d_a_salvage.cpp:168-238",
+    "src/d/actor/d_a_salvage.cpp:242-258",
+    "src/d/actor/d_a_salvage.cpp:304-320",
+    "src/d/actor/d_a_salvage.cpp:442-462",
+    "src/d/actor/d_a_salvage.cpp:503-530",
+    "src/d/actor/d_a_salvage.cpp:534-562",
+    "src/d/d_save.cpp:966-990",
+    "src/d/d_save.cpp:1478",
+    "src/d/d_item.cpp:1029-1068",
+    "res/Stage/sea/Room*.arc room.dzr SCOB 'Salvage' (196 placements, read from the disc image)"
+   ],
+   "notes": "room is null because the eight instances sit in eight different sea rooms; they are listed in the trigger detail instead. The four alternate positions are real, not scenery: on a fresh file each shard is at one of four charted spots near its island, chosen by a single random byte in the save. requires 0x0B80 is indirect (only the freed Tingle can decipher a chart); the code gate is dComIfGs_isCollectMapTriforce(chartNo)."
+  },
+  {
+   "id": "tf_salvage_miss",
+   "stage": "sea",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "salvage",
+    "detail": "Dredging a point whose type is not 1, or any kind-5 point, sets m2E9 to 4 (arm right) or 3 (arm left) and fires SALVAGE_HAZURE / SLVG_HAZURE_LEFT - the crane comes up empty ('hazure' is a miss). On those events ending, if the box type was 2 or the point's kind was 5, daSalvage_c::createEnemy spawns fpcNm_OQ_e with parameter 2 at the player's position. The sea carries 66 'SalvagE' placements, all kind 5, type 0xF, itemNo 0xFF - and daSalvage_c::isEffectKind returns FALSE for kind 5, so they draw NO marker at all: invisible decoy spots that answer the hook with a monster."
+   },
+   "event": "SALVAGE_HAZURE",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_salvage.cpp:168-238",
+    "src/d/actor/d_a_salvage.cpp:242-258",
+    "src/d/actor/d_a_salvage.cpp:466-470",
+    "src/d/actor/d_a_salvage.cpp:698-716",
+    "res/Stage/sea/Room*.arc room.dzr SCOB 'SalvagE' (66 placements, all kind 5)"
+   ],
+   "notes": "checkDistance deliberately prefers a real point over an overlapping kind-5 decoy (src/d/actor/d_a_salvage.cpp:534-562)."
+  },
+  {
+   "id": "tf_warship_guards_shard",
+   "stage": "sea",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "defeat",
+    "detail": "Warships (daOship_c, actor 'Oship') can be tied to a Triforce chart. getArg reads mTriforce = (prms>>8)&0xF and mRandomSalvagePoint = (prms>>12)&0xF; _create returns cPhs_ERROR_e - the ship never appears - unless dComIfGs_isCollectMapTriforce(mTriforce + 1) is true and, when mRandomSalvagePoint != 0xF, it equals dComIfGs_getRandomSalvagePoint(). So a fleet only materialises over the charted spot the player's save actually rolled. sea room 31 (Stone Watcher Island, Triforce Chart 3's shard) is the clearest case: eight Oship placements in pairs, params 0xFF052302 / 0xFF053302, 0xFF062301 / 0xFF063301 and so on - mTriforce 2 or 3 paired with mRandomSalvagePoint 2 or 3. When such a ship sinks, daOship_c::modeDelete calls dComIfGs_onSwitch(mSwitchA, room) and daSalvage_c::onSalvageForOship, which walks the room's salvage slots 128..159 for the point whose switch matches and MOVES it to where the ship went down."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_oship.cpp:993-1010",
+    "src/d/actor/d_a_oship.cpp:1013-1046",
+    "src/d/actor/d_a_oship.cpp:740-762",
+    "src/d/actor/d_a_salvage.cpp:473-500",
+    "res/Stage/sea/Room31.arc room.dzr ACTR 'Oship' (8 placements, params 0xFF05..0xFF0A)"
+   ],
+   "notes": "room is null - Oship placements are spread over 20 sea rooms and only some carry a Triforce number."
+  },
+  {
+   "id": "tf_golden_warship",
+   "stage": "sea",
+   "room": 29,
+   "layer": -1,
+   "trigger": {
+    "kind": "defeat",
+    "detail": "One Warship is special (daOship_c::isSpecial). Sinking it does not just delete the actor: it orders the event GOLD_SHIP_DELETE, and on that event ending raises 0x3E80 and deletes itself (src/d/actor/d_a_oship.cpp:712-737). The Tingle Tuner reads 0x3E80 to switch its Triforce Chart 5 hint away from dIsleRoom_NeedleRockIsle_e (room 29) and onto the salvage points of treasure charts 0x1C, 0x1D and 0x1F (src/d/actor/d_a_agbsw0.cpp:987-1015)."
+   },
+   "event": "GOLD_SHIP_DELETE",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x3E80"
+   ],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "src/d/actor/d_a_oship.cpp:712-737",
+    "src/d/actor/d_a_agbsw0.cpp:987-1015",
+    "out/rip/GZLE01/godot/events/sea.json:GOLD_SHIP_DELETE"
+   ],
+   "notes": "room 29 = dIsleRoom_NeedleRockIsle_e, taken from the hint condition rather than from a placement. daOship_c::isSpecial is not decidable from the params I decoded, so WHICH of the sea's 60 Oship entries is the golden one is NOT established here - hence medium."
+  },
+  {
+   "id": "tf_korl_confirms_complete",
+   "stage": "sea",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "Once dComIfGs_getTriforceNum() == 8 and 0x3D04 is clear, daShip_c queues message 0x1682 and orders a speak event on itself (src/d/actor/d_a_ship.cpp:4244-4260): 'With the shards you have collected, the Triforce of Courage is now complete at last! We must make for Hyrule, quickly!' Closing that message raises 0x3D04 so it is said once (src/d/actor/d_a_ship.cpp:657-663). Afterwards the boat's idle line becomes 0xD72: 'The Triforce you possess is complete. We must make for the Tower of the Gods and return to Hyrule.'"
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x3D04"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_ship.cpp:4244-4247",
+    "src/d/actor/d_a_ship.cpp:657-663",
+    "src/d/actor/d_a_ship.cpp:435-441",
+    "out/rip/GZLE01/text/messages.json:id 5762, 3442"
+   ],
+   "notes": "getTriforceNum() counts the bits of dSv_player_collect_c::mTriforce (src/d/d_save.cpp:813-825)."
+  },
+  {
+   "id": "tf_gate_to_hyrule",
+   "stage": "sea",
+   "room": 26,
+   "layer": -1,
+   "trigger": {
+    "kind": "npc_tag",
+    "detail": "The gate is a single TagWp SCOB at (99950, -2, -50) in sea room 26 = dIsleRoom_ToweroftheGods_e, params 0xFFFFFF02. TagWp and TagMk are the same actor (fpcNm_TAG_MK_e, src/d/d_stage.cpp:584-585); getType() = params & 0xFF = 2 selects the warp-gate branch. daTag_Mk_c::create arms it only when 0x3380 is set, 0x2D08 is NOT set and 0x2D02 IS set; setTagWpEvId then picks the event by state: getSelectEquip(0) != dItemNo_MASTER_SWORD_3_e -> 'tagwp2'; else getTriforceNum() < 8 -> 'tagwp'; else -> 'tagwp3'. daTag_Mk_c::actionTagWp orders it when the player is within 5000 units."
+   },
+   "event": "tagwp",
+   "stb": null,
+   "requires_bits": [
+    "0x3380",
+    "0x2D02"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/sea/Room26.arc room.dzr SCOB 'TagWp' params 0xFFFFFF02 at (99950.3, -1.9, -49.7)",
+    "src/d/d_stage.cpp:584-585",
+    "src/d/actor/d_a_tag_mk.cpp:475-530",
+    "src/d/actor/d_a_tag_mk.cpp:134-140",
+    "src/d/actor/d_a_tag_mk.cpp:346-356",
+    "out/rip/GZLE01/godot/events/sea.json:tagwp, tagwp2, tagwp3",
+    "out/rip/GZLE01/text/messages.json:id 5751-5755"
+   ],
+   "notes": "tagwp is the King of Red Lions turning Link away: msg 5751 'Even though the power to repel evil has been returned to the Master Sword, you will not be able to return to Hyrule until the Triforce is complete' plus 5752 'you must now think only of finding the eight shards'. tagwp2 (5753-5755) is the other half of the gate, the Master Sword's power. This one volume is the payoff of the whole Triforce hunt."
+  },
+  {
+   "id": "tf_descend_to_hyrule",
+   "stage": "sea",
+   "room": 26,
+   "layer": -1,
+   "trigger": {
+    "kind": "warp",
+    "detail": "With the fully restored Master Sword equipped AND all eight shards held, the same TagWp orders 'tagwp3' instead. That script has no dialogue at all: a DIRECTOR NEXT action with Stage 'ADMumi', StartCode 232, RoomNo 0, Layer 10, a Ship 05keep at speed 0 and a Link 001n_wait. The sea opens and the boat sinks toward Hyrule."
+   },
+   "event": "tagwp3",
+   "stb": null,
+   "requires_bits": [
+    "0x3380",
+    "0x2D02"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/godot/events/sea.json:tagwp3",
+    "src/d/actor/d_a_tag_mk.cpp:134-140",
+    "gcrip/data/ww_stages.py:'ADMumi': 'Tower of the Gods Cutscenes'"
+   ],
+   "notes": "The 0x2D08 that warphole.stb raises in ADMumi is what afterwards silences this TagWp entirely (src/d/actor/d_a_tag_mk.cpp:497)."
+  },
+  {
+   "id": "tf_assembled_triforce_layer",
+   "stage": "Hyrule",
+   "room": 0,
+   "layer": 4,
+   "trigger": {
+    "kind": "bits",
+    "detail": "The assembled Triforce is a stage LAYER, not an event. dComIfGs_setGameLayer picks layer|4 for the start stages 'Hyrule', 'Hyroom' and 'kenroom' whenever dComIfGs_getTriforceNum() == 8 and 0x2C01 is clear; when 0x2C01 IS set kenroom takes layer|6 instead (src/d/d_com_inf_game.cpp:218-250)."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x2C01"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/d_com_inf_game.cpp:218-250",
+    "src/d/d_save.cpp:813-825"
+   ],
+   "notes": "requires_bits lists 0x2C01 for reference only - the layer needs it CLEAR, not set, and this schema has no forbids_bits field. Nothing in src/ raises 0x2C01, so the Triforce-assembling scene itself is event data. None of the disc's 27 flag-raising .stb cutscenes is a Triforce scene (tools/ww_stb_flags.py), so if a baked cutscene exists it does not raise its own bit."
+  },
+  {
+   "id": "tc_treasure_chart_points",
+   "stage": "sea",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "salvage",
+    "detail": "Exactly the same kind-0 mechanism as tf_salvage_shard, used for the other 41 charts. One chart per sea room, four candidate positions each, 196 'Salvage' placements in all. The buried itemNo tells them apart: 0x0F SILVER_RUPEE (23 rooms), 0x07 HEART_PIECE (12 rooms), 0x01 GREEN_RUPEE (room 11, chart 27), 0xC5..0xCA = COLLECT_MAP_58..53, i.e. six charts that are themselves salvaged (chart 49 -> room 24, 48 -> room 7, 47 -> room 48, 46 -> room 14, 45 -> room 8, 44 -> room 18), and 0x61..0x68 the eight Triforce shards. Chart numbers run 1..51 and are NOT the room number."
+   },
+   "event": "SALVAGE_GETITEM",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x3E02"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/sea/Room*.arc room.dzr SCOB 'Salvage' (196 placements, kind 0, decoded per src/d/d_salvage.cpp:14-22)",
+    "src/d/actor/d_a_salvage.cpp:503-530",
+    "include/d/d_item_data.h:6-22",
+    "include/d/d_item_data.h:196-263"
+   ],
+   "notes": "Kind 0 is the only salvage kind that gets the light-pillar particle (dPa_name::ID_AK_JN_SALVAGELIGHT00, src/d/actor/d_a_salvage.cpp:388-440)."
+  },
+  {
+   "id": "tc_salvage_free_points",
+   "stage": "sea",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "salvage",
+    "detail": "112 'Salvag2' placements, kind 3. No chart is involved: entry() only skips one when its ocean bit is already set, so they are dredgeable from the moment Link has the Grappling Hook. Completion lives in dSv_ocean_c::field_0x0[grid] bit saveNo (saveNo 0..15 per sea room), set by end_salvage case 3 via dComIfGs_onOceanSvBit. Every one buries item 0x04 RED_RUPEE or 0x05 PURPLE_RUPEE."
+   },
+   "event": "SALVAGE_GETITEM",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/sea/Room*.arc room.dzr SCOB 'Salvag2' (112 placements, kind 3)",
+    "src/d/d_salvage.cpp:95-105",
+    "src/d/actor/d_a_salvage.cpp:503-520",
+    "src/d/d_save.cpp:1157-1176",
+    "include/d/d_save.h:684-693"
+   ],
+   "notes": ""
+  },
+  {
+   "id": "tc_salvage_night_points",
+   "stage": "sea",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "salvage",
+    "detail": "35 'SalvagN' placements, kind 4. dSalvage_control_c::entry marks them used when dKy_daynight_check() == dKy_TIME_DAY_e, and proc_wait clears the flag again as soon as it is not day - they exist only after dark. Same dSv_ocean_c storage as kind 3. Items 0x03 YELLOW_RUPEE, 0x04 RED_RUPEE and 0x05 PURPLE_RUPEE, save numbers 3..10."
+   },
+   "event": "SALVAGE_GETITEM",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/sea/Room*.arc room.dzr SCOB 'SalvagN' (35 placements, kind 4)",
+    "src/d/d_salvage.cpp:105-110",
+    "src/d/actor/d_a_salvage.cpp:322-330"
+   ],
+   "notes": ""
+  },
+  {
+   "id": "tc_salvage_switch_points",
+   "stage": "sea",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "salvage",
+    "detail": "64 'SwSlvg' placements, kind 2 - points that only open when a room switch is thrown; the switch number is rot.z & 0xFF. Two families are visible in the data: 47 points with saveNo 15 and switch 232 / 237 / 238 / 228 / 205, which are the ones the Warships hand over (daOship_c::modeDelete sets that switch and calls onSalvageForOship), and 17 points with a low saveNo and switches 13..23 or 76..78. proc_wait has a dedicated branch for the latter: while the switch is still off it looks up the Big Octo (fpcNm_DAIOCTA_e) and, when the Big Octo's switch matches, drags the salvage point to wherever the Big Octo currently is."
+   },
+   "event": "SALVAGE_GETITEM",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/sea/Room*.arc room.dzr SCOB 'SwSlvg' (64 placements, kind 2)",
+    "src/d/actor/d_a_salvage.cpp:280-302",
+    "src/d/actor/d_a_salvage.cpp:473-500",
+    "src/d/actor/d_a_oship.cpp:740-762",
+    "src/d/d_salvage.cpp:95-102"
+   ],
+   "notes": "Two of them bury a chart instead of a rupee: sea room 22 switch 23 buries item 0xE3 = COLLECT_MAP_28, sea room 29 switch 23 buries 0xFA = COLLECT_MAP_05."
+  },
+  {
+   "id": "tc_salvage_full_moon_points",
+   "stage": "sea",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "salvage",
+    "detail": "16 'SalvFM' placements, kind 6 - the only salvage points whose state is an event bit. proc_wait opens one when !dKy_moon_type_chk() && dKyr_moon_arrival_check() && !isEventBit(m_savelabel[saveNo]). dKy_moon_type_chk() returns the day of the week (shifted back one before 3am), so !it means day 0, and dKyr_moon_arrival_check() is true when the clock is past 277.5 or before 112.5 - i.e. the night of the full moon. end_salvage case 6 raises m_savelabel[saveNo], and the day-change proc clears all sixteen again on day-of-week 5, so they return each week. saveNo indexes daSalvage_c::m_savelabel[16] exactly. Placements: sea room 6 saveNo 0-2, room 18 saveNo 12-15, room 21 saveNo 3-4, room 23 saveNo 8-11, room 49 saveNo 5-7."
+   },
+   "event": "SALVAGE_GETITEM",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x2080",
+    "0x2004",
+    "0x2002",
+    "0x2804",
+    "0x2802",
+    "0x2801",
+    "0x2980",
+    "0x2940",
+    "0x3B01",
+    "0x3C80",
+    "0x3C40",
+    "0x3C20",
+    "0x3C10",
+    "0x3C08",
+    "0x3C04",
+    "0x3C02"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/sea/Room*.arc room.dzr SCOB 'SalvFM' (16 placements, kind 6)",
+    "src/d/d_com_static.cpp:115-132",
+    "src/d/actor/d_a_salvage.cpp:332-340",
+    "src/d/actor/d_a_salvage.cpp:518-522",
+    "src/d/d_salvage.cpp:108-112",
+    "src/d/d_kankyo.cpp:3602-3615",
+    "src/d/d_kankyo_rain.cpp:515-521",
+    "src/d/d_kankyo_dayproc.inc:83-99"
+   ],
+   "notes": "Kind 6 is also the one kind end_salvage does NOT init_one(): the slot stays registered so the point can come back without a room reload."
+  },
+  {
+   "id": "tc_salvage_corp",
+   "stage": "sea",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "The Salvage Corp ride rafts (actor 'Ikada', d_a_obj_ikada.cpp - 'Various Great Sea ships (Beedle, Submarines, Skull Platforms/Rafts, and Salvage Corp.)'). 20 Ikada placements sit in sea rooms 3, 9, 12, 23, 25, 34, 47, 48 and 49. Their crew is daNpcSv_c (profile fpcNm_NPC_SV_e, dzr names Sv0..Sv3, src/d/d_stage.cpp:825-828), and the three events they own are SV_TALK_P1_1ST, SV_TALK_P1_2ND and SV_TALK_P4_1ST - identified because daShip_c::setHeadAnm watches for exactly those three names to turn the King of Red Lions' head toward them (src/d/actor/d_a_ship.cpp:3467-3472)."
+   },
+   "event": "SV_TALK_P1_1ST",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "low",
+   "sources": [
+    "src/d/actor/d_a_npc_sv.cpp:1-4",
+    "src/d/d_stage.cpp:820-828",
+    "src/d/actor/d_a_ship.cpp:3462-3475",
+    "res/Stage/sea/Room*.arc room.dzr ACTR 'Ikada' (20 placements)",
+    "out/rip/GZLE01/godot/events/sea.json:SV_TALK_P1_1ST, SV_TALK_P1_2ND, SV_TALK_P4_1ST"
+   ],
+   "notes": "LOW because src/d/actor/d_a_npc_sv.cpp is a shell: all 44 of its bodies are /* Nonmatching */ stubs, so nothing about what the Salvage Corp says, gives or requires can be read from the decompilation. The only Sv0..Sv3 placements on the whole disc are in the test stage K_Testb, so in the real game the Ikada raft must create its own crew - and that code is stubbed too. What they hand over is NOT established by anything I read."
+  }
+ ]
+}

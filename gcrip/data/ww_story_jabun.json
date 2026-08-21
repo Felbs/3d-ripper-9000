@@ -483,6 +483,7 @@
     "0x3B20",
     "0x2110",
     "0x2110",
+    "0x2110",
     "0x2110"
    ],
    "gives_item": null,
@@ -496,7 +497,7 @@
     "src/d/d_event_data.cpp:779-802",
     "out/rip/GZLE01/godot/cutscenes/bombshop.json"
    ],
-   "notes": "The event is one PACKAGE staff: PLAY FileName bombshop.stb, EventFlag 8464 (= 0x2110), then return to Obombh room 0 spawn 200 layer 0. dEvDtStaff_c::specialProcPackage calls dComIfGs_onEventBit(EventFlag) as the .stb starts, so 0x2110 is raised at the beginning of the cutscene, not the end. The baked cutscene is 2045 frames / 68.2s and its actors are Link, Zl1 (Tetra), P1a, P1b, P1c and Bms2 - the crew looting the shop while the owner watches. The same TagEv type 9 also rolls the password: if 0x3B20 is clear it sets 0x3B20 and stores cM_rndF(6.0f) in event register 0xBA0F; the password string is then message 0x1B37 + that value. Layer 1 is the night dressing (Obombh has no special getLayerNo rule, so it is simply day 0 / night 1, and night is forced); Bms1, Bms2, Zl1, P1a, P1b and P1c are placed on both 0 and 1. bombshop.stb raises 0x2110 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). bombshop.stb raises 0x2110 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). bombshop.stb raises 0x2110 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+   "notes": "The event is one PACKAGE staff: PLAY FileName bombshop.stb, EventFlag 8464 (= 0x2110), then return to Obombh room 0 spawn 200 layer 0. dEvDtStaff_c::specialProcPackage calls dComIfGs_onEventBit(EventFlag) as the .stb starts, so 0x2110 is raised at the beginning of the cutscene, not the end. The baked cutscene is 2045 frames / 68.2s and its actors are Link, Zl1 (Tetra), P1a, P1b, P1c and Bms2 - the crew looting the shop while the owner watches. The same TagEv type 9 also rolls the password: if 0x3B20 is clear it sets 0x3B20 and stores cM_rndF(6.0f) in event register 0xBA0F; the password string is then message 0x1B37 + that value. Layer 1 is the night dressing (Obombh has no special getLayerNo rule, so it is simply day 0 / night 1, and night is forced); Bms1, Bms2, Zl1, P1a, P1b and P1c are placed on both 0 and 1. bombshop.stb raises 0x2110 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). bombshop.stb raises 0x2110 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). bombshop.stb raises 0x2110 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). bombshop.stb raises 0x2110 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
   },
   {
    "id": "jab_bombshop_owner",
@@ -772,6 +773,7 @@
     "0x3920",
     "0x3920",
     "0x3920",
+    "0x3920",
     "0x3920"
    ],
    "gives_item": "dItemNo_PEARL_NAYRU_e (0x69) - Nayru's Pearl",
@@ -785,7 +787,7 @@
     "out/rip/GZLE01/godot/cutscenes/getperl_jab.json",
     "include/d/d_item_data.h:112"
    ],
-   "notes": "The event is a PACKAGE staff - PLAY FileName getperl_jab.stb, EventFlag 14624 (= 0x3920) - plus a DIRECTOR NEXT to stage 'sea', room 44, StartCode 9, Layer -1, Mode 1. Sea room 44 spawn 9 is at (-193011.2, -101.5, 324657.5), a few thousand units in front of the whirlpool, so Link is dropped back outside the cave. The baked cutscene is 2245 frames / 74.8s with Link, Jb1 and six demo actors. The pearl itself comes from the .stb: a demo item staff carries an index into daDemo00_c's l_itemNo table and index 5 is dItemNo_PEARL_NAYRU_e (src/d/actor/d_a_demo00.cpp:714-737); which index this particular .stb passes was not decoded, so the mechanism is high confidence and the exact byte is not. Pjavdou's event list also contains APPEAR (Jb1 doing GRUGRU then APPEAR with two fixed cameras), which is not in the EVNT table and which nothing in the placement data orders - most likely a sub-scene of the same beat. getperl_jab.stb raises 0x3920 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). getperl_jab.stb raises 0x3920 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). getperl_jab.stb raises 0x3920 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+   "notes": "The event is a PACKAGE staff - PLAY FileName getperl_jab.stb, EventFlag 14624 (= 0x3920) - plus a DIRECTOR NEXT to stage 'sea', room 44, StartCode 9, Layer -1, Mode 1. Sea room 44 spawn 9 is at (-193011.2, -101.5, 324657.5), a few thousand units in front of the whirlpool, so Link is dropped back outside the cave. The baked cutscene is 2245 frames / 74.8s with Link, Jb1 and six demo actors. The pearl itself comes from the .stb: a demo item staff carries an index into daDemo00_c's l_itemNo table and index 5 is dItemNo_PEARL_NAYRU_e (src/d/actor/d_a_demo00.cpp:714-737); which index this particular .stb passes was not decoded, so the mechanism is high confidence and the exact byte is not. Pjavdou's event list also contains APPEAR (Jb1 doing GRUGRU then APPEAR with two fixed cameras), which is not in the EVNT table and which nothing in the placement data orders - most likely a sub-scene of the same beat. getperl_jab.stb raises 0x3920 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). getperl_jab.stb raises 0x3920 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). getperl_jab.stb raises 0x3920 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). getperl_jab.stb raises 0x3920 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
   },
   {
    "id": "jab_curse_broken",

@@ -931,6 +931,7 @@
     "0x2401",
     "0x2401",
     "0x2401",
+    "0x2401",
     "0x2401"
    ],
    "gives_item": null,
@@ -942,7 +943,7 @@
     "res/Stage/sea/Room44.arc room.dzr ACTa chunk",
     "out/rip/GZLE01/stages/LinkRM/LinkRM_events.json:Ganbaru"
    ],
-   "notes": "PACKAGE PLAY departure.stb with EventFlag = 9217 = 0x2401 (the event manager raises that bit for the package), OffsetPos (-200000, 0, 320000), OffsetAngY 0, and a hand-off NEXT to Stage=A_umikz, StartCode=204, RoomNo=0, Layer=-1. Layer 10 stages the send-off cast: Pirates 0x03FF0001 at (-200635, 0, 310720), Ba1 params 0x00000002 (Grandma) at (-202086, 151, 314166), Zl1 0x00000006 (Tetra), P1a and P1b, Ym1, Ym2, Vdora and the bridge. Grandma's farewell lines are the \"Ganbaru\" event (msgs 2038 and 2040) carried in the LinkRM event list and replayed by the Ba1 actor. departure.stb raises 0x2401 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). departure.stb raises 0x2401 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). departure.stb raises 0x2401 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+   "notes": "PACKAGE PLAY departure.stb with EventFlag = 9217 = 0x2401 (the event manager raises that bit for the package), OffsetPos (-200000, 0, 320000), OffsetAngY 0, and a hand-off NEXT to Stage=A_umikz, StartCode=204, RoomNo=0, Layer=-1. Layer 10 stages the send-off cast: Pirates 0x03FF0001 at (-200635, 0, 310720), Ba1 params 0x00000002 (Grandma) at (-202086, 151, 314166), Zl1 0x00000006 (Tetra), P1a and P1b, Ym1, Ym2, Vdora and the bridge. Grandma's farewell lines are the \"Ganbaru\" event (msgs 2038 and 2040) carried in the LinkRM event list and replayed by the Ba1 actor. departure.stb raises 0x2401 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). departure.stb raises 0x2401 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). departure.stb raises 0x2401 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). departure.stb raises 0x2401 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
   },
   {
    "id": "aj_speak_ambient",
