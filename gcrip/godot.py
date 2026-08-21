@@ -2538,7 +2538,12 @@ func _update_prompt() -> void:
                 continue
             var to_n: Vector3 = n.global_position - global_position
             to_n.y = 0.0
-            if to_n.length() > 220.0:
+            # an NPC knows its own dAttention_c TALK distance (up to 500 for the Fishman);
+            # this scan must not cap it at the generic pick-up reach
+            var reach := 220.0
+            if n.has_method("talk_range"):
+                reach = maxf(reach, n.talk_range())
+            if to_n.length() > reach:
                 continue
             if to_n.length() > 30.0 and forward().dot(to_n.normalized()) < 0.2:
                 continue  # must roughly face it
