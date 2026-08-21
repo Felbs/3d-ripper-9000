@@ -2953,6 +2953,9 @@ var shot_actor := ""   # --shot=<actor>: screenshot that actor's face to user://
 var door_test := false   # --door[=<dest stage>]: take the first (matching) door, report the landing
 var door_want := ""
 var door_legs := 0
+var story_test: bool = "--story" in OS.get_cmdline_user_args()   # walk every story state
+var story_idx := -1
+var story_frames := 0
 var door_frames := 0
 var shot_frames := 0
 var events: Dictionary = {}        # this stage's event_list.dat: name -> event
@@ -3015,6 +3018,8 @@ func _ready() -> void:
     for a in OS.get_cmdline_user_args():
         if a.begins_with("--shot="):
             shot_actor = a.substr(7)
+        elif a == "--story":
+            story_test = true
         elif a.begins_with("--door"):
             door_test = true
             if a.begins_with("--door="):
@@ -3024,7 +3029,7 @@ func _ready() -> void:
     Input.joy_connection_changed.connect(func(_id, _c): _apply_saved_pad_mappings())
     if load_game():
         print("gcrip: save file loaded (", str(save.get("saved_at", "?")), ")")
-        if not selftest and shot_actor == "" and not door_test:
+        if not selftest and shot_actor == "" and not door_test and not story_test:
             _continue_saved.call_deferred()
     bgm_player = AudioStreamPlayer.new()
     bgm_player.bus = "Master"
@@ -3107,6 +3112,33 @@ func _restore_position() -> void:
 func _process(delta: float) -> void:
     if shot_actor != "":
         _shot_tick()
+    if story_test:
+        story_frames += 1
+        if story_frames % 40 == 0:
+            var cs0 := get_tree().current_scene
+            var stage := String(cs0.name) if cs0 else ""
+            var states := story_states(stage)
+            if story_idx >= 0 and story_idx < states.size():
+                var rule: Dictionary = states[story_idx]
+                var shown := 0
+                var lvl := cs0.get_node_or_null("Level") if cs0 else null
+                if lvl:
+                    for n in lvl.find_children("*", "Node3D", true, false):
+                        if (n as Node3D).visible:
+                            shown += 1
+                print("gcrip story: state %d tests %s -> layer %d, %d visible nodes" % [
+                    story_idx, str(rule.get("tests", [])), story_layer(stage, 44), shown])
+            story_idx += 1
+            if story_idx >= states.size():
+                print("gcrip story: done")
+                get_tree().quit()
+            else:
+                for t in states[story_idx].get("tests", []):
+                    if bool(t[1]):
+                        set_event_bit(int(t[0]))
+                    else:
+                        clear_event_bit(int(t[0]))
+                reload_stage()
     if door_test:
         door_frames += 1
         var cs := get_tree().current_scene
@@ -3141,7 +3173,7 @@ func _process(delta: float) -> void:
             else:
                 door_frames = 0   # go back through the door and do it again
     autosave_frames += 1
-    if autosave_frames >= 30 * 60 and not dialog_open and not event_running and not selftest and shot_actor == "" and not door_test:
+    if autosave_frames >= 30 * 60 and not dialog_open and not event_running and not selftest and shot_actor == "" and not door_test and not story_test:
         autosave_frames = 0
         save_game("autosave")
 
@@ -3205,14 +3237,69 @@ func story_layer(stage: String, room: int) -> int:
             return int(rule.get("layer_night" if night else "layer_day", 0))
     return int(layers.get("default_night" if night else "default_day", 0))
 
-func event_bit(n: int) -> bool:
-    var bits: Dictionary = save.get("event_bits", {})
-    return bits.has(str(n))
+# dSv_event_flag_c: u8 mFlags[0x100]; an "event bit" id packs the byte index in its high
+# byte and the MASK (not a bit index) in its low byte - isEventBit(0x0520) = mFlags[5] & 0x20.
+# Some ids use multi-bit masks as packed registers, so keep the real byte array.
+const EVENT_FLAG_BYTES := 0x100
 
-func set_event_bit(n: int) -> void:
-    var bits: Dictionary = save.get("event_bits", {})
-    bits[str(n)] = true
-    save["event_bits"] = bits
+func event_flags() -> Array:
+    var f: Array = save.get("event_flags", [])
+    if f.size() != EVENT_FLAG_BYTES:
+        f = []
+        f.resize(EVENT_FLAG_BYTES)
+        f.fill(0)
+        save["event_flags"] = f
+    return f
+
+func event_bit(id: int) -> bool:
+    var mask := id & 0xFF
+    if mask == 0:
+        return false
+    return (int(event_flags()[(id >> 8) & 0xFF]) & mask) == mask
+
+func set_event_bit(id: int) -> void:
+    var f := event_flags()
+    var i := (id >> 8) & 0xFF
+    f[i] = int(f[i]) | (id & 0xFF)
+    save["event_flags"] = f
+
+func story_states(stage: String) -> Array:
+    # every layer rule that applies to this stage, in the decomp's order, plus the default
+    var base := stage.split("_r")[0]
+    var out: Array = []
+    for rule in layers.get("rules", []):
+        if str(rule.get("stage", "")) == base:
+            out.append(rule)
+    return out
+
+func apply_story_state(rule: Dictionary) -> void:
+    # set / clear exactly the bits this rule tests, then reload the stage so the layer swaps
+    for t in rule.get("tests", []):
+        if bool(t[1]):
+            set_event_bit(int(t[0]))
+        else:
+            clear_event_bit(int(t[0]))
+    reload_stage()
+
+func reload_stage() -> void:
+    var cs := get_tree().current_scene
+    if cs == null:
+        return
+    var link := player()
+    var keep: Vector3 = link.global_position if link else Vector3.ZERO
+    var st := String(cs.name)
+    last_warp_ms = -100000
+    pending = {"stage": st, "room": 0, "spawn": 0}
+    get_tree().change_scene_to_file.call_deferred("res://scenes/%s.tscn" % st)
+    _place_player.call_deferred()
+    if keep != Vector3.ZERO:
+        save["last_pos"] = [keep.x, keep.y, keep.z]
+
+func clear_event_bit(id: int) -> void:
+    var f := event_flags()
+    var i := (id >> 8) & 0xFF
+    f[i] = int(f[i]) & ~(id & 0xFF)
+    save["event_flags"] = f
 
 func is_switch(room: int, bit: int) -> bool:
     var sw: Dictionary = save.get("switches", {})
@@ -4534,7 +4621,7 @@ func _fill() -> void:
         for k in keys:
             var n: String = str(names.get(k, ""))
             list.add_item((n + "   (" + k + ")") if n != "" else k)
-        title.text = "Where to?   %d stages   -   Enter / A: go   Tab: events   Esc / Start: back" % keys.size()
+        title.text = "Where to?   %d stages   -   Enter / A: go   Tab: events / story / game   Esc: back" % keys.size()
     elif mode == "events":
         keys = Game.events.keys()
         for k in keys:
@@ -4543,7 +4630,23 @@ func _fill() -> void:
             for sf in ev.get("actors", []):
                 cast.append(str(sf.get("name", "")))
             list.add_item("%s   [%s]" % [k, ", ".join(cast)])
-        title.text = "Cutscenes here   %d events   -   Enter / A: play   Tab: game   Esc / Start: back" % keys.size()
+        title.text = "Cutscenes here   %d events   -   Enter / A: play   Tab: story   Esc / Start: back" % keys.size()
+    elif mode == "story":
+        var cs := get_tree().current_scene
+        var stage := String(cs.name) if cs else ""
+        keys = Game.story_states(stage)
+        var live := Game.story_layer(stage, 44 if stage.begins_with("sea") else 0)
+        for rule in keys:
+            var bits: Array = []
+            for t in rule.get("tests", []):
+                bits.append(("" if bool(t[1]) else "not ") + "0x%04X" % int(t[0]))
+            var lay := int(rule.get("layer_day", 0))
+            list.add_item("layer %d   <- %s%s" % [lay, ", ".join(bits), "   (live)" if lay == live else ""])
+        list.add_item("layer %d   <- fresh file (no story bits)   %s" % [
+            int(Game.layers.get("default_day", 0)),
+            "(live)" if live == int(Game.layers.get("default_day", 0)) else ""])
+        keys.append({"tests": [], "reset": true})
+        title.text = "Story state of %s   -   Enter / A: apply + reload   Tab: game   Esc: back" % stage
     else:
         keys = ["save", "new"]
         list.add_item("Save game now   (autosaves on every door and every 30 s)")
@@ -4560,12 +4663,23 @@ func _unhandled_input(event: InputEvent) -> void:
         Game.close_menu()
         get_viewport().set_input_as_handled()
     elif event.is_action_pressed("item_next"):
-        mode = {"stages": "events", "events": "game", "game": "stages"}[mode]
+        mode = {"stages": "events", "events": "story", "story": "game", "game": "stages"}[mode]
         _fill()
         get_viewport().set_input_as_handled()
     elif event.is_action_pressed("action_a") or event.is_action_pressed("ui_accept"):
         var sel := list.get_selected_items()
         if sel.size() > 0:
+            if mode == "story":
+                var rule: Dictionary = keys[sel[0]]
+                Game.close_menu()
+                if bool(rule.get("reset", false)):
+                    for r2 in Game.story_states(String(get_tree().current_scene.name)):
+                        for t in r2.get("tests", []):
+                            Game.clear_event_bit(int(t[0]))
+                    Game.reload_stage()
+                else:
+                    Game.apply_story_state(rule)
+                return
             var key := str(keys[sel[0]])
             Game.close_menu()
             if mode == "stages":
@@ -4829,7 +4943,8 @@ func _wrap_actors() -> void:
         var actor: String = rec["actor"]
         # story layers: -1 is always placed, otherwise only the layer the save's state selects
         var lay := int(rec.get("layer", -1))
-        if lay >= 0 and lay != Game.story_layer(name, int(rec.get("room", 0) if rec.get("room") != null else 0)):
+        var rm: int = int(rec["room"]) if rec.get("room") != null else -1   # stage.dzs loads with -1
+        if lay >= 0 and lay != Game.story_layer(name, rm):
             var off := level.find_child(str(rec["node"]).replace(".", "_"), true, false)
             if off and off is Node3D:
                 (off as Node3D).visible = false
