@@ -2782,6 +2782,7 @@ var bgm_player: AudioStreamPlayer = null
 var bgm_song := ""
 var selftest: bool = "--selftest" in OS.get_cmdline_user_args()   # scripted input run
 var events: Dictionary = {}        # this stage's event_list.dat: name -> event
+var enemies: Dictionary = {}       # enemies.json: actor -> constants (data/ww_enemies_*.json)
 var event_running := false
 var event_runner: Node = null
 var event_cam: Dictionary = {}     # {eye, center, fov} while an event drives the camera
@@ -2817,6 +2818,11 @@ func _ready() -> void:
         var parsed_s = JSON.parse_string(sn.get_as_text())
         if parsed_s is Dictionary:
             stage_names = parsed_s
+    var en := FileAccess.open("res://enemies.json", FileAccess.READ)
+    if en:
+        var parsed_e = JSON.parse_string(en.get_as_text())
+        if parsed_e is Dictionary:
+            enemies = parsed_e
     var bg := FileAccess.open("res://bgm.json", FileAccess.READ)
     if bg:
         var parsed_b = JSON.parse_string(bg.get_as_text())
@@ -4294,6 +4300,11 @@ const SCRIPTS := {
     "koisi1": "res://actors/carriable.gd", "Ktaru": "res://actors/carriable.gd",
     "item": "res://actors/item.gd", "Kanban": "res://actors/sign.gd",
     "Kui": "res://actors/kui.gd",
+    # generic data-driven enemies (enemies.json)
+    "mo2": "res://actors/enemy.gd", "Puti": "res://actors/enemy.gd", "Tn": "res://actors/enemy.gd",
+    "Stal": "res://actors/enemy.gd", "amos2": "res://actors/enemy.gd", "keeth": "res://actors/enemy.gd",
+    "Fkeeth": "res://actors/enemy.gd", "Bb": "res://actors/enemy.gd", "p_hat": "res://actors/enemy.gd",
+    "Oq": "res://actors/enemy.gd", "wiz_r": "res://actors/enemy.gd",
     "Pig": "res://actors/pig.gd", "Kamome": "res://actors/gull.gd",
     "NpcSo": "res://actors/npc.gd", "Bk": "res://actors/bokoblin.gd",
     # villagers and friends: generic talkable NPC with their own rig + wait/talk clips
@@ -4442,7 +4453,7 @@ func _wrap_actors() -> void:
             node.setup(params, mesh, rot_y)
         elif script_path.ends_with("chest.gd"):
             node.setup(int(rot[2]), mesh, rot_y)
-        elif script_path.ends_with("npc.gd"):
+        elif script_path.ends_with("npc.gd") or script_path.ends_with("enemy.gd"):
             node.setup(actor, params, mesh, rot_y)
         else:
             node.setup(params, mesh, rot_y)
@@ -4492,6 +4503,10 @@ _ROPE_GD = 'extends Node3D\n# gcrip: Grappling Hook rope (d_a_himo2.cpp). Free f
 _KUI_GD = 'extends Node3D\n# gcrip: grapple post (d_a_kui). Marks where the grappling hook can catch: the hook point is\n# the top of the post\'s mesh. Group "grapple_post"; hook_point() for the rope\'s target search.\n\nvar params := 0\nvar mesh: Node3D = null\nvar top := 170.0\n\nfunc setup(p: int, mesh_node: Node3D, _rot_y: float) -> void:\n    params = p\n    mesh = mesh_node\n    add_to_group("grapple_post")\n    if mesh is MeshInstance3D:\n        var aabb: AABB = (mesh as MeshInstance3D).get_aabb()\n        var hi := mesh.global_transform * (aabb.position + aabb.size)\n        var lo := mesh.global_transform * aabb.position\n        top = maxf(hi.y, lo.y) - global_position.y\n\nfunc hook_point() -> Vector3:\n    return global_position + Vector3(0, top, 0)\n'
 
 _TAG_EVENT_GD = 'extends Area3D\n# gcrip: TagEv (d_a_tag_event.cpp) - an invisible cylinder (scale x 100) that orders the\n# stage event named by the EVNT table entry params >> 24 when Link walks in. A switch bit\n# (params >> 8) remembers it fired; an event bit in rot.z gates it (0 / 0xFFFF = none).\n\nvar params := 0\nvar event_flag := 0\nvar event_name := ""\nvar swbit := 0xFF\nvar room := 0\nvar done := false\n\nfunc setup(p: int, rot_z: int, r: int, table: Array, sc: Array) -> void:\n    params = p\n    room = r\n    event_flag = rot_z & 0xFFFF\n    swbit = (p >> 8) & 0xFF\n    var no := (p >> 24) & 0xFF\n    if no < table.size():\n        event_name = str(table[no])\n    var shape := CollisionShape3D.new()\n    var cyl := CylinderShape3D.new()\n    cyl.radius = maxf(float(sc[0]) * 100.0, 40.0)\n    cyl.height = maxf(float(sc[1]) * 100.0, 60.0) * 2.0\n    shape.shape = cyl\n    add_child(shape)\n    collision_layer = 0\n    collision_mask = 1\n    monitoring = true\n    body_entered.connect(_on_body_entered)\n\nfunc _on_body_entered(body: Node3D) -> void:\n    if done or not (body is CharacterBody3D) or not body.is_in_group("player"):\n        return\n    if event_name == "" or not Game.events.has(event_name):\n        return\n    if swbit != 0xFF and Game.is_switch(room, swbit):\n        done = true\n        return\n    if event_flag != 0 and event_flag != 0xFFFF and not Game.event_bit(event_flag):\n        return\n    if Game.run_event(event_name):\n        done = true\n        if swbit != 0xFF:\n            Game.set_switch(room, swbit)\n'
+
+_ACTOR_ENEMY_GD = 'extends CharacterBody3D\n# gcrip: data-driven enemy (melee / flying / ranged) for the actors that are not worth their\n# own script yet. Constants come from enemies.json (data/ww_enemies_*.json mined from the\n# decomp); anything missing falls back to the Bokoblin-like defaults below. Per-frame units.\n\nconst DEFAULTS := {\n    "hp": 3, "radius": 40.0, "height": 100.0, "notice": 1000.0, "lose": 1800.0,\n    "walk": 3.0, "run": 10.0, "gravity": -3.0, "terminal": -50.0, "turn_s16": 0x600,\n    "attack_range": 110.0, "attack_frames": 30, "hit_frame": 14, "damage": 2,\n    "knockback": 8.0, "flinch_frames": 12, "flying": false, "hover": 250.0, "fly_speed": 8.0,\n    "ranged": null, "clips": {},\n}\n\nenum Act { STAND, APPROACH, ATTACK, DAMAGE, DEAD, RETURN }\nvar act: int = Act.STAND\nvar actor := ""\nvar cfg: Dictionary = {}\nvar hp := 3\nvar facing := 0.0\nvar speed := 0.0\nvar timer := 0\nvar cooldown := 0\nvar hit_done := false\nvar mesh: Node3D = null\nvar anim: AnimationPlayer = null\nvar home := Vector3.ZERO\nvar bob := 0.0\nvar dive_from := Vector3.ZERO\nvar dive_to := Vector3.ZERO\nvar clips: Dictionary = {}\n\nfunc setup(actor_name: String, _p: int, mesh_node: Node3D, rot_y_deg: float) -> void:\n    actor = actor_name\n    cfg = DEFAULTS.duplicate(true)\n    var table: Dictionary = Game.enemies.get(actor, {})\n    for k in table:\n        if table[k] != null:\n            cfg[k] = table[k]\n    mesh = mesh_node\n    home = global_position\n    facing = deg_to_rad(rot_y_deg)\n    hp = int(cfg["hp"])\n    collision_layer = 1 | 8\n    collision_mask = 1\n    var shape := CollisionShape3D.new()\n    var cyl := CylinderShape3D.new()\n    cyl.radius = float(cfg["radius"])\n    cyl.height = float(cfg["height"])\n    shape.shape = cyl\n    shape.position.y = float(cfg["height"]) / 2.0\n    add_child(shape)\n    add_to_group("enemy")\n    if bool(cfg["flying"]):\n        motion_mode = CharacterBody3D.MOTION_MODE_FLOATING\n    anim = mesh.find_child("AnimationPlayer", true, false) if mesh else null\n    if anim:\n        var wanted: Dictionary = cfg.get("clips", {})\n        var names := anim.get_animation_list()\n        for key in ["wait", "walk", "run", "notice", "attack", "damage", "dead", "fly"]:\n            var want := str(wanted.get(key, ""))\n            if want != "" and anim.has_animation(want):\n                clips[key] = want\n        for n in names:\n            var l := n.to_lower()\n            for key in ["wait", "walk", "run", "attack", "damage", "dead", "fly", "hakken"]:\n                var k2: String = "notice" if key == "hakken" else key\n                if key in l and not clips.has(k2):\n                    clips[k2] = n\n        for key in ["wait", "walk", "run", "fly"]:\n            if clips.has(key):\n                anim.get_animation(clips[key]).loop_mode = Animation.LOOP_LINEAR\n        _play("fly" if bool(cfg["flying"]) and clips.has("fly") else "wait")\n\nfunc _play(key: String, blend := 0.2) -> void:\n    if anim and clips.has(key) and anim.current_animation != clips[key]:\n        anim.play(clips[key], blend)\n\nfunc take_hit(damage: int, from: Vector3) -> void:\n    if act == Act.DEAD:\n        return\n    hp -= damage\n    var away := global_position - from\n    away.y = 0.0\n    if away.length() > 0.01:\n        facing = atan2(-away.x, -away.z)\n    if hp <= 0:\n        act = Act.DEAD\n        timer = 40\n        _play("dead", 0.1)\n        Game.burst(global_position + Vector3(0, float(cfg["height"]) * 0.5, 0), Color(0.5, 0.2, 0.6))\n        return\n    act = Act.DAMAGE\n    timer = int(cfg["flinch_frames"])\n    speed = -float(cfg["knockback"])\n    _play("damage", 0.05)\n\nfunc _turn_to(t: float) -> void:\n    var max_step := int(cfg["turn_s16"]) * PI / 32768.0\n    facing += clampf(wrapf(t - facing, -PI, PI), -max_step, max_step)\n\nfunc _physics_process(_delta: float) -> void:\n    var link := Game.player()\n    var to_link := Vector3.ZERO\n    var dist := 1.0e9\n    if link:\n        to_link = link.global_position - global_position\n        to_link.y = 0.0\n        dist = to_link.length()\n    var flying := bool(cfg["flying"])\n    var ranged = cfg.get("ranged")\n    var has_ranged: bool = ranged is Dictionary\n    if cooldown > 0:\n        cooldown -= 1\n    match act:\n        Act.STAND:\n            speed = 0.0\n            _play("fly" if flying and clips.has("fly") else "wait")\n            if link and dist < float(cfg["notice"]) and Game.line_of_sight(global_position + Vector3(0, 80, 0), link.global_position + Vector3(0, 80, 0)):\n                act = Act.APPROACH\n                _play("notice" if clips.has("notice") else ("fly" if flying else "run"), 0.1)\n        Act.APPROACH:\n            _turn_to(atan2(to_link.x, to_link.z))\n            if has_ranged and dist < float(ranged.get("range", 1200.0)) and dist > float(cfg["attack_range"]):\n                speed = 0.0\n                _play("wait")\n                if cooldown <= 0 and link:\n                    _shoot(ranged, link)\n            else:\n                speed = float(cfg["fly_speed"] if flying else cfg["run"])\n                _play("fly" if flying and clips.has("fly") else "run")\n            if dist < float(cfg["attack_range"]) and link:\n                act = Act.ATTACK\n                timer = int(cfg["attack_frames"])\n                hit_done = false\n                speed = 0.0\n                dive_from = global_position\n                dive_to = link.global_position + Vector3(0, 60.0, 0)\n                _play("attack", 0.1)\n            elif dist > float(cfg["lose"]):\n                act = Act.RETURN\n        Act.ATTACK:\n            timer -= 1\n            var n := int(cfg["attack_frames"])\n            if flying:\n                # swoop: dive at Link\'s body and climb back out over the attack\'s frames\n                var k := 1.0 - float(timer) / maxf(float(n), 1.0)\n                var arc := sin(k * PI)\n                global_position = dive_from.lerp(dive_to, minf(k * 2.0, 1.0)) + Vector3(0, (1.0 - arc) * 0.0, 0)\n                if k > 0.5:\n                    global_position = dive_to.lerp(dive_from + Vector3(0, float(cfg["hover"]), 0), (k - 0.5) * 2.0)\n            if timer == n - int(cfg["hit_frame"]) and not hit_done and link and link.global_position.distance_to(global_position) < float(cfg["attack_range"]) + 40.0:\n                hit_done = true\n                link.call("take_damage", int(cfg["damage"]), global_position)\n            if timer <= 0:\n                act = Act.APPROACH\n        Act.DAMAGE:\n            timer -= 1\n            speed = minf(speed + 1.0, 0.0)\n            if timer <= 0:\n                act = Act.APPROACH\n        Act.RETURN:\n            var to_home := home - global_position\n            to_home.y = 0.0\n            _turn_to(atan2(to_home.x, to_home.z))\n            speed = float(cfg["walk"] if not flying else cfg["fly_speed"])\n            _play("walk" if clips.has("walk") else "run")\n            if to_home.length() < 40.0:\n                act = Act.STAND\n            elif link and dist < float(cfg["notice"]) * 0.8:\n                act = Act.APPROACH\n        Act.DEAD:\n            timer -= 1\n            if mesh:\n                mesh.scale = mesh.scale * 0.92\n            if timer <= 0:\n                queue_free()\n            return\n    if flying:\n        if act != Act.ATTACK:\n            bob += 0.12\n            var target_y := Game.ground_height(global_position) + float(cfg["hover"]) + sin(bob) * 15.0\n            var dy := clampf(target_y - global_position.y, -6.0, 6.0)\n            velocity = (Vector3(sin(facing) * speed, dy, cos(facing) * speed)) * 30.0\n            move_and_slide()\n    else:\n        var vy := velocity.y / 30.0 + float(cfg["gravity"])\n        vy = maxf(vy, float(cfg["terminal"]))\n        velocity = Vector3(sin(facing) * speed, vy, cos(facing) * speed) * 30.0\n        move_and_slide()\n        if is_on_floor():\n            velocity.y = 0.0\n    if mesh:\n        mesh.rotation.y = facing\n\nfunc _shoot(r: Dictionary, link: Node3D) -> void:\n    cooldown = int(r.get("cooldown", 90))\n    var shot := Area3D.new()\n    shot.set_script(load("res://items/enemy_shot.gd"))\n    get_tree().current_scene.add_child(shot)\n    var from := global_position + Vector3(0, float(cfg["height"]) * 0.6, 0)\n    var aim := (link.global_position + Vector3(0, 80.0, 0)) - from\n    shot.launch(from, aim.normalized(), float(r.get("speed", 30.0)), float(r.get("range", 1500.0)), int(r.get("damage", 2)))\n    _play("attack", 0.1)\n'
+
+_ENEMY_SHOT_GD = 'extends Area3D\n# gcrip: a simple enemy projectile (Octorok rock, Wizzrobe fire ball): straight flight, hurts\n# Link within 40 units, stops on the world.\n\nvar vel := Vector3.ZERO\nvar left := 0.0\nvar damage := 2\nvar mesh: MeshInstance3D = null\n\nfunc launch(from: Vector3, dir: Vector3, speed: float, range_units: float, dmg: int) -> void:\n    global_position = from\n    vel = dir * speed\n    left = range_units\n    damage = dmg\n    mesh = MeshInstance3D.new()\n    var sph := SphereMesh.new()\n    sph.radius = 14.0\n    sph.height = 28.0\n    mesh.mesh = sph\n    var mat := StandardMaterial3D.new()\n    mat.albedo_color = Color(0.9, 0.4, 0.1)\n    mat.emission_enabled = true\n    mat.emission = Color(1.0, 0.5, 0.1)\n    mesh.material_override = mat\n    add_child(mesh)\n\nfunc _physics_process(_delta: float) -> void:\n    var old := global_position\n    var next := old + vel\n    var space := get_world_3d().direct_space_state\n    var q := PhysicsRayQueryParameters3D.create(old, next, 1)\n    if space.intersect_ray(q):\n        queue_free()\n        return\n    global_position = next\n    left -= vel.length()\n    var link := Game.player()\n    if link and link.global_position.distance_to(global_position - Vector3(0, 60.0, 0)) < 45.0:\n        link.call("take_damage", damage, global_position)\n        queue_free()\n        return\n    if left <= 0.0:\n        queue_free()\n'
 
 _WARP_GD = """extends Area3D
 # gcrip: walking into this (a door) loads the destination stage.
@@ -4899,6 +4914,7 @@ _ANIMATED_ACTORS = {
     "Co1", "Zk1", "Tc", "Bs1", "Bs2", "Kp1", "Mt", "Ds1", "Sa1", "Gk1", "Um1", "Uo1", "Uo2",
     "Uo3", "Ub1", "Ub2", "Ub3", "Ub4", "Bj1", "Jb1", "Mk", "Hr", "Aj2", "Bmcon1", "Bms1",
     "Ah", "Auzu", "Puti", "c_green", "c_red", "c_blue", "c_black", "c_kiiro", "keeth", "Fkeeth",
+    "mo2", "Tn", "Stal", "amos2", "Bb", "p_hat", "Oq", "wiz_r",
 }
 _ANIM_WORDS = ("wait", "talk", "walk", "run", "attack", "damage", "dead", "fly", "swim", "idle")
 _ANIM_CAP = 12
@@ -5028,6 +5044,13 @@ def export_godot(
     dlg = Path(__file__).parent / "data" / "ww_npc_dialogue.json"
     if dlg.exists():
         shutil.copyfile(dlg, out_dir / "npc_dialogue.json")
+    merged: dict = {}
+    for part in sorted((Path(__file__).parent / "data").glob("ww_enemies_*.json")):
+        try:
+            merged.update(json.loads(part.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            continue
+    (out_dir / "enemies.json").write_text(json.dumps(merged, indent=1), encoding="utf-8")
     n_songs = _copy_music(rip_dir, out_dir, list(stage_data))
     if not quiet:
         print(f"  {n_songs} songs in audio/music/ (gcrip music renders more)")
@@ -5039,7 +5062,8 @@ def export_godot(
     (out_dir / "items").mkdir(parents=True, exist_ok=True)
     for fname, src in (("arrow.gd", _ARROW_GD), ("boomerang.gd", _BOOMERANG_GD),
                        ("bomb.gd", _BOMB_GD), ("hookshot.gd", _HOOKSHOT_GD),
-                       ("ship.gd", _SHIP_GD), ("rope.gd", _ROPE_GD)):
+                       ("ship.gd", _SHIP_GD), ("rope.gd", _ROPE_GD),
+                       ("enemy_shot.gd", _ENEMY_SHOT_GD)):
         (out_dir / "items" / fname).write_text(src, encoding="utf-8")
     n_items = _item_models(rip_dir, out_dir)
     if not quiet:
@@ -5057,6 +5081,7 @@ def export_godot(
         "item.gd": _ACTOR_ITEM_GD,
         "sign.gd": _ACTOR_SIGN_GD,
         "kui.gd": _KUI_GD,
+        "enemy.gd": _ACTOR_ENEMY_GD,
         "tag_event.gd": _TAG_EVENT_GD,
         "chest.gd": _ACTOR_CHEST_GD,
         "pig.gd": _ACTOR_PIG_GD,
