@@ -46,7 +46,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from gcrip.formats import ibnk, wsys
-from gcrip.formats.bms import Note, Sequence
+from gcrip.formats.bms import VIB_DEFAULT_RATE, Note, Sequence
 
 OUT_RATE = 32000  # the GameCube DSP mixes at 32 kHz
 ATTACK_SEC = 0.004
@@ -135,7 +135,7 @@ def _track_curves(seq: Sequence) -> tuple[dict[int, Vibrato], dict[int, list[tup
     for e in seq.events:
         if e.kind == "vibrato":
             depth, rate = e.value  # type: ignore[misc]
-            vib_changes.setdefault(e.track, [(0.0, 0.0, 1.0 / 18.0)]).append((e.sec, depth, rate))
+            vib_changes.setdefault(e.track, [(0.0, 0.0, VIB_DEFAULT_RATE)]).append((e.sec, depth, rate))
         elif e.kind == "param" and e.value[0] == 2:  # type: ignore[index]
             fx.setdefault(e.track, [(0.0, 0.0)]).append((e.sec, float(e.value[1])))  # type: ignore[index]
     vibs = {t: Vibrato(c) for t, c in vib_changes.items() if any(d for _s, d, _r in c)}
