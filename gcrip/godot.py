@@ -182,7 +182,7 @@ const HEAVY_SPEED_SCALE := 0.5          # move.heavy_speed_scale
 
 const S16_TO_RAD := PI / 32768.0
 
-enum State { GROUND, AIR, ROLL, SWIM, LAND, ATTACK, JUMPCUT, JUMPCUT_LAND, DAMAGE, GLIDE }
+enum State { GROUND, AIR, ROLL, SWIM, LAND, ATTACK, JUMPCUT, JUMPCUT_LAND, DAMAGE, GLIDE, CARRY, GRAB }
 
 @export var water_level := -1.0e9   # stage sets this (sea stages: 0)
 
@@ -223,6 +223,12 @@ var glide_frames := 0
 var glide_magic_timer := 0
 @onready var hud_magic: Label = get_node_or_null("HUD/Magic")
 @onready var hud_items: Label = get_node_or_null("HUD/Items")
+@onready var hud_rupees: Label = get_node_or_null("HUD/Rupees")
+@onready var hud_prompt: Label = get_node_or_null("HUD/Prompt")
+var rupees := 0
+var held: Node3D = null          # carried pot / pig / pebble
+var prompt_target: Node3D = null
+var grab_frames := 0
 @onready var sword_pivot: Node3D = get_node_or_null("SwordPivot")
 @onready var sword_area: Area3D = get_node_or_null("SwordPivot/SwordHit")
 @onready var sword_shape: CollisionShape3D = get_node_or_null("SwordPivot/SwordHit/Shape")
@@ -340,11 +346,18 @@ func _physics_process(_delta: float) -> void:
         if combo_timer == 0 and state != State.ATTACK:
             combo = 0
 
+    if Game.dialog_open:  # text box up: Link stands still
+        _apply(Vector3.ZERO, -1.0)
+        play_clip("wait")
+        return
     if Input.is_action_just_pressed("action_y") and state in [State.GROUND, State.SWIM]:
         heavy = not heavy  # Iron Boots toggle (procBootsEquip; 19-frame anim skipped)
         _update_hud()
+    _update_prompt()
 
     match state:
+        State.CARRY: _carry()
+        State.GRAB: _grab()
         State.GROUND: _ground()
         State.AIR: _air()
         State.ROLL: _roll()
@@ -410,9 +423,13 @@ func _ground() -> void:
     if Input.is_action_just_pressed("action_b"):
         _enter_attack(s)
         return
-    if Input.is_action_just_pressed("action_a") and speed > 1.0:
-        _enter_roll()
-        return
+    if Input.is_action_just_pressed("action_a"):
+        if prompt_target != null:
+            prompt_target.interact(self)
+            return
+        if speed > 1.0:
+            _enter_roll()
+            return
 
     var was_on_floor := is_on_floor()
     _apply(forward() * speed, -1.0)  # small downward push keeps floor contact on slopes
@@ -711,6 +728,85 @@ func _jumpcut_land() -> void:
     if cut_frame >= JATTACK_LAND["end"]:
         _enter_ground()
 
+# ---------------------------------------------------------------- interaction / carrying
+
+func _update_prompt() -> void:
+    prompt_target = null
+    var best := ""
+    if state in [State.GROUND, State.CARRY]:
+        for n in get_tree().get_nodes_in_group("interact"):
+            if not is_instance_valid(n) or n == held:
+                continue
+            var to_n: Vector3 = n.global_position - global_position
+            to_n.y = 0.0
+            if to_n.length() > 220.0:
+                continue
+            if to_n.length() > 30.0 and forward().dot(to_n.normalized()) < 0.2:
+                continue  # must roughly face it
+            var p: String = n.interact_prompt(self)
+            if p != "" and state == State.GROUND:
+                prompt_target = n
+                best = p
+                break
+    if state == State.CARRY:
+        best = "Throw"
+    if hud_prompt:
+        hud_prompt.text = ("A: " + best) if best != "" else ""
+
+func carry(node: Node3D) -> void:
+    # lift: d_a_player_grab - Link stops, grabup anim, then carries at walk speed
+    held = node
+    node.picked_up(self)
+    state = State.GRAB
+    grab_frames = 0
+    speed = 0.0
+    play_clip("grabup", 0.1)
+
+func carry_point() -> Vector3:
+    return global_position + Vector3(0, 175.0, 0) + forward() * 10.0
+
+func _grab() -> void:
+    grab_frames += 1
+    _apply(Vector3.ZERO, -1.0)
+    if grab_frames >= 12:
+        state = State.CARRY
+        play_clip("grabwait")
+
+func _carry() -> void:
+    if held == null or not is_instance_valid(held):
+        held = null
+        _enter_ground()
+        return
+    var s := stick()
+    var dist := minf(s.length(), 1.0)
+    if dist > 0.05:
+        turn_toward(heading_of(stick_world_dir(s)), TURN_MAX_STEP, TURN_MIN_STEP, TURN_DIVISOR)
+        var target_speed := RUN_SPEED_MAX * dist * (0.8 if held.get("kind") == "ootubo1" else 1.0)
+        speed = minf(speed + RUN_ACCEL * dist, target_speed) if speed < target_speed else target_speed
+        play_clip("walkbarrel" if held.get("kind") == "ootubo1" else "walk", ANIM_BLEND, maxf(dist, 0.5))
+    else:
+        _decel_to(0.0)
+        play_clip("grabwait")
+    _apply(forward() * speed, -1.0)
+    if Input.is_action_just_pressed("action_a"):
+        var h := held
+        held = null
+        h.thrown(forward(), speed)
+        play_clip("grabthrow", 0.05)
+        state = State.LAND
+        land_frames = 10
+        return
+    if not is_on_floor():
+        _enter_air(forward() * speed, 0.0, GRAVITY)
+        if held:
+            var h2 := held
+            held = null
+            h2.thrown(forward(), speed)
+
+func add_rupees(n: int) -> void:
+    rupees = mini(rupees + n, 5000)
+    _update_hud()
+
 # ---------------------------------------------------------------- Deku Leaf
 
 func _enter_glide() -> void:
@@ -836,6 +932,8 @@ func _update_hud() -> void:
     hud_hearts.text = s
     if hud_magic:
         hud_magic.text = "MP " + "\\u2588".repeat(magic) + "\\u2591".repeat(MAGIC_MAX - magic)
+    if hud_rupees:
+        hud_rupees.text = "\\u25c6 %d" % rupees
     if hud_items:
         hud_items.text = "B sword   A roll/jump   R/Z target   X Deku Leaf   Y Iron Boots%s" % (" [ON]" if heavy else "")
 
@@ -948,6 +1046,32 @@ theme_override_font_sizes/font_size = 20
 theme_override_colors/font_color = Color(0.35, 0.9, 0.45, 1)
 text = ""
 
+[node name="Rupees" type="Label" parent="HUD"]
+offset_left = 24.0
+offset_top = 96.0
+offset_right = 300.0
+offset_bottom = 130.0
+theme_override_font_sizes/font_size = 24
+theme_override_colors/font_color = Color(0.4, 0.95, 0.5, 1)
+text = ""
+
+[node name="Prompt" type="Label" parent="HUD"]
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -200.0
+offset_top = -110.0
+offset_right = 200.0
+offset_bottom = -70.0
+grow_horizontal = 2
+grow_vertical = 0
+horizontal_alignment = 1
+theme_override_font_sizes/font_size = 26
+theme_override_colors/font_color = Color(0.95, 0.95, 0.7, 1)
+text = ""
+
 [node name="Items" type="Label" parent="HUD"]
 anchors_preset = 3
 anchor_left = 1.0
@@ -983,6 +1107,7 @@ _PLAYER_CLIPS = (
     "wait", "walk", "dash", "mjmp", "jmped", "mrolll", "swimwait", "swiming",
     "cuta", "cutf", "cutr", "cutl", "cutea", "cuteb", "jattack", "jattackland",
     "damf", "damb", "daml", "damr", "dam", "damff", "damfb", "talka",
+    "grabup", "grabwait", "grabthrow", "walkbarrel",
 )  # fmt: skip
 
 _GAME_GD = """extends Node
@@ -1005,6 +1130,9 @@ var pending: Dictionary = {}
 var last_warp_ms := -100000
 var banner: Label = null
 var calib: Node = null
+var messages: Dictionary = {}   # BMG message id -> text (gcrip msg)
+var dialog: Node = null
+var dialog_open := false
 
 func _ready() -> void:
     var f := FileAccess.open("res://stage_data.json", FileAccess.READ)
@@ -1012,8 +1140,134 @@ func _ready() -> void:
         var parsed = JSON.parse_string(f.get_as_text())
         if parsed is Dictionary:
             stage_data = parsed
+    var m := FileAccess.open("res://messages.json", FileAccess.READ)
+    if m:
+        var parsed_m = JSON.parse_string(m.get_as_text())
+        if parsed_m is Array:
+            for e in parsed_m:
+                messages[int(e["id"])] = str(e["text"])
     _apply_saved_pad_mappings()
     Input.joy_connection_changed.connect(func(_id, _c): _apply_saved_pad_mappings())
+
+# ---- world helpers used by actors
+
+func player() -> Node3D:
+    var list := get_tree().get_nodes_in_group("player")
+    return list[0] if list.size() > 0 else null
+
+func ground_height(pos: Vector3) -> float:
+    var scene: Node3D = get_tree().current_scene as Node3D
+    if scene == null:
+        return pos.y
+    var space: PhysicsDirectSpaceState3D = scene.get_world_3d().direct_space_state
+    var q := PhysicsRayQueryParameters3D.create(pos + Vector3(0, 200, 0), pos - Vector3(0, 5000, 0), 1)
+    var hit: Dictionary = space.intersect_ray(q)
+    return hit.position.y if hit else pos.y - 5000.0
+
+func line_of_sight(a: Vector3, b: Vector3) -> bool:
+    var scene: Node3D = get_tree().current_scene as Node3D
+    if scene == null:
+        return true
+    var space: PhysicsDirectSpaceState3D = scene.get_world_3d().direct_space_state
+    var q := PhysicsRayQueryParameters3D.create(a, b, 1)
+    return not space.intersect_ray(q)
+
+func spawn_drop(params: int, pos: Vector3) -> void:
+    # pots/grass: item no in params bits 0-5 (0x3F none, 0x20+ = drop table -> mostly green rupees)
+    var item_no := params & 0x3F
+    if item_no == 0x3F:
+        return
+    var id := item_no
+    if item_no >= 0x20:
+        var r := randf()
+        id = 1 if r < 0.7 else (0 if r < 0.9 else 2)
+    spawn_item(id, pos + Vector3(0, 20, 0))
+
+func spawn_item(item_id: int, pos: Vector3) -> void:
+    var scene := get_tree().current_scene
+    if scene == null:
+        return
+    var s: Script = load("res://actors/item.gd")
+    var it: Area3D = s.new()
+    scene.add_child(it)
+    it.global_position = pos
+    it.setup(item_id, null, false)
+    it.vy = 23.0  # pop up like a pot drop (POP_VY)
+
+func burst(pos: Vector3, color: Color) -> void:
+    var scene := get_tree().current_scene
+    if scene == null:
+        return
+    var p := GPUParticles3D.new()
+    p.one_shot = true
+    p.emitting = true
+    p.amount = 24
+    p.lifetime = 0.6
+    p.explosiveness = 1.0
+    var mat := ParticleProcessMaterial.new()
+    mat.direction = Vector3(0, 1, 0)
+    mat.spread = 80.0
+    mat.initial_velocity_min = 150.0
+    mat.initial_velocity_max = 400.0
+    mat.gravity = Vector3(0, -900, 0)
+    mat.scale_min = 6.0
+    mat.scale_max = 14.0
+    mat.color = color
+    p.process_material = mat
+    var mesh := BoxMesh.new()
+    mesh.size = Vector3(1, 1, 1)
+    p.draw_pass_1 = mesh
+    scene.add_child(p)
+    p.global_position = pos
+    get_tree().create_timer(1.5).timeout.connect(p.queue_free)
+
+# ---- dialogue
+
+func npc_messages(actor: String) -> Array:
+    # first lines of a few known conversations; the full graphs live in the decomp
+    match actor:
+        "NpcSo":
+            return [1303, 1304] if messages.has(1303) else []
+    return []
+
+func _ensure_dialog() -> void:
+    if dialog == null:
+        dialog = load("res://dialog.tscn").instantiate()
+        add_child(dialog)
+        dialog.closed.connect(func(): dialog_open = false)
+
+func show_text(text: String) -> void:
+    _ensure_dialog()
+    dialog_open = true
+    dialog.show_pages(_paginate(text))
+
+func show_message(id: int) -> void:
+    show_text(messages.get(id, "(message %d not found)" % id))
+
+func show_messages(ids: Array) -> void:
+    var pages: Array = []
+    for id in ids:
+        pages.append_array(_paginate(messages.get(int(id), "(message %d)" % int(id))))
+    _ensure_dialog()
+    dialog_open = true
+    dialog.show_pages(pages)
+
+func _paginate(text: String) -> Array:
+    var t := text.replace("{name}", "Link")
+    var re := RegEx.new()
+    re.compile("\\\\{[^}]*\\\\}")
+    t = re.sub(t, "", true)
+    var lines := t.split("\\n")
+    var pages: Array = []
+    var cur: Array = []
+    for ln in lines:
+        cur.append(ln)
+        if cur.size() >= 3:
+            pages.append("\\n".join(cur))
+            cur = []
+    if cur.size() > 0 and "".join(cur).strip_edges() != "":
+        pages.append("\\n".join(cur))
+    return pages if pages.size() > 0 else [t]
 
 func _apply_saved_pad_mappings() -> void:
     var cfg := ConfigFile.new()
@@ -1138,12 +1392,829 @@ vertical_alignment = 1
 theme_override_font_sizes/font_size = 28
 """
 
-_STAGE_GD = """extends Node3D
-# gcrip stage root: puts the game's liquid collision (from the .dzb) on its own physics
-# layers so Link can probe for water and hazards without colliding with them.
-#   layer 1 = solid ground   layer 2 = water surfaces   layer 4 = lava / poison
+# ----------------------------------------------------------------------------- actors
+# Behaviours for placed actors. Constants come from the decomp specs in memRip
+# (knowledge/gamecube/actors/*.md); units are game units per 30 fps frame.
+
+_ACTOR_BASE_GD = """extends CharacterBody3D
+# gcrip: base for small carriable / throwable props (pots d_a_tsubo, pebbles d_a_stone).
+# Modes from the decomp: WAIT, CARRY, DROP (thrown), SINK. The prop keeps its own
+# integrator: gravity per frame, breaks on ground/wall contact while thrown, on
+# sword hits, on falls > 200 units, and sinks silently in water.
+class_name GcripCarriable
+
+const KINDS := {
+    # name: gravity, throw fwd, throw up, radius, height, break on fall, item drop
+    "kotubo":  {"g": -6.0, "fwd": 36.0, "up": 27.0, "r": 30.0, "h": 60.0,  "hp": 1},
+    "ootubo1": {"g": -6.5, "fwd": 43.0, "up": 22.0, "r": 50.0, "h": 100.0, "hp": 1},
+    "koisi1":  {"g": -6.0, "fwd": 36.0, "up": 27.0, "r": 30.0, "h": 35.0,  "hp": 99},
+    "Ktaru":   {"g": -6.0, "fwd": 36.0, "up": 27.0, "r": 35.0, "h": 70.0,  "hp": 1},
+}
+const MAX_FALL := -100.0
+const BREAK_FALL_HEIGHT := 200.0
+const WAIT_FRICTION := 0.5
+const SPIN_PITCH := 0x7D0 * PI / 32768.0   # 11.25 deg/frame tumble while thrown
+
+enum Mode { WAIT, CARRY, DROP, SINK }
+var mode: int = Mode.WAIT
+var kind := "kotubo"
+var k: Dictionary = KINDS["kotubo"]
+var params := 0
+var mesh: Node3D = null
+var speed := 0.0
+var dir := Vector3.FORWARD
+var carrier: Node3D = null
+var fall_start_y := 0.0
+var home := Vector3.ZERO
+var hp := 1
+var tumble := 0.0
+
+func setup(actor: String, p: int, mesh_node: Node3D) -> void:
+    kind = actor
+    k = KINDS.get(actor, KINDS["kotubo"])
+    params = p
+    hp = int(k["hp"])
+    mesh = mesh_node
+    home = global_position
+    collision_layer = 8          # hittable by the sword
+    collision_mask = 1           # world
+    var shape := CollisionShape3D.new()
+    var cyl := CylinderShape3D.new()
+    cyl.radius = float(k["r"])
+    cyl.height = float(k["h"])
+    shape.shape = cyl
+    shape.position.y = float(k["h"]) / 2.0
+    add_child(shape)
+    add_to_group("interact")
+
+# --- Link-side interaction API ---
+func interact_prompt(link: Node3D) -> String:
+    if mode != Mode.WAIT:
+        return ""
+    var d := link.global_position.distance_to(global_position)
+    return "Grab" if d < (100.0 if kind == "ootubo1" else 80.0) else ""
+
+func interact(link: Node3D) -> void:
+    if mode == Mode.WAIT:
+        link.call("carry", self)
+
+func picked_up(by: Node3D) -> void:
+    mode = Mode.CARRY
+    carrier = by
+    velocity = Vector3.ZERO
+    collision_layer = 0
+    collision_mask = 0
+
+func thrown(direction: Vector3, _link_speed: float) -> void:
+    # the pot overrides Link's throw with its own velocity (d_a_tsubo)
+    mode = Mode.DROP
+    carrier = null
+    dir = direction.normalized()
+    speed = float(k["fwd"])
+    velocity.y = float(k["up"]) * 30.0
+    fall_start_y = global_position.y
+    collision_mask = 1
+    tumble = 0.0
+
+func take_hit(_damage: int, _from: Vector3) -> void:
+    if mode == Mode.CARRY:
+        return
+    hp -= 1
+    if hp <= 0:
+        _break()
+
+func _physics_process(_delta: float) -> void:
+    match mode:
+        Mode.CARRY:
+            if carrier:
+                global_position = carrier.call("carry_point")
+        Mode.WAIT:
+            if speed > 0.1:
+                speed = maxf(speed - WAIT_FRICTION, 0.0)
+            var vy: float = velocity.y / 30.0 + float(k["g"])
+            velocity = Vector3(dir.x * speed, maxf(vy, MAX_FALL), dir.z * speed) * 30.0
+            move_and_slide()
+            if is_on_floor():
+                velocity.y = 0.0
+        Mode.DROP:
+            var vy: float = velocity.y / 30.0 + float(k["g"])
+            vy = maxf(vy, MAX_FALL)
+            fall_start_y = maxf(fall_start_y, global_position.y)
+            velocity = Vector3(dir.x * speed, vy, dir.z * speed) * 30.0
+            tumble += SPIN_PITCH
+            if mesh:
+                mesh.rotation.x = tumble
+            var col := move_and_collide(velocity / 30.0)
+            if col:
+                var hit := col.get_collider()
+                if hit and hit.has_method("take_hit") and hit != self:
+                    hit.take_hit(2, global_position)
+                if kind == "koisi1" and fall_start_y - global_position.y < BREAK_FALL_HEIGHT and col.get_normal().y > 0.7:
+                    # pebbles survive a gentle landing
+                    mode = Mode.WAIT
+                    speed *= 0.3
+                    velocity.y = 0.0
+                    if mesh:
+                        mesh.rotation.x = 0.0
+                else:
+                    _break()
+        Mode.SINK:
+            global_position.y -= 2.0
+            if global_position.y < home.y - 300.0:
+                queue_free()
+
+func _break() -> void:
+    mode = Mode.SINK
+    if mesh:
+        mesh.visible = false
+    collision_layer = 0
+    collision_mask = 0
+    Game.spawn_drop(params, global_position)
+    Game.burst(global_position, Color(0.75, 0.6, 0.45))
+    queue_free()
+"""
+
+_ACTOR_ITEM_GD = """extends Area3D
+# gcrip: collectible (d_a_item): rupees, hearts. Placed items (type 1/3) only spin;
+# dropped items fall with gravity -7 and bounce (reflect 0.62), then wait 240 frames
+# and blink for 60 before vanishing.
+
+const VALUES := {1: 1, 2: 5, 3: 10, 4: 20, 5: 50, 6: 100, 15: 200}
+const COLORS := {1: Color(0.2, 0.9, 0.3), 2: Color(0.3, 0.5, 1.0), 3: Color(1.0, 0.9, 0.2),
+    4: Color(1.0, 0.25, 0.25), 5: Color(0.7, 0.3, 0.9), 6: Color(1.0, 0.6, 0.2), 15: Color(0.85, 0.85, 0.95)}
+const GRAVITY := -7.0
+const REFLECT := 0.62
+const SPIN := 799 * PI / 32768.0     # 799 s16/frame
+const WAIT_TIME := 240
+const DISAPPEAR_TIME := 60
+
+var item_id := 1
+var placed := true
+var vy := 0.0
+var life := 0
+var mesh: Node3D = null
+
+func setup(p: int, mesh_node: Node3D, is_placed: bool) -> void:
+    item_id = p & 0xFF
+    placed = is_placed
+    mesh = mesh_node
+    if mesh == null:
+        mesh = _make_mesh()
+        add_child(mesh)
+    var shape := CollisionShape3D.new()
+    var cyl := CylinderShape3D.new()
+    var heart := item_id == 0
+    cyl.radius = 30.0 if heart else 35.0
+    cyl.height = 40.0 if heart else 55.0
+    shape.shape = cyl
+    shape.position.y = cyl.height / 2.0
+    add_child(shape)
+    collision_layer = 16
+    collision_mask = 0
+    monitoring = false
+
+func _make_mesh() -> Node3D:
+    var mi := MeshInstance3D.new()
+    var heart := item_id == 0
+    if heart:
+        var sm := SphereMesh.new()
+        sm.radius = 14.0
+        sm.height = 28.0
+        mi.mesh = sm
+    else:
+        var pm := PrismMesh.new()
+        pm.size = Vector3(22.0, 40.0, 12.0)
+        mi.mesh = pm
+    var mat := StandardMaterial3D.new()
+    mat.albedo_color = Color(1, 0.2, 0.3) if heart else COLORS.get(item_id, Color.GREEN)
+    mat.emission_enabled = true
+    mat.emission = mat.albedo_color
+    mat.emission_energy_multiplier = 0.6
+    mi.material_override = mat
+    mi.position.y = 28.0
+    return mi
+
+func _physics_process(_delta: float) -> void:
+    if mesh:
+        mesh.rotation.y += SPIN
+    if not placed:
+        vy = maxf(vy + GRAVITY, -100.0)
+        global_position.y += vy
+        var floor_y := Game.ground_height(global_position)
+        if global_position.y <= floor_y:
+            global_position.y = floor_y
+            if vy < -3.0:
+                vy = -vy * REFLECT
+            else:
+                vy = 0.0
+        life += 1
+        if life > WAIT_TIME and mesh:
+            mesh.visible = (life / 3) % 2 == 0
+        if life > WAIT_TIME + DISAPPEAR_TIME:
+            queue_free()
+            return
+    var link := Game.player()
+    if link and link.global_position.distance_to(global_position) < 60.0:
+        _collect(link)
+
+func _collect(link: Node) -> void:
+    if item_id == 0:
+        link.call("heal", 4)
+    elif VALUES.has(item_id):
+        link.call("add_rupees", VALUES[item_id])
+    queue_free()
+"""
+
+_ACTOR_SIGN_GD = """extends StaticBody3D
+# gcrip: signpost (d_a_kanban): read with A from the front (150 units, facing it);
+# a sword cut knocks it over (the original splits it into pieces and it regrows).
+
+var message_id := 0
+var mesh: Node3D = null
+var down := 0
+var facing := 0.0
+
+func setup(p: int, mesh_node: Node3D, rot_y_deg: float) -> void:
+    message_id = p & 0xFFFF
+    mesh = mesh_node
+    facing = deg_to_rad(rot_y_deg)
+    collision_layer = 1 | 8
+    var shape := CollisionShape3D.new()
+    var cyl := CylinderShape3D.new()
+    cyl.radius = 50.0
+    cyl.height = 105.0
+    shape.shape = cyl
+    shape.position.y = 52.0
+    add_child(shape)
+    add_to_group("interact")
+
+func interact_prompt(link: Node3D) -> String:
+    if down > 0:
+        return ""
+    var to_link := link.global_position - global_position
+    to_link.y = 0.0
+    if to_link.length() > 150.0:
+        return ""
+    return "Read"
+
+func interact(_link: Node3D) -> void:
+    Game.show_message(message_id)
+
+func take_hit(_damage: int, from: Vector3) -> void:
+    if down > 0:
+        return
+    down = 30 * 20
+    var away := global_position - from
+    away.y = 0.0
+    if mesh:
+        var t := mesh.create_tween()
+        t.tween_property(mesh, "rotation", Vector3(PI / 2.0 * signf(-away.z + 0.001), mesh.rotation.y, 0.0), 0.3)
+
+func _physics_process(_delta: float) -> void:
+    if down > 0:
+        down -= 1
+        if down == 0 and mesh:
+            mesh.rotation.x = 0.0
+            mesh.rotation.z = 0.0
+"""
+
+_ACTOR_CHEST_GD = """extends StaticBody3D
+# gcrip: treasure chest (d_a_tbox). Open from the front within 100 units and 45 deg;
+# item id lives in rot.z >> 8; item-get text is message 101 + item id.
+
+var item_id := 0
+var opened := false
+var mesh: Node3D = null
+var facing := 0.0
+
+func setup(rot_z: int, mesh_node: Node3D, rot_y_deg: float) -> void:
+    item_id = (rot_z >> 8) & 0xFF
+    mesh = mesh_node
+    facing = deg_to_rad(rot_y_deg)
+    collision_layer = 1
+    var shape := CollisionShape3D.new()
+    var box := BoxShape3D.new()
+    box.size = Vector3(110.0, 90.0, 80.0)
+    shape.shape = box
+    shape.position.y = 45.0
+    shape.rotation.y = facing
+    add_child(shape)
+    add_to_group("interact")
+
+func interact_prompt(link: Node3D) -> String:
+    if opened:
+        return ""
+    var to_link := link.global_position - global_position
+    to_link.y = 0.0
+    if to_link.length() > 100.0:
+        return ""
+    var front := Vector3(sin(facing), 0.0, cos(facing))
+    if front.dot(to_link.normalized()) < cos(PI / 4.0):
+        return ""
+    return "Open"
+
+func interact(link: Node3D) -> void:
+    opened = true
+    if mesh:
+        var t := mesh.create_tween()
+        t.tween_property(mesh, "scale", mesh.scale * Vector3(1.05, 1.2, 1.05), 0.25)
+        t.tween_property(mesh, "scale", mesh.scale, 0.25)
+    Game.burst(global_position + Vector3(0, 60, 0), Color(1.0, 0.95, 0.6))
+    if item_id in [1, 2, 3, 4, 5, 6, 15]:
+        link.call("add_rupees", {1: 1, 2: 5, 3: 10, 4: 20, 5: 50, 6: 100, 15: 200}[item_id])
+    elif item_id == 0:
+        link.call("heal", 4)
+    Game.show_message(101 + item_id)
+"""
+
+_ACTOR_PIG_GD = """extends CharacterBody3D
+# gcrip: pig (d_a_kb): wanders around its spawn (radius 300), flees when Link comes
+# within 200 units until 400 away; can be picked up and thrown like a pot.
+# Constants: walk 3 u/f (accel 2), run 12, gravity -3, terminal -20, idle/walk 50+rnd(50).
+
+const WALK := 3.0
+const RUN := 12.0
+const ACCEL := 2.0
+const GRAVITY := -3.0
+const TERMINAL := -20.0
+const FLEE_DIST := 200.0
+const FLEE_STOP := 400.0
+const WANDER_R := 300.0
+const TURN_WALK := 0x800 * PI / 32768.0
+const TURN_RUN := 0x2000 * PI / 32768.0
+
+enum Sub { WAIT, WALK, FLEE, CARRY, THROWN }
+var sub: int = Sub.WAIT
+var timer := 0
+var home := Vector3.ZERO
+var target := Vector3.ZERO
+var facing := 0.0
+var speed := 0.0
+var mesh: Node3D = null
+var carrier: Node3D = null
+var anim: AnimationPlayer = null
+
+func setup(_p: int, mesh_node: Node3D, rot_y_deg: float) -> void:
+    mesh = mesh_node
+    home = global_position
+    facing = deg_to_rad(rot_y_deg)
+    collision_layer = 1 | 8
+    collision_mask = 1
+    var shape := CollisionShape3D.new()
+    var cyl := CylinderShape3D.new()
+    cyl.radius = 25.0
+    cyl.height = 35.0
+    shape.shape = cyl
+    shape.position.y = 17.5
+    add_child(shape)
+    add_to_group("interact")
+    timer = 50 + randi() % 50
+
+func interact_prompt(link: Node3D) -> String:
+    if sub in [Sub.CARRY, Sub.THROWN]:
+        return ""
+    return "Grab" if link.global_position.distance_to(global_position) < 90.0 else ""
+
+func interact(link: Node3D) -> void:
+    link.call("carry", self)
+
+func picked_up(by: Node3D) -> void:
+    sub = Sub.CARRY
+    carrier = by
+    collision_layer = 0
+    collision_mask = 0
+
+func thrown(direction: Vector3, _s: float) -> void:
+    sub = Sub.THROWN
+    carrier = null
+    facing = atan2(direction.x, direction.z)
+    speed = 20.0
+    velocity.y = 20.0 * 30.0
+    collision_mask = 1
+    collision_layer = 1 | 8
+
+func take_hit(_d: int, from: Vector3) -> void:
+    var away := global_position - from
+    away.y = 0.0
+    if away.length() > 0.1:
+        facing = atan2(away.x, away.z)
+    sub = Sub.FLEE
+    timer = 60
+
+func _turn_to(t: float, step: float) -> void:
+    var rem := wrapf(t - facing, -PI, PI)
+    facing += clampf(rem, -step, step)
+
+func _physics_process(_delta: float) -> void:
+    if sub == Sub.CARRY:
+        if carrier:
+            global_position = carrier.call("carry_point")
+        return
+    var link := Game.player()
+    var to_link := Vector3.ZERO
+    if link:
+        to_link = link.global_position - global_position
+        to_link.y = 0.0
+    match sub:
+        Sub.WAIT:
+            speed = maxf(speed - ACCEL, 0.0)
+            timer -= 1
+            if timer <= 0:
+                sub = Sub.WALK
+                timer = 50 + randi() % 50
+                var a := randf() * TAU
+                target = home + Vector3(cos(a), 0.0, sin(a)) * randf() * WANDER_R
+            if link and to_link.length() < FLEE_DIST:
+                sub = Sub.FLEE
+        Sub.WALK:
+            var to_t := target - global_position
+            to_t.y = 0.0
+            _turn_to(atan2(to_t.x, to_t.z), TURN_WALK)
+            speed = minf(speed + ACCEL, WALK)
+            timer -= 1
+            if timer <= 0 or to_t.length() < 30.0:
+                sub = Sub.WAIT
+                timer = 50 + randi() % 50
+            if link and to_link.length() < FLEE_DIST:
+                sub = Sub.FLEE
+        Sub.FLEE:
+            if link:
+                _turn_to(atan2(-to_link.x, -to_link.z), TURN_RUN)
+            speed = minf(speed + ACCEL, RUN)
+            timer -= 1
+            if (link and to_link.length() > FLEE_STOP) or timer <= 0:
+                sub = Sub.WAIT
+                timer = 30
+        Sub.THROWN:
+            pass
+    var vy := velocity.y / 30.0 + GRAVITY
+    vy = maxf(vy, TERMINAL)
+    velocity = Vector3(sin(facing) * speed, vy, cos(facing) * speed) * 30.0
+    move_and_slide()
+    if is_on_floor():
+        velocity.y = 0.0
+        if sub == Sub.THROWN:
+            sub = Sub.FLEE
+            timer = 60
+            speed = RUN
+    if is_on_wall() and sub == Sub.WALK:
+        sub = Sub.WAIT
+        timer = 20
+    if mesh:
+        mesh.rotation.y = facing
+    if anim == null and mesh:
+        anim = mesh.find_child("AnimationPlayer", true, false)
+"""
+
+_ACTOR_GULL_GD = """extends Node3D
+# gcrip: seagull (d_a_kamome, free type): wanders in the air around its spawn point,
+# banking into turns; glide speed ~10 u/f, rise +5 u/f when below its cruise height.
+
+const SPEED := 10.0
+const TURN := 0x300 * PI / 32768.0
+const CRUISE := 350.0
+
+var home := Vector3.ZERO
+var target := Vector3.ZERO
+var yaw := 0.0
+var bank := 0.0
+var mesh: Node3D = null
+var timer := 0
+
+func setup(_p: int, mesh_node: Node3D, rot_y_deg: float) -> void:
+    mesh = mesh_node
+    home = global_position
+    yaw = deg_to_rad(rot_y_deg)
+    _pick()
+
+func _pick() -> void:
+    var a := randf() * TAU
+    target = home + Vector3(cos(a) * randf_range(200.0, 700.0), CRUISE + randf_range(-80.0, 120.0), sin(a) * randf_range(200.0, 700.0))
+    timer = 90 + randi() % 120
+
+func _physics_process(_delta: float) -> void:
+    timer -= 1
+    var to_t := target - global_position
+    var flat := Vector3(to_t.x, 0.0, to_t.z)
+    if timer <= 0 or flat.length() < 60.0:
+        _pick()
+    var want := atan2(flat.x, flat.z)
+    var rem := wrapf(want - yaw, -PI, PI)
+    var step := clampf(rem, -TURN, TURN)
+    yaw += step
+    bank = lerpf(bank, -step * 25.0, 0.15)
+    var vy := clampf(to_t.y * 0.05, -4.0, 5.0)
+    global_position += Vector3(sin(yaw) * SPEED, vy, cos(yaw) * SPEED)
+    if mesh:
+        mesh.rotation = Vector3(0.0, yaw, bank)
+"""
+
+_ACTOR_NPC_GD = """extends Node3D
+# gcrip: talkable NPC. The Fishman (NpcSo) bobs at the water surface and circles
+# near its spawn; others stand still. Talk with A from 150 units: plays the message
+# ids configured per actor (conversation graphs live in the decomp's next_msgStatus).
+
+var messages: Array = []
+var mesh: Node3D = null
+var home := Vector3.ZERO
+var t := 0.0
+var swimmer := false
+var facing := 0.0
+
+func setup(actor: String, _p: int, mesh_node: Node3D, rot_y_deg: float) -> void:
+    mesh = mesh_node
+    home = global_position
+    facing = deg_to_rad(rot_y_deg)
+    swimmer = actor == "NpcSo"
+    messages = Game.npc_messages(actor)
+    var body := StaticBody3D.new()
+    body.collision_layer = 1
+    var shape := CollisionShape3D.new()
+    var cyl := CylinderShape3D.new()
+    cyl.radius = 40.0
+    cyl.height = 120.0
+    shape.shape = cyl
+    shape.position.y = 60.0
+    body.add_child(shape)
+    add_child(body)
+    add_to_group("interact")
+
+func interact_prompt(link: Node3D) -> String:
+    return "Talk" if link.global_position.distance_to(global_position) < 150.0 else ""
+
+func interact(link: Node3D) -> void:
+    var to_link := link.global_position - global_position
+    facing = atan2(to_link.x, to_link.z)
+    if messages.is_empty():
+        Game.show_text("...")
+    else:
+        Game.show_messages(messages)
+
+func _physics_process(_delta: float) -> void:
+    t += 1.0
+    if swimmer:
+        var a := t * 0.01
+        global_position = home + Vector3(cos(a) * 120.0, sin(t * 0.08) * 6.0, sin(a) * 120.0)
+        facing = a + PI / 2.0
+    if mesh:
+        mesh.rotation.y = facing
+"""
+
+_ACTOR_BOKOBLIN_GD = """extends CharacterBody3D
+# gcrip: Bokoblin (d_a_bk): stands/patrols, notices Link within sight range, runs in,
+# swings its stick when close, flinches on hits, dies after hp hits.
+# Per-frame constants from the spec (speed x 0.25): walk 3, run 11.25, gravity 3, terminal 50,
+# jump 16-19. Attack reach ~100 units, notice ~1000 with line of sight.
+
+const WALK := 3.0
+const RUN := 11.25
+const GRAVITY := -3.0
+const TERMINAL := -50.0
+const NOTICE := 1000.0
+const ATTACK_RANGE := 110.0
+const TURN := 0x600 * PI / 32768.0
+const HP := 3
+const DAMAGE_TO_LINK := 2   # quarter hearts (stick)
+
+enum Act { STAND, FIGHT_RUN, FIGHT, ATTACK, DAMAGE, DEAD }
+var act: int = Act.STAND
+var hp := HP
+var facing := 0.0
+var speed := 0.0
+var timer := 0
+var mesh: Node3D = null
+var anim: AnimationPlayer = null
+var home := Vector3.ZERO
+var hit_done := false
+
+func setup(_p: int, mesh_node: Node3D, rot_y_deg: float) -> void:
+    mesh = mesh_node
+    home = global_position
+    facing = deg_to_rad(rot_y_deg)
+    collision_layer = 1 | 8
+    collision_mask = 1
+    var shape := CollisionShape3D.new()
+    var cyl := CylinderShape3D.new()
+    cyl.radius = 40.0
+    cyl.height = 100.0
+    shape.shape = cyl
+    shape.position.y = 50.0
+    add_child(shape)
+    add_to_group("enemy")
+
+func take_hit(damage: int, from: Vector3) -> void:
+    if act == Act.DEAD:
+        return
+    hp -= damage
+    var away := global_position - from
+    away.y = 0.0
+    facing = atan2(-away.x, -away.z)
+    if hp <= 0:
+        act = Act.DEAD
+        timer = 40
+        Game.burst(global_position + Vector3(0, 50, 0), Color(0.5, 0.2, 0.6))
+        return
+    act = Act.DAMAGE
+    timer = 12
+    speed = -8.0
+
+func _turn_to(t: float) -> void:
+    var rem := wrapf(t - facing, -PI, PI)
+    facing += clampf(rem, -TURN, TURN)
+
+func _physics_process(_delta: float) -> void:
+    var link := Game.player()
+    var to_link := Vector3.ZERO
+    var dist := 1.0e9
+    if link:
+        to_link = link.global_position - global_position
+        to_link.y = 0.0
+        dist = to_link.length()
+    match act:
+        Act.STAND:
+            speed = 0.0
+            if link and dist < NOTICE and Game.line_of_sight(global_position + Vector3(0, 80, 0), link.global_position + Vector3(0, 80, 0)):
+                act = Act.FIGHT_RUN
+        Act.FIGHT_RUN:
+            _turn_to(atan2(to_link.x, to_link.z))
+            speed = RUN
+            if dist < ATTACK_RANGE:
+                act = Act.ATTACK
+                timer = 30
+                hit_done = false
+                speed = 0.0
+            elif dist > NOTICE * 1.5:
+                act = Act.STAND
+        Act.ATTACK:
+            timer -= 1
+            if timer == 14 and not hit_done and link and dist < ATTACK_RANGE + 20.0:
+                hit_done = true
+                link.call("take_damage", DAMAGE_TO_LINK, global_position)
+            if timer <= 0:
+                act = Act.FIGHT_RUN
+        Act.DAMAGE:
+            timer -= 1
+            speed = minf(speed + 1.0, 0.0)
+            if timer <= 0:
+                act = Act.FIGHT_RUN
+        Act.DEAD:
+            timer -= 1
+            if mesh:
+                mesh.scale = mesh.scale * 0.92
+            if timer <= 0:
+                queue_free()
+            return
+    var vy := velocity.y / 30.0 + GRAVITY
+    vy = maxf(vy, TERMINAL)
+    velocity = Vector3(sin(facing) * speed, vy, cos(facing) * speed) * 30.0
+    move_and_slide()
+    if is_on_floor():
+        velocity.y = 0.0
+    if mesh:
+        mesh.rotation.y = facing
+"""
+
+_DIALOG_GD = """extends CanvasLayer
+# gcrip text box: shows BMG messages (tags already decoded by gcrip msg);
+# {name} -> the player's name, other tags stripped for now. A advances pages.
+
+signal closed
+
+var pages: Array = []
+var page := 0
+@onready var label: Label = $Panel/Label
 
 func _ready() -> void:
+    layer = 40
+    process_mode = Node.PROCESS_MODE_ALWAYS
+    visible = false
+
+func show_pages(p: Array) -> void:
+    pages = p
+    page = 0
+    visible = true
+    _render()
+
+func _render() -> void:
+    if page >= pages.size():
+        visible = false
+        closed.emit()
+        return
+    label.text = str(pages[page])
+
+func _unhandled_input(event: InputEvent) -> void:
+    if not visible:
+        return
+    if event.is_action_pressed("action_a") or event.is_action_pressed("action_b"):
+        page += 1
+        _render()
+        get_viewport().set_input_as_handled()
+"""
+
+_DIALOG_TSCN = """[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://dialog.gd" id="1"]
+
+[node name="Dialog" type="CanvasLayer"]
+script = ExtResource("1")
+
+[node name="Panel" type="Panel" parent="."]
+anchors_preset = 7
+anchor_left = 0.5
+anchor_top = 1.0
+anchor_right = 0.5
+anchor_bottom = 1.0
+offset_left = -460.0
+offset_top = -190.0
+offset_right = 460.0
+offset_bottom = -40.0
+grow_horizontal = 2
+grow_vertical = 0
+
+[node name="Label" type="Label" parent="Panel"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = 14.0
+offset_right = -24.0
+offset_bottom = -14.0
+theme_override_font_sizes/font_size = 26
+autowrap_mode = 3
+"""
+
+_STAGE_GD = """extends Node3D
+# gcrip stage root: puts the game's liquid collision (from the .dzb) on its own physics
+# layers so Link can probe for water and hazards without colliding with them, and
+# wraps the baked actor meshes into behaviour nodes (pots, items, signs, chests, pigs,
+# gulls, NPCs, enemies) using the placement records in stage_data.json.
+#   layer 1 = solid ground   layer 2 = water   layer 4 = lava/poison   layer 8 = hittable
+#   layer 16 = items
+
+const SCRIPTS := {
+    "kotubo": "res://actors/carriable.gd", "ootubo1": "res://actors/carriable.gd",
+    "koisi1": "res://actors/carriable.gd", "Ktaru": "res://actors/carriable.gd",
+    "item": "res://actors/item.gd", "Kanban": "res://actors/sign.gd",
+    "Pig": "res://actors/pig.gd", "Kamome": "res://actors/gull.gd",
+    "NpcSo": "res://actors/npc.gd", "Bk": "res://actors/bokoblin.gd",
+}
+const CHEST_PREFIXES := ["takara", "tkr", "Tkr"]
+
+func _ready() -> void:
+    _tag_liquids()
+    _wrap_actors()
+
+func _wrap_actors() -> void:
+    var level := get_node_or_null("Level")
+    var info: Dictionary = Game.stage_data.get(name, {})
+    if level == null:
+        return
+    var n := 0
+    for rec in info.get("actors", []):
+        var actor: String = rec["actor"]
+        var script_path := ""
+        if SCRIPTS.has(actor):
+            script_path = SCRIPTS[actor]
+        else:
+            for pre in CHEST_PREFIXES:
+                if actor.begins_with(pre):
+                    script_path = "res://actors/chest.gd"
+        if script_path == "":
+            continue
+        # the glTF importer sanitises "." in node names to "_"
+        var node_name: String = str(rec["node"]).replace(".", "_").replace(":", "_")
+        var mesh := level.find_child(node_name, true, false)
+        if mesh == null or not (mesh is Node3D):
+            continue
+        var xf: Transform3D = mesh.global_transform
+        var s: Script = load(script_path)
+        var node: Node3D = s.new()
+        node.name = "A_" + node_name
+        add_child(node)
+        node.global_transform = Transform3D(Basis(), xf.origin)
+        var parent := mesh.get_parent()
+        parent.remove_child(mesh)
+        node.add_child(mesh)
+        mesh.global_transform = xf
+        var params: int = int(rec["params"])
+        var rot_y: float = float(rec.get("rot_y_deg", 0.0))
+        var rot: Array = rec.get("rot", [0, 0, 0])
+        if script_path.ends_with("carriable.gd"):
+            node.setup(actor, params, mesh)
+        elif script_path.ends_with("item.gd"):
+            node.setup(params, mesh, true)
+        elif script_path.ends_with("sign.gd"):
+            node.setup(params, mesh, rot_y)
+        elif script_path.ends_with("chest.gd"):
+            node.setup(int(rot[2]), mesh, rot_y)
+        elif script_path.ends_with("npc.gd"):
+            node.setup(actor, params, mesh, rot_y)
+        else:
+            node.setup(params, mesh, rot_y)
+        n += 1
+    print("gcrip: ", n, " actors wrapped in ", name)
+
+func _tag_liquids() -> void:
     var col := get_node_or_null("Collision")
     if col == null:
         return
@@ -1523,7 +2594,7 @@ def export_godot(
             _stage_tscn(name, spawn, has_col=has_col, exits=exits, water_level=water),
             encoding="utf-8",
         )
-        stage_data[name] = {"spawns": spawns}
+        stage_data[name] = {"spawns": spawns, "actors": rep.get("actors") or []}
         done.append(name)
         if not quiet:
             size = (out_dir / "stages" / f"{name}.glb").stat().st_size >> 20
@@ -1538,6 +2609,23 @@ def export_godot(
     (out_dir / "calib.gd").write_text(_CALIB_GD, encoding="utf-8")
     (out_dir / "calib.tscn").write_text(_CALIB_TSCN, encoding="utf-8")
     (out_dir / "stage.gd").write_text(_STAGE_GD, encoding="utf-8")
+    (out_dir / "dialog.gd").write_text(_DIALOG_GD, encoding="utf-8")
+    (out_dir / "dialog.tscn").write_text(_DIALOG_TSCN, encoding="utf-8")
+    (out_dir / "actors").mkdir(exist_ok=True)
+    for fname, src_text in {
+        "carriable.gd": _ACTOR_BASE_GD,
+        "item.gd": _ACTOR_ITEM_GD,
+        "sign.gd": _ACTOR_SIGN_GD,
+        "chest.gd": _ACTOR_CHEST_GD,
+        "pig.gd": _ACTOR_PIG_GD,
+        "gull.gd": _ACTOR_GULL_GD,
+        "npc.gd": _ACTOR_NPC_GD,
+        "bokoblin.gd": _ACTOR_BOKOBLIN_GD,
+    }.items():
+        (out_dir / "actors" / fname).write_text(src_text, encoding="utf-8")
+    msgs = rip_dir / "text" / "messages.json"
+    if msgs.exists():  # gcrip msg output -> in-game text box
+        shutil.copyfile(msgs, out_dir / "messages.json")
     sd_path = out_dir / "stage_data.json"
     if sd_path.exists():  # partial re-exports must not clobber other stages' spawn data
         with contextlib.suppress(OSError, ValueError):

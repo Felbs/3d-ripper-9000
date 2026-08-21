@@ -321,6 +321,13 @@ def cmd_msg(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_audio(args: argparse.Namespace) -> int:
+    from gcrip.audio import dump_streams
+
+    dump_streams(Path(args.ripdir), iso=Path(args.iso) if args.iso else None, quiet=args.quiet)
+    return 0
+
+
 def cmd_godot(args: argparse.Namespace) -> int:
     from gcrip.godot import export_godot
 
@@ -480,6 +487,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--iso", default=None, help="disc image (default: found via disc_manifest)")
     p.add_argument("-q", "--quiet", action="store_true")
     p.set_defaults(fn=cmd_msg)
+
+    p = sub.add_parser("audio", help="decode the streamed music (Audiores/Stream/*.afc) to WAV")
+    p.add_argument("ripdir", help="finished rip folder, e.g. out/rip/GZLE01")
+    p.add_argument("--iso", default=None, help="disc image (default: found via disc_manifest)")
+    p.add_argument("-q", "--quiet", action="store_true")
+    p.set_defaults(fn=cmd_audio)
 
     p = sub.add_parser(
         "godot", help="recompiled stages -> a ready-to-open Godot 4 project (walk the levels)"

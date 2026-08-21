@@ -290,6 +290,7 @@ def _build(
     # ---- actors
     counts = Counter()
     spawn_pts = []  # PLYR entries: where the game can place the player
+    actor_recs = []  # every placed actor instance: node name + params (for behaviours)
     unresolved = Counter()
     skipped_names = Counter()
     door_pts: list[dict] = []
@@ -347,15 +348,30 @@ def _build(
             continue
 
         group = f"Room{room_no}_actors" if room_no is not None else "Stage_actors"
+        node_name = f"{p.name}.{counts['placed']}"
         idx = builder.add_instance(
             target,
-            f"{p.name}.{counts['placed']}",
+            node_name,
             translation=p.pos,
             rot_y_deg=p.rot_y_deg,
             scale=p.scale,
             group=group,
         )
         counts["placed" if idx is not None else "empty_model"] += 1
+        if idx is not None:
+            actor_recs.append(
+                {
+                    "node": node_name,
+                    "actor": p.name,
+                    "chunk": p.chunk,
+                    "params": p.params,
+                    "rot": list(p.rot),
+                    "room": room_no,
+                    "pos": list(p.pos),
+                    "rot_y_deg": round(p.rot_y_deg, 2),
+                    "scale": list(p.scale),
+                }
+            )
 
     exits = _bind_exits(disc, stage_name, own_scls, door_pts, spawn_pts)
     offset = (0.0, 0.0, 0.0) if world else builder.recenter(anchor=room_node_ids)
@@ -391,6 +407,10 @@ def _build(
         ],
         # room-local spawns first: with --rooms, stage-wide PLYR entries can sit on
         # other islands and would drop the player in the middle of the ocean
+        "actors": [
+            {**a, "pos": [a["pos"][0] - offset[0], a["pos"][1], a["pos"][2] - offset[2]]}
+            for a in actor_recs
+        ],
         "spawns": [
             {**sp, "pos": [sp["pos"][0] - offset[0], sp["pos"][1], sp["pos"][2] - offset[2]]}
             for sp in sorted(spawn_pts, key=lambda sp: sp["room"] is None)
