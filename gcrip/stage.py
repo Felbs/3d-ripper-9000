@@ -20,6 +20,7 @@ from __future__ import annotations
 import contextlib
 import json
 import re
+import struct
 import time
 from collections import Counter
 from pathlib import Path
@@ -432,12 +433,22 @@ def _build(
             for sp in ship_pts
         ],
         "wave_max": {str(r): t.wave_max for r, t in mult.items() if r in room_nos},
+        "offset": [offset[0], 0.0, offset[2]],
         "gltf": str(out_path),
         "seconds": seconds,
     }
     (out_dir / f"{stage_name}_report.json").write_text(
         json.dumps(report, indent=1), encoding="utf-8"
     )
+    # the stage's cutscene / event scripts (Stage.arc dat/event_list.dat) as JSON
+    ev_blob = disc.read_inner(f"res/Stage/{stage_name}/Stage.arc", "event_list.dat")
+    if ev_blob:
+        try:
+            from gcrip.formats import evt as evt_mod
+
+            evt_mod.dump_json(ev_blob, out_dir / f"{stage_name}_events.json")
+        except (ValueError, struct.error, KeyError, IndexError):
+            pass
     if not quiet:
         print(
             f"{stage_name}: {room_models} room models + {counts['placed']} actors placed "
