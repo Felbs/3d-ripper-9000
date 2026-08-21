@@ -3411,15 +3411,6 @@ def export_godot(
     (out_dir / "dialog.tscn").write_text(_DIALOG_TSCN, encoding="utf-8")
     (out_dir / "menu.gd").write_text(_MENU_GD, encoding="utf-8")
     (out_dir / "menu.tscn").write_text(_MENU_TSCN, encoding="utf-8")
-    from gcrip.data.ww_stages import WW_STAGE_NAMES
-
-    names = {}
-    for st in stage_data:
-        m = re.match(r"^(.*)_r(\d+)$", st)
-        key = f"{m.group(1)}/Room{m.group(2)}" if m else st
-        if key in WW_STAGE_NAMES:
-            names[st] = WW_STAGE_NAMES[key]
-    (out_dir / "stage_names.json").write_text(json.dumps(names, indent=1), encoding="utf-8")
     (out_dir / "actors").mkdir(exist_ok=True)
     for fname, src_text in {
         "carriable.gd": _ACTOR_BASE_GD,
@@ -3442,6 +3433,16 @@ def export_godot(
             merged.update(stage_data)
             stage_data = merged
     sd_path.write_text(json.dumps(stage_data), encoding="utf-8")
+    # place names for every stage in the project (merged stage_data)
+    from gcrip.data.ww_stages import WW_STAGE_NAMES
+
+    names = {}
+    for st in stage_data:
+        m = re.match(r"^(.*)_r(\d+)$", st)
+        key = f"{m.group(1)}/Room{m.group(2)}" if m else st
+        if key in WW_STAGE_NAMES:
+            names[st] = WW_STAGE_NAMES[key]
+    (out_dir / "stage_names.json").write_text(json.dumps(names, indent=1), encoding="utf-8")
     main = next((n for n in ("sea_r44", "M_NewD2", "sea") if n in done), done[0])
     (out_dir / "project.godot").write_text(_project_godot(title, main), encoding="utf-8")
     seconds = round(time.monotonic() - t0, 1)
