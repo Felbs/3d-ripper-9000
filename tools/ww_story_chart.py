@@ -25,7 +25,21 @@ IMPLEMENTED = {
     "tag": "TagEv volumes order their EVNT entry (actors/tag_event.gd)",
     "room_enter": "a stage's StartCamera event runs on arrival (stage.gd)",
     "talk": "story-graph talk steps (Game.story_talk) via actors/npc.gd",
+    "look": "the Telescope's scope look at the step's target (Game.telescope_look)",
+    "npc": "the NPC orders it itself, by proximity or on being placed (Game.story_npc_tick)",
 }
+
+# steps the mining calls "tag" that no TagEv actor actually orders: the original drives them
+# from an NPC's own code.  Whatever the engine does instead is named here.
+LOOK_STEPS = {
+    "telescope_watch_quill": "look",
+    "zelda_fly_helmaroc": "look",
+    "aryll_omedeto": "npc",
+    "tetra_dock_conversation": "npc",
+}
+
+BUILD = ROOT / "out" / "rip" / "GZLE01" / "godot" / "stage_data.json"
+SCENES: "dict[str, set[str]] | None" = None   # set from the build in main()
 
 # save-file state the engine models beyond the raw event bits
 MODELLED_STATE = {
@@ -58,9 +72,40 @@ def bits(step: dict, key: str) -> list[str]:
     return out
 
 
-def status(step: dict) -> tuple[str, str]:
+def tag_events(build: Path) -> dict[str, set[str]] | None:
+    """scene key -> the event names its TagEv / AttTag volumes can order.
+
+    A step mined as "tag" is only really reachable if some volume in that scene names its
+    event: getEventNo() is params >> 24 into the stage's EVNT table (d_a_tag_event.cpp:19)."""
+    if not build.exists():
+        return None
+    data = json.loads(build.read_text(encoding="utf-8"))
+    out: dict[str, set[str]] = {}
+    for key, scene in data.items():
+        table = scene.get("event_table") or []
+        names = set()
+        for t in scene.get("tags") or []:
+            if not str(t.get("actor", "")).startswith(("TagEv", "AttTag")):
+                continue
+            no = (int(t.get("params", 0)) >> 24) & 0xFF
+            if no < len(table):
+                names.add(str(table[no]))
+        out[key] = names
+    return out
+
+
+def scene_key(step: dict, scenes: dict[str, set[str]]) -> str | None:
+    stage = str(step.get("stage", ""))
+    room = step.get("room")
+    if room is not None and f"{stage}_r{room}" in scenes:
+        return f"{stage}_r{room}"
+    return stage if stage in scenes else None
+
+
+def status(step: dict, scenes: dict[str, set[str]] | None = None) -> tuple[str, str]:
+    scenes = SCENES if scenes is None else scenes
     """-> (state, why). state is ok / partial / missing."""
-    kind = (step.get("trigger") or {}).get("kind", "")
+    kind = LOOK_STEPS.get(str(step.get("id", ""))) or (step.get("trigger") or {}).get("kind", "")
     if kind not in IMPLEMENTED:
         return "missing", f"trigger kind '{kind}' has no mechanism"
     if kind == "talk" and not step_actor(step):
@@ -74,6 +119,13 @@ def status(step: dict) -> tuple[str, str]:
     ]
     if unresolved:
         return "partial", f"gated on non-bit state: {', '.join(str(u) for u in unresolved)}"
+    if kind == "tag" and scenes is not None:
+        key = scene_key(step, scenes)
+        ev = str(step.get("event") or "")
+        if key is None:
+            return "partial", f"stage '{step.get('stage')}' is not in the build"
+        if ev and ev not in scenes[key]:
+            return "missing", f"no TagEv in {key} orders '{ev}' - the original drives it from actor code"
     if step.get("confidence") == "low":
         return "partial", "mined with low confidence"
     return "ok", IMPLEMENTED[kind]
@@ -141,6 +193,10 @@ def main() -> None:
     args = ap.parse_args()
     data = json.loads(STORY.read_text(encoding="utf-8"))
     steps = data["steps"]
+    global SCENES
+    SCENES = tag_events(BUILD)
+    if SCENES is None:
+        print(f"note: {BUILD} is not built - tag steps are not cross-checked")
 
     counts = {"ok": 0, "partial": 0, "missing": 0}
     rows = []

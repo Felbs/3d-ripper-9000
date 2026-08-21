@@ -145,10 +145,10 @@ flowchart TD
 | aryll_tower_first_talk | talk | Ls1 |  |  |  |  | **ok** | story-graph talk steps (Game.story_talk) via actors/npc.gd |
 | grandma_birthday_talk | talk | Ba1 | tale_1 |  |  |  | **ok** | story-graph talk steps (Game.story_talk) via actors/npc.gd |
 | tale_demo_hero_clothes | spawn |  | TALE_DEMO | tale.stb |  | 0x2A80 | **ok** | PLYR params >> 24 indexes the stage EVNT table (Game._place_player) |
-| aryll_omedeto | tag | Ls1 | omedeto |  | 0x2A80 |  | **ok** | TagEv volumes order their EVNT entry (actors/tag_event.gd) |
+| aryll_omedeto | tag | Ls1 | omedeto |  | 0x2A80 |  | **ok** | the NPC orders it itself, by proximity or on being placed (Game.story_npc_tick) |
 | aryll_get_telescope | talk | Ls1 | get_telescope |  |  |  | **ok** | story-graph talk steps (Game.story_talk) via actors/npc.gd |
-| telescope_watch_quill | tag |  |  |  |  | 0x0310 | **ok** | TagEv volumes order their EVNT entry (actors/tag_event.gd) |
-| zelda_fly_helmaroc | tag |  | zelda_fly | kaizoku_zelda_fly.stb | 0x0310 | 0x0001 | **ok** | TagEv volumes order their EVNT entry (actors/tag_event.gd) |
+| telescope_watch_quill | tag |  |  |  |  | 0x0310 | **ok** | the Telescope's scope look at the step's target (Game.telescope_look) |
+| zelda_fly_helmaroc | tag |  | zelda_fly | kaizoku_zelda_fly.stb | 0x0310 | 0x0001 | **ok** | the Telescope's scope look at the step's target (Game.telescope_look) |
 | aryll_etalk | talk | Ls1 | eTalk |  | 0x0001 |  | **ok** | story-graph talk steps (Game.story_talk) via actors/npc.gd |
 | grandma_after_prologue | talk | Ba1 |  |  | 0x0001 | 0x0601 | **ok** | story-graph talk steps (Game.story_talk) via actors/npc.gd |
 | orca_first_talk | room_enter | Ji1 | StartCamera |  |  | 0x0640 0x0108 | **ok** | a stage's StartCamera event runs on arrival (stage.gd) |
@@ -164,7 +164,7 @@ flowchart TD
 | look_shield | tag |  | LOOK_SHIELD |  | 0x0E20 | 0x3202 | **ok** | TagEv volumes order their EVNT entry (actors/tag_event.gd) |
 | grandma_gives_shield | talk | Ba1 | get_shield | get_shield.stb | 0x0E20 0x3202 |  | **ok** | story-graph talk steps (Game.story_talk) via actors/npc.gd |
 | grandma_after_kidnap | talk | Ba1 |  |  | 0x0E20 | 0x0740 | **ok** | story-graph talk steps (Game.story_talk) via actors/npc.gd |
-| tetra_dock_conversation | tag | Zl1 | yuukaigo |  | 0x0E20 |  | **ok** | TagEv volumes order their EVNT entry (actors/tag_event.gd) |
+| tetra_dock_conversation | tag | Zl1 | yuukaigo |  | 0x0E20 |  | **ok** | the NPC orders it itself, by proximity or on being placed (Game.story_npc_tick) |
 | tetra_board_ship | talk | Zl1 |  |  | 0x0E20 |  | **ok** | story-graph talk steps (Game.story_talk) via actors/npc.gd |
 | departure | spawn |  | departure_DEMO | departure.stb | 0x0E20 | 0x2401 | **ok** | PLYR params >> 24 indexes the stage EVNT table (Game._place_player) |
 | aj_speak_ambient | talk | Aj1 | AJ_SPEAK |  |  |  | **partial** | mined with low confidence |
