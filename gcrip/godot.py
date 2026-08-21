@@ -900,7 +900,7 @@ func _ground() -> void:
         _enter_attack(s)
         return
     if Input.is_action_just_pressed("action_a"):
-        if prompt_target != null:
+        if prompt_target != null and Engine.get_physics_frames() - Game.dialog_closed_frame > 8:
             prompt_target.interact(self)
             return
         if speed > 1.0:
@@ -1531,6 +1531,13 @@ func _fp_enter() -> void:
     fp_from_center = cam_center
     if model:
         model.visible = false
+
+func snap_camera_behind() -> void:
+    cam_center = global_position + Vector3(0, CAM_ATTN_HEIGHT, 0)
+    cam_eye = cam_center - forward() * 380.0 + Vector3(0, 120.0, 0)
+    camera.global_position = cam_eye
+    camera.look_at(cam_center, Vector3.UP)
+    camera.reset_physics_interpolation()
 
 func _fp_exit() -> void:
     if not fp_active:
@@ -2799,6 +2806,7 @@ var actor_models: Dictionary = {}  # model rel path -> {glb, clips} (animated ac
 var npc_dialogue: Dictionary = {}  # actor name -> {first: [ids], alternatives: {...}}
 var dialog: Node = null
 var dialog_open := false
+var dialog_closed_frame := -1000
 var stage_names: Dictionary = {}
 var menu: Node = null
 var bgm: Dictionary = {}           # data/ww_bgm.json: stages / sea_rooms -> song
@@ -2806,7 +2814,8 @@ var bgm_player: AudioStreamPlayer = null
 var bgm_song := ""
 var selftest: bool = "--selftest" in OS.get_cmdline_user_args()   # scripted input run
 var shot_actor := ""   # --shot=<actor>: screenshot that actor's face to user://shot.png and quit
-var door_test: bool = "--door" in OS.get_cmdline_user_args()   # take the first door, report the landing
+var door_test := false   # --door[=<dest stage>]: take the first (matching) door, report the landing
+var door_want := ""
 var door_frames := 0
 var shot_frames := 0
 var events: Dictionary = {}        # this stage's event_list.dat: name -> event
@@ -2862,6 +2871,10 @@ func _ready() -> void:
     for a in OS.get_cmdline_user_args():
         if a.begins_with("--shot="):
             shot_actor = a.substr(7)
+        elif a.begins_with("--door"):
+            door_test = true
+            if a.begins_with("--door="):
+                door_want = a.substr(7)
     if load_game():
         print("gcrip: save file loaded (", str(save.get("saved_at", "?")), ")")
         if not selftest and shot_actor == "" and not door_test:
@@ -2952,7 +2965,7 @@ func _process(delta: float) -> void:
         var cs := get_tree().current_scene
         if door_frames == 30 and cs:
             for n in cs.find_children("*", "Area3D", true, false):
-                if n.get("dest_stage") != null:
+                if n.get("dest_stage") != null and (door_want == "" or str(n.dest_stage) == door_want):
                     print("gcrip door: ", cs.name, " -> ", n.dest_stage, " room ", n.dest_room, " spawn ", n.dest_spawn)
                     last_warp_ms = -100000
                     warp(str(n.dest_stage), int(n.dest_room), int(n.dest_spawn))
@@ -2961,7 +2974,10 @@ func _process(delta: float) -> void:
             var link := player()
             var cs2 := get_tree().current_scene
             if link and cs2:
-                print("gcrip door: landed in ", cs2.name, " at ", link.global_position.round(), " ground=", has_ground(link.global_position), " state=", link.get("state"))
+                var space := (cs2 as Node3D).get_world_3d().direct_space_state
+                var q := PhysicsRayQueryParameters3D.create(link.global_position + Vector3(0, 80, 0), link.global_position + Vector3(0, 80, 0) + Vector3(sin(float(link.get("facing"))), 0, cos(float(link.get("facing")))) * 120.0, 1)
+                var blocked := not space.intersect_ray(q).is_empty()
+                print("gcrip door: landed in ", cs2.name, " at ", link.global_position.round(), " ground=", has_ground(link.global_position), " wall_ahead=", blocked, " state=", link.get("state"))
             get_tree().quit()
     autosave_frames += 1
     if autosave_frames >= 30 * 60 and not dialog_open and not event_running and not selftest and shot_actor == "" and not door_test:
@@ -3299,7 +3315,9 @@ func _ensure_dialog() -> void:
     if dialog == null:
         dialog = load("res://dialog.tscn").instantiate()
         add_child(dialog)
-        dialog.closed.connect(func(): dialog_open = false)
+        dialog.closed.connect(func():
+            dialog_open = false
+            dialog_closed_frame = Engine.get_physics_frames())
 
 func show_text(text: String) -> void:
     _ensure_dialog()
@@ -3340,10 +3358,12 @@ func _apply_saved_pad_mappings() -> void:
     var unknown := []
     for id in Input.get_connected_joypads():
         var guid := Input.get_joy_guid(id)
-        if cfg.has_section_key("mappings", guid):
-            Input.add_joy_mapping(cfg.get_value("mappings", guid), true)
-        elif PRESET_PADS.has(guid):
+        if PRESET_PADS.has(guid) and not cfg.get_value("prefer", guid, false):
             Input.add_joy_mapping(PRESET_PADS[guid], true)
+            print("gcrip: pad ", Input.get_joy_name(id), " -> built-in DragonRise mapping (A=b2 B=b3 X=b1 Y=b0)")
+        elif cfg.has_section_key("mappings", guid):
+            Input.add_joy_mapping(cfg.get_value("mappings", guid), true)
+            print("gcrip: pad ", Input.get_joy_name(id), " -> calibrated mapping from ", PAD_CFG)
         elif not Input.is_joy_known(id):
             unknown.append(Input.get_joy_name(id))
     if unknown.size() > 0:
@@ -3442,6 +3462,12 @@ func _place_player() -> void:
         player.global_position = p
         player.velocity = Vector3.ZERO
         player.start_pos = player.global_position
+        # face the way the PLYR entry says (into the room / away from the door) and put the
+        # camera behind that
+        var f := deg_to_rad(float(best.get("rot_y_deg", 0.0)))
+        player.set("facing", f)
+        if player.has_method("snap_camera_behind"):
+            player.snap_camera_behind()
     if bool(pending.get("restore", false)):
         _restore_position()
     pending = {}
@@ -4593,6 +4619,10 @@ func _process(_delta: float) -> void:
     if _bgm_tick % 60 == 0:  # crossing into another island's room changes the theme
         Game.play_bgm("sea", _room_hint())
 
+# story-state variants of the same villager share a room; the game spawns one by event bits.
+# Until event bits drive it, keep the fresh-file type (data/ww_npc_dialogue.json "types").
+const FRESH_TYPE := {"Ba1": 0, "Ls1": 4, "Aj1": 0, "Ob1": 0, "Yw1": 0, "Ym1": 0, "Ym2": 2, "Ko1": 2, "Ko2": 0}
+
 func _wrap_actors() -> void:
     var level := get_node_or_null("Level")
     var info: Dictionary = Game.stage_data.get(name, {})
@@ -4601,6 +4631,11 @@ func _wrap_actors() -> void:
     var n := 0
     for rec in info.get("actors", []):
         var actor: String = rec["actor"]
+        if FRESH_TYPE.has(actor) and (int(rec["params"]) & 0xFF) != int(FRESH_TYPE[actor]):
+            var ghost := level.find_child(str(rec["node"]).replace(".", "_"), true, false)
+            if ghost and ghost is Node3D:
+                (ghost as Node3D).visible = false
+            continue
         var script_path := ""
         if SCRIPTS.has(actor):
             script_path = SCRIPTS[actor]
