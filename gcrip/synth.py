@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """A small sample-playback synthesizer for JAudio sequences.
 
 Renders the :class:`gcrip.formats.bms.Sequence` produced by :func:`bms.play` with the
@@ -9,13 +10,19 @@ them, the way ``JASystem::TChannel`` does at the coarse level:
   (percussion ignores the key: it plays the wave at its own rate, panned by the PERC entry)
 * amplitude = track volume (already the product over the track chain) x velocity / 127
   x instrument volume x region volume, equal-power panned
-* envelope: a short linear attack, hold while the note is on, then an exponential
-  release (the note-off release byte in 1/30 s steps, else ~60 ms); one-shot waves
-  stop at their end, looping waves wrap ``loop_start..loop_end`` forever
+* envelope: the instrument's volume oscillator (IBNK ``OSCT``): rows of (mode, time,
+  value) run by ``JASystem::TOscillator`` - time in 1/600 s (``time * (dacRate/80/600)``
+  driver updates), value / 0x8000 as the target level, modes 0 linear, 1 square,
+  2 square-root, 3 "sample cell" (exponential-ish 16-entry tables), 13 loop, 14 hold,
+  15 stop; the release table takes over at note-off (or a direct release: percussion
+  ``release`` / the note-off byte, also 1/600 s units). Output = phase x width + vertex.
+  Instruments without tables get a 4 ms attack / 60 ms release. One-shot waves stop at
+  their end, looping waves wrap ``loop_start..loop_end`` forever
+* a light Schroeder reverb (4 combs + 2 all-passes, ~15 % wet) stands in for the
+  DSP's reverb send
 
-The oscillator tables (real ADSR curves), LFO / vibrato, reverb and the DSP's
-biquad filters are not modelled - those are the difference between this and the
-console, not the notes. Pure numpy, no audio libraries.
+Not modelled: LFO / vibrato (pitch oscillators), per-track fx mix, the DSP biquads.
+Pure numpy, no audio libraries.
 """
 from __future__ import annotations
 
@@ -31,6 +38,17 @@ from gcrip.formats.bms import Note, Sequence
 OUT_RATE = 32000  # the GameCube DSP mixes at 32 kHz
 ATTACK_SEC = 0.004
 DEFAULT_RELEASE_SEC = 0.06
+OSC_TIME_UNIT = 1.0 / 600.0  # envelope row time -> seconds (dacRate / 80 / 600 updates)
+REVERB_WET = 0.15
+# TOscillator curve tables (index 0..16 over the segment); 0 = linear
+_REL_SAMPLE_CELL = [1.0, 0.970489, 0.781274, 0.546281, 0.399792, 0.289315, 0.212104, 0.157476,
+                    0.112613, 0.0817896, 0.0579852, 0.0436415, 0.0308237, 0.0237129, 0.0152593,
+                    0.00915555, 0.0]
+_REL_SQ_ROOT = [1.0, 0.878906, 0.765625, 0.660156, 0.5625, 0.472656, 0.390625, 0.316406, 0.25,
+                0.191406, 0.140625, 0.0976562, 0.0625, 0.0351562, 0.015625, 0.00390625, 0.0]
+_REL_SQUARE = [1.0, 0.968246, 0.935414, 0.901388, 0.866025, 0.829156, 0.790569, 0.75, 0.707107,
+               0.661438, 0.612372, 0.559017, 0.5, 0.433013, 0.353553, 0.25, 0.0]
+_CURVES = {1: _REL_SQUARE, 2: _REL_SQ_ROOT, 3: _REL_SAMPLE_CELL}
 MAX_LOOP_NOTE_SEC = 30.0  # a held looping note longer than this is cut
 MASTER_GAIN = 0.35
 TARGET_PEAK = 0.9
@@ -49,12 +67,85 @@ class Voice:
     ratio: float  # source samples per output sample
     gain_l: float
     gain_r: float
+    osc: ibnk.Oscillator | None = None  # volume oscillator (target 0) if the bank has one
+    direct_release: int = 0  # percussion PER2 / note-off release in 1/600 s units
+
+
+def _segment(start: float, target: float, n: int, mode: int) -> np.ndarray:
+    """One envelope row: phase moves start -> target over n samples along the mode's curve."""
+    if n <= 0:
+        return np.zeros(0, dtype=np.float32)
+    t = np.linspace(0.0, 1.0, n, endpoint=False, dtype=np.float32)
+    curve = _CURVES.get(mode)
+    if curve is None:
+        frac = t
+    else:
+        # TOscillator indexes the 16-entry table by the remaining fraction of the segment
+        tab = np.asarray(curve, dtype=np.float32)
+        idx = (1.0 - t) * 16.0
+        i0 = np.clip(idx.astype(np.int64), 0, 15)
+        frac = 1.0 - (tab[i0] + (idx - i0) * (tab[i0 + 1] - tab[i0]))
+    return (start + (target - start) * frac).astype(np.float32)
+
+
+def _run_table(table, phase: float, max_samples: int, out_rate: int) -> tuple[np.ndarray, float, bool]:
+    """Play oscillator rows until hold / stop / the sample budget. Returns (envelope,
+    final phase, reached_stop)."""
+    parts: list[np.ndarray] = []
+    total = 0
+    pos = 0
+    guard = 0
+    while table and pos < len(table) and total < max_samples and guard < 64:
+        guard += 1
+        mode, time, value = table[pos]
+        if mode == 15:  # stop
+            return (np.concatenate(parts) if parts else np.zeros(0, np.float32)), phase, True
+        if mode == 14:  # hold
+            break
+        if mode == 13:  # loop back to row `value`
+            pos = max(0, min(int(value), len(table) - 1))
+            if table[pos][0] in (13, 14, 15):
+                break
+            continue
+        target = value / 32768.0
+        n = int(round(time * OSC_TIME_UNIT * out_rate))
+        n = min(n, max_samples - total)
+        if n > 0:
+            parts.append(_segment(phase, target, n, mode))
+            total += n
+        phase = target
+        pos += 1
+    env = np.concatenate(parts) if parts else np.zeros(0, np.float32)
+    if len(env) < max_samples:  # hold the last level
+        env = np.concatenate([env, np.full(max_samples - len(env), phase, dtype=np.float32)])
+    return env, phase, False
+
+
+def _osc_envelope(v: Voice, held_samples: int, out_rate: int) -> np.ndarray:
+    """Volume envelope for a voice with oscillator tables: attack/hold while the note is on,
+    then the release table (or a direct release) down to silence."""
+    o = v.osc
+    attack, phase, stopped = _run_table(o.table, 0.0, held_samples, out_rate)
+    if stopped:
+        return attack * o.width + o.vertex
+    if v.direct_release or not o.rel_table:
+        units = v.direct_release if v.direct_release else int(v.release_sec / OSC_TIME_UNIT)
+        n = max(int(units * OSC_TIME_UNIT * out_rate), 1)
+        rel = _segment(phase, 0.0, n, 0)
+    else:
+        rel, _end, _stopped = _run_table(o.rel_table, phase, int(4.0 * out_rate), out_rate)
+        # a release table that holds above zero is cut off where it stops falling
+        below = np.nonzero(rel <= 1e-3)[0]
+        if len(below):
+            rel = rel[: int(below[0]) + 1]
+    return np.concatenate([attack, rel]) * o.width + o.vertex
 
 
 def _region_for(
     bank: ibnk.Bank, note: Note
-) -> tuple[ibnk.VelRegion, float, float, float | None, bool] | None:
-    """-> (vel region, volume mult, pitch mult, pan override, is_percussion)."""
+) -> tuple[ibnk.VelRegion, float, float, float | None, bool, ibnk.Oscillator | None, int] | None:
+    """-> (vel region, volume mult, pitch mult, pan override, is_percussion, volume osc,
+    direct release)."""
     prog = bank.program(note.program)
     if prog is None:
         return None
@@ -65,11 +156,12 @@ def _region_for(
         vr = perc.region(note.velocity)
         if vr is None:
             return None
-        return vr, perc.volume * vr.volume, perc.pitch * vr.pitch, perc.pan, True
+        return vr, perc.volume * vr.volume, perc.pitch * vr.pitch, perc.pan, True, None, perc.release & 0x3FFF
     vr = prog.region(note.key, note.velocity)
     if vr is None:
         return None
-    return vr, prog.volume * vr.volume, prog.pitch * vr.pitch, None, False
+    osc = next((o for o in prog.oscillators if o.target == 0 and o.table), None)
+    return vr, prog.volume * vr.volume, prog.pitch * vr.pitch, None, False, osc, 0
 
 
 def build_voices(
@@ -96,7 +188,7 @@ def build_voices(
         if reg is None:
             missing["program"] += 1
             continue
-        vr, vol_mult, pitch_mult, pan_override, is_perc = reg
+        vr, vol_mult, pitch_mult, pan_override, is_perc, osc, direct_rel = reg
         found = lookup(n.bank, vr.wave_id)
         if found is None:
             missing["wave"] += 1
@@ -117,7 +209,9 @@ def build_voices(
         if wave.loop:
             end_sec = min(end_sec, n.start_sec + MAX_LOOP_NOTE_SEC)
         release = (n.release / 30.0) if n.release else DEFAULT_RELEASE_SEC
-        voices.append(Voice(n.start_sec, end_sec, release, wave, pcm, ratio, gain_l, gain_r))
+        if n.release and osc is not None:
+            direct_rel = n.release  # note-off release byte: 1/600 s units like PER2
+        voices.append(Voice(n.start_sec, end_sec, release, wave, pcm, ratio, gain_l, gain_r, osc, direct_rel))
     return voices, missing
 
 
@@ -127,7 +221,13 @@ def _render_voice(v: Voice, out_rate: int, total_frames: int) -> tuple[int, np.n
     if start >= total_frames:
         return None
     held = max(v.end_sec - v.start_sec, 0.0)
-    length = int(round((held + v.release_sec * 4.0) * out_rate))
+    held_samples = int(round(held * out_rate))
+    env_osc: np.ndarray | None = None
+    if v.osc is not None:
+        env_osc = _osc_envelope(v, held_samples, out_rate)
+        length = len(env_osc)
+    else:
+        length = int(round((held + v.release_sec * 4.0) * out_rate))
     if not v.wave.loop:
         # a one-shot sample cannot sound past its own end
         length = min(length, int(len(v.pcm) / v.ratio) + 1)
@@ -148,6 +248,11 @@ def _render_voice(v: Voice, out_rate: int, total_frames: int) -> tuple[int, np.n
     samples = pcm[idx].astype(np.float32) * (1.0 - frac) + pcm[idx1].astype(np.float32) * frac
     samples *= 1.0 / 32768.0
     # envelope
+    if env_osc is not None:
+        env = env_osc[:length]
+        if len(env) < length:
+            env = np.concatenate([env, np.zeros(length - len(env), dtype=np.float32)])
+        return start, samples * np.clip(env, 0.0, 4.0)
     env = np.ones(length, dtype=np.float32)
     a = min(int(ATTACK_SEC * out_rate), length)
     if a > 1:
@@ -180,6 +285,8 @@ def render(
         end = start + len(block)
         mix[start:end, 0] += block * v.gain_l
         mix[start:end, 1] += block * v.gain_r
+    if REVERB_WET > 0.0 and len(mix) > out_rate // 10:
+        mix = mix * (1.0 - REVERB_WET) + reverb(mix, out_rate) * REVERB_WET
     # normalise: the console's mixer / reverb chain is not modelled, so level every song
     # to the same peak instead of trusting absolute gains
     peak = float(np.max(np.abs(mix))) if len(mix) else 0.0
@@ -191,3 +298,45 @@ def render(
         mix = mix[: min(len(mix), int(nz[-1]) + out_rate // 10)]
     missing["voices"] = len(voices)
     return (mix * 32767.0).astype(np.int16), missing
+
+
+def _comb(x: np.ndarray, delay: int, g: float) -> np.ndarray:
+    """y[n] = x[n] + g y[n - delay], block-wise (each block only depends on the previous)."""
+    y = np.zeros_like(x)
+    n = len(x)
+    for start in range(0, n, delay):
+        end = min(start + delay, n)
+        y[start:end] = x[start:end]
+        if start >= delay:
+            y[start:end] += g * y[start - delay : start - delay + (end - start)]
+    return y
+
+
+def _allpass(x: np.ndarray, delay: int, g: float) -> np.ndarray:
+    """y[n] = -g x[n] + x[n - delay] + g y[n - delay]."""
+    y = np.zeros_like(x)
+    n = len(x)
+    for start in range(0, n, delay):
+        end = min(start + delay, n)
+        y[start:end] = -g * x[start:end]
+        if start >= delay:
+            w = end - start
+            y[start:end] += x[start - delay : start - delay + w] + g * y[start - delay : start - delay + w]
+    return y
+
+
+def reverb(mix: np.ndarray, out_rate: int) -> np.ndarray:
+    """Schroeder reverb (Freeverb-ish tunings scaled to the rate), mono send, stereo return."""
+    mono = mix.mean(axis=1).astype(np.float32)
+    scale = out_rate / 44100.0
+    combs = [int(d * scale) for d in (1116, 1188, 1277, 1356)]
+    wet = np.zeros_like(mono)
+    for d in combs:
+        wet += _comb(mono, max(d, 1), 0.84)
+    wet *= 0.25
+    for d in (int(556 * scale), int(441 * scale)):
+        wet = _allpass(wet, max(d, 1), 0.5)
+    out = np.empty_like(mix)
+    out[:, 0] = wet
+    out[:, 1] = np.roll(wet, int(0.0007 * out_rate))  # a hair of decorrelation
+    return out
