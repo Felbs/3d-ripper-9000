@@ -31,8 +31,8 @@ from gcrip.export import glb as glbmod
 
 # Godot physical keycodes
 _KEYS = {
-    "W": 87, "A": 65, "S": 83, "D": 68, "SPACE": 32, "SHIFT": 4194325, "CTRL": 4194326,
-    "ESC": 4194305, "F1": 4194332,
+    "W": 87, "A": 65, "S": 83, "D": 68, "E": 69, "Q": 81, "SPACE": 32, "SHIFT": 4194325,
+    "CTRL": 4194326, "ESC": 4194305, "F1": 4194332,
     "LEFT": 4194319, "UP": 4194320, "RIGHT": 4194321, "DOWN": 4194322,
 }  # fmt: skip
 
@@ -168,10 +168,21 @@ const LARGE_DAMAGE_SPEED := 25.0        # laDamage.fly_speed
 const LARGE_DAMAGE_SPEED_Y := 60.0      # laDamage.fly_yspeed
 const LARGE_DAMAGE_GRAVITY := -13.0     # laDamage.fly_gravity
 const MAX_HEARTS_START := 3             # quarter hearts: 12
+# --- Deku Leaf glide (fan table) ---
+const GLIDE_DEPLOY_SPEED_Y := 15.0      # fan.fan_deploy_speed_y
+const GLIDE_GRAVITY := -0.5             # fan.fan_glide_gravity (once falling)
+const GLIDE_MAX_FALL := -2.0            # fan.fan_glide_max_fall_speed
+const GLIDE_FORWARD_SPEED := 12.0       # fan.fan_glide_forward_speed (x stick x cos)
+const GLIDE_MAGIC_INTERVAL := 40        # fan.fan_glide_magic_drain_interval
+const GLIDE_CANCEL_LOCKOUT := 20        # fan.fan_glide_cancel_lockout
+const GLIDE_LAND_RATE := 0.6            # fan.fan_land_anm_rate
+const MAGIC_MAX := 16                   # small magic meter
+# --- Iron Boots ---
+const HEAVY_SPEED_SCALE := 0.5          # move.heavy_speed_scale
 
 const S16_TO_RAD := PI / 32768.0
 
-enum State { GROUND, AIR, ROLL, SWIM, LAND, ATTACK, JUMPCUT, JUMPCUT_LAND, DAMAGE }
+enum State { GROUND, AIR, ROLL, SWIM, LAND, ATTACK, JUMPCUT, JUMPCUT_LAND, DAMAGE, GLIDE }
 
 @export var water_level := -1.0e9   # stage sets this (sea stages: 0)
 
@@ -205,6 +216,13 @@ var cut_entry_speed := 0.0
 var hit_targets := {}                    # bodies already hit by this swing
 var jattack: Dictionary = {}
 var damage_dir := Vector3.ZERO
+# items
+var magic := MAGIC_MAX
+var heavy := false                       # Iron Boots on
+var glide_frames := 0
+var glide_magic_timer := 0
+@onready var hud_magic: Label = get_node_or_null("HUD/Magic")
+@onready var hud_items: Label = get_node_or_null("HUD/Items")
 @onready var sword_pivot: Node3D = get_node_or_null("SwordPivot")
 @onready var sword_area: Area3D = get_node_or_null("SwordPivot/SwordHit")
 @onready var sword_shape: CollisionShape3D = get_node_or_null("SwordPivot/SwordHit/Shape")
@@ -247,8 +265,10 @@ func play_clip(name: String, blend := ANIM_BLEND, rate := 1.0) -> void:
 
 func stick() -> Vector2:
     # camera-relative stick: x = right, y = forward, length 0..1
+    # (Iron Boots scale the stick itself, like the game: move.heavy_speed_scale)
     var raw := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
-    return Vector2(raw.x, -raw.y)
+    var s := Vector2(raw.x, -raw.y)
+    return s * HEAVY_SPEED_SCALE if heavy else s
 
 func stick_world_dir(s: Vector2) -> Vector3:
     var d := cam_yaw.global_transform.basis * Vector3(s.x, 0.0, -s.y)
@@ -288,6 +308,8 @@ func water_surface() -> float:
     return best
 
 func in_water() -> bool:
+    if heavy:
+        return false  # Iron Boots: Link walks along the bottom instead of swimming
     return global_position.y < water_surface() - SWIM_START_DEPTH
 
 func on_hazard() -> String:
@@ -318,6 +340,10 @@ func _physics_process(_delta: float) -> void:
         if combo_timer == 0 and state != State.ATTACK:
             combo = 0
 
+    if Input.is_action_just_pressed("action_y") and state in [State.GROUND, State.SWIM]:
+        heavy = not heavy  # Iron Boots toggle (procBootsEquip; 19-frame anim skipped)
+        _update_hud()
+
     match state:
         State.GROUND: _ground()
         State.AIR: _air()
@@ -328,6 +354,7 @@ func _physics_process(_delta: float) -> void:
         State.JUMPCUT: _jumpcut()
         State.JUMPCUT_LAND: _jumpcut_land()
         State.DAMAGE: _damage()
+        State.GLIDE: _glide()
 
     if model:
         model.rotation.y = facing
@@ -476,6 +503,9 @@ func _air() -> void:
         return
     if Input.is_action_just_pressed("action_b"):  # midair jump attack
         _enter_jumpcut(JATTACK_AIR)
+        return
+    if Input.is_action_just_pressed("action_x") and magic > 0 and not heavy:
+        _enter_glide()
         return
     fall_start_y = maxf(fall_start_y, global_position.y)
     var vy := velocity.y / 30.0 + gravity
@@ -681,6 +711,56 @@ func _jumpcut_land() -> void:
     if cut_frame >= JATTACK_LAND["end"]:
         _enter_ground()
 
+# ---------------------------------------------------------------- Deku Leaf
+
+func _enter_glide() -> void:
+    # procFanGlide_init: pop up 15, then glide with its own gravity / terminal speed
+    state = State.GLIDE
+    glide_frames = 0
+    glide_magic_timer = GLIDE_MAGIC_INTERVAL
+    velocity.y = GLIDE_DEPLOY_SPEED_Y * 30.0
+    gravity = GLIDE_GRAVITY
+    speed = GLIDE_FORWARD_SPEED
+    fall_start_y = global_position.y
+    play_clip("mjmp", 0.0, 0.5)  # no USEFANB clip exported yet; slow jump pose stands in
+
+func _glide() -> void:
+    glide_frames += 1
+    if in_water():
+        _enter_swim()
+        return
+    var s := stick()
+    var dist := minf(s.length(), 1.0)
+    if dist > 0.05:
+        turn_toward(heading_of(stick_world_dir(s)), TURN_MAX_STEP, TURN_MIN_STEP, TURN_DIVISOR)
+    # forward speed chases 12 * stick * cos(stick angle - facing): addCalc(0.5, 0.1+0.4*stick, 0.01)
+    var want := 0.0
+    if dist > 0.05:
+        var off := wrapf(heading_of(stick_world_dir(s)) - facing, -PI, PI)
+        want = GLIDE_FORWARD_SPEED * dist * cos(off)
+    var rem := want - speed
+    var step := clampf(absf(rem) * 0.5, 0.01, 0.1 + 0.4 * dist)
+    speed = want if absf(rem) <= step else speed + signf(rem) * step
+    var vy := velocity.y / 30.0
+    if vy < -GLIDE_GRAVITY:
+        vy = maxf(vy + GLIDE_GRAVITY, GLIDE_MAX_FALL)
+    else:
+        vy += GRAVITY  # still rising from the deploy pop: normal gravity until it stops
+    glide_magic_timer -= 1
+    if glide_magic_timer <= 0:
+        glide_magic_timer = GLIDE_MAGIC_INTERVAL
+        magic = maxi(magic - 1, 0)
+        _update_hud()
+    _apply(forward() * speed, vy)
+    var cancel: bool = glide_frames > GLIDE_CANCEL_LOCKOUT and (Input.is_action_just_pressed("action_a") or Input.is_action_just_pressed("action_b") or Input.is_action_just_pressed("action_x"))
+    if is_on_floor():
+        land_frames = 8
+        state = State.LAND
+        play_clip("jmped", 5.0 / 30.0, GLIDE_LAND_RATE)
+        return
+    if cancel or magic <= 0:
+        _enter_air(forward() * speed, vy, GRAVITY)
+
 # ---------------------------------------------------------------- damage
 
 func take_damage(quarter_hearts: int, source_pos: Vector3, large := false) -> void:
@@ -754,6 +834,10 @@ func _update_hud() -> void:
         else:
             s += "\\u2661 "
     hud_hearts.text = s
+    if hud_magic:
+        hud_magic.text = "MP " + "\\u2588".repeat(magic) + "\\u2591".repeat(MAGIC_MAX - magic)
+    if hud_items:
+        hud_items.text = "B sword   A roll/jump   R/Z target   X Deku Leaf   Y Iron Boots%s" % (" [ON]" if heavy else "")
 
 func _enter_swim() -> void:
     state = State.SWIM
@@ -853,6 +937,32 @@ offset_right = 600.0
 offset_bottom = 70.0
 theme_override_font_sizes/font_size = 34
 theme_override_colors/font_color = Color(1, 0.25, 0.3, 1)
+text = ""
+
+[node name="Magic" type="Label" parent="HUD"]
+offset_left = 24.0
+offset_top = 62.0
+offset_right = 600.0
+offset_bottom = 96.0
+theme_override_font_sizes/font_size = 20
+theme_override_colors/font_color = Color(0.35, 0.9, 0.45, 1)
+text = ""
+
+[node name="Items" type="Label" parent="HUD"]
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -760.0
+offset_top = -40.0
+offset_right = -16.0
+offset_bottom = -10.0
+grow_horizontal = 0
+grow_vertical = 0
+horizontal_alignment = 2
+theme_override_font_sizes/font_size = 16
+theme_override_colors/font_color = Color(0.85, 0.85, 0.85, 0.85)
 text = ""
 
 [node name="CamYaw" type="Node3D" parent="."]
@@ -1182,6 +1292,8 @@ move_left={_action(k["A"], k["LEFT"], _joy_axis(AXIS_LX, -1.0), deadzone=0.15)}
 move_right={_action(k["D"], k["RIGHT"], _joy_axis(AXIS_LX, 1.0), deadzone=0.15)}
 action_a={_action(k["SPACE"], _joy_button(JOY_A))}
 action_b={_action(k["CTRL"], _joy_button(JOY_B))}
+action_x={_action(k["E"], _joy_button(JOY_X))}
+action_y={_action(k["Q"], _joy_button(JOY_Y))}
 target={_action(k["SHIFT"], _joy_button(JOY_RSHOULDER), _joy_axis(AXIS_RT, 1.0))}
 pause={_action(k["ESC"], _joy_button(JOY_START))}
 calibrate={_action(k["F1"])}
