@@ -732,6 +732,10 @@ func turn_toward(target: float, max_step: int, min_step: int, divisor: float) ->
 func forward() -> Vector3:
     return Vector3(sin(facing), 0.0, cos(facing))
 
+func swinging() -> bool:
+    # mid sword swing: the CUT_* / JUMPCUT cut types daObjBarrier_c::break_start_wait_proc tests
+    return state == State.ATTACK or state == State.JUMPCUT or state == State.JUMPCUT_LAND
+
 func water_surface() -> float:
     # Height of the water surface above Link's feet, or -1e9 if none. Probes the liquid
     # colliders (layer 2) exported from the game's .dzb, with the stage's flat water
@@ -3023,6 +3027,9 @@ var dialogue_test: bool = "--dialogue" in OS.get_cmdline_user_args()
 var scope_test: bool = "--scope" in OS.get_cmdline_user_args()
 # --near: walk Link into the NPC-ordered story event that is waiting in this stage
 var near_test: bool = "--near" in OS.get_cmdline_user_args()
+# --object: satisfy the object-ordered story step waiting in this stage and let the object fire
+var object_test: bool = "--object" in OS.get_cmdline_user_args()
+var object_fired := false
 # --opening: play the mined opening graph end to end, one step at a time, and report each
 var opening_test: bool = "--opening" in OS.get_cmdline_user_args()
 # --sweep[=<from>:<to>]: walk every exported stage, land Link on its first spawn and check that
@@ -3088,6 +3095,7 @@ var events: Dictionary = {}        # this stage's event_list.dat: name -> event
 var enemies: Dictionary = {}       # enemies.json: actor -> constants (data/ww_enemies_*.json)
 var layers: Dictionary = {}        # layers.json: story-state -> which placement layer is live
 var story: Dictionary = {}         # story.json: the mined opening graph (steps -> bits)
+const STORY_OBJ_NOWHERE := Vector3(-1.0e9, -1.0e9, -1.0e9)   # no such object placed in this stage
 var night := false                 # no day/night clock yet: the game's layers differ by it
 const SAVE_PATH := "user://gcrip_save.json"
 var autosave_frames := 0
@@ -3603,6 +3611,8 @@ func _opening_start(step: Dictionary, arrived := false) -> void:
         kind = "look"
     elif step.get("near") is Dictionary:
         kind = "near"
+    elif step.get("object") is Dictionary:
+        kind = "object"
     print("gcrip opening: ", id, " by ", kind)
     var lk := player()
     match kind:
@@ -3612,6 +3622,17 @@ func _opening_start(step: Dictionary, arrived := false) -> void:
                 print("gcrip opening: ", id, " - no ", who, " placed here")
                 return
             story_talk(who)
+        "object":
+            var obj: Dictionary = step["object"]
+            var opos := story_object_pos(str(obj.get("actor", "")))
+            if opos == STORY_OBJ_NOWHERE or lk == null:
+                print("gcrip opening: ", id, " - no ", obj.get("actor", "?"), " placed here")
+                return
+            give_item(str(obj.get("item", "")))
+            var orad := float(obj.get("radius", 0.0))
+            if orad > 0.0:
+                lk.global_position = opos + Vector3(0, 5, maxf(orad * 0.5, 40.0))
+            story_object_tick()
         "near":
             var near: Dictionary = step["near"]
             var n := _find_actor(str(near.get("actor", "")))
@@ -3636,6 +3657,56 @@ func _opening_start(step: Dictionary, arrived := false) -> void:
                 run_event(ev)
             else:
                 story_event_done(id if ev == "" else ev)
+
+func _object_tick() -> bool:
+    # the harness for a step a placed object orders itself: raise its bits, stand Link where the
+    # predicate wants him, hand him what it wants, then poll once.  False = try again later
+    # (the stage's arrival camera can still be up when the first attempt lands).
+    if event_running or cutscene_running() or dialog_open:
+        return false
+    var step: Dictionary = {}
+    for st in story.get("steps", []):
+        if st.get("object") is Dictionary and not story_done(str(st.get("id", ""))) \
+                and str(st.get("stage", "")) == current_stage_key().split("_r")[0]:
+            step = st
+            break
+    if step.is_empty():
+        print("gcrip object: no object-ordered step is waiting in this stage")
+        get_tree().quit()
+        return true
+    for b in step.get("requires_bits", []):
+        var bid := _bit_value(b)
+        if bid != 0 and not event_bit(bid):
+            set_event_bit(bid)
+    var obj: Dictionary = step["object"]
+    var pos := story_object_pos(str(obj.get("actor", "")))
+    if pos == STORY_OBJ_NOWHERE:
+        print("gcrip object: no ", obj.get("actor", "?"), " placed in this stage")
+        get_tree().quit()
+        return true
+    var lk := player()
+    if lk == null:
+        print("gcrip object: no player")
+        get_tree().quit()
+        return true
+    give_item(str(obj.get("item", "")))
+    var sw = obj.get("switch")
+    if sw != null:
+        set_switch(int(obj.get("room", 0)), int(sw))
+    var near_r := float(obj.get("radius", 0.0))
+    var far_r := float(obj.get("min_radius", 0.0))
+    if far_r > 0.0:
+        lk.global_position = pos + Vector3(0, 5, far_r + 200.0)
+    elif near_r > 0.0:
+        lk.global_position = pos + Vector3(0, 5, maxf(near_r * 0.5, 40.0))
+    print("gcrip object: ", step.get("id", "?"), " - ", obj.get("actor", "?"), " at ",
+          pos.round(), ", Link ", round(pos.distance_to(lk.global_position)), " units off")
+    if bool(obj.get("swing", false)):
+        print("gcrip object: this step also wants a sword swing - headless cannot fake one")
+    story_object_tick()
+    if not story_done(str(step.get("id", ""))):
+        print("gcrip object: the predicate did not take - step blocked")
+    return true
 
 func _near_tick() -> void:
     var step: Dictionary = {}
@@ -3727,6 +3798,7 @@ func _process(delta: float) -> void:
     if story_tick % 15 == 0:
         story_npc_tick()
         story_bits_tick()
+        story_object_tick()
     if dialogue_test:
         event_frames += 1
         if event_frames == 20:
@@ -3765,6 +3837,16 @@ func _process(delta: float) -> void:
         _sweep_tick()
     if opening_test:
         _opening_tick()
+    if object_test:
+        event_frames += 1
+        if not object_fired and event_frames >= 40 and event_frames <= 200 and event_frames % 40 == 0:
+            object_fired = _object_tick()
+        elif event_frames > 40 and event_frames % 120 == 0:
+            print("gcrip object: f%d event=%s cut=%s dialog=%s" % [
+                event_frames, str(event_running), str(cutscene_running()), str(dialog_open)])
+            if event_frames > 1800:
+                print("gcrip object: done")
+                get_tree().quit()
     if near_test:
         event_frames += 1
         if event_frames == 40:
@@ -3786,7 +3868,7 @@ func _process(delta: float) -> void:
                 print("gcrip scope: done")
                 get_tree().quit()
     if newgame_test or event_test != "" or talk_test != "" or story_test or scope_test \
-            or near_test or opening_test or sweep_test or doors_test or cuts_test:
+            or near_test or opening_test or sweep_test or doors_test or cuts_test or object_test:
         # tests have no player: advance text boxes directly (a synthesised action press raises
         # no InputEvent, so the box would never turn its page and the event would never end)
         auto_a += 1
@@ -4161,6 +4243,64 @@ func _story_chain_after(name: String) -> void:
     last_warp_ms = -100000
     warp(scene, int(w.get("room", 0)) if w.get("room") != null else 0, int(w.get("spawn", 0)))
 
+func warp_objects(stage: String) -> Array:
+    # The mined "warp" steps of this stage, grouped into one entry per placed object. Several
+    # steps can describe the SAME object taking different branches, so they are collected
+    # under one (stage, actor) and the branch is chosen when Link steps in.
+    var out: Array = []
+    var index: Dictionary = {}
+    for step in story.get("steps", []):
+        var w = step.get("warp_object")
+        if not (w is Dictionary):
+            continue
+        if str(w.get("stage", "")) != stage:
+            continue
+        var actor := str(w.get("actor", ""))
+        var obj: Dictionary
+        if index.has(actor):
+            obj = out[int(index[actor])]
+        else:
+            index[actor] = out.size()
+            obj = {"actor": actor, "stage": stage, "room": -1, "pos": null, "branches": []}
+            out.append(obj)
+        if int(obj["room"]) < 0 and w.get("room") != null:
+            obj["room"] = int(w.get("room"))
+        var pos = w.get("pos")
+        if obj["pos"] == null and pos is Array:
+            var pa: Array = pos
+            if pa.size() >= 3:
+                obj["pos"] = Vector3(float(pa[0]), float(pa[1]), float(pa[2]))
+        var req: Array = []
+        var raw = w.get("requires", [])
+        if raw is Array:
+            req = raw
+        var branches: Array = obj["branches"]
+        branches.append({
+            "step": str(step.get("id", "")),
+            "event": str(w.get("event", "")),
+            "dest": w.get("dest", {}),
+            "requires": req,
+        })
+    return out
+
+func warp_branch(obj: Dictionary) -> Dictionary:
+    # daWarpf_c::CreateInit: the same flower orders WARP_WIND while this dungeon's reward is
+    # untaken and WARP_WIND_AFTER once it has been taken - checkEndDemo() reading the save
+    # (event bit 0x2D10 for the Tower of the Gods, a held item for the other dungeons). The
+    # mined branches carry that test as requires_bits, so the most specific branch the save
+    # satisfies wins and the unconditional one is the fallback.
+    var best: Dictionary = {}
+    var best_score := -1
+    var branches: Array = obj.get("branches", [])
+    for b in branches:
+        var req: Array = b.get("requires", [])
+        if not _story_bits_ok({"requires_bits": req}):
+            continue
+        if req.size() > best_score:
+            best_score = req.size()
+            best = b
+    return best
+
 func story_states(stage: String) -> Array:
     # every layer rule that applies to this scene, in the decomp's order. A "sea_rNN" scene is
     # one island, so drop the rules that belong to the other islands' rooms.
@@ -4507,7 +4647,7 @@ func burst(pos: Vector3, color: Color) -> void:
 func scripted() -> bool:
     # any headless harness run: nobody is holding the pad, so "press any key" waits must pass
     return selftest or story_test or newgame_test or dialogue_test or door_test         or talk_test != "" or event_test != "" or shot_actor != "" or scope_test or near_test or defeat_test != "" or opening_test or sweep_test or doors_test \
-        or models_test or cuts_test
+        or models_test or cuts_test or object_test
 
 func stage_boss_dead(stage := "") -> bool:
     # A dungeon boss's death is NOT an event bit: dComIfGs_onStageBossEnemy writes its own save
@@ -4728,6 +4868,111 @@ func story_npc_tick() -> void:
             return
         story_event_done(id)
         return
+
+func story_object_tick() -> void:
+    # a placed object orders its own event when its OWN condition comes true: the courtyard warp
+    # polls Link's XZ distance (daWarphr_c::check_warp), the throne-room blocks and the Hero's
+    # statue watch their own state.  Unlike a TagEv this is a per-tick predicate, not a volume.
+    if event_running or cutscene_running() or dialog_open:
+        return
+    var here := current_stage_key()
+    for step in story.get("steps", []):
+        var obj = step.get("object")
+        if not (obj is Dictionary):
+            continue
+        var id := sfield(step, "id")
+        if story_done(id) or not _story_bits_ok(step):
+            continue
+        var st := sfield(step, "stage")
+        if st != "" and st != here:
+            continue
+        if not _story_object_ok(obj):
+            continue
+        _mark_story_done(id)
+        var ev := sfield(step, "event")
+        print("gcrip story: ", obj.get("actor", "?"), " orders ", id, " (event ", ev, ")")
+        if ev != "" and events.has(ev) and run_event(ev):
+            return
+        story_event_done(id)
+        return
+
+func _story_object_ok(obj: Dictionary) -> bool:
+    # every key the block carries must hold; a block with no test fires as soon as the object
+    # is placed.  Missing object -> never: the step belongs to a placement this stage has not got.
+    var pos := story_object_pos(str(obj.get("actor", "")))
+    if pos == STORY_OBJ_NOWHERE:
+        return false
+    var lk := player()
+    var near_r := float(obj.get("radius", 0.0))
+    var far_r := float(obj.get("min_radius", 0.0))
+    if near_r > 0.0 or far_r > 0.0:
+        if lk == null:
+            return false
+        # "ship": the real test measures to the boat and only counts while Link is aboard
+        var from: Vector3 = lk.global_position
+        if bool(obj.get("ship", false)):
+            var boat = lk.get("ship")
+            if boat == null or not is_instance_valid(boat):
+                return false
+            from = boat.global_position
+        var d := _story_object_dist(pos, from, bool(obj.get("xz", true)))
+        if near_r > 0.0 and d > near_r:
+            return false
+        if far_r > 0.0 and d < far_r:
+            return false
+    var sw = obj.get("switch")
+    if sw != null and not is_switch(int(obj.get("room", 0)), int(sw)):
+        return false
+    var item := str(obj.get("item", ""))
+    if item != "" and not has_item(item):
+        return false
+    if bool(obj.get("swing", false)):
+        # .call(): player() is typed Node3D, and swinging() lives on the player script
+        if lk == null or not lk.has_method("swinging") or not bool(lk.call("swinging")):
+            return false
+    return true
+
+func _story_object_dist(a: Vector3, b: Vector3, xz: bool) -> float:
+    if xz:
+        return Vector2(a.x - b.x, a.z - b.z).length()
+    return a.distance_to(b)
+
+func story_object_pos(actor: String) -> Vector3:
+    # MtryB / YLzou / Ghrwp carry no behaviour script, so stage.gd never wraps them into a node:
+    # the placement records in stage_data.json are the only thing that knows where they stand.
+    # One object can be placed several times (Hyroom has three MtryB blocks) and in the game each
+    # copy polls its own condition, so the copy nearest Link is the one that answers here.
+    if actor == "":
+        return STORY_OBJ_NOWHERE
+    var found: Array[Vector3] = []
+    var live := _find_actor(actor)
+    if live != null:
+        found.append(live.global_position)
+    var keys: Array = []
+    var cs := get_tree().current_scene
+    if cs != null:
+        keys.append(String(cs.name))
+    var key := current_stage_key()
+    if not keys.has(key):
+        keys.append(key)
+    for k in keys:
+        var info: Dictionary = stage_data.get(k, {})
+        for rec in info.get("actors", []):
+            if str(rec.get("actor", "")) != actor:
+                continue
+            var pt = rec.get("pos")
+            if pt is Array and (pt as Array).size() == 3:
+                found.append(Vector3(float(pt[0]), float(pt[1]), float(pt[2])))
+    if found.is_empty():
+        return STORY_OBJ_NOWHERE
+    var lk := player()
+    if lk == null:
+        return found[0]
+    var best: Vector3 = found[0]
+    for cand in found:
+        if cand.distance_to(lk.global_position) < best.distance_to(lk.global_position):
+            best = cand
+    return best
 
 func telescope_look(eye: Vector3, dir: Vector3) -> bool:
     # Link is looking down the Telescope: a story step whose "look" target is inside the scope
@@ -6323,6 +6568,7 @@ func _ready() -> void:
     _wrap_actors()
     _spawn_ships()
     _spawn_tags()
+    _spawn_warp_objects()
     _start_bgm.call_deferred()
 
 func _variant_keep(info: Dictionary, actor: String) -> int:
@@ -6358,6 +6604,82 @@ func _drop_variant(info: Dictionary, rec: Dictionary, actor: String) -> bool:
         return true                                  # one of each, even if types tie
     _variant_seen[actor] = true
     return false
+
+# daWarpf_c's flower has no ACTR record of its own - the boss spawns it where it died, which
+# is also where the boss item drops, so that placement is the flower's anchor.
+const WARP_ANCHORS := ["Bitem"]
+const WARP_RADIUS := 200.0     # daWarpf_c::m_warp_size[STAGE_TOTG]
+
+func _spawn_warp_objects() -> void:
+    # placed warp objects: the in-dungeon lifts (Ywarp00) and the boss room's warp flower.
+    # Each orders a stage event and then changes stage; which event it orders is read from
+    # the save when Link steps in (Game.warp_branch).
+    var objs: Array = Game.warp_objects(name)
+    if objs.is_empty():
+        return
+    var info: Dictionary = Game.stage_data.get(name, {})
+    var n := 0
+    for obj in objs:
+        var found = _warp_pos(info, obj)
+        if not (found is Vector3):
+            print("gcrip warp: no position for ", str(obj.get("actor", "?")), " in ", name)
+            continue
+        var pos: Vector3 = found
+        var node := Area3D.new()
+        node.set_script(load("res://actors/warp_object.gd"))
+        node.name = "Warp_%s_%d" % [str(obj.get("actor", "W")), n]
+        add_child(node)
+        node.global_position = pos
+        node.setup(obj, WARP_RADIUS)
+        n += 1
+        # report the branch the save picks right now, so booting into the stage is enough to
+        # check the save-state choice without walking Link into the object
+        var br: Dictionary = Game.warp_branch(obj)
+        var raw = br.get("dest", {})
+        var dest: Dictionary = raw if raw is Dictionary else {}
+        var branches: Array = obj.get("branches", [])
+        print("gcrip warp: ", str(obj.get("actor", "?")), " at ", pos.round(),
+              " room ", int(obj.get("room", -1)), " -> ", str(br.get("event", "-")),
+              " -> ", str(dest.get("stage", "-")), " room ", int(dest.get("room", 0)),
+              " spawn ", int(dest.get("spawn", 0)), "  (", branches.size(), " branches)")
+    if n > 0:
+        print("gcrip: ", n, " warp objects in ", name)
+
+func _warp_pos(info: Dictionary, obj: Dictionary):
+    # prefer the stage's own ACTR record for this actor (the mined coordinates are rounded);
+    # then the mined position; then the boss-item anchor, for objects the game spawns
+    var actor := str(obj.get("actor", ""))
+    var room := int(obj.get("room", -1))
+    var mined = obj.get("pos")
+    var have_mined: bool = mined is Vector3
+    var want: Vector3 = mined if have_mined else Vector3.ZERO
+    var best := Vector3.ZERO
+    var best_d := INF
+    var found := false
+    for rec in info.get("actors", []):
+        if str(rec.get("actor", "")) != actor:
+            continue
+        if room >= 0 and rec.get("room") != null and int(rec["room"]) != room:
+            continue
+        var p := Vector3(float(rec["pos"][0]), float(rec["pos"][1]), float(rec["pos"][2]))
+        var d: float = p.distance_to(want) if have_mined else 0.0
+        if not found or d < best_d:
+            best = p
+            best_d = d
+            found = true
+        if not have_mined:
+            break
+    if found and (not have_mined or best_d < 200.0):
+        return best
+    if have_mined:
+        return want
+    for rec in info.get("actors", []):
+        if not WARP_ANCHORS.has(str(rec.get("actor", ""))):
+            continue
+        if room >= 0 and rec.get("room") != null and int(rec["room"]) != room:
+            continue
+        return Vector3(float(rec["pos"][0]), float(rec["pos"][1]), float(rec["pos"][2]))
+    return null
 
 func _spawn_tags() -> void:
     var info: Dictionary = Game.stage_data.get(name, {})
@@ -6720,6 +7042,188 @@ water_level = {water_level:.1f}
 {"".join(warp_nodes)}"""
 
 
+# --- placed warp objects (mined trigger kind "warp") ---------------------------------
+# A mined warp step describes ONE object in prose: which actor it is, where it stands, which
+# event it orders and where that event's DIRECTOR NEXT puts Link. Two steps can describe the
+# same object taking different branches - daWarpf_c::CreateInit orders WARP_WIND or
+# WARP_WIND_AFTER from the same flower depending on checkEndDemo() - so the engine groups
+# them per (stage, actor) and picks the branch the save satisfies.
+_WARP_OBJ_ACTOR_RE = re.compile(r"\b(Warpf|Ywarp00|Warpls|Warpmj|Warpgn)\b")
+# "the same Warpf in SirenB takes the other branch": the object's home stage, for steps whose
+# own `stage` is the ARRIVAL stage instead. "Ywarp00 in room 17" must not match.
+_WARP_OBJ_HOME_RE = re.compile(
+    r"\b(?:Warpf|Ywarp00|Warpls|Warpmj|Warpgn)\s+in\s+(?!room\b)([A-Za-z][A-Za-z0-9_]*)"
+)
+_WARP_OBJ_POS_RE = re.compile(
+    r"\bat\s*\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)"
+)
+# an event script's tail: DIRECTOR NEXT -> Stage 'ADMumi', RoomNo 0, Layer 9, StartCode 200
+_WARP_OBJ_DEST_RE = re.compile(
+    r"Stage\s*['\"]([A-Za-z0-9_]+)['\"]\s*,\s*RoomNo\s*(-?\d+)\s*,"
+    r"\s*Layer\s*(-?\d+)\s*,\s*StartCode\s*(-?\d+)"
+)
+# "Room 17 spawn 0 carries EVNT index 3": a destination inside the step's own stage
+_WARP_OBJ_ROOM_SPAWN_RE = re.compile(r"[Rr]oom\s+(\d+)\s+spawn\s+(\d+)")
+# which event this branch orders, when it is not simply the step's `event` (the mined step
+# totg_return_from_tower names TOWER_WARPOUT, the ARRIVAL event, not WARP_WIND_AFTER)
+_WARP_OBJ_EVENT_RES = (
+    re.compile(r"\bpicks\s+([A-Z][A-Z0-9_]{2,})"),
+    re.compile(r"\borders\s+([A-Z][A-Z0-9_]{2,})"),
+    re.compile(r"\btakes\s+the\s+([A-Z][A-Z0-9_]{2,})\s+branch"),
+    re.compile(r"\bplays\s+([A-Z][A-Z0-9_]{2,})"),
+)
+
+
+def _warp_object_of(step: dict) -> dict | None:
+    """One mined "warp" step -> the placed object plus the single branch it describes, or None
+    when the prose names no actor or no destination."""
+    trig = step.get("trigger") or {}
+    if trig.get("kind") != "warp":
+        return None
+    detail = str(trig.get("detail", ""))
+    m_actor = _WARP_OBJ_ACTOR_RE.search(detail)
+    if not m_actor:
+        return None
+    actor = m_actor.group(1)
+    m_home = _WARP_OBJ_HOME_RE.search(detail)
+    stage = str(step.get("stage", ""))
+    home = m_home.group(1) if m_home else stage
+    # the step's own room and the coordinates in its prose describe the OBJECT only when the
+    # object lives in the step's stage; otherwise they describe where Link lands
+    room = step.get("room") if home == stage else None
+    pos = None
+    if home == stage:
+        m_pos = _WARP_OBJ_POS_RE.search(detail)
+        if m_pos:
+            pos = [float(m_pos.group(1)), float(m_pos.group(2)), float(m_pos.group(3))]
+    dest = None
+    m_dest = _WARP_OBJ_DEST_RE.search(detail)
+    if m_dest:
+        dest = {
+            "stage": m_dest.group(1),
+            "room": int(m_dest.group(2)),
+            "layer": int(m_dest.group(3)),
+            "spawn": int(m_dest.group(4)),
+        }
+    else:
+        m_rs = _WARP_OBJ_ROOM_SPAWN_RE.search(detail)
+        if m_rs and stage:
+            dest = {
+                "stage": stage,
+                "room": int(m_rs.group(1)),
+                "layer": step.get("layer", -1),
+                "spawn": int(m_rs.group(2)),
+            }
+    if dest is None:
+        return None
+    event = ""
+    for rx in _WARP_OBJ_EVENT_RES:
+        m_ev = rx.search(detail)
+        if m_ev:
+            event = m_ev.group(1)
+            break
+    if not event:
+        v = step.get("event")
+        event = "" if v is None else str(v)
+    return {
+        "actor": actor,
+        "stage": home,
+        "room": room,
+        "pos": pos,
+        "event": event,
+        "dest": dest,
+        # verbatim, so the engine can reuse _story_bits_ok (event bits AND item tests)
+        "requires": list(step.get("requires_bits") or []),
+    }
+
+
+_WARP_OBJECT_GD = """extends Area3D
+# gcrip: a placed warp object - the boss room's warp flower (daWarpf_c) and the in-dungeon
+# lift (Ywarp00 / daWarpls_c). It is warp.gd and tag_event.gd in one: stepping in orders a
+# stage event and, once that event (and any .stb it launched) ends, changes stage.
+#
+# WHICH event and destination it uses is read from the save the moment Link touches it.
+# daWarpf_c::CreateInit asks checkEndDemo() whether this dungeon's reward has been taken and
+# orders WARP_WIND (out through the reward cutscene) or WARP_WIND_AFTER (straight out); for
+# the Tower of the Gods that test is the single event bit 0x2D10. The mined steps carry it as
+# requires_bits, so Game.warp_branch() takes the most specific branch the save satisfies and
+# the unconditional branch is the fallback.
+
+var obj: Dictionary = {}
+var actor := ""
+var armed := false      # spawning on top of Link must not fire it (warp.gd's guard)
+var busy := false
+
+func setup(o: Dictionary, radius: float) -> void:
+    obj = o
+    actor = str(o.get("actor", ""))
+    var shape := CollisionShape3D.new()
+    var cyl := CylinderShape3D.new()
+    cyl.radius = maxf(radius, 40.0)
+    cyl.height = 400.0
+    shape.shape = cyl
+    add_child(shape)
+    collision_layer = 0
+    collision_mask = 1
+    monitoring = true
+    body_entered.connect(_on_body_entered)
+    body_exited.connect(_on_body_exited)
+    await get_tree().create_timer(0.5).timeout
+    armed = true
+    for b in get_overlapping_bodies():
+        if b is CharacterBody3D:
+            armed = false
+
+func _on_body_exited(body: Node3D) -> void:
+    if body is CharacterBody3D:
+        armed = true
+
+func _on_body_entered(body: Node3D) -> void:
+    if busy or not armed or not (body is CharacterBody3D) or not body.is_in_group("player"):
+        return
+    if Game.event_running or Game.cutscene_running():
+        return
+    var branch: Dictionary = Game.warp_branch(obj)
+    if branch.is_empty():
+        return          # no branch this save satisfies: the warp is not open yet
+    busy = true
+    _take(branch)
+
+func _take(branch: Dictionary) -> void:
+    var ev := str(branch.get("event", ""))
+    var raw = branch.get("dest", {})
+    var dest: Dictionary = raw if raw is Dictionary else {}
+    var stage := str(dest.get("stage", ""))
+    var shown := ev
+    if shown == "":
+        shown = "(no event)"
+    var going := stage
+    if going == "":
+        going = "(nowhere)"
+    print("gcrip warp: ", actor, " ordering ", shown, " -> ", going,
+          " room ", int(dest.get("room", 0)), " spawn ", int(dest.get("spawn", 0)))
+    if ev != "" and Game.run_event(ev):
+        # deliberately untyped: `finished` is event_runner.gd's own signal, and a Node-typed
+        # var would make the static access to it a compile error
+        var runner = Game.event_runner
+        if runner != null and is_instance_valid(runner) and runner.has_signal("finished"):
+            await runner.finished
+        while Game.cutscene_running():
+            await get_tree().physics_frame
+    # the branch's own step id: story_event_done matches on id as well as on event name, so
+    # the step is marked done and its sets_bits raised even when the event it ordered is
+    # named only in the mined prose (WARP_WIND_AFTER vs the step's TOWER_WARPOUT)
+    Game.story_event_done(str(branch.get("step", "")))
+    if stage == "":
+        busy = false
+        return
+    # the event just played is far longer than warp()'s just-arrived guard, but a fade-only
+    # script can finish inside it - clear the guard the way the story chain does
+    Game.last_warp_ms = -100000
+    Game.warp(stage, int(dest.get("room", 0)), int(dest.get("spawn", 0)))
+"""
+
+
 _STORY_ACTOR_RE = re.compile(r"\b(Ba1|Ls1|Ji1|Zl1|ZL1|Aj1|Ko1|Ko2|Ob1|Yw1|Ym1|Ym2|Bm1|Dk)\b")
 _STORY_ID_HINTS = {"grandma": "Ba1", "aryll": "Ls1", "orca": "Ji1", "tetra": "Zl1", "aj_": "Aj1"}
 
@@ -6759,6 +7263,44 @@ _STORY_LOOK = {
         "y": 2000.0,
         "half_angle": 60.0,
         "also_done": "telescope_watch_quill",
+    },
+}
+
+# `object`: a placed non-NPC object polls its own condition and orders its own event.  That is
+# a predicate, not a volume - daWarphr_c::normal_execute calls check_warp() every frame from the
+# actor, where a TagEv would wait for a body_entered.  The mined steps only describe the
+# predicate in prose, so the machine-readable form is spelled out here, keyed by step id.
+#
+# The vocabulary is a conjunction of optional keys - every key present must hold, and a block
+# with no test at all fires as soon as the object is placed ("on spawn"):
+#   actor       which placed actor answers (required; several copies are allowed - the copy
+#               nearest Link is the one that polls, which is how three MtryB blocks work)
+#   radius      Link within this distance of the object
+#   min_radius  Link at least this far from the object
+#   xz          measure the two distances in XZ only (default True, like check_warp)
+#   switch      a room switch bit the object itself sets, with optional "room"
+#   item        something Link must be carrying
+#   swing       Link is mid sword swing
+_STORY_OBJECT = {
+    # d_a_warphr.cpp:402-416 check_warp: the distance is measured to the SHIP, not to Link, it
+    # only counts while daPyStts0_SHIP_RIDE_e is set, and the threshold is 500.  Link swimming up
+    # to the pool does nothing - he has to sail into it.
+    "hy_warp_back": {"actor": "Ghrwp", "radius": 500.0, "ship": True},
+    # d_a_obj_YLzou.cpp is signatures only - every body is a /* Nonmatching */ stub - so the real
+    # condition is unrecoverable.  Approximated: the statue grinds aside as Link walks up to it.
+    "hy_statue_moves": {"actor": "YLzou", "radius": 300.0},
+    # there is no d_a_obj_mtryb.cpp at all, and nothing in the remake can push the three blocks
+    # into their sockets, so the crest camera plays when Link reaches a block instead.
+    "hy_floor_puzzle": {"actor": "MtryB", "radius": 300.0},
+    # d_a_obj_barrier.cpp:227-260 - break_start_wait_proc wants the Master Sword equipped, one of
+    # ten sword cut types running, and the player 8800+ units away in XZ.  We have no sword tiers,
+    # so "item": "sword" is as close as the remake gets.  No Barrier is placed in Hyrule's
+    # exported actors, so this block finds no object and the step stays asleep.
+    "hy_third_visit_break_barrier": {
+        "actor": "Barrier",
+        "min_radius": 8800.0,
+        "item": "sword",
+        "swing": True,
     },
 }
 
@@ -7012,6 +7554,9 @@ def _story_with_actors(path: Path) -> dict:
         near = _STORY_NPC_ORDER.get(str(step.get("id", "")))
         if near:
             step["near"] = near
+        obj = _STORY_OBJECT.get(str(step.get("id", "")))
+        if obj and (step.get("trigger") or {}).get("kind") == "object":
+            step["object"] = obj
     # some steps are reached by the previous one calling setNextStage(stage, spawn, room, layer):
     # that re-entry is what auto-plays their cutscene (Grandma's tale, the shield, the ship)
     warp_re = re.compile(
@@ -7029,6 +7574,12 @@ def _story_with_actors(path: Path) -> dict:
             "room": int(room) if room.isdigit() else None,
             "layer": int(layer),
         }
+    # placed warp objects: the object, the event it orders and where that event sends Link,
+    # pulled out of the step's prose so the engine never parses English
+    for step in data.get("steps", []):
+        wo = _warp_object_of(step)
+        if wo is not None:
+            step["warp_object"] = wo
     return data
 
 
@@ -7727,6 +8278,7 @@ def export_godot(
         "kui.gd": _KUI_GD,
         "enemy.gd": _ACTOR_ENEMY_GD,
         "tag_event.gd": _TAG_EVENT_GD,
+        "warp_object.gd": _WARP_OBJECT_GD,
         "chest.gd": _ACTOR_CHEST_GD,
         "pickup.gd": _ACTOR_PICKUP_GD,
         "pig.gd": _ACTOR_PIG_GD,

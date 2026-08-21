@@ -5,7 +5,7 @@ the mined data - the player's own state machine, the item list, the enemy table,
 baked cutscenes, the story graph - so this cannot drift from what the engine does.
 
 **Systems:** 9 working, 3 partial, 2 not started.  
-**Story:** 155 of 199 mined steps reachable (18 partial, 26 missing) across 10 chapters: outset, fortress, dragonroost, forbiddenwoods, jabun, towerofgods, hyrule, temples, fortress2, ganon.
+**Story:** 162 of 199 mined steps reachable (18 partial, 19 missing) across 10 chapters: outset, fortress, dragonroost, forbiddenwoods, jabun, towerofgods, hyrule, temples, fortress2, ganon.
 
 ## 1. Systems
 
@@ -314,7 +314,7 @@ flowchart TD
         totg_trial_west --> totg_trial_north
         totg_pedestals_done["totg_pedestals_done<br/><i>npc - OK</i>"]
         totg_trial_north --> totg_pedestals_done
-        totg_warp_up["totg_warp_up<br/>TOWER_WARP_U<br/><i>warp - MISSING</i>"]
+        totg_warp_up["totg_warp_up<br/>TOWER_WARP_U<br/><i>warp - OK</i>"]
         totg_pedestals_done --> totg_warp_up
         totg_big_key["totg_big_key<br/><i>chest - OK</i>"]
         totg_warp_up --> totg_big_key
@@ -326,13 +326,13 @@ flowchart TD
         totg_get_bow --> totg_gohdan
         totg_heart_container["totg_heart_container<br/><i>room_enter - OK</i>"]
         totg_gohdan --> totg_heart_container
-        totg_boss_warp["totg_boss_warp<br/>WARP_WIND<br/><i>warp - MISSING</i>"]
+        totg_boss_warp["totg_boss_warp<br/>WARP_WIND<br/><i>warp - OK</i>"]
         totg_heart_container --> totg_boss_warp
         totg_descend_shaft["totg_descend_shaft<br/>JMP_DEMO<br/><i>spawn - OK</i>"]
         totg_boss_warp --> totg_descend_shaft
         totg_warp_to_hyrule["totg_warp_to_hyrule<br/>warp_in.stb<br/>sets 0x2D10 0x2D10 0x2D10<br/><i>spawn - OK</i>"]
         totg_descend_shaft --> totg_warp_to_hyrule
-        totg_return_from_tower["totg_return_from_tower<br/>TOWER_WARPOUT<br/><i>warp - MISSING</i>"]
+        totg_return_from_tower["totg_return_from_tower<br/>TOWER_WARPOUT<br/><i>warp - OK</i>"]
         totg_warp_to_hyrule --> totg_return_from_tower
         totg_later_return_to_hyrule["totg_later_return_to_hyrule<br/>warphole.stb<br/>sets 0x2D08 0x2D08 0x2D08<br/><i>spawn - OK</i>"]
         totg_return_from_tower --> totg_later_return_to_hyrule
@@ -347,9 +347,9 @@ flowchart TD
         hy_courtyard --> hy_intro
         hy_hint["hy_hint<br/>HIRL_HINT<br/><i>tag - MISSING</i>"]
         hy_intro --> hy_hint
-        hy_floor_puzzle["hy_floor_puzzle<br/>MtryB_sink<br/><i>object - MISSING</i>"]
+        hy_floor_puzzle["hy_floor_puzzle<br/>MtryB_sink<br/><i>object - OK</i>"]
         hy_hint --> hy_floor_puzzle
-        hy_statue_moves["hy_statue_moves<br/>move_YLzou<br/><i>object - MISSING</i>"]
+        hy_statue_moves["hy_statue_moves<br/>move_YLzou<br/><i>object - OK</i>"]
         hy_floor_puzzle --> hy_statue_moves
         hy_draw_master_sword["hy_draw_master_sword<br/>master_sword.stb<br/>sets 0x2D04 0x2D04 0x2D04<br/><i>tag - OK</i>"]
         hy_statue_moves --> hy_draw_master_sword
@@ -359,7 +359,7 @@ flowchart TD
         hy_rebirth --> hy_swing_sword
         hy_fight_out["hy_fight_out<br/><i>room_enter - OK</i>"]
         hy_swing_sword --> hy_fight_out
-        hy_warp_back["hy_warp_back<br/>TO_SEA_WARP_1<br/>sets 0x3810<br/><i>object - MISSING</i>"]
+        hy_warp_back["hy_warp_back<br/>TO_SEA_WARP_1<br/>sets 0x3810<br/><i>object - OK</i>"]
         hy_fight_out --> hy_warp_back
         hy_return_route_opens["hy_return_route_opens<br/>warphole.stb<br/>sets 0x2D08 0x2D08 0x2D08<br/><i>spawn - OK</i>"]
         hy_warp_back --> hy_return_route_opens
@@ -367,7 +367,7 @@ flowchart TD
         hy_return_route_opens --> hy_second_visit_awake_zelda
         hy_third_visit_swordroom_ambush["hy_third_visit_swordroom_ambush<br/>btl_of_swroom<br/><i>tag - OK</i>"]
         hy_second_visit_awake_zelda --> hy_third_visit_swordroom_ambush
-        hy_third_visit_break_barrier["hy_third_visit_break_barrier<br/>seal.stb<br/>sets 0x2C02 0x3B08 0x3B08 0x3B08<br/><i>object - MISSING</i>"]
+        hy_third_visit_break_barrier["hy_third_visit_break_barrier<br/>seal.stb<br/>sets 0x2C02 0x3B08 0x3B08 0x3B08<br/><i>object - OK</i>"]
         hy_third_visit_swordroom_ambush --> hy_third_visit_break_barrier
     end
     subgraph temples["temples"]
@@ -598,9 +598,9 @@ flowchart TD
     gt_trial_molgera -.->|0x3208| gt_four_doors_open
     gt_four_doors_open -.->|0x3204| gt_phantom_ganon
     gt_four_doors_open -.->|0x3204| gt_puppet_ganon
-    class opening_lookout_awake,aryll_tower_first_talk,grandma_birthday_talk,tale_demo_hero_clothes,aryll_omedeto,aryll_get_telescope,telescope_watch_quill,zelda_fly_helmaroc,aryll_etalk,grandma_after_prologue,orca_first_talk,orca_sparring_lesson,orca_gives_hero_sword,orca_spin_attack_lesson,grandma_after_sword,amori_bokoblin_dropin,amori_meet_tetra,outset_ridge_layer9,stolen_sister,outset_village_layer2,look_shield,grandma_gives_shield,grandma_after_kidnap,tetra_dock_conversation,tetra_board_ship,departure,post_outset_note,ff_ride_to_fortress,ff_launched_at_fortress,ff_arrive_exterior,ff_tower_looks,ff_tetra_ooi,ff_infiltration,ff_searchlight_look,ff_push_barrel,ff_interior_cells,ff_door_looks,ff_moblin_patrol,ff_find_sister,ff_meet_korl,ff_board_korl,dr_chieftain_dragontale,dr_medli_gives_letter,dr_medli_cliff_request,dr_bomb_the_spring,dr_enter_cavern,dr_cavern_set_pieces,dr_trapped_with_bokoblins,dr_clear_room_bars_open,dr_grappling_hook,dr_carry_medli,dr_boss_warp_out,dr_valoo_calms,dr_dins_pearl,dr_secret_cave,fw_korl_sends_link_to_forest,fw_korl_forest_directions,fw_forest_haven_looks,fw_fall_into_forest_haven,fw_mori_inside,fw_meet_deku_tree,fw_woods_telop,fw_woods_cameras,fw_rescue_makar,fw_warp_out_with_makar,fw_boss_warpout_to_forest_haven,fw_getperl_deku,fw_makar_in_forest_haven,fw_korl_after_the_pearl,fw_otkura_boundary,jab_korl_points_to_greatfish,jab_korl_briefing_after_greatfish,jab_quill_at_greatfish,jab_bombshop_raid,jab_password_door,jab_board_pirate_ship,jab_rope_course_2,jab_rope_course_2_cleared,jab_get_bomb_bag,jab_korl_briefing_after_bombs,jab_receive_nayrus_pearl,jab_curse_broken,jab_abship_not_in_this_chapter,totg_pearl_din,totg_first_statue_reaction,totg_place_pearl,totg_tower_rises,totg_tower_rises_cutscene,totg_arrive_tower,totg_enter_dungeon,totg_interior_camera_beats,totg_wake_servants,totg_trial_east,totg_trial_west,totg_trial_north,totg_pedestals_done,totg_big_key,totg_darknut,totg_get_bow,totg_heart_container,totg_descend_shaft,totg_warp_to_hyrule,totg_later_return_to_hyrule,hy_warp_in,hy_descent,hy_courtyard,hy_intro,hy_draw_master_sword,hy_rebirth,hy_swing_sword,hy_fight_out,hy_return_route_opens,hy_second_visit_awake_zelda,hy_third_visit_swordroom_ambush,et_land_headstone,et_enter_edaichi,et_learn_earth_gods_lyric,et_dance_zola,et_hole_cam,et_warp_jars,et_mkie_block_cameras,et_moro_cam,et_stalfos_miniboss,et_jalhalla,et_boss_warp,et_pray_zola,wt_land_gale_isle,wt_enter_ekaze,wt_learn_wind_gods_aria,wt_dance_kokiri,wt_makar_sows_seeds,wt_wizzrobe_miniboss,wt_molgera,wt_boss_warp,wt_pray_kokiri,ff2_sail_to_fortress,ff2_land_at_fortress,ff2_enter_interior,ff2_moblins_patrol,ff2_interior_chests,ff2_skull_hammer,ff2_rescue,ff2_tower_redressed,ff2_enter_ganon_room,ff2_attack_ganon,ff2_runaway_majuto,ff2_after_endless_night,gt_tower_intro,gt_four_doors_open,gt_phantom_ganon,gt_puppet_ganon,gt_to_the_roof,gt_rooftop_confrontation,gt_endhr,gt_ending ok;
+    class opening_lookout_awake,aryll_tower_first_talk,grandma_birthday_talk,tale_demo_hero_clothes,aryll_omedeto,aryll_get_telescope,telescope_watch_quill,zelda_fly_helmaroc,aryll_etalk,grandma_after_prologue,orca_first_talk,orca_sparring_lesson,orca_gives_hero_sword,orca_spin_attack_lesson,grandma_after_sword,amori_bokoblin_dropin,amori_meet_tetra,outset_ridge_layer9,stolen_sister,outset_village_layer2,look_shield,grandma_gives_shield,grandma_after_kidnap,tetra_dock_conversation,tetra_board_ship,departure,post_outset_note,ff_ride_to_fortress,ff_launched_at_fortress,ff_arrive_exterior,ff_tower_looks,ff_tetra_ooi,ff_infiltration,ff_searchlight_look,ff_push_barrel,ff_interior_cells,ff_door_looks,ff_moblin_patrol,ff_find_sister,ff_meet_korl,ff_board_korl,dr_chieftain_dragontale,dr_medli_gives_letter,dr_medli_cliff_request,dr_bomb_the_spring,dr_enter_cavern,dr_cavern_set_pieces,dr_trapped_with_bokoblins,dr_clear_room_bars_open,dr_grappling_hook,dr_carry_medli,dr_boss_warp_out,dr_valoo_calms,dr_dins_pearl,dr_secret_cave,fw_korl_sends_link_to_forest,fw_korl_forest_directions,fw_forest_haven_looks,fw_fall_into_forest_haven,fw_mori_inside,fw_meet_deku_tree,fw_woods_telop,fw_woods_cameras,fw_rescue_makar,fw_warp_out_with_makar,fw_boss_warpout_to_forest_haven,fw_getperl_deku,fw_makar_in_forest_haven,fw_korl_after_the_pearl,fw_otkura_boundary,jab_korl_points_to_greatfish,jab_korl_briefing_after_greatfish,jab_quill_at_greatfish,jab_bombshop_raid,jab_password_door,jab_board_pirate_ship,jab_rope_course_2,jab_rope_course_2_cleared,jab_get_bomb_bag,jab_korl_briefing_after_bombs,jab_receive_nayrus_pearl,jab_curse_broken,jab_abship_not_in_this_chapter,totg_pearl_din,totg_first_statue_reaction,totg_place_pearl,totg_tower_rises,totg_tower_rises_cutscene,totg_arrive_tower,totg_enter_dungeon,totg_interior_camera_beats,totg_wake_servants,totg_trial_east,totg_trial_west,totg_trial_north,totg_pedestals_done,totg_warp_up,totg_big_key,totg_darknut,totg_get_bow,totg_heart_container,totg_boss_warp,totg_descend_shaft,totg_warp_to_hyrule,totg_return_from_tower,totg_later_return_to_hyrule,hy_warp_in,hy_descent,hy_courtyard,hy_intro,hy_floor_puzzle,hy_statue_moves,hy_draw_master_sword,hy_rebirth,hy_swing_sword,hy_fight_out,hy_warp_back,hy_return_route_opens,hy_second_visit_awake_zelda,hy_third_visit_swordroom_ambush,hy_third_visit_break_barrier,et_land_headstone,et_enter_edaichi,et_learn_earth_gods_lyric,et_dance_zola,et_hole_cam,et_warp_jars,et_mkie_block_cameras,et_moro_cam,et_stalfos_miniboss,et_jalhalla,et_boss_warp,et_pray_zola,wt_land_gale_isle,wt_enter_ekaze,wt_learn_wind_gods_aria,wt_dance_kokiri,wt_makar_sows_seeds,wt_wizzrobe_miniboss,wt_molgera,wt_boss_warp,wt_pray_kokiri,ff2_sail_to_fortress,ff2_land_at_fortress,ff2_enter_interior,ff2_moblins_patrol,ff2_interior_chests,ff2_skull_hammer,ff2_rescue,ff2_tower_redressed,ff2_enter_ganon_room,ff2_attack_ganon,ff2_runaway_majuto,ff2_after_endless_night,gt_tower_intro,gt_four_doors_open,gt_phantom_ganon,gt_puppet_ganon,gt_to_the_roof,gt_rooftop_confrontation,gt_endhr,gt_ending ok;
     class aj_speak_ambient,dr_komali_refuses,dr_gohma,fw_koroks_and_lift,fw_glide_to_forbidden_woods,fw_mothula,fw_kalle_demos,jab_bombshop_owner,jab_niko_second_course_intro,totg_gohdan,ff2_phantom_ganon,ff2_climb_the_wall,ff2_reach_the_tower,ff2_helmaroc_king,gt_trial_gohma,gt_trial_kalle_demos,gt_trial_jalhalla,gt_trial_molgera partial;
-    class dr_arrive_island,dr_throw_medli_to_ledge,fw_arrive_forest_haven,fw_get_deku_leaf,fw_dungeon_items,fw_get_boomerang,fw_heart_container,jab_arrive_greatfish_ruined,jab_arrive_windfall_night,jab_return_to_outset,jab_blow_open_the_cave,totg_warp_up,totg_boss_warp,totg_return_from_tower,hy_hint,hy_floor_puzzle,hy_statue_moves,hy_warp_back,hy_third_visit_break_barrier,et_duet_opens_earth_temple,et_partner_hint_tags,et_inner_tablets,wt_duet_opens_wind_temple,wt_partner_hint_tags,wt_inner_tablets,gt_warp_appears missing;
+    class dr_arrive_island,dr_throw_medli_to_ledge,fw_arrive_forest_haven,fw_get_deku_leaf,fw_dungeon_items,fw_get_boomerang,fw_heart_container,jab_arrive_greatfish_ruined,jab_arrive_windfall_night,jab_return_to_outset,jab_blow_open_the_cave,hy_hint,et_duet_opens_earth_temple,et_partner_hint_tags,et_inner_tablets,wt_duet_opens_wind_temple,wt_partner_hint_tags,wt_inner_tablets,gt_warp_appears missing;
 ```
 
 | chapter | step | trigger | event | sets | status | why |
@@ -721,33 +721,33 @@ flowchart TD
 | towerofgods | totg_trial_west | npc | Os1_Finit0 | 0x1704 | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
 | towerofgods | totg_trial_north | npc | Os2_Finit0 | 0x1B01 | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
 | towerofgods | totg_pedestals_done | npc |  |  | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
-| towerofgods | totg_warp_up | warp | TOWER_WARP_U |  | missing | a warp object plays an event as Link steps in, then changes stage, choosing WHICH event by reading save state. The engine has door warps but they order no event |
+| towerofgods | totg_warp_up | warp | TOWER_WARP_U |  | ok | actors/warp_object.gd - picks WHICH event to order from save state, the way daWarpf_c::CreateInit does, then plays it and changes stage |
 | towerofgods | totg_big_key | chest |  |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
 | towerofgods | totg_darknut | tag | SIREN_MD |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
 | towerofgods | totg_get_bow | chest |  |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
 | towerofgods | totg_gohdan | enemy_defeat |  |  | partial | the mechanism works, but 'Bst' has no mined enemy profile so nothing wraps the actor |
 | towerofgods | totg_heart_container | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
-| towerofgods | totg_boss_warp | warp | WARP_WIND |  | missing | a warp object plays an event as Link steps in, then changes stage, choosing WHICH event by reading save state. The engine has door warps but they order no event |
+| towerofgods | totg_boss_warp | warp | WARP_WIND |  | ok | actors/warp_object.gd - picks WHICH event to order from save state, the way daWarpf_c::CreateInit does, then plays it and changes stage |
 | towerofgods | totg_descend_shaft | spawn | JMP_DEMO |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | towerofgods | totg_warp_to_hyrule | spawn | warp_in | 0x2D10 0x2D10 0x2D10 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
-| towerofgods | totg_return_from_tower | warp | TOWER_WARPOUT |  | missing | a warp object plays an event as Link steps in, then changes stage, choosing WHICH event by reading save state. The engine has door warps but they order no event |
+| towerofgods | totg_return_from_tower | warp | TOWER_WARPOUT |  | ok | actors/warp_object.gd - picks WHICH event to order from save state, the way daWarpf_c::CreateInit does, then plays it and changes stage |
 | towerofgods | totg_later_return_to_hyrule | spawn | warphole | 0x2D08 0x2D08 0x2D08 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | hyrule | hy_warp_in | spawn | warp_in | 0x2D10 0x2D10 0x2D10 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | hyrule | hy_descent | spawn | warp_out |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | hyrule | hy_courtyard | spawn |  |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | hyrule | hy_intro | spawn | hy_intro |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | hyrule | hy_hint | tag | HIRL_HINT |  | missing | no TagEv in Hyroom orders 'HIRL_HINT' |
-| hyrule | hy_floor_puzzle | object | MtryB_sink |  | missing | a placed non-NPC object orders its event when its own condition is met - a sinking block, a sliding statue, a warp polling the player's distance. Needs a per-object event predicate rather than an Area3D the player walks into |
-| hyrule | hy_statue_moves | object | move_YLzou |  | missing | a placed non-NPC object orders its event when its own condition is met - a sinking block, a sliding statue, a warp polling the player's distance. Needs a per-object event predicate rather than an Area3D the player walks into |
+| hyrule | hy_floor_puzzle | object | MtryB_sink |  | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
+| hyrule | hy_statue_moves | object | move_YLzou |  | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
 | hyrule | hy_draw_master_sword | tag | master_sword | 0x2D04 0x2D04 0x2D04 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
 | hyrule | hy_rebirth | spawn | rebirth_hyral | 0x3802 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | hyrule | hy_swing_sword | spawn | swing_sword | 0x3A04 0x3A04 0x3A04 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | hyrule | hy_fight_out | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
-| hyrule | hy_warp_back | object | TO_SEA_WARP_1 | 0x3810 | missing | a placed non-NPC object orders its event when its own condition is met - a sinking block, a sliding statue, a warp polling the player's distance. Needs a per-object event predicate rather than an Area3D the player walks into |
+| hyrule | hy_warp_back | object | TO_SEA_WARP_1 | 0x3810 | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
 | hyrule | hy_return_route_opens | spawn | warphole | 0x2D08 0x2D08 0x2D08 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | hyrule | hy_second_visit_awake_zelda | tag | to_awake_zl | 0x2D02 0x2D02 0x2D02 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
 | hyrule | hy_third_visit_swordroom_ambush | tag | btl_of_swroom |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
-| hyrule | hy_third_visit_break_barrier | object | seal | 0x2C02 0x3B08 0x3B08 0x3B08 | missing | a placed non-NPC object orders its event when its own condition is met - a sinking block, a sliding statue, a warp polling the player's distance. Needs a per-object event predicate rather than an Area3D the player walks into |
+| hyrule | hy_third_visit_break_barrier | object | seal | 0x2C02 0x3B08 0x3B08 0x3B08 | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
 | temples | et_land_headstone | board |  | 0x2E04 | ok | player.gd board() raises RODE_KORL the first time Link boards the boat |
 | temples | et_enter_edaichi | spawn |  |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | temples | et_learn_earth_gods_lyric | talk | MKNJD_D_LESSON |  | ok | Game.story_talk - via actors/npc.gd |
