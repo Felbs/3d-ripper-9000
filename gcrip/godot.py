@@ -562,7 +562,7 @@ func stick_world_dir(s: Vector2) -> Vector3:
     # camera-relative: forward = the direction the camera looks (flattened)
     var cy := cam_yaw_angle()
     var fwd := Vector3(sin(cy), 0.0, cos(cy))
-    var right := Vector3(fwd.z, 0.0, -fwd.x)
+    var right := fwd.cross(Vector3.UP)   # camera +X (Godot's look_at: right = forward x up)
     var d := right * s.x + fwd * s.y
     return d.normalized() if d.length() > 0.001 else Vector3.ZERO
 
@@ -2824,6 +2824,7 @@ calibrate={_action(k["F1"])}
 [physics]
 
 common/physics_ticks_per_second=30
+common/physics_interpolation=true
 
 [rendering]
 
