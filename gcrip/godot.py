@@ -2958,6 +2958,7 @@ var shot_frames := 0
 var events: Dictionary = {}        # this stage's event_list.dat: name -> event
 var enemies: Dictionary = {}       # enemies.json: actor -> constants (data/ww_enemies_*.json)
 var layers: Dictionary = {}        # layers.json: story-state -> which placement layer is live
+var night := false                 # no day/night clock yet: the game's layers differ by it
 const SAVE_PATH := "user://gcrip_save.json"
 var autosave_frames := 0
 var continued := false
@@ -3185,8 +3186,9 @@ func _shot_tick() -> void:
 # ---- story layers (dzr ACT0..ACTb): which set of actors this room shows right now
 
 func story_layer(stage: String, room: int) -> int:
-    # rules from data/ww_layers.json (mined from the decomp): first rule whose event bits
-    # match wins; without a rule file we stay on the fresh-file layer
+    # normalised rules from the decomp (layers.json): the first rule for this stage / room
+    # whose event-bit tests all hold wins; day / night pick the variant (we are always day
+    # until a clock exists)
     var base := stage.split("_r")[0]
     for rule in layers.get("rules", []):
         if str(rule.get("stage", "")) != base:
@@ -3195,14 +3197,13 @@ func story_layer(stage: String, room: int) -> int:
         if r != null and int(r) != room:
             continue
         var ok := true
-        for b in rule.get("bits", []):
-            var want: bool = not str(rule.get("condition", "")).begins_with("!")
-            if event_bit(int(b)) != want:
+        for t in rule.get("tests", []):
+            if event_bit(int(t[0])) != bool(t[1]):
                 ok = false
                 break
         if ok:
-            return int(rule.get("layer", 0))
-    return int(layers.get("default_layer", 0))
+            return int(rule.get("layer_night" if night else "layer_day", 0))
+    return int(layers.get("default_night" if night else "default_day", 0))
 
 func event_bit(n: int) -> bool:
     var bits: Dictionary = save.get("event_bits", {})
@@ -5099,6 +5100,46 @@ water_level = {water_level:.1f}
 {"".join(warp_nodes)}"""
 
 
+def _normalise_layer_rules(path: Path) -> dict:
+    """data/ww_layers.json (mined from the decomp) -> a form GDScript can evaluate directly:
+    each rule becomes an ordered list of (event bit, must-be-set) tests plus the day / night
+    layer. Conditions like ``!isEventBit(UNK_0520) && isEventBit(UNK_0E20)`` carry one
+    ``isEventBit`` call per entry of ``bits``, in order, so the leading ``!`` of each call
+    gives that bit's polarity. Rules whose condition uses anything else (nightStop() ...)
+    keep an ``extra`` note and are skipped at runtime unless their bit tests alone match."""
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    rules = []
+    for r in raw.get("rules", []):
+        calls = re.findall(r"(!?)\s*isEventBit\s*\(", r.get("condition", ""))
+        bits = list(r.get("bits", []))
+        tests = [[int(b), calls[i] != "!"] for i, b in enumerate(bits) if i < len(calls)]
+        extra = re.sub(r"!?\s*isEventBit\s*\([^)]*\)", "", r.get("condition", ""))
+        extra = extra.replace("&&", "").replace("||", "").strip()
+        day = r.get("layer_day", r.get("layer"))
+        night = r.get("layer_night", r.get("layer"))
+        if day is None and night is None:
+            continue
+        rules.append(
+            {
+                "stage": r.get("stage"),
+                "room": r.get("room"),
+                "tests": tests,
+                "layer_day": day if day is not None else night,
+                "layer_night": night if night is not None else day,
+                "extra": extra,
+                "source": r.get("source", ""),
+            }
+        )
+    d_day = raw.get("default_layer_day", raw.get("default_layer"))
+    d_night = raw.get("default_layer_night", raw.get("default_layer"))
+    return {
+        "_source": raw.get("_source", ""),
+        "rules": rules,
+        "default_day": 0 if d_day is None else d_day,
+        "default_night": (0 if d_day is None else d_day) if d_night is None else d_night,
+    }
+
+
 def _copy_music(rip_dir: Path, out_dir: Path, stages: list[str]) -> int:
     """bgm.json (which song each stage / sea room plays) + the rendered WAVs those
     stages need, from <rip>/audio/music (``gcrip music``). Missing songs are skipped."""
@@ -5591,7 +5632,9 @@ def export_godot(
     (out_dir / "enemies.json").write_text(json.dumps(merged, indent=1), encoding="utf-8")
     layers_src = Path(__file__).parent / "data" / "ww_layers.json"
     if layers_src.exists():
-        shutil.copyfile(layers_src, out_dir / "layers.json")
+        (out_dir / "layers.json").write_text(
+            json.dumps(_normalise_layer_rules(layers_src), indent=1), encoding="utf-8"
+        )
     n_songs = _copy_music(rip_dir, out_dir, list(stage_data))
     if not quiet:
         print(f"  {n_songs} songs in audio/music/ (gcrip music renders more)")
