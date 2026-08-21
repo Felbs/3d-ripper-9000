@@ -9197,6 +9197,11 @@ def export_godot(
     # Field-level merge: a later file may only ADD to an entry, never blank a field that an
     # earlier file filled.  Whole-entry update() meant a null-heavy file winning on filename
     # order alone silently discarded good mined numbers.
+    #
+    # Some enemies are PLACED under a different name than the class the decomp profiles them
+    # under, so a lookup by placed name misses them entirely: "pow" appears 28 times in the
+    # placement data and "PW" never; "Oqw" 22 times against "Oq"'s 7.
+    enemy_aliases = {"pow": "PW", "Oqw": "Oq"}
     merged: dict = {}
     for part in sorted((Path(__file__).parent / "data").glob("ww_enemies_*.json")):
         try:
@@ -9210,6 +9215,9 @@ def export_godot(
                         have[field] = value
         except (OSError, ValueError):
             continue
+    for placed, profiled in enemy_aliases.items():
+        if profiled in merged and placed not in merged:
+            merged[placed] = merged[profiled]
     (out_dir / "enemies.json").write_text(json.dumps(merged, indent=1), encoding="utf-8")
     story = _story_all_chapters(Path(__file__).parent / "data")
     if story["steps"]:
