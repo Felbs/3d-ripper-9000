@@ -7276,6 +7276,11 @@ func _wrap_actors() -> void:
         var script_path := ""
         if SCRIPTS.has(actor):
             script_path = SCRIPTS[actor]
+        elif Game.enemies.has(actor):
+            # anything with a mined enemy profile wraps itself, so a newly mined boss starts
+            # existing the moment its ww_enemies_*.json lands; SCRIPTS above is only for actors
+            # that need a SPECIALISED script (bokoblin.gd, pig.gd, ...)
+            script_path = "res://actors/enemy.gd"
         else:
             for pre in CHEST_PREFIXES:
                 if actor.begins_with(pre):
@@ -8030,8 +8035,10 @@ _STORY_DEFEAT = {
     "totg_gohdan": {"enemy": "Bst", "boss": True},
     "gt_trial_gohma": {"enemy": "Btd", "boss": True, "stage": "Xboss0"},
     "gt_trial_kalle_demos": {"enemy": "Bkm", "boss": True, "stage": "Xboss1"},
-    "gt_trial_jalhalla": {"enemy": "Bpw", "boss": True, "stage": "Xboss2"},
-    "gt_trial_molgera": {"enemy": "Bmgn", "boss": True, "stage": "Xboss3"},
+    # the rematch arenas place different actors from the main dungeons: Xboss2 holds "big_pow",
+    # not the Earth Temple's "Bpw", and Molgera is "Bwd" - there is no "Bmgn" in the game at all
+    "gt_trial_jalhalla": {"enemy": "big_pow", "boss": True, "stage": "Xboss2"},
+    "gt_trial_molgera": {"enemy": "Bwd", "boss": True, "stage": "Xboss3"},
 }
 
 # TagMd (d_a_tag_etc.cpp) watches an NPC, not Link: which actor its box is for, and the
@@ -8976,10 +8983,20 @@ def export_godot(
         (out_dir / "npc_dialogue.json").write_text(
             json.dumps(_dialogue_with_conditions(dlg)), encoding="utf-8"
         )
+    # Field-level merge: a later file may only ADD to an entry, never blank a field that an
+    # earlier file filled.  Whole-entry update() meant a null-heavy file winning on filename
+    # order alone silently discarded good mined numbers.
     merged: dict = {}
     for part in sorted((Path(__file__).parent / "data").glob("ww_enemies_*.json")):
         try:
-            merged.update(json.loads(part.read_text(encoding="utf-8")))
+            for actor, entry in json.loads(part.read_text(encoding="utf-8")).items():
+                if not isinstance(entry, dict) or actor not in merged:
+                    merged[actor] = entry
+                    continue
+                have = merged[actor]
+                for field, value in entry.items():
+                    if value is not None or have.get(field) is None:
+                        have[field] = value
         except (OSError, ValueError):
             continue
     (out_dir / "enemies.json").write_text(json.dumps(merged, indent=1), encoding="utf-8")
