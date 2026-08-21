@@ -480,9 +480,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--all", action="store_true", help="build every stage + stages/stage_matrix.md")
     p.add_argument("--iso", default=None, help="disc image (default: found via disc_manifest)")
     p.add_argument("--rooms", default=None, help="only these room numbers, e.g. 0,1,2")
-    p.add_argument("--layers", action="store_true", help="place EVERY conditional layer (debug)")
     p.add_argument(
-        "--layer", type=int, default=0,
+        "--layers", action="store_true",
+        help="(default) place every story layer; each actor records its layer so the engine "
+             "can show the set that matches the save's story state",
+    )
+    p.add_argument(
+        "--layer", type=int, default=None,
         help="also place this story layer (default 0 = the game's opening state, where the "
         "villagers are; -1 = none)",
     )

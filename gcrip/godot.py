@@ -2957,6 +2957,7 @@ var door_frames := 0
 var shot_frames := 0
 var events: Dictionary = {}        # this stage's event_list.dat: name -> event
 var enemies: Dictionary = {}       # enemies.json: actor -> constants (data/ww_enemies_*.json)
+var layers: Dictionary = {}        # layers.json: story-state -> which placement layer is live
 const SAVE_PATH := "user://gcrip_save.json"
 var autosave_frames := 0
 var continued := false
@@ -2995,6 +2996,11 @@ func _ready() -> void:
         var parsed_s = JSON.parse_string(sn.get_as_text())
         if parsed_s is Dictionary:
             stage_names = parsed_s
+    var ly := FileAccess.open("res://layers.json", FileAccess.READ)
+    if ly:
+        var parsed_l = JSON.parse_string(ly.get_as_text())
+        if parsed_l is Dictionary:
+            layers = parsed_l
     var en := FileAccess.open("res://enemies.json", FileAccess.READ)
     if en:
         var parsed_e = JSON.parse_string(en.get_as_text())
@@ -3175,6 +3181,28 @@ func _shot_tick() -> void:
         print("gcrip shot: saved ", fn, " for ", shot_actor, " at ", target.global_position.round(), " rig=", str(rig != null))
         if shot_frames == 105:
             get_tree().quit()
+
+# ---- story layers (dzr ACT0..ACTb): which set of actors this room shows right now
+
+func story_layer(stage: String, room: int) -> int:
+    # rules from data/ww_layers.json (mined from the decomp): first rule whose event bits
+    # match wins; without a rule file we stay on the fresh-file layer
+    var base := stage.split("_r")[0]
+    for rule in layers.get("rules", []):
+        if str(rule.get("stage", "")) != base:
+            continue
+        var r = rule.get("room")
+        if r != null and int(r) != room:
+            continue
+        var ok := true
+        for b in rule.get("bits", []):
+            var want: bool = not str(rule.get("condition", "")).begins_with("!")
+            if event_bit(int(b)) != want:
+                ok = false
+                break
+        if ok:
+            return int(rule.get("layer", 0))
+    return int(layers.get("default_layer", 0))
 
 func event_bit(n: int) -> bool:
     var bits: Dictionary = save.get("event_bits", {})
@@ -4795,8 +4823,17 @@ func _wrap_actors() -> void:
     if level == null:
         return
     var n := 0
+    var hidden := 0
     for rec in info.get("actors", []):
         var actor: String = rec["actor"]
+        # story layers: -1 is always placed, otherwise only the layer the save's state selects
+        var lay := int(rec.get("layer", -1))
+        if lay >= 0 and lay != Game.story_layer(name, int(rec.get("room", 0) if rec.get("room") != null else 0)):
+            var off := level.find_child(str(rec["node"]).replace(".", "_"), true, false)
+            if off and off is Node3D:
+                (off as Node3D).visible = false
+            hidden += 1
+            continue
         if FRESH_TYPE.has(actor) and (int(rec["params"]) & 0xFF) != int(FRESH_TYPE[actor]):
             var ghost := level.find_child(str(rec["node"]).replace(".", "_"), true, false)
             if ghost and ghost is Node3D:
@@ -4854,7 +4891,7 @@ func _wrap_actors() -> void:
         else:
             node.setup(params, mesh, rot_y)
         n += 1
-    print("gcrip: ", n, " actors wrapped in ", name)
+    print("gcrip: ", n, " actors wrapped in ", name, " (", hidden, " on other story layers)")
 
 func _attach_head(rig: Node3D, head_path: String) -> void:
     # the head model rides the body's "head" bone (J3D joint names survive the glTF export)
@@ -5552,6 +5589,9 @@ def export_godot(
         except (OSError, ValueError):
             continue
     (out_dir / "enemies.json").write_text(json.dumps(merged, indent=1), encoding="utf-8")
+    layers_src = Path(__file__).parent / "data" / "ww_layers.json"
+    if layers_src.exists():
+        shutil.copyfile(layers_src, out_dir / "layers.json")
     n_songs = _copy_music(rip_dir, out_dir, list(stage_data))
     if not quiet:
         print(f"  {n_songs} songs in audio/music/ (gcrip music renders more)")

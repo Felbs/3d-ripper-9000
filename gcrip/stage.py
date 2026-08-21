@@ -213,8 +213,8 @@ def build_stage(
     out_dir: Path | None = None,
     quiet: bool = False,
 ) -> dict:
-    """layer: also place this one conditional layer (0 = the game's opening state, where
-    the villagers live); layers=True places every layer at once (debug)."""
+    """layer: place only this one story layer; the default (None) places EVERY layer and
+    records each actor's layer, so the engine can switch sets as the story advances."""
     t0 = time.monotonic()
     rip_dir = Path(rip_dir)
     disc = _Disc(_find_iso(rip_dir, iso))
@@ -315,7 +315,7 @@ def _build(
             # salvage points...) live all over the map
             counts["stage_wide_skipped"] += 1
             continue
-        if p.layer >= 0 and not layers and p.layer != layer:
+        if p.layer >= 0 and layer is not None and not layers and p.layer != layer:
             counts["layered_skipped"] += 1
             continue
         if p.chunk in ("DOOR", "TGDR") or p.name.upper().startswith("KNOB"):
@@ -351,6 +351,7 @@ def _build(
                             "params": p.params,
                             "rot": list(p.rot),
                             "room": room_no,
+                            "layer": p.layer,
                             "pos": list(p.pos),
                             "rot_y_deg": round(p.rot_y_deg, 2),
                             "scale": list(p.scale),
@@ -395,6 +396,7 @@ def _build(
                     "params": p.params,
                     "rot": list(p.rot),
                     "room": room_no,
+                    "layer": p.layer,
                     "pos": list(p.pos),
                     "rot_y_deg": round(p.rot_y_deg, 2),
                     "scale": list(p.scale),

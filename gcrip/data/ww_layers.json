@@ -1,0 +1,274 @@
+{
+  "_source": "zeldaret/tww decompilation at Z:/memRip/sources/tww. Primary rule source: src/d/d_com_inf_game.cpp:184-268 (dComIfG_play_c::getLayerNo). Layer chunk dispatch: src/d/d_stage.cpp:2070-2151 (layerLoader) and 2152-2213 (dStage_dt_c_stageLoader / roomLoader / roomReLoader). Event bit storage: src/d/d_save.cpp:1177-1210 (dSv_event_c) + include/d/d_save.h:695-710. Event bit ids: include/d/d_save_event_flag.inc. Room-number enum: include/d/d_save.h:303-353 (dIsleRoom_*). Match status per configure.py: d_stage.cpp and d_save.cpp Matching for all versions; d_com_inf_game.cpp, d_kankyo.cpp, d_s_room.cpp Matching for GZLJ01/GZLE01/GZLP01 (retail JP/US/PAL), not for the Space World demo. Rules below reflect the RETAIL (USA/PAL) preprocessor branch.",
+
+  "_version_note": "Two rules are version-gated. Retail (VERSION_USA/VERSION_PAL) values are used here. Differences are recorded per-rule in 'version_notes'.",
+
+  "_names_note": "Event flag names beginning with UNK_ are placeholder names invented by the decomp team; the file include/d/d_save_event_flag.inc opens with the comment that all names in it are fake. Only the numeric ids are authoritative. MET_KORL, COLORS_IN_HYRULE and ENDLESS_NIGHT are the decomp's guessed semantic names and should be treated as hypotheses, not as verified story meanings.",
+
+  "bit_encoding": {
+    "storage": "dSv_event_c { u8 mFlags[0x100]; }  // 256 bytes, part of the save file",
+    "formula": "byte_index = id >> 8;  mask = id & 0xFF;  isEventBit(id) = (mFlags[byte_index] & mask) != 0",
+    "on": "onEventBit(id):  mFlags[id >> 8] |= (id & 0xFF)",
+    "off": "offEventBit(id): mFlags[id >> 8] &= ~(id & 0xFF)",
+    "get_reg": "getEventReg(id): return mFlags[id >> 8] & (id & 0xFF)   // multi-bit masks act as small packed registers",
+    "set_reg": "setEventReg(id, v): mFlags[id >> 8] = (mFlags[id >> 8] & ~(id & 0xFF)) | v",
+    "notes": "The low byte is a MASK, not a bit index. Most event ids have exactly one bit set in the low byte (0x01,0x02,0x04,0x08,0x10,0x20,0x40,0x80), so isEventBit is a single-bit test. A few ids use multi-bit masks (e.g. 0x7EFF, 0x89FF, 0xC407) and are used as packed registers via get/setEventReg; isEventBit on such an id returns true if ANY masked bit is set. High byte range is 0x00-0xFF, matching the 0x100-byte array exactly.",
+    "source": "src/d/d_save.cpp:1186-1210; include/d/d_save.h:695-710"
+  },
+
+  "always_layer_minus_1": true,
+  "always_layer_minus_1_evidence": {
+    "explanation": "Unlayered chunks are decoded by a separate func table from the layer chunks, and BOTH tables run on every load. dStage_dt_c_stageLoader decodes the unlayered stage table (which contains ACTR, TGOB, TRES, TGSC, SCOB, DOOR, TGDR ...) and then unconditionally calls layerLoader(data, stage, -1). dStage_dt_c_roomReLoader decodes the unlayered room table (ACTR, TGOB, TRES, TGSC, SCOB, DOOR, TGDR) and then unconditionally calls layerLoader(data, stage, roomNo). layerLoader only ever adds ACT<n>/SCO<n>/TRE<n> for the single chosen n; it never removes or suppresses the unlayered actors.",
+    "source": "src/d/d_stage.cpp:2152-2177 (stageLoader), src/d/d_stage.cpp:2200-2212 (roomReLoader), src/d/d_stage.cpp:2148-2150 (layerLoader dispatch)"
+  },
+
+  "layer_chunks": {
+    "unlayered": ["ACTR", "TGOB", "TRES", "TGSC", "SCOB", "DOOR", "TGDR"],
+    "per_layer": ["ACT%x", "SCO%x", "TRE%x"],
+    "layer_digits": ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "a", "b"],
+    "count": 12,
+    "note": "layerLoader indexes a 12-entry table with getLayerNo()'s return value and decodes exactly three chunk types for that layer. Layers 10 (a) and 11 (b) exist in the loader table but are never produced by getLayerNo's story rules; they are reachable only via an explicit layer override (see explicit_layer_override).",
+    "source": "src/d/d_stage.cpp:2071-2151"
+  },
+
+  "time_of_day": {
+    "hour": "hour = (int)(saveTime / 15.0f)   // dKy_getdaytime_hour, src/d/d_kankyo.cpp:613-616",
+    "base_layer": "night_stop ? 1 : (hour >= 6 && hour < 18 ? 0 : 1)",
+    "night_stop": "dKy_checkEventNightStop() == isEventBit(0x0A02 /*ENDLESS_NIGHT*/) && !isSymbol(dSymbol_NAYRU_e /*0*/)",
+    "night_stop_source": "src/d/d_kankyo.cpp:3160-3167; isSymbol at src/d/d_save.cpp:~808",
+    "notes": "The base layer value (0 = day, 1 = night) is what gets OR'd with 2/4/6 in most story rules, so most story layers come in day/night pairs: 2/3, 4/5, 6/7."
+  },
+
+  "explicit_layer_override": {
+    "rule": "If dComIfGp_getStartStageLayer() >= 0, getLayerNo returns it verbatim and NO story/time rule is evaluated.",
+    "source": "src/d/d_com_inf_game.cpp:186-187, 266",
+    "set_by": "dComIfGp_setNextStage(stage, point, roomNo, layer, ...) — the 4th argument. Default is -1 (= let getLayerNo decide). SCLS exit records always pass -1 (src/d/d_stage.cpp:2343-2365), so normal door/exit travel never forces a layer.",
+    "known_forced_layers": [
+      {"stage": "GanonK",  "layer": 9,  "source": "src/d/actor/d_a_bgn.cpp:3360"},
+      {"stage": "LinkRM",  "layer": 9,  "source": "src/d/actor/d_a_npc_ba1.cpp:1549"},
+      {"stage": "Otkura",  "layer": 8,  "source": "src/d/actor/d_a_npc_cb1.cpp:1594"},
+      {"stage": "sea", "room": 13, "layer": 8, "source": "src/d/actor/d_a_npc_md.cpp:3557, 3911"},
+      {"stage": "sea", "room": 44, "layer": 10, "source": "src/d/actor/d_a_npc_zl1.cpp:2206"},
+      {"stage": "Hyrule",  "layer": 9,  "source": "src/d/actor/d_a_obj_barrier.cpp:286"},
+      {"stage": "ADMumi",  "layer": 8,  "source": "src/d/actor/d_a_obj_doguu.cpp:355"},
+      {"stage": "sea_T",   "room": 44, "layer": 0, "source": "src/d/d_com_inf_game.cpp:496"},
+      {"stage": "majroom", "layer": -1, "source": "src/d/actor/d_a_mo2.cpp:3392 — passes 0xFF, which as s8 is -1, i.e. no override"},
+      {"stage": "sea", "layer": -1, "source": "src/d/actor/d_a_tag_ghostship.cpp:60 — passes 0xFF = -1, no override"}
+    ],
+    "notes": "d_s_menu.cpp:194 (debug/map room select) also passes an explicit layerNo. dStage_turnRestart (src/d/d_stage.cpp:2375-2380) preserves the current explicit layer but XORs bit 0, flipping day<->night within the same story layer pair."
+  },
+
+  "rules": [
+    {
+      "stage": "sea", "room": 44, "room_name": "OutsetIsland",
+      "order": 1,
+      "condition": "isEventBit(UNK_0520)",
+      "bits": [1312], "bits_hex": ["0x0520"], "bit_bytes": [[5, 32]],
+      "layer": null, "layer_day": 4, "layer_night": 5,
+      "layer_expr": "base | 4",
+      "source": "src/d/d_com_inf_game.cpp:194-195"
+    },
+    {
+      "stage": "sea", "room": 44, "room_name": "OutsetIsland",
+      "order": 2,
+      "condition": "!isEventBit(UNK_0520) && isEventBit(UNK_0E20)",
+      "bits": [1312, 3616], "bits_hex": ["0x0520", "0x0E20"], "bit_bytes": [[5, 32], [14, 32]],
+      "layer": null, "layer_day": 2, "layer_night": 3,
+      "layer_expr": "base | 2",
+      "source": "src/d/d_com_inf_game.cpp:196-197"
+    },
+    {
+      "stage": "sea", "room": 44, "room_name": "OutsetIsland",
+      "order": 3,
+      "condition": "!isEventBit(UNK_0520) && !isEventBit(UNK_0E20) && isEventBit(UNK_0101)",
+      "bits": [1312, 3616, 257], "bits_hex": ["0x0520", "0x0E20", "0x0101"], "bit_bytes": [[5, 32], [14, 32], [1, 1]],
+      "layer": 9, "layer_day": 9, "layer_night": 9,
+      "layer_expr": "9 (time-independent)",
+      "source": "src/d/d_com_inf_game.cpp:198-199"
+    },
+    {
+      "stage": "sea", "room": 11, "room_name": "WindfallIsland",
+      "order": 4,
+      "condition": "isEventBit(UNK_2D01)",
+      "bits": [11521], "bits_hex": ["0x2D01"], "bit_bytes": [[45, 1]],
+      "layer": null, "layer_day": 4, "layer_night": 5,
+      "layer_expr": "base | 4",
+      "source": "src/d/d_com_inf_game.cpp:202-203"
+    },
+    {
+      "stage": "sea", "room": 11, "room_name": "WindfallIsland",
+      "order": 5,
+      "condition": "!isEventBit(UNK_2D01) && nightStop()",
+      "bits": [11521, 2562], "bits_hex": ["0x2D01", "0x0A02"], "bit_bytes": [[45, 1], [10, 2]],
+      "layer": 3, "layer_day": 3, "layer_night": 3,
+      "layer_expr": "base | 2, but nightStop() forces base = 1, so this always yields 3",
+      "source": "src/d/d_com_inf_game.cpp:204-205"
+    },
+    {
+      "stage": "sea", "room": 1, "room_name": "ForsakenFortress",
+      "order": 6,
+      "condition": "isEventBit(UNK_1820)",
+      "bits": [6176], "bits_hex": ["0x1820"], "bit_bytes": [[24, 32]],
+      "layer": 3, "layer_day": 3, "layer_night": 3,
+      "layer_expr": "3 (time-independent)",
+      "source": "src/d/d_com_inf_game.cpp:208"
+    },
+    {
+      "stage": "sea", "room": 1, "room_name": "ForsakenFortress",
+      "order": 7,
+      "condition": "!isEventBit(UNK_1820)",
+      "bits": [6176], "bits_hex": ["0x1820"], "bit_bytes": [[24, 32]],
+      "layer": 1, "layer_day": 1, "layer_night": 1,
+      "layer_expr": "1 (time-independent)",
+      "source": "src/d/d_com_inf_game.cpp:208",
+      "notes": "Room 1 always returns 3 or 1 and never falls through to the default. Forsaken Fortress is permanently 'night' regardless of clock."
+    },
+    {
+      "stage": "A_mori", "room": null,
+      "order": 8,
+      "condition": "isEventBit(MET_KORL)",
+      "bits": [3968], "bits_hex": ["0x0F80"], "bit_bytes": [[15, 128]],
+      "layer": null, "layer_day": 2, "layer_night": 3,
+      "layer_expr": "base | 2",
+      "source": "src/d/d_com_inf_game.cpp:211-212"
+    },
+    {
+      "stage": "Asoko", "room": null,
+      "order": 9,
+      "condition": "isEventBit(UNK_0520)",
+      "bits": [1312], "bits_hex": ["0x0520"], "bit_bytes": [[5, 32]],
+      "layer": null, "layer_day": 2, "layer_night": 3,
+      "layer_expr": "base | 2",
+      "source": "src/d/d_com_inf_game.cpp:215-216"
+    },
+    {
+      "stage": "Hyrule", "room": null,
+      "order": 10,
+      "condition": "getTriforceNum() == 8",
+      "bits": [], "bits_hex": [], "bit_bytes": [],
+      "layer": null, "layer_day": 4, "layer_night": 5,
+      "layer_expr": "base | 4",
+      "source": "src/d/d_com_inf_game.cpp:219-225",
+      "version_notes": "On VERSION_DEMO only, this also requires !isEventBit(0x2C01). Retail drops that clause.",
+      "extra_state": "getTriforceNum() counts set bits in the 8-bit Triforce-shard collect field (src/d/d_save.cpp:813-825); it is NOT an event bit."
+    },
+    {
+      "stage": "Hyrule", "room": null,
+      "order": 11,
+      "condition": "getTriforceNum() != 8 && isEventBit(UNK_3280)",
+      "bits": [12928], "bits_hex": ["0x3280"], "bit_bytes": [[50, 128]],
+      "layer": null, "layer_day": 2, "layer_night": 3,
+      "layer_expr": "base | 2",
+      "source": "src/d/d_com_inf_game.cpp:226-227"
+    },
+    {
+      "stage": "Hyroom", "room": null,
+      "order": 12,
+      "condition": "getTriforceNum() == 8 && !isEventBit(UNK_2C01)",
+      "bits": [11265], "bits_hex": ["0x2C01"], "bit_bytes": [[44, 1]],
+      "layer": null, "layer_day": 4, "layer_night": 5,
+      "layer_expr": "base | 4",
+      "source": "src/d/d_com_inf_game.cpp:230-231"
+    },
+    {
+      "stage": "Hyroom", "room": null,
+      "order": 13,
+      "condition": "!(prev) && isEventBit(UNK_3280)",
+      "bits": [12928], "bits_hex": ["0x3280"], "bit_bytes": [[50, 128]],
+      "layer": null, "layer_day": 2, "layer_night": 3,
+      "layer_expr": "base | 2",
+      "source": "src/d/d_com_inf_game.cpp:232-233"
+    },
+    {
+      "stage": "Hyroom", "room": null,
+      "order": 14,
+      "condition": "!(prev) && !isEventBit(UNK_3280) && isEventBit(UNK_3B40)",
+      "bits": [12928, 15168], "bits_hex": ["0x3280", "0x3B40"], "bit_bytes": [[50, 128], [59, 64]],
+      "layer": null, "layer_day": 6, "layer_night": 7,
+      "layer_expr": "base | 6",
+      "source": "src/d/d_com_inf_game.cpp:234-235"
+    },
+    {
+      "stage": "kenroom", "room": null,
+      "order": 15,
+      "condition": "isEventBit(UNK_2C01) || (isEventBit(COLORS_IN_HYRULE) && !isEventBit(UNK_3280))",
+      "bits": [11265, 14338, 12928], "bits_hex": ["0x2C01", "0x3802", "0x3280"], "bit_bytes": [[44, 1], [56, 2], [50, 128]],
+      "layer": null, "layer_day": 6, "layer_night": 7,
+      "layer_expr": "base | 6",
+      "source": "src/d/d_com_inf_game.cpp:237-245",
+      "version_notes": "RETAIL (USA/PAL and the #else branch, i.e. VERSION > VERSION_JPN) form shown. On VERSION_DEMO and VERSION_JPN the condition is only isEventBit(0x2C01)."
+    },
+    {
+      "stage": "kenroom", "room": null,
+      "order": 16,
+      "condition": "!(prev) && getTriforceNum() == 8",
+      "bits": [], "bits_hex": [], "bit_bytes": [],
+      "layer": null, "layer_day": 4, "layer_night": 5,
+      "layer_expr": "base | 4",
+      "source": "src/d/d_com_inf_game.cpp:246-247"
+    },
+    {
+      "stage": "kenroom", "room": null,
+      "order": 17,
+      "condition": "!(prev) && getTriforceNum() != 8 && isEventBit(COLORS_IN_HYRULE)",
+      "bits": [14338], "bits_hex": ["0x3802"], "bit_bytes": [[56, 2]],
+      "layer": null, "layer_day": 2, "layer_night": 3,
+      "layer_expr": "base | 2",
+      "source": "src/d/d_com_inf_game.cpp:248-249",
+      "version_notes": "VERSION_SELECT(DEMO=0x3280, JPN=0x3280, USA=0x3802, PAL=0x3802). Retail uses COLORS_IN_HYRULE (0x3802); demo/JPN use UNK_3280 (0x3280)."
+    },
+    {
+      "stage": "M2tower", "room": null,
+      "order": 18,
+      "condition": "isEventBit(UNK_2D01)",
+      "bits": [11521], "bits_hex": ["0x2D01"], "bit_bytes": [[45, 1]],
+      "layer": null, "layer_day": 2, "layer_night": 3,
+      "layer_expr": "base | 2",
+      "source": "src/d/d_com_inf_game.cpp:252-253"
+    },
+    {
+      "stage": "GanonK", "room": null,
+      "order": 19,
+      "condition": "!isEventBit(UNK_3B02)",
+      "bits": [15106], "bits_hex": ["0x3B02"], "bit_bytes": [[59, 2]],
+      "layer": 8, "layer_day": 8, "layer_night": 8,
+      "layer_expr": "8 (time-independent)",
+      "source": "src/d/d_com_inf_game.cpp:256-257"
+    },
+    {
+      "stage": "GTower", "room": null,
+      "order": 20,
+      "condition": "!isEventBit(UNK_4002)",
+      "bits": [16386], "bits_hex": ["0x4002"], "bit_bytes": [[64, 2]],
+      "layer": 8, "layer_day": 8, "layer_night": 8,
+      "layer_expr": "8 (time-independent)",
+      "source": "src/d/d_com_inf_game.cpp:260-261"
+    }
+  ],
+
+  "default_layer": null,
+  "default_layer_expr": "base = nightStop() ? 1 : (hour >= 6 && hour < 18 ? 0 : 1)",
+  "default_layer_day": 0,
+  "default_layer_night": 1,
+  "default_layer_source": "src/d/d_com_inf_game.cpp:189-190, 264",
+
+  "rule_evaluation": {
+    "structure": "A single if/else-if chain on strcmp(startStageName, ...). Only the FIRST matching stage branch is entered; inside it only the first matching condition wins. If the entered branch matches no inner condition, control falls out to the shared `return base` at the end. Any stage not named in the chain also returns base.",
+    "stage_name_source": "dComIfGp_getStartStageName() — the CURRENT stage being loaded, not the room's archive name.",
+    "room_no_source": "layerLoader's i_roomNo argument. It is -1 for stage.dzs (stage-level actors) and the real room number for each room.dzr. Only the 'sea' branch inspects it; every other rule is stage-wide and behaves identically for roomNo == -1.",
+    "important": "For stage.dzs the layer is computed with roomNo = -1, so on the 'sea' overworld the stage-level ACT<n> chunk always uses the plain day/night base layer (0 or 1), while each island room.dzr independently applies its own room rule."
+  },
+
+  "consumers": [
+    {"what": "actor/scob/treasure placement", "where": "src/d/d_stage.cpp:2148-2150 layerLoader"},
+    {"what": "per-layer cutscene archive (LBNK -> Demo%02d)", "where": "src/d/d_s_room.cpp:210-215", "note": "The same layer number indexes the room's LBNK bank table to pick which Demo archive to mount. A remake replicating cutscenes needs the same number."}
+  ],
+
+  "caveats": [
+    "getLayerNo is the ONLY layer selection function in the codebase (verified: two call sites, d_stage.cpp:2150 and d_s_room.cpp:210, plus the declaration at include/d/d_com_inf_game.h:182). There is no per-stage data table and no dComIfGp_getLayerNo / dStage_getActorTable symbol in this decomp.",
+    "All event-flag names are placeholders invented by the decomp; only ids are authoritative.",
+    "getTriforceNum() is save state but not an event bit; a remake must model the 8 Triforce shard collect bits separately.",
+    "Layers 10 and 11 are never selected by the story rules; they only appear via an explicit setNextStage layer argument.",
+    "dStage_actorInit additionally skips any actor whose setID is already marked dead/collected via dComIfGs_isActor(setID, roomNo) (src/d/d_stage.cpp:1692). That is per-save runtime state, orthogonal to layer selection, and a static exporter cannot resolve it."
+  ]
+}
