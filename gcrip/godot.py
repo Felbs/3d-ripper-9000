@@ -17,6 +17,7 @@ glTF and Godot share the same coordinate system (Y-up, right-handed), so game
 positions carry straight over; 100 game units are roughly one meter.
 """
 
+# ruff: noqa: E501 - embedded GDScript/tscn templates
 from __future__ import annotations
 
 import contextlib
@@ -30,7 +31,8 @@ from gcrip.export import glb as glbmod
 
 # Godot physical keycodes
 _KEYS = {
-    "W": 87, "A": 65, "S": 83, "D": 68, "SPACE": 32, "SHIFT": 4194325,
+    "W": 87, "A": 65, "S": 83, "D": 68, "SPACE": 32, "SHIFT": 4194325, "CTRL": 4194326,
+    "ESC": 4194305, "F1": 4194332,
     "LEFT": 4194319, "UP": 4194320, "RIGHT": 4194321, "DOWN": 4194322,
 }  # fmt: skip
 
@@ -45,20 +47,105 @@ def _key_event(code: int) -> str:
     )
 
 
-def _action(*codes: int) -> str:
-    events = ", ".join(_key_event(c) for c in codes)
-    return '{\n"deadzone": 0.5,\n"events": [' + events + "]\n}"
+def _joy_button(index: int) -> str:
+    return (
+        'Object(InputEventJoypadButton,"resource_local_to_scene":false,"resource_name":"",'
+        f'"device":-1,"button_index":{index},"pressure":0.0,"pressed":false,"script":null)'
+    )
+
+
+def _joy_axis(axis: int, value: float) -> str:
+    return (
+        'Object(InputEventJoypadMotion,"resource_local_to_scene":false,"resource_name":"",'
+        f'"device":-1,"axis":{axis},"axis_value":{value:.1f},"script":null)'
+    )
+
+
+def _action(*events: int | str, deadzone: float = 0.5) -> str:
+    """Keys are given as ints (physical keycodes); pre-serialized joypad events as str."""
+    parts = [_key_event(e) if isinstance(e, int) else e for e in events]
+    return '{\n"deadzone": ' + f"{deadzone}" + ',\n"events": [' + ", ".join(parts) + "]\n}"
+
+
+# Godot's SDL-mapped joypad ids (valid once the pad is known or calibrated)
+JOY_A, JOY_B, JOY_X, JOY_Y = 0, 1, 2, 3
+JOY_START, JOY_LSHOULDER, JOY_RSHOULDER = 6, 9, 10
+AXIS_LX, AXIS_LY, AXIS_RX, AXIS_RY, AXIS_LT, AXIS_RT = 0, 1, 2, 3, 4, 5
 
 
 _PLAYER_GD = """extends CharacterBody3D
-# gcrip third-person controller. World scale: ~100 game units per meter.
-# The camera orbits on CamYaw; the character model turns to face where it walks.
+# gcrip: Link's controller, driven by the real Wind Waker tuning constants.
+#
+# Every number below comes from zeldaret/tww  src/d/actor/d_a_player_HIO_data.inc,
+# named by the memRip sweep (knowledge/gamecube/link-movement-constants.md). The
+# game runs at 30 fps and its constants are per FRAME (units/frame, units/frame^2,
+# frames, s16 angles where 0x8000 = 180 deg), so this project runs physics at 30 Hz
+# and applies them 1:1. ~100 units = 1 m.
 
-const SPEED := 700.0
-const SPRINT := 1500.0
-const JUMP := 550.0
-const GRAVITY := 1600.0
-const TURN_SPEED := 12.0
+# --- move (daPy_HIO_move_c0) ---
+const RUN_SPEED_MAX := 17.0          # move.run_speed_max          units/frame
+const RUN_ACCEL := 3.5               # move.run_accel              units/frame^2 (x stick)
+const DECEL_SCALE := 0.6             # move.decel_scale            remove 60% of remaining/frame
+const DECEL_MIN_STEP := 1.8          # move.decel_min_step
+const DECEL_MAX_STEP := 2.5          # move.decel_max_step
+const WALK_RATIO := 0.5              # move.walk_speed_ratio       walk anim fully in
+const TURN_MAX_STEP := 3000          # move.turn_yaw_max_step      s16/frame (16.5 deg)
+const TURN_MIN_STEP := 100           # move.turn_yaw_min_step      s16/frame (0.55 deg)
+const TURN_DIVISOR := 5.0            # move.turn_yaw_scale
+# --- Z-target strafing (atnMove / atnMoveB) ---
+const STRAFE_SPEED_MAX := 12.0       # atnMove.atn_strafe_speed_max
+const STRAFE_BACK_MAX := 15.0        # atnMoveB.back_max_speed
+const STRAFE_ACCEL := 5.0            # atnMove.atn_strafe_accel
+const STRAFE_BACK_ACCEL := 2.5       # atnMoveB.back_accel
+# --- gravity / air (autoJump) ---
+const GRAVITY := -2.5                # autoJump.default_gravity     units/frame^2
+const MAX_FALL_SPEED := -175.0       # autoJump.default_max_fall_speed
+const AUTOJUMP_MIN_SPEED := 9.0      # autoJump.jump_min_speed
+const AUTOJUMP_SCALE := 1.6          # autoJump.jump_speed_scale
+const AUTOJUMP_ANGLE := 11000        # autoJump.jump_launch_angle   s16 (60.4 deg)
+const AIR_ACCEL := 0.4               # autoJump.air_accel_to_run_speed
+# --- backflip / side hop ---
+const BACKFLIP_SPEED := 22.5         # backJump.backjump_speed
+const BACKFLIP_SPEED_Y := 19.0       # backJump.backjump_speed_y
+const BACKFLIP_GRAVITY := -3.0       # backJump.backjump_gravity
+const SIDEHOP_SPEED := 30.0          # sideStep.hop_launch_speed
+const SIDEHOP_ANGLE := 6200          # sideStep.hop_launch_angle    s16 (34.1 deg)
+const SIDEHOP_GRAVITY := -2.4        # sideStep.hop_gravity
+# --- roll ---
+const ROLL_SPEED_MULT := 1.5         # roll.roll_speed_mult
+const ROLL_SPEED_ADD := 0.5          # roll.roll_speed_add
+const ROLL_SPEED_MIN := 5.0          # roll.roll_speed_min
+const ROLL_FRAMES := 17              # roll.roll_anim_end_frame 19 at rate 1.1
+const ROLL_CANCEL_FRAME := 15        # roll.roll_cancel_frame (17 anim frames / 1.1)
+const ROLL_CRASH_MIN_SPEED := 10.0   # roll.crash_min_speed
+const ROLL_CRASH_REBOUND := 0.4      # roll.crash_rebound_speed_mult
+const ROLL_CRASH_REBOUND_Y := 7.0    # roll.crash_rebound_speed_y
+# --- slip (sudden reversal) ---
+const SLIP_RATIO := 0.6              # slip.slip_speed_ratio_threshold
+# --- swim ---
+const SWIM_SPEED_MAX := 18.0         # swim.swim_speed_max (x stick^2)
+const SWIM_APPROACH_SCALE := 0.02    # swim.speed_approach_scale
+const SWIM_APPROACH_MIN := 0.5       # swim.speed_approach_min_step
+const SWIM_APPROACH_MAX := 2.0       # swim.speed_approach_max_step
+const SWIM_TURN_MAX := 5000          # swim.turn_max_step  s16 (27.5 deg)
+const SWIM_TURN_MIN := 1200          # swim.turn_min_step  s16 (6.6 deg)
+const SWIM_TURN_DIVISOR := 17.0      # swim.turn_divisor
+const SWIM_START_DEPTH := 90.0       # swim.swim_start_depth
+const SWIM_RISE_ACCEL := 6.0         # swim.rise_accel
+const SWIM_RISE_MAX := 9.5           # swim.rise_speed_max
+# --- fall damage (fall.fall_height_damage*_m, meters x100) ---
+const FALL_HARD_LANDING := 1000.0    # half the 1-heart height: hard landing, no damage
+const FALL_DAMAGE_1 := 2000.0        # 1 heart
+const FALL_DAMAGE_2 := 6000.0        # 2 hearts
+# --- misc ---
+const WALL_PUSH_REDUCE := 0.6        # basic.wall_push_speed_reduce
+const ANIM_BLEND := 2.4 / 30.0       # basic.default_anm_morf_frames (2.4 frames)
+
+const S16_TO_RAD := PI / 32768.0
+
+enum State { GROUND, AIR, ROLL, SWIM, LAND }
+
+@export var water_level := -1.0e9   # stage sets this (sea stages: 0)
 
 @onready var cam_yaw: Node3D = $CamYaw
 @onready var arm: SpringArm3D = $CamYaw/SpringArm3D
@@ -67,56 +154,329 @@ var anim: AnimationPlayer = null
 var current_clip := ""
 var start_pos := Vector3.ZERO
 
+var state: int = State.GROUND
+var facing := 0.0          # radians, Link's heading (model faces +Z -> rotation.y = facing)
+var speed := 0.0           # forward ground speed, units/frame
+var air_vel := Vector3.ZERO  # horizontal velocity while airborne, units/frame
+var gravity := GRAVITY
+var roll_frame := 0
+var land_frames := 0
+var fall_start_y := 0.0
+var strafe := Vector2.ZERO  # strafe velocity (x right, y forward) in target mode
+var swim_speed := 0.0
+
 func _ready() -> void:
     start_pos = global_position
+    fall_start_y = global_position.y
+    facing = model.rotation.y if model else 0.0
     Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
     if model:
         anim = model.find_child("AnimationPlayer", true, false)
 
 func _unhandled_input(event: InputEvent) -> void:
     if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-        cam_yaw.rotation.y -= event.relative.x * 0.003
-        arm.rotation.x = clampf(arm.rotation.x - event.relative.y * 0.003, -1.4, 1.4)
+        _orbit(event.relative.x * 0.003, event.relative.y * 0.003)
     if event.is_action_pressed("ui_cancel"):
         if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
             Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
         else:
             Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
-func play_clip(name: String, blend := 0.2) -> void:
-    if anim and current_clip != name and anim.has_animation(name):
-        anim.play(name, blend)
-        current_clip = name
+func _orbit(dx: float, dy: float) -> void:
+    cam_yaw.rotation.y -= dx
+    arm.rotation.x = clampf(arm.rotation.x - dy, -1.4, 1.4)
 
-func _physics_process(delta: float) -> void:
-    if not is_on_floor():
-        velocity.y -= GRAVITY * delta
-    elif Input.is_action_just_pressed("jump"):
-        velocity.y = JUMP
-    var dir2 := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
-    var dir3 := (cam_yaw.global_transform.basis * Vector3(dir2.x, 0.0, dir2.y))
-    dir3.y = 0.0
-    dir3 = dir3.normalized() if dir3.length() > 0.01 else Vector3.ZERO
-    var sprinting := Input.is_action_pressed("sprint")
-    var spd := SPRINT if sprinting else SPEED
-    velocity.x = dir3.x * spd
-    velocity.z = dir3.z * spd
-    move_and_slide()
+func play_clip(name: String, blend := ANIM_BLEND, rate := 1.0) -> void:
+    if anim == null:
+        return
+    if anim.has_animation(name):
+        if current_clip != name:
+            anim.play(name, blend)
+            current_clip = name
+        anim.speed_scale = rate
 
-    if model and dir3.length() > 0.01:  # face where we walk (rig faces +Z natively)
-        var target := atan2(dir3.x, dir3.z)
-        model.rotation.y = lerp_angle(model.rotation.y, target, TURN_SPEED * delta)
+# ---------------------------------------------------------------- helpers
 
-    if not is_on_floor():
-        play_clip("mjmp", 0.1)
-    elif dir3.length() > 0.01:
-        play_clip("dash" if sprinting else "walk")
+func stick() -> Vector2:
+    # camera-relative stick: x = right, y = forward, length 0..1
+    var raw := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
+    return Vector2(raw.x, -raw.y)
+
+func stick_world_dir(s: Vector2) -> Vector3:
+    var d := cam_yaw.global_transform.basis * Vector3(s.x, 0.0, -s.y)
+    d.y = 0.0
+    return d.normalized() if d.length() > 0.001 else Vector3.ZERO
+
+func heading_of(dir: Vector3) -> float:
+    return atan2(dir.x, dir.z)
+
+func turn_toward(target: float, max_step: int, min_step: int, divisor: float) -> void:
+    # cLib_addCalcAngleS: step = remaining / divisor, clamped to [min, max] (s16 units)
+    var remaining := wrapf(target - facing, -PI, PI)
+    var step := absf(remaining) / divisor
+    step = clampf(step, min_step * S16_TO_RAD, max_step * S16_TO_RAD)
+    if absf(remaining) <= step:
+        facing = target
     else:
-        play_clip("wait")
+        facing += signf(remaining) * step
+    facing = wrapf(facing, -PI, PI)
+
+func forward() -> Vector3:
+    return Vector3(sin(facing), 0.0, cos(facing))
+
+func in_water() -> bool:
+    return global_position.y < water_level - SWIM_START_DEPTH
+
+# ---------------------------------------------------------------- states
+
+func _physics_process(_delta: float) -> void:
+    # right stick (C-stick) orbits the camera when a pad is mapped
+    var cx := Input.get_joy_axis(0, JOY_AXIS_RIGHT_X)
+    var cy := Input.get_joy_axis(0, JOY_AXIS_RIGHT_Y)
+    if absf(cx) > 0.2 or absf(cy) > 0.2:
+        _orbit(cx * 0.06, cy * 0.04)
+
+    match state:
+        State.GROUND: _ground()
+        State.AIR: _air()
+        State.ROLL: _roll()
+        State.SWIM: _swim()
+        State.LAND: _land()
+
+    if model:
+        model.rotation.y = facing
 
     if global_position.y < start_pos.y - 50000.0:  # fell out of the world
         global_position = start_pos
         velocity = Vector3.ZERO
+        _enter_ground()
+
+func _apply(h: Vector3, vy: float) -> void:
+    # h = horizontal velocity in units/frame; Godot wants units/second
+    velocity = Vector3(h.x, vy, h.z) * 30.0
+    move_and_slide()
+
+func _enter_ground() -> void:
+    state = State.GROUND
+    gravity = GRAVITY
+
+func _ground() -> void:
+    if in_water():
+        _enter_swim()
+        return
+    var s := stick()
+    var dist := minf(s.length(), 1.0)
+    var targeting := Input.is_action_pressed("target")
+
+    if targeting:
+        _ground_strafe(s, dist)
+        return
+
+    # free movement: turn toward the stick, move along the facing
+    if dist > 0.05:
+        var want := heading_of(stick_world_dir(s))
+        var off := absf(wrapf(want - facing, -PI, PI))
+        if off > PI * 0.6 and speed > SLIP_RATIO * RUN_SPEED_MAX:
+            speed *= 0.5  # slip: sudden reversal scrubs speed (slip.slip_entry then decel)
+        turn_toward(want, TURN_MAX_STEP, TURN_MIN_STEP, TURN_DIVISOR)
+        var target_speed := RUN_SPEED_MAX * dist
+        if speed < target_speed:
+            speed = minf(speed + RUN_ACCEL * dist, target_speed)
+        else:
+            _decel_to(target_speed)
+    else:
+        _decel_to(0.0)
+
+    if Input.is_action_just_pressed("action_a") and speed > 1.0:
+        _enter_roll()
+        return
+
+    var was_on_floor := is_on_floor()
+    _apply(forward() * speed, -1.0)  # small downward push keeps floor contact on slopes
+    if is_on_wall():
+        speed *= 1.0 - WALL_PUSH_REDUCE * 0.5
+    if was_on_floor and not is_on_floor():
+        if speed >= AUTOJUMP_MIN_SPEED:
+            _enter_air_autojump()
+        else:
+            _enter_air(forward() * speed, 0.0, GRAVITY)
+        return
+    if not is_on_floor():
+        _enter_air(forward() * speed, 0.0, GRAVITY)
+        return
+
+    var ratio := speed / RUN_SPEED_MAX
+    if ratio < 0.03:
+        play_clip("wait")
+    elif ratio < WALK_RATIO + 0.15:
+        play_clip("walk", ANIM_BLEND, maxf(ratio / WALK_RATIO, 0.4))
+    else:
+        play_clip("dash", ANIM_BLEND, maxf(ratio, 0.6))
+
+func _decel_to(target: float) -> void:
+    var remaining := speed - target
+    if remaining <= 0.0:
+        speed = target
+        return
+    var step := clampf(remaining * DECEL_SCALE, DECEL_MIN_STEP, DECEL_MAX_STEP)
+    speed = maxf(speed - step, target)
+
+func _ground_strafe(s: Vector2, dist: float) -> void:
+    # Z-target: face the camera direction, strafe with atnMove constants
+    var cam_fwd := -cam_yaw.global_transform.basis.z
+    cam_fwd.y = 0.0
+    facing = heading_of(cam_fwd.normalized())
+    var want := Vector2(s.x * STRAFE_SPEED_MAX, s.y * (STRAFE_BACK_MAX if s.y < 0.0 else STRAFE_SPEED_MAX))
+    var accel := STRAFE_BACK_ACCEL if s.y < 0.0 else STRAFE_ACCEL
+    strafe = strafe.move_toward(want, accel)
+    speed = strafe.length()
+
+    if Input.is_action_just_pressed("action_a"):
+        if s.y < -0.5:
+            _enter_air(-forward() * BACKFLIP_SPEED, BACKFLIP_SPEED_Y, BACKFLIP_GRAVITY)
+            return
+        if absf(s.x) > 0.5:
+            var side := cam_yaw.global_transform.basis.x * signf(s.x)
+            side.y = 0.0
+            var a := SIDEHOP_ANGLE * S16_TO_RAD
+            _enter_air(side.normalized() * SIDEHOP_SPEED * cos(a), SIDEHOP_SPEED * sin(a), SIDEHOP_GRAVITY)
+            return
+
+    var right := cam_yaw.global_transform.basis.x
+    right.y = 0.0
+    var h := right.normalized() * strafe.x + forward() * strafe.y
+    _apply(h, -1.0)
+    if not is_on_floor():
+        _enter_air(h, 0.0, GRAVITY)
+        return
+    if speed < 0.5:
+        play_clip("wait")
+    else:
+        play_clip("walk", ANIM_BLEND, clampf(speed / STRAFE_SPEED_MAX, 0.5, 1.2))
+
+func _enter_air(h: Vector3, vy: float, g: float) -> void:
+    state = State.AIR
+    air_vel = h
+    velocity.y = vy * 30.0
+    gravity = g
+    fall_start_y = global_position.y
+    play_clip("mjmp", 0.1)
+
+func _enter_air_autojump() -> void:
+    # running off a ledge: v = clamp(speed, 9, 17) * 1.6 along the launch angle
+    var v := clampf(speed, AUTOJUMP_MIN_SPEED, RUN_SPEED_MAX) * AUTOJUMP_SCALE
+    var a := AUTOJUMP_ANGLE * S16_TO_RAD
+    _enter_air(forward() * v * cos(a), v * sin(a), GRAVITY)
+
+func _air() -> void:
+    if in_water():
+        _enter_swim()
+        return
+    fall_start_y = maxf(fall_start_y, global_position.y)
+    var vy := velocity.y / 30.0 + gravity
+    vy = maxf(vy, MAX_FALL_SPEED)
+    # air control: horizontal speed chases the stick at 0.4 units/frame^2
+    var s := stick()
+    if s.length() > 0.1:
+        var want := stick_world_dir(s) * RUN_SPEED_MAX * minf(s.length(), 1.0)
+        air_vel = air_vel.move_toward(want, AIR_ACCEL)
+        if not Input.is_action_pressed("target"):
+            turn_toward(heading_of(air_vel) if air_vel.length() > 0.5 else facing, TURN_MAX_STEP, TURN_MIN_STEP, TURN_DIVISOR)
+    _apply(air_vel, vy)
+    if is_on_floor():
+        var drop := fall_start_y - global_position.y
+        speed = air_vel.length()
+        if drop >= FALL_DAMAGE_2:
+            land_frames = 40
+            state = State.LAND
+            play_clip("jmped", 0.05)
+            if drop >= FALL_DAMAGE_2 * 2.0:  # no HP yet: a truly huge fall respawns
+                global_position = start_pos
+        elif drop >= FALL_DAMAGE_1:
+            land_frames = 30
+            state = State.LAND
+            play_clip("jmped", 0.05)
+        elif drop >= FALL_HARD_LANDING:
+            land_frames = 12
+            state = State.LAND
+            play_clip("jmped", 0.05)
+        else:
+            _enter_ground()
+            play_clip("jmped", 0.05)
+
+func _land() -> void:
+    land_frames -= 1
+    _decel_to(0.0)
+    _apply(forward() * speed, -1.0)
+    if land_frames <= 0:
+        _enter_ground()
+
+func _enter_roll() -> void:
+    state = State.ROLL
+    roll_frame = 0
+    speed = maxf(ROLL_SPEED_MULT * speed + ROLL_SPEED_ADD, ROLL_SPEED_MIN)
+    speed = minf(speed, ROLL_SPEED_MULT * RUN_SPEED_MAX + ROLL_SPEED_ADD)
+    play_clip("mrolll", 0.05, 1.1)
+
+func _roll() -> void:
+    roll_frame += 1
+    var s := stick()
+    if s.length() > 0.3:  # the roll steers a little toward the stick
+        turn_toward(heading_of(stick_world_dir(s)), TURN_MAX_STEP / 3, TURN_MIN_STEP, TURN_DIVISOR)
+    _apply(forward() * speed, -1.0)
+    if is_on_wall() and speed >= ROLL_CRASH_MIN_SPEED and roll_frame >= 6 and roll_frame <= 15:
+        # crashed into a wall: bounce back and up
+        _enter_air(-forward() * speed * ROLL_CRASH_REBOUND, ROLL_CRASH_REBOUND_Y, GRAVITY)
+        speed = 0.0
+        return
+    if not is_on_floor():
+        _enter_air(forward() * speed, 0.0, GRAVITY)
+        return
+    if roll_frame >= ROLL_CANCEL_FRAME and Input.is_action_just_pressed("action_a"):
+        _enter_roll()  # chained roll
+        return
+    if roll_frame >= ROLL_FRAMES:
+        speed = minf(speed, RUN_SPEED_MAX)
+        _enter_ground()
+
+func _enter_swim() -> void:
+    state = State.SWIM
+    swim_speed = 0.0
+    velocity.y = clampf(velocity.y, -50.0 * 30.0, 0.0)  # swim.water_entry_yspeed_min
+    play_clip("swimwait", 0.2)
+
+func _swim() -> void:
+    var surface := water_level
+    var s := stick()
+    var dist := minf(s.length(), 1.0)
+    if dist > 0.05:
+        turn_toward(heading_of(stick_world_dir(s)), SWIM_TURN_MAX, SWIM_TURN_MIN, SWIM_TURN_DIVISOR)
+    var target := SWIM_SPEED_MAX * dist * dist
+    var remaining := target - swim_speed
+    var step := clampf(absf(remaining) * SWIM_APPROACH_SCALE, SWIM_APPROACH_MIN, SWIM_APPROACH_MAX)
+    if absf(remaining) <= step:
+        swim_speed = target
+    else:
+        swim_speed += signf(remaining) * step
+    # rise to the surface, then float there
+    var vy := velocity.y / 30.0
+    var depth := surface - global_position.y
+    if depth > 0.0:
+        vy = minf(vy + SWIM_RISE_ACCEL, SWIM_RISE_MAX)
+        if vy > depth:
+            vy = depth
+    else:
+        vy = 0.0
+        global_position.y = surface
+    _apply(forward() * swim_speed, vy)
+    if is_on_floor() and depth < SWIM_START_DEPTH:
+        speed = swim_speed
+        _enter_ground()
+        return
+    if swim_speed > 0.5:
+        play_clip("swiming", 0.2, clampf(swim_speed / SWIM_SPEED_MAX, 0.5, 1.3))
+    else:
+        play_clip("swimwait", 0.2)
 """
 
 
@@ -168,12 +528,18 @@ far = 1000000.0
 _PLAYER_CLIPS = ("wait", "walk", "dash", "mjmp", "jmped", "mrolll", "swimwait", "swiming")
 
 _GAME_GD = """extends Node
-# gcrip autoload: stage warps. Doors' destinations come from the game's own exit
-# tables; spawn positions per stage live in res://stage_data.json.
+# gcrip autoload: stage warps + controller mapping. Doors' destinations come from the
+# game's own exit tables; spawn positions per stage live in res://stage_data.json.
+# Unknown USB pads (e.g. GameCube-shaped DragonRise 0079:0006 pads) get a mapping from
+# the calibration screen (F1, or Start on the pad), saved in user://gcpad.cfg.
+
+const PAD_CFG := "user://gcpad.cfg"
 
 var stage_data: Dictionary = {}
 var pending: Dictionary = {}
 var last_warp_ms := -100000
+var banner: Label = null
+var calib: Node = null
 
 func _ready() -> void:
     var f := FileAccess.open("res://stage_data.json", FileAccess.READ)
@@ -181,6 +547,63 @@ func _ready() -> void:
         var parsed = JSON.parse_string(f.get_as_text())
         if parsed is Dictionary:
             stage_data = parsed
+    _apply_saved_pad_mappings()
+    Input.joy_connection_changed.connect(func(_id, _c): _apply_saved_pad_mappings())
+
+func _apply_saved_pad_mappings() -> void:
+    var cfg := ConfigFile.new()
+    cfg.load(PAD_CFG)
+    var unknown := []
+    for id in Input.get_connected_joypads():
+        var guid := Input.get_joy_guid(id)
+        if cfg.has_section_key("mappings", guid):
+            Input.add_joy_mapping(cfg.get_value("mappings", guid), true)
+        elif not Input.is_joy_known(id):
+            unknown.append(Input.get_joy_name(id))
+    if unknown.size() > 0:
+        _show_banner("Controller '%s' is not mapped - press F1 (or Start) to calibrate" % unknown[0])
+    else:
+        _show_banner("")
+
+func _show_banner(text: String) -> void:
+    if banner == null:
+        var layer := CanvasLayer.new()
+        layer.layer = 50
+        add_child(layer)
+        banner = Label.new()
+        banner.position = Vector2(16, 12)
+        banner.add_theme_font_size_override("font_size", 20)
+        banner.add_theme_color_override("font_color", Color(1, 0.92, 0.5))
+        layer.add_child(banner)
+    banner.text = text
+    banner.visible = text != ""
+
+func _unhandled_input(event: InputEvent) -> void:
+    if calib != null:
+        return
+    var start_pressed: bool = event is InputEventJoypadButton and event.pressed and not Input.is_joy_known(event.device) and banner != null and banner.visible
+    if event.is_action_pressed("calibrate") or start_pressed:
+        open_calibration()
+
+func open_calibration() -> void:
+    if calib != null:
+        return
+    calib = load("res://calib.tscn").instantiate()
+    calib.done.connect(_on_calibrated)
+    add_child(calib)
+    get_tree().paused = true
+
+func _on_calibrated(guid: String, mapping: String) -> void:
+    get_tree().paused = false
+    calib.queue_free()
+    calib = null
+    if mapping != "":
+        var cfg := ConfigFile.new()
+        cfg.load(PAD_CFG)
+        cfg.set_value("mappings", guid, mapping)
+        cfg.save(PAD_CFG)
+        Input.add_joy_mapping(mapping, true)
+        _show_banner("")
 
 func warp(dest_stage: String, dest_room: int, dest_spawn: int) -> void:
     if Time.get_ticks_msec() - last_warp_ms < 1500:
@@ -223,6 +646,121 @@ func _place_player() -> void:
     pending = {}
 """
 
+_CALIB_GD = """extends CanvasLayer
+# gcrip controller calibration: press each GameCube input in turn; writes an SDL
+# mapping for this pad's GUID so Godot's standard button/axis ids work afterwards.
+
+signal done(guid: String, mapping: String)
+
+const STEPS := [
+    ["A", "a"], ["B", "b"], ["X", "x"], ["Y", "y"],
+    ["Z", "rightshoulder"], ["L (press fully)", "lefttrigger"], ["R (press fully)", "righttrigger"],
+    ["Start", "start"],
+    ["push the LEFT stick RIGHT", "leftx"], ["push the LEFT stick UP", "lefty"],
+    ["push the C-stick RIGHT", "rightx"], ["push the C-stick UP", "righty"],
+    ["D-pad UP", "dpup"], ["D-pad DOWN", "dpdown"], ["D-pad LEFT", "dpleft"], ["D-pad RIGHT", "dpright"],
+]
+
+var step := 0
+var device := -1
+var parts: Array[String] = []
+var used_buttons := {}
+var used_axes := {}
+var cooldown := 0.0
+@onready var label: Label = $Panel/Label
+
+func _ready() -> void:
+    layer = 60
+    process_mode = Node.PROCESS_MODE_ALWAYS
+    _prompt()
+
+func _prompt() -> void:
+    if step >= STEPS.size():
+        _finish()
+        return
+    label.text = "Controller calibration  (%d/%d)\\n\\nPress  %s\\n\\nEsc: cancel     Backspace: skip this one" % [step + 1, STEPS.size(), STEPS[step][0]]
+
+func _process(delta: float) -> void:
+    cooldown = maxf(cooldown - delta, 0.0)
+
+func _input(event: InputEvent) -> void:
+    if event is InputEventKey and event.pressed:
+        if event.keycode == KEY_ESCAPE:
+            done.emit("", "")
+        elif event.keycode == KEY_BACKSPACE:
+            step += 1
+            _prompt()
+        get_viewport().set_input_as_handled()
+        return
+    if cooldown > 0.0 or step >= STEPS.size():
+        return
+    var sdl: String = STEPS[step][1]
+    var is_axis_step: bool = sdl.ends_with("x") or sdl.ends_with("y")
+    if event is InputEventJoypadButton and event.pressed and not is_axis_step:
+        if used_buttons.has(event.button_index):
+            return
+        device = event.device
+        used_buttons[event.button_index] = true
+        parts.append("%s:b%d" % [sdl, event.button_index])
+        _advance()
+    elif event is InputEventJoypadMotion and absf(event.axis_value) > 0.6:
+        if is_axis_step:
+            if used_axes.has(event.axis):
+                return
+            device = event.device
+            used_axes[event.axis] = true
+            # SDL axes: +right / +down. We asked for RIGHT and UP, so UP arriving as a
+            # positive value means the axis is inverted (the '~' suffix flips it).
+            var inverted: bool = (sdl.ends_with("y") and event.axis_value > 0.0) or (sdl.ends_with("x") and event.axis_value < 0.0)
+            parts.append("%s:a%d%s" % [sdl, event.axis, "~" if inverted else ""])
+            _advance()
+        elif sdl.ends_with("trigger") and not used_axes.has(event.axis):
+            device = event.device
+            used_axes[event.axis] = true
+            parts.append("%s:a%d" % [sdl, event.axis])
+            _advance()
+        get_viewport().set_input_as_handled()
+
+func _advance() -> void:
+    cooldown = 0.5
+    step += 1
+    _prompt()
+
+func _finish() -> void:
+    if device < 0:
+        done.emit("", "")
+        return
+    var guid := Input.get_joy_guid(device)
+    var name := Input.get_joy_name(device).replace(",", " ")
+    var mapping := "%s,%s,%s,platform:Windows," % [guid, name, ",".join(parts)]
+    label.text = "Saved mapping for %s\\n\\n%s" % [name, mapping]
+    await get_tree().create_timer(1.5).timeout
+    done.emit(guid, mapping)
+"""
+
+_CALIB_TSCN = """[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://calib.gd" id="1"]
+
+[node name="Calib" type="CanvasLayer"]
+script = ExtResource("1")
+
+[node name="Panel" type="Panel" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Label" type="Label" parent="Panel"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+horizontal_alignment = 1
+vertical_alignment = 1
+theme_override_font_sizes/font_size = 28
+"""
+
 _WARP_GD = """extends Area3D
 # gcrip: walking into this (a door) loads the destination stage.
 
@@ -260,6 +798,7 @@ def _stage_tscn(
     *,
     has_col: bool = False,
     exits: list[dict] | None = None,
+    water_level: float = -1.0e9,
 ) -> str:
     x, y, z = spawn
     exits = exits or []
@@ -326,6 +865,7 @@ environment = SubResource("env")
 
 [node name="Player" parent="." instance=ExtResource("2")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, {x:.1f}, {y + 30:.1f}, {z:.1f})
+water_level = {water_level:.1f}
 {"".join(warp_nodes)}"""
 
 
@@ -346,12 +886,19 @@ Game="*res://game.gd"
 
 [input]
 
-move_forward={_action(k["W"], k["UP"])}
-move_back={_action(k["S"], k["DOWN"])}
-move_left={_action(k["A"], k["LEFT"])}
-move_right={_action(k["D"], k["RIGHT"])}
-jump={_action(k["SPACE"])}
-sprint={_action(k["SHIFT"])}
+move_forward={_action(k["W"], k["UP"], _joy_axis(AXIS_LY, -1.0), deadzone=0.15)}
+move_back={_action(k["S"], k["DOWN"], _joy_axis(AXIS_LY, 1.0), deadzone=0.15)}
+move_left={_action(k["A"], k["LEFT"], _joy_axis(AXIS_LX, -1.0), deadzone=0.15)}
+move_right={_action(k["D"], k["RIGHT"], _joy_axis(AXIS_LX, 1.0), deadzone=0.15)}
+action_a={_action(k["SPACE"], _joy_button(JOY_A))}
+action_b={_action(k["CTRL"], _joy_button(JOY_B))}
+target={_action(k["SHIFT"], _joy_button(JOY_RSHOULDER), _joy_axis(AXIS_RT, 1.0))}
+pause={_action(k["ESC"], _joy_button(JOY_START))}
+calibrate={_action(k["F1"])}
+
+[physics]
+
+common/physics_ticks_per_second=30
 
 [rendering]
 
@@ -565,8 +1112,12 @@ def export_godot(
             n_col = _godot_glb(gltf_path, out_dir / "stages" / f"{name}.glb")
             kind = "visual colliders"
         exits = rep.get("exits") or []
+        # the Great Sea's water is the y=0 plane (islands are authored around it); proper
+        # per-stage water volumes come with the dzb liquid surfaces later
+        water = 0.0 if name.lower().startswith("sea") else -1.0e9
         (out_dir / "scenes" / f"{name}.tscn").write_text(
-            _stage_tscn(name, spawn, has_col=has_col, exits=exits), encoding="utf-8"
+            _stage_tscn(name, spawn, has_col=has_col, exits=exits, water_level=water),
+            encoding="utf-8",
         )
         stage_data[name] = {"spawns": spawns}
         done.append(name)
@@ -580,6 +1131,8 @@ def export_godot(
     (out_dir / "player.tscn").write_text(_player_tscn(has_model), encoding="utf-8")
     (out_dir / "game.gd").write_text(_GAME_GD, encoding="utf-8")
     (out_dir / "warp.gd").write_text(_WARP_GD, encoding="utf-8")
+    (out_dir / "calib.gd").write_text(_CALIB_GD, encoding="utf-8")
+    (out_dir / "calib.tscn").write_text(_CALIB_TSCN, encoding="utf-8")
     sd_path = out_dir / "stage_data.json"
     if sd_path.exists():  # partial re-exports must not clobber other stages' spawn data
         with contextlib.suppress(OSError, ValueError):

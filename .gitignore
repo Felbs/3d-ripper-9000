@@ -17,3 +17,6 @@ disc_manifest*.json
 roms/
 # local engine downloads, never committed
 tools/godot/
+
+# machine-specific MCP wiring (memRip palace)
+.mcp.json
