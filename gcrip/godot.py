@@ -254,6 +254,7 @@ var fp_blend := 0
 var fp_from_eye := Vector3.ZERO
 var fp_from_center := Vector3.ZERO
 var cstick_armed := true
+var cstick_up_frames := 0
 var boom_locks: Array = []
 # --- boat camera (d_cam_style BN07: ride camera; rideCamera is a stub, rows inferred) ---
 const BOAT_CAM_R := 800.0
@@ -410,6 +411,17 @@ func _ready() -> void:
     Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
     if model:
         anim = model.find_child("AnimationPlayer", true, false)
+        if anim:
+            for n in anim.get_animation_list():
+                var l := n.to_lower()
+                var loops := false
+                for key in ["wait", "walk", "dash", "swim", "ladderltor", "ladderrtol", "wall", "crouch",
+                            "lieforward", "grabwait", "bowwait", "boomwait", "hookshotwait", "ropewait",
+                            "ropeclimb", "ropedown", "ropeswing", "hangmove", "walkbarrel"]:
+                    if l.begins_with(key) or l == key:
+                        loops = true
+                if loops:
+                    anim.get_animation(n).loop_mode = Animation.LOOP_LINEAR
     add_to_group("player")
     _sword_active(false)
     # restore the persistent state (hearts/rupees/magic/boots survive stage warps)
@@ -441,7 +453,7 @@ func _orbit(dx: float, dy: float) -> void:
     # orbit the eye around the center and hold off the auto-yaw for a moment
     cam_manual_yaw -= dx
     cam_manual_pitch = clampf(cam_manual_pitch - dy, -1.0, 1.0)
-    cam_manual = 45
+    cam_manual = 90   # the auto-yaw stays off for 3 s after the last C-stick input
 
 # -- camera math (ported from d_cam_param.cpp / d_camera.cpp)
 
@@ -752,8 +764,10 @@ func _physics_process(_delta: float) -> void:
     # right stick (C-stick) orbits the camera when a pad is mapped
     var cx := Input.get_joy_axis(0, JOY_AXIS_RIGHT_X)
     var cy := Input.get_joy_axis(0, JOY_AXIS_RIGHT_Y)
-    if absf(cx) > 0.2 or absf(cy) > 0.2:
-        _orbit(cx * 0.06, cy * 0.04)
+    if absf(cx) > 0.15 or absf(cy) > 0.15:
+        var kx := (absf(cx) - 0.15) / 0.85 * signf(cx)
+        var ky := (absf(cy) - 0.15) / 0.85 * signf(cy)
+        _orbit(kx * absf(kx) * 0.07, ky * absf(ky) * 0.05)
 
     if invincible > 0:
         invincible -= 1
@@ -840,9 +854,14 @@ func _ground() -> void:
     if cy < 0.2:
         cstick_armed = true
     if cstick_armed and cy > 0.95 and stick().length() < 0.5 and lock_target == null and speed < 1.0:
-        cstick_armed = false
-        _enter_look()
-        return
+        cstick_up_frames += 1
+        if cstick_up_frames >= 20:
+            cstick_armed = false
+            cstick_up_frames = 0
+            _enter_look()
+            return
+    else:
+        cstick_up_frames = 0
     if in_water():
         _enter_swim()
         return
@@ -2786,6 +2805,8 @@ var bgm: Dictionary = {}           # data/ww_bgm.json: stages / sea_rooms -> son
 var bgm_player: AudioStreamPlayer = null
 var bgm_song := ""
 var selftest: bool = "--selftest" in OS.get_cmdline_user_args()   # scripted input run
+var shot_actor := ""   # --shot=<actor>: screenshot that actor's face to user://shot.png and quit
+var shot_frames := 0
 var events: Dictionary = {}        # this stage's event_list.dat: name -> event
 var enemies: Dictionary = {}       # enemies.json: actor -> constants (data/ww_enemies_*.json)
 const SAVE_PATH := "user://gcrip_save.json"
@@ -2836,9 +2857,12 @@ func _ready() -> void:
         var parsed_b = JSON.parse_string(bg.get_as_text())
         if parsed_b is Dictionary:
             bgm = parsed_b
+    for a in OS.get_cmdline_user_args():
+        if a.begins_with("--shot="):
+            shot_actor = a.substr(7)
     if load_game():
         print("gcrip: save file loaded (", str(save.get("saved_at", "?")), ")")
-        if not selftest:
+        if not selftest and shot_actor == "":
             _continue_saved.call_deferred()
     bgm_player = AudioStreamPlayer.new()
     bgm_player.bus = "Master"
@@ -2915,10 +2939,50 @@ func _restore_position() -> void:
         link.set("start_pos", link.global_position)
 
 func _process(delta: float) -> void:
+    if shot_actor != "":
+        _shot_tick()
     autosave_frames += 1
-    if autosave_frames >= 30 * 60 and not dialog_open and not event_running:
+    if autosave_frames >= 30 * 60 and not dialog_open and not event_running and not selftest and shot_actor == "":
         autosave_frames = 0
         save_game("autosave")
+
+func _shot_tick() -> void:
+    shot_frames += 1
+    var cs := get_tree().current_scene
+    var cam := get_viewport().get_camera_3d()
+    if cs == null or cam == null:
+        return
+    var target: Node3D = null
+    for n in cs.find_children("A_" + shot_actor + "*", "", true, false):
+        target = n
+        break
+    if target == null:
+        if shot_frames > 120:
+            print("gcrip shot: no actor ", shot_actor)
+            get_tree().quit()
+        return
+    var link := player()
+    if link:
+        link.set_physics_process(false)
+        link.visible = false
+    var head := target.global_position + Vector3(0, 120.0, 0)
+    var rig: Node3D = target.get_child(target.get_child_count() - 1) as Node3D
+    var fwd := Vector3(sin(float(target.get("facing"))), 0.0, cos(float(target.get("facing"))))
+    var side := 1.0 if shot_frames < 75 else -1.0
+    cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+    if cam.get_parent():
+        cam.get_parent().physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+    cam.global_position = head + fwd * 220.0 * side + Vector3(0, 30.0, 0)
+    cam.look_at(head, Vector3.UP)
+    cam.fov = 45.0
+    cam.reset_physics_interpolation()
+    if shot_frames == 60 or shot_frames == 105:
+        var img := get_viewport().get_texture().get_image()
+        var fn := "user://shot_%s.png" % ("front" if shot_frames == 60 else "back")
+        img.save_png(fn)
+        print("gcrip shot: saved ", fn, " for ", shot_actor, " at ", target.global_position.round(), " rig=", str(rig != null))
+        if shot_frames == 105:
+            get_tree().quit()
 
 func event_bit(n: int) -> bool:
     var bits: Dictionary = save.get("event_bits", {})
@@ -4534,6 +4598,8 @@ func _wrap_actors() -> void:
             mesh.visible = false
             mesh = rig
             node.set_meta("clips", am.get("clips", []))
+            if am.has("head") and ResourceLoader.exists(str(am["head"])):
+                _attach_head(rig, str(am["head"]))
         var params: int = int(rec["params"])
         var rot_y: float = float(rec.get("rot_y_deg", 0.0))
         var rot: Array = rec.get("rot", [0, 0, 0])
@@ -4551,6 +4617,23 @@ func _wrap_actors() -> void:
             node.setup(params, mesh, rot_y)
         n += 1
     print("gcrip: ", n, " actors wrapped in ", name)
+
+func _attach_head(rig: Node3D, head_path: String) -> void:
+    # the head model rides the body's "head" bone (J3D joint names survive the glTF export)
+    var head: Node3D = load(head_path).instantiate()
+    var skel: Skeleton3D = null
+    for n in rig.find_children("*", "Skeleton3D", true, false):
+        skel = n
+        break
+    if skel != null and skel.find_bone("head") >= 0:
+        var att := BoneAttachment3D.new()
+        att.bone_name = "head"
+        skel.add_child(att)
+        att.add_child(head)
+        # the head models are authored in the head joint's own frame: identity on the bone
+        head.transform = Transform3D()
+    else:
+        rig.add_child(head)
 
 func _tag_liquids() -> void:
     var col := get_node_or_null("Collision")
@@ -5012,6 +5095,22 @@ _ANIM_WORDS = ("wait", "talk", "walk", "run", "attack", "damage", "dead", "fly",
 _ANIM_CAP = 12
 
 
+def _head_model(body: Path) -> Path | None:
+    """The separate head model of an NPC body (``<stem>head01``, ``<stem>_head``, ``*head01``)
+    inside the same archive, or None."""
+    arc_dir = body.parent.parent  # .../<Arc>.arc/archive
+    stem = body.stem.lower()
+    cands = [g for g in arc_dir.rglob("*.gltf") if g != body and "head" in g.stem.lower()]
+    if not cands:
+        return None
+
+    def score(g: Path) -> tuple:
+        n = g.stem.lower()
+        return (0 if n.startswith(stem) else 1, 0 if "01" in n or n.endswith("_head") else 1, n)
+
+    return sorted(cands, key=score)[0]
+
+
 def _actor_models(rip_dir: Path, out_dir: Path, stage_data: dict) -> dict:
     """Export one animated glb per distinct model used by animated actors.
     Returns {model rel path: {"glb": res path, "clips": [...]}} (also written to
@@ -5026,10 +5125,21 @@ def _actor_models(rip_dir: Path, out_dir: Path, stage_data: dict) -> dict:
             if rec.get("actor") not in _ANIMATED_ACTORS:
                 continue
             rel = rec.get("model")
-            if not rel or rel in table:
+            if not rel:
                 continue
             src = rip_dir / rel
             if not src.exists():
+                continue
+            if rel in table:
+                if "head" not in table[rel]:  # older table: add the separate head model
+                    head = _head_model(src)
+                    if head is not None:
+                        head_glb = f"{Path(rel).parent.parent.parent.name}_{head.stem}.glb".replace(".arc", "")
+                        try:
+                            _animated_glb(head, out_dir / "actors" / "models" / head_glb, ())
+                            table[rel]["head"] = f"res://actors/models/{head_glb}"
+                        except (OSError, ValueError, KeyError):
+                            pass
                 continue
             try:
                 doc = json.loads(src.read_text(encoding="utf-8"))
@@ -5043,6 +5153,16 @@ def _actor_models(rip_dir: Path, out_dir: Path, stage_data: dict) -> dict:
             glb_name = f"{Path(rel).parent.parent.parent.name}_{Path(rel).stem}.glb".replace(".arc", "")
             kept = _animated_glb(src, out_dir / "actors" / "models" / glb_name, tuple(picked))
             table[rel] = {"glb": f"res://actors/models/{glb_name}", "clips": kept}
+            # NPCs ship their head as a separate model in the same archive (ywhead01, oba_head,
+            # kohead01 ...) attached to the body's "head" joint at runtime
+            head = _head_model(src)
+            if head is not None:
+                head_glb = f"{Path(rel).parent.parent.parent.name}_{head.stem}.glb".replace(".arc", "")
+                try:
+                    _animated_glb(head, out_dir / "actors" / "models" / head_glb, ())
+                    table[rel]["head"] = f"res://actors/models/{head_glb}"
+                except (OSError, ValueError, KeyError):
+                    pass
     table_path.write_text(json.dumps(table, indent=1), encoding="utf-8")
     return table
 
