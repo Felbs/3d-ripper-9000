@@ -123,7 +123,8 @@ def parse(data: bytes) -> Dzs:
         elif fourcc == "EVNT":
             for k in range(n):
                 base = off + k * 0x18
-                nm = data[base + 4 : base + 19].split(b"\0")[0].decode("latin-1", "replace")
+                # char mName[15] starts at +1 (d_stage.h's 0x04 is the padded runtime struct)
+                nm = data[base + 1 : base + 16].split(b"\0")[0].decode("latin-1", "replace")
                 out.events.append(nm)
         elif fourcc == "SHIP":
             for k in range(n):

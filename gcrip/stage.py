@@ -326,6 +326,9 @@ def _build(
                     # stage-wide spawns name their room in params bits 0-5
                     "room": room_no if room_no is not None else p.params & 0x3F,
                     "id": p.rot[2] & 0xFF,  # PLYR spawn id lives in z_rot's low byte
+                    # params >> 24 indexes the stage EVNT table: arriving auto-plays it
+                    "event": (p.params >> 24) & 0xFF,
+                    "params": p.params,
                     "pos": list(p.pos),
                     "rot_y_deg": round(p.rot_y_deg, 2),
                 }
