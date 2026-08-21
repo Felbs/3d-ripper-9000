@@ -206,7 +206,7 @@ const CLIMB_OVER_FRAMES := 24          # ladderupedl / wallholdup climb-over
 
 const S16_TO_RAD := PI / 32768.0
 
-enum State { GROUND, AIR, ROLL, SWIM, LAND, ATTACK, JUMPCUT, JUMPCUT_LAND, DAMAGE, GLIDE, CARRY, GRAB, VJUMP, HANG, CLIMB, LADDER, CLIMBWALL, AIM, ITEM_WAIT, HOOKPULL, SHIP, ROPE_THROW, ROPE, LOOK }
+enum State { GROUND, AIR, ROLL, SWIM, LAND, ATTACK, JUMPCUT, JUMPCUT_LAND, DAMAGE, GLIDE, CARRY, GRAB, VJUMP, HANG, CLIMB, LADDER, CLIMBWALL, AIM, ITEM_WAIT, HOOKPULL, SHIP, ROPE_THROW, ROPE, LOOK, CROUCH, CRAWL }
 var ship: Node3D = null           # the King of Red Lions while riding
 
 # --- X-button items (bow / boomerang / bombs / hookshot specs: projectile-items.md) ---
@@ -255,6 +255,22 @@ var fp_from_eye := Vector3.ZERO
 var fp_from_center := Vector3.ZERO
 var cstick_armed := true
 var boom_locks: Array = []
+# --- crouch / crawl (procCrouch, d_a_player_crawl.inc; crouch HIO table) ---
+const CRAWL_PROBE_FRONT := 112.0       # l_crawl_start_front_offset
+const CRAWL_PROBE_UP := 10.0
+const CRAWL_CEILING := 125.0           # checkNotCrawlStand: stay down while roof - pos.y <= 125
+const CRAWL_START_FRAMES := 9          # crawl_start_anim_end_frame (LIE)
+const CRAWL_END_FRAMES := 8            # crawl_end_anim_end_frame (LIE reversed)
+const CRAWL_SPEED_PEAK := 3.0          # crouch.crawl_speed_peak
+const CRAWL_RATE_MIN := 1.0            # crawl_anim_rate_min_stick
+const CRAWL_RATE_FULL := 3.0           # crawl_anim_rate_full_stick
+const CRAWL_TURN_DIVISOR := 32.0
+const CRAWL_TURN_MAX := 7000 * PI / 32768.0
+const CRAWL_TURN_MIN := 500 * PI / 32768.0
+const CRAWL_STROKE := 17.0             # LIEFORWARD half-cycle
+var crawl_frame := 0.0
+var crawl_phase := 0.0
+var crawl_mode := "start"              # start / move / end
 const BOW_HOLD_FRAMES := 10            # string can be released after 10 frames (m355E)
 const AIM_PITCH_CLAMP := 0x2000 * PI / 32768.0   # Z-target pitch limit
 const ARROW_MAX_LIVE := 5
@@ -455,7 +471,9 @@ func _target_attn() -> Vector3:
 
 func _update_lock() -> void:
     # hold Z/R: lock onto the closest enemy / talkable thing within 1000 units in the camera's view
-    var want: bool = Input.is_action_pressed("target")
+    var want: bool = Input.is_action_pressed("target") and st_no_lock == 0
+    if st_no_lock > 0:
+        st_no_lock -= 1
     if not want:
         lock_target = null
         return
@@ -551,6 +569,8 @@ func _camera_output(attn: Vector3) -> void:
             hud_reticle.visible = false
 
 func _camera_tick() -> void:
+    if state == State.CRAWL and hud_prompt:
+        hud_prompt.text = "crawling - stick: move   release R in the open: stand"
     if fp_active and not Game.event_cam.has("eye"):
         _fp_camera()
         return
@@ -768,6 +788,8 @@ func _physics_process(_delta: float) -> void:
         State.ROPE_THROW: _rope_throw()
         State.ROPE: _rope()
         State.LOOK: _look()
+        State.CROUCH: _crouch()
+        State.CRAWL: _crawl()
         State.GROUND: _ground()
         State.AIR: _air()
         State.ROLL: _roll()
@@ -821,6 +843,9 @@ func _ground() -> void:
     var dist := minf(s.length(), 1.0)
     var targeting := Input.is_action_pressed("target")
 
+    if targeting and lock_target == null and dist < 0.05 and speed < 1.0 and is_on_floor():
+        _enter_crouch()
+        return
     if targeting:
         _ground_strafe(s, dist)
         return
@@ -1354,6 +1379,117 @@ func _rope() -> void:
             if not a_held or fwd_in >= -0.3 or global_position.y <= bottom:
                 rope_mode = "hang"
 
+# ---------------------------------------------------------------- crouch / crawl
+
+func _enter_crouch() -> void:
+    state = State.CROUCH
+    speed = 0.0
+    velocity = Vector3.ZERO
+    play_clip("crouch", 3.0 / 30.0)
+
+func _crouch() -> void:
+    _apply(Vector3.ZERO, -1.0)
+    var s := stick()
+    if not Input.is_action_pressed("target") or lock_target != null:
+        _enter_ground()
+        return
+    if s.length() > 0.5:
+        var want := heading_of(stick_world_dir(s))
+        var off := absf(wrapf(want - facing, -PI, PI))
+        if off < deg_to_rad(60.0):
+            turn_toward(want, TURN_MAX_STEP, TURN_MIN_STEP, TURN_DIVISOR)
+            if _crawl_gap_ahead():
+                _enter_crawl()
+                return
+        # moving out of the crouch: back to normal play (strafe / walk)
+        _enter_ground()
+        return
+    play_clip("crouch")
+
+func _crawl_gap_ahead() -> bool:
+    # procCrouch: a wall 112 ahead at knee height (+10) with open space under 125 - a crawl hole
+    var space := get_world_3d().direct_space_state
+    var from := global_position + Vector3(0, CRAWL_PROBE_UP, 0)
+    var low := PhysicsRayQueryParameters3D.create(from, from + forward() * CRAWL_PROBE_FRONT, 1)
+    if space.intersect_ray(low):
+        return false   # solid at knee height: no hole
+    var head := global_position + Vector3(0, 60.0, 0)
+    var mid := PhysicsRayQueryParameters3D.create(head, head + forward() * CRAWL_PROBE_FRONT, 1)
+    return not space.intersect_ray(mid).is_empty()
+
+func _roof_height() -> float:
+    # RoofChk: ceiling above Link's feet, 1e9 if none within reach
+    var space := get_world_3d().direct_space_state
+    var from := global_position + Vector3(0, 5.0, 0)
+    var q := PhysicsRayQueryParameters3D.create(from, from + Vector3(0, 400.0, 0), 1)
+    var hit := space.intersect_ray(q)
+    return (hit.position.y - global_position.y) if hit else 1.0e9
+
+func _enter_crawl() -> void:
+    state = State.CRAWL
+    crawl_mode = "start"
+    crawl_frame = 0.0
+    crawl_phase = 0.0
+    speed = 0.0
+    play_clip("lie", 3.0 / 30.0, 1.0)
+
+func _crawl() -> void:
+    var s := stick()
+    var dist := minf(s.length(), 1.0)
+    match crawl_mode:
+        "start":
+            crawl_frame += 1.0
+            _apply(forward() * 1.5, -1.0)   # eases under the lip while lying down
+            if crawl_frame >= CRAWL_START_FRAMES:
+                crawl_mode = "move"
+                crawl_phase = 0.0
+                play_clip("lieforward", 5.0 / 30.0, CRAWL_RATE_MIN)
+        "move":
+            var roof := _roof_height()
+            var in_tunnel := roof <= CRAWL_CEILING
+            if dist > 0.1:
+                var want := heading_of(stick_world_dir(s))
+                var back: bool = absf(wrapf(want - facing, -PI, PI)) > PI * 0.5
+                if not back:
+                    turn_toward(want, CRAWL_TURN_MAX, CRAWL_TURN_MIN, CRAWL_TURN_DIVISOR)
+                    _crawl_side_steer()
+                var rate := lerpf(CRAWL_RATE_MIN, CRAWL_RATE_FULL, dist)
+                crawl_phase += rate
+                var sp := CRAWL_SPEED_PEAK * rate * absf(sin(PI * crawl_phase / CRAWL_STROKE))
+                _apply(forward() * (-sp if back else sp), -1.0)
+                play_clip("lieforward", ANIM_BLEND, rate * (-1.0 if back else 1.0))
+            else:
+                _apply(Vector3.ZERO, -1.0)
+                play_clip("lieforward", ANIM_BLEND, 0.0)
+            if not in_tunnel and (dist < 0.1 or not Input.is_action_pressed("target")):
+                # checkNotCrawlStand: nothing overhead any more -> stand up
+                crawl_mode = "end"
+                crawl_frame = 0.0
+                play_clip("lie", 2.0 / 30.0, -1.0)
+            if not is_on_floor():
+                _enter_air(forward() * speed, 0.0, GRAVITY)
+        "end":
+            crawl_frame += 1.0
+            _apply(Vector3.ZERO, -1.0)
+            if crawl_frame >= CRAWL_END_FRAMES:
+                _enter_ground()
+
+func _crawl_side_steer() -> void:
+    # checkCrawlSideWall: tunnel walls 60-75 apart centre Link between them
+    var space := get_world_3d().direct_space_state
+    var right := forward().cross(Vector3.UP)
+    var c := global_position + Vector3(0, 30.0, 0)
+    var ql := PhysicsRayQueryParameters3D.create(c, c + right * 75.0, 1)
+    var qr := PhysicsRayQueryParameters3D.create(c, c - right * 75.0, 1)
+    var hl := space.intersect_ray(ql)
+    var hr := space.intersect_ray(qr)
+    if hl and hr:
+        var dl: float = c.distance_to(hl.position)
+        var dr: float = c.distance_to(hr.position)
+        var d := dl + dr
+        if d * d > 3600.0 and d * d < 5625.0:
+            global_position += right * (dr - dl) * 0.25
+
 # ---------------------------------------------------------------- first person (subjectCamera)
 
 func _fp_enter() -> void:
@@ -1549,6 +1685,7 @@ func _ship() -> void:
 # ---------------------------------------------------------------- X items
 
 var _st_frame := 0
+var st_no_lock := 0   # self-test: suppress Z-target acquisition for N frames (crouch test)
 const _ST_SCRIPT := {
     # frame: [action, pressed]  -- bow, boomerang, bombs, hookshot in turn
     10: ["item_next", true], 11: ["item_next", false],
@@ -1568,7 +1705,8 @@ const _ST_SCRIPT := {
     760: ["action_a", true], 860: ["action_a", false],
     900: ["action_a", true], 901: ["action_a", false],
     # grappling hook: stand 500 in front of the nearest post, throw, pump, let go
-    920: ["to_post", true],
+    905: ["target", true], 906: ["crouch", true], 935: ["move_forward", true], 937: ["move_forward", false], 945: ["target", false],
+    950: ["to_post", true],
     922: ["item_next", true], 923: ["item_next", false],
     990: ["action_x", true], 992: ["move_forward", true], 1004: ["move_forward", false], 1005: ["action_x", false],
     1080: ["move_forward", true], 1200: ["move_forward", false],
@@ -1587,6 +1725,11 @@ func _selftest_tick() -> void:
             var boat := get_tree().current_scene.get_node_or_null("KingOfRedLions")
             if boat:
                 board(boat)
+        elif a[0] == "crouch":
+            lock_target = null
+            st_no_lock = 45
+            if state == State.GROUND:
+                _enter_crouch()
         elif a[0] == "to_post":
             # a post with solid (not lava) ground somewhere around it: the pit's edge
             var best: Node3D = null
@@ -2566,6 +2709,7 @@ _PLAYER_CLIPS = (
     "vjmp", "vjmpcha", "vjmpchb", "vjmpcl", "mstepover", "hangmovel", "hangmover", "jmpeds",
     "bowwait", "arrowshoot", "boomwait", "boomthrow", "boomcatch", "hookshotwait", "hookshotjmp",
     "ropethrow", "ropethrowwait", "ropethrowcatch", "ropewait", "ropeswingf", "ropeswingb", "ropeclimb", "ropedown",
+    "crouch", "lie", "lieforward",
     "ladderupst", "ladderltor", "ladderrtol", "ladderupedl", "ladderdwst",
     "wall", "wallpl", "walldw", "wallwl", "wallwr", "wallholdup",
 )  # fmt: skip
