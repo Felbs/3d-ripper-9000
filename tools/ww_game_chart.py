@@ -29,16 +29,27 @@ IMPLEMENTED = {
     "board": "player.gd board() raises RODE_KORL the first time Link boards the boat",
     "bits": "Game.story_bits_tick - fires as soon as every requires_bits entry is set",
     "chest": "actors/chest.gd - opening the chest holding that dItemNo advances the step",
+    "defeat": "actors/enemy.gd death -> Game.story_enemy_defeated / story_room_cleared;"
+              " a dungeon boss also writes the per-stage boss_dead field, which is NOT an"
+              " event bit",
+    "boss": "same mechanism as 'defeat'",
+    "enemy_defeat": "same mechanism as 'defeat'",
 }
+
+# An enemy the mined data names but enemies.json has no profile for is never wrapped, so its
+# step cannot fire in real play even though the mechanism exists.  Report that separately.
+def unwrapped_enemy(step: dict, enemies: dict) -> str:
+    d = step.get("defeat")
+    if not isinstance(d, dict) or d.get("room_clear"):
+        return ""
+    name = str(d.get("enemy", ""))
+    if name and name not in enemies:
+        return name
+    return ""
 
 # Mechanisms the mined chapters need that the engine has not built yet.  Each line says what
 # it would take, so the list doubles as the build order for the rest of the game.
 UNIMPLEMENTED = {
-    "defeat": "an enemy or boss dying has to raise a flag. Two flavours: a room cleared (a live"
-              " enemy count per room) and a dungeon boss dead (a per-stage boss field, which is"
-              " NOT an event bit - dComIfGs_onStageBossEnemy writes its own save area)",
-    "boss": "same gap as 'defeat', for the four Ganon's Tower rematches",
-    "enemy_defeat": "same gap as 'defeat', for Gohdan",
     "item": "picking up a placed item actor. Needs the pickup's own spawn condition (itemDek"
             " only exists once the Deku Tree scene is done) plus a collected bit per placement",
     "object": "a placed non-NPC object orders its event when its own condition is met - a"
@@ -119,6 +130,13 @@ def step_status(step: dict, scenes: dict[str, set[str]] | None) -> tuple[str, st
             return "partial", f"stage '{step.get('stage')}' is not in the build"
         if ev and ev not in scenes[key]:
             return "missing", f"no TagEv in {key} orders '{ev}'"
+    if kind in ("defeat", "boss", "enemy_defeat"):
+        missing_actor = unwrapped_enemy(step, read(BUILD / "enemies.json", {}) or {})
+        if missing_actor:
+            return "partial", (
+                f"the mechanism works, but '{missing_actor}' has no mined enemy profile so"
+                " nothing wraps the actor"
+            )
     if step.get("confidence") == "low":
         return "partial", "mined with low confidence"
     return "ok", IMPLEMENTED[kind]

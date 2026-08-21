@@ -5,7 +5,7 @@ the mined data - the player's own state machine, the item list, the enemy table,
 baked cutscenes, the story graph - so this cannot drift from what the engine does.
 
 **Systems:** 9 working, 3 partial, 2 not started.  
-**Story:** 154 of 199 mined steps reachable (8 partial, 37 missing) across 10 chapters: outset, fortress, dragonroost, forbiddenwoods, jabun, towerofgods, hyrule, temples, fortress2, ganon.
+**Story:** 155 of 199 mined steps reachable (18 partial, 26 missing) across 10 chapters: outset, fortress, dragonroost, forbiddenwoods, jabun, towerofgods, hyrule, temples, fortress2, ganon.
 
 ## 1. Systems
 
@@ -183,13 +183,13 @@ flowchart TD
         dr_enter_cavern --> dr_cavern_set_pieces
         dr_trapped_with_bokoblins["dr_trapped_with_bokoblins<br/>MORI1_EVENT<br/><i>tag - OK</i>"]
         dr_cavern_set_pieces --> dr_trapped_with_bokoblins
-        dr_clear_room_bars_open["dr_clear_room_bars_open<br/>DEFAULT_STOP_OPEN<br/>sets 0x1140<br/><i>defeat - MISSING</i>"]
+        dr_clear_room_bars_open["dr_clear_room_bars_open<br/>DEFAULT_STOP_OPEN<br/>sets 0x1140<br/><i>defeat - OK</i>"]
         dr_trapped_with_bokoblins --> dr_clear_room_bars_open
         dr_grappling_hook["dr_grappling_hook<br/>Md_RopeGet<br/>sets 0x1101<br/><i>talk - OK</i>"]
         dr_clear_room_bars_open --> dr_grappling_hook
         dr_carry_medli["dr_carry_medli<br/>Md_Fly2<br/>sets 0x1280<br/><i>npc - OK</i>"]
         dr_grappling_hook --> dr_carry_medli
-        dr_gohma["dr_gohma<br/><i>defeat - MISSING</i>"]
+        dr_gohma["dr_gohma<br/><i>defeat - PARTIAL</i>"]
         dr_carry_medli --> dr_gohma
         dr_boss_warp_out["dr_boss_warp_out<br/>WARP_WIND<br/><i>npc - OK</i>"]
         dr_gohma --> dr_boss_warp_out
@@ -226,11 +226,11 @@ flowchart TD
         fw_woods_telop --> fw_woods_cameras
         fw_dungeon_items["fw_dungeon_items<br/><i>item - MISSING</i>"]
         fw_woods_cameras --> fw_dungeon_items
-        fw_mothula["fw_mothula<br/><i>defeat - MISSING</i>"]
+        fw_mothula["fw_mothula<br/><i>defeat - PARTIAL</i>"]
         fw_dungeon_items --> fw_mothula
         fw_get_boomerang["fw_get_boomerang<br/><i>item - MISSING</i>"]
         fw_mothula --> fw_get_boomerang
-        fw_kalle_demos["fw_kalle_demos<br/><i>defeat - MISSING</i>"]
+        fw_kalle_demos["fw_kalle_demos<br/><i>defeat - PARTIAL</i>"]
         fw_get_boomerang --> fw_kalle_demos
         fw_heart_container["fw_heart_container<br/><i>item - MISSING</i>"]
         fw_kalle_demos --> fw_heart_container
@@ -322,7 +322,7 @@ flowchart TD
         totg_big_key --> totg_darknut
         totg_get_bow["totg_get_bow<br/><i>chest - OK</i>"]
         totg_darknut --> totg_get_bow
-        totg_gohdan["totg_gohdan<br/><i>enemy_defeat - MISSING</i>"]
+        totg_gohdan["totg_gohdan<br/><i>enemy_defeat - PARTIAL</i>"]
         totg_get_bow --> totg_gohdan
         totg_heart_container["totg_heart_container<br/><i>room_enter - OK</i>"]
         totg_gohdan --> totg_heart_container
@@ -435,7 +435,7 @@ flowchart TD
         ff2_enter_interior --> ff2_moblins_patrol
         ff2_interior_chests["ff2_interior_chests<br/><i>chest - OK</i>"]
         ff2_moblins_patrol --> ff2_interior_chests
-        ff2_phantom_ganon["ff2_phantom_ganon<br/><i>defeat - MISSING</i>"]
+        ff2_phantom_ganon["ff2_phantom_ganon<br/><i>defeat - PARTIAL</i>"]
         ff2_interior_chests --> ff2_phantom_ganon
         ff2_skull_hammer["ff2_skull_hammer<br/><i>chest - OK</i>"]
         ff2_phantom_ganon --> ff2_skull_hammer
@@ -447,7 +447,7 @@ flowchart TD
         ff2_reach_the_tower --> ff2_rescue
         ff2_tower_redressed["ff2_tower_redressed<br/><i>spawn - OK</i>"]
         ff2_rescue --> ff2_tower_redressed
-        ff2_helmaroc_king["ff2_helmaroc_king<br/>sets 0x3C01<br/><i>defeat - MISSING</i>"]
+        ff2_helmaroc_king["ff2_helmaroc_king<br/>sets 0x3C01<br/><i>defeat - PARTIAL</i>"]
         ff2_tower_redressed --> ff2_helmaroc_king
         ff2_enter_ganon_room["ff2_enter_ganon_room<br/>attack_ganon.stb<br/>sets 0x3910 0x3910 0x3910<br/><i>spawn - OK</i>"]
         ff2_helmaroc_king --> ff2_enter_ganon_room
@@ -462,13 +462,13 @@ flowchart TD
         gt_warp_appears["gt_warp_appears<br/>APPEAR_WARP<br/>sets 0x3D02<br/><i>actor - MISSING</i>"]
         gt_tower_intro["gt_tower_intro<br/>Gintro2<br/><i>tag - OK</i>"]
         gt_warp_appears --> gt_tower_intro
-        gt_trial_gohma["gt_trial_gohma<br/>4_door_dn<br/>sets 0x3240 0x3904<br/><i>boss - MISSING</i>"]
+        gt_trial_gohma["gt_trial_gohma<br/>4_door_dn<br/>sets 0x3240 0x3904<br/><i>boss - PARTIAL</i>"]
         gt_tower_intro --> gt_trial_gohma
-        gt_trial_kalle_demos["gt_trial_kalle_demos<br/>4_door_mr<br/>sets 0x3220 0x3902<br/><i>boss - MISSING</i>"]
+        gt_trial_kalle_demos["gt_trial_kalle_demos<br/>4_door_mr<br/>sets 0x3220 0x3902<br/><i>boss - PARTIAL</i>"]
         gt_trial_gohma --> gt_trial_kalle_demos
-        gt_trial_jalhalla["gt_trial_jalhalla<br/>4_door_dc<br/>sets 0x3210 0x3901<br/><i>boss - MISSING</i>"]
+        gt_trial_jalhalla["gt_trial_jalhalla<br/>4_door_dc<br/>sets 0x3210 0x3901<br/><i>boss - PARTIAL</i>"]
         gt_trial_kalle_demos --> gt_trial_jalhalla
-        gt_trial_molgera["gt_trial_molgera<br/>4_door_kz<br/>sets 0x3208 0x3A80<br/><i>boss - MISSING</i>"]
+        gt_trial_molgera["gt_trial_molgera<br/>4_door_kz<br/>sets 0x3208 0x3A80<br/><i>boss - PARTIAL</i>"]
         gt_trial_jalhalla --> gt_trial_molgera
         gt_four_doors_open["gt_four_doors_open<br/>4_door_fin<br/>sets 0x3204<br/><i>bits - OK</i>"]
         gt_trial_molgera --> gt_four_doors_open
@@ -598,9 +598,9 @@ flowchart TD
     gt_trial_molgera -.->|0x3208| gt_four_doors_open
     gt_four_doors_open -.->|0x3204| gt_phantom_ganon
     gt_four_doors_open -.->|0x3204| gt_puppet_ganon
-    class opening_lookout_awake,aryll_tower_first_talk,grandma_birthday_talk,tale_demo_hero_clothes,aryll_omedeto,aryll_get_telescope,telescope_watch_quill,zelda_fly_helmaroc,aryll_etalk,grandma_after_prologue,orca_first_talk,orca_sparring_lesson,orca_gives_hero_sword,orca_spin_attack_lesson,grandma_after_sword,amori_bokoblin_dropin,amori_meet_tetra,outset_ridge_layer9,stolen_sister,outset_village_layer2,look_shield,grandma_gives_shield,grandma_after_kidnap,tetra_dock_conversation,tetra_board_ship,departure,post_outset_note,ff_ride_to_fortress,ff_launched_at_fortress,ff_arrive_exterior,ff_tower_looks,ff_tetra_ooi,ff_infiltration,ff_searchlight_look,ff_push_barrel,ff_interior_cells,ff_door_looks,ff_moblin_patrol,ff_find_sister,ff_meet_korl,ff_board_korl,dr_chieftain_dragontale,dr_medli_gives_letter,dr_medli_cliff_request,dr_bomb_the_spring,dr_enter_cavern,dr_cavern_set_pieces,dr_trapped_with_bokoblins,dr_grappling_hook,dr_carry_medli,dr_boss_warp_out,dr_valoo_calms,dr_dins_pearl,dr_secret_cave,fw_korl_sends_link_to_forest,fw_korl_forest_directions,fw_forest_haven_looks,fw_fall_into_forest_haven,fw_mori_inside,fw_meet_deku_tree,fw_woods_telop,fw_woods_cameras,fw_rescue_makar,fw_warp_out_with_makar,fw_boss_warpout_to_forest_haven,fw_getperl_deku,fw_makar_in_forest_haven,fw_korl_after_the_pearl,fw_otkura_boundary,jab_korl_points_to_greatfish,jab_korl_briefing_after_greatfish,jab_quill_at_greatfish,jab_bombshop_raid,jab_password_door,jab_board_pirate_ship,jab_rope_course_2,jab_rope_course_2_cleared,jab_get_bomb_bag,jab_korl_briefing_after_bombs,jab_receive_nayrus_pearl,jab_curse_broken,jab_abship_not_in_this_chapter,totg_pearl_din,totg_first_statue_reaction,totg_place_pearl,totg_tower_rises,totg_tower_rises_cutscene,totg_arrive_tower,totg_enter_dungeon,totg_interior_camera_beats,totg_wake_servants,totg_trial_east,totg_trial_west,totg_trial_north,totg_pedestals_done,totg_big_key,totg_darknut,totg_get_bow,totg_heart_container,totg_descend_shaft,totg_warp_to_hyrule,totg_later_return_to_hyrule,hy_warp_in,hy_descent,hy_courtyard,hy_intro,hy_draw_master_sword,hy_rebirth,hy_swing_sword,hy_fight_out,hy_return_route_opens,hy_second_visit_awake_zelda,hy_third_visit_swordroom_ambush,et_land_headstone,et_enter_edaichi,et_learn_earth_gods_lyric,et_dance_zola,et_hole_cam,et_warp_jars,et_mkie_block_cameras,et_moro_cam,et_stalfos_miniboss,et_jalhalla,et_boss_warp,et_pray_zola,wt_land_gale_isle,wt_enter_ekaze,wt_learn_wind_gods_aria,wt_dance_kokiri,wt_makar_sows_seeds,wt_wizzrobe_miniboss,wt_molgera,wt_boss_warp,wt_pray_kokiri,ff2_sail_to_fortress,ff2_land_at_fortress,ff2_enter_interior,ff2_moblins_patrol,ff2_interior_chests,ff2_skull_hammer,ff2_rescue,ff2_tower_redressed,ff2_enter_ganon_room,ff2_attack_ganon,ff2_runaway_majuto,ff2_after_endless_night,gt_tower_intro,gt_four_doors_open,gt_phantom_ganon,gt_puppet_ganon,gt_to_the_roof,gt_rooftop_confrontation,gt_endhr,gt_ending ok;
-    class aj_speak_ambient,dr_komali_refuses,fw_koroks_and_lift,fw_glide_to_forbidden_woods,jab_bombshop_owner,jab_niko_second_course_intro,ff2_climb_the_wall,ff2_reach_the_tower partial;
-    class dr_arrive_island,dr_throw_medli_to_ledge,dr_clear_room_bars_open,dr_gohma,fw_arrive_forest_haven,fw_get_deku_leaf,fw_dungeon_items,fw_mothula,fw_get_boomerang,fw_kalle_demos,fw_heart_container,jab_arrive_greatfish_ruined,jab_arrive_windfall_night,jab_return_to_outset,jab_blow_open_the_cave,totg_warp_up,totg_gohdan,totg_boss_warp,totg_return_from_tower,hy_hint,hy_floor_puzzle,hy_statue_moves,hy_warp_back,hy_third_visit_break_barrier,et_duet_opens_earth_temple,et_partner_hint_tags,et_inner_tablets,wt_duet_opens_wind_temple,wt_partner_hint_tags,wt_inner_tablets,ff2_phantom_ganon,ff2_helmaroc_king,gt_warp_appears,gt_trial_gohma,gt_trial_kalle_demos,gt_trial_jalhalla,gt_trial_molgera missing;
+    class opening_lookout_awake,aryll_tower_first_talk,grandma_birthday_talk,tale_demo_hero_clothes,aryll_omedeto,aryll_get_telescope,telescope_watch_quill,zelda_fly_helmaroc,aryll_etalk,grandma_after_prologue,orca_first_talk,orca_sparring_lesson,orca_gives_hero_sword,orca_spin_attack_lesson,grandma_after_sword,amori_bokoblin_dropin,amori_meet_tetra,outset_ridge_layer9,stolen_sister,outset_village_layer2,look_shield,grandma_gives_shield,grandma_after_kidnap,tetra_dock_conversation,tetra_board_ship,departure,post_outset_note,ff_ride_to_fortress,ff_launched_at_fortress,ff_arrive_exterior,ff_tower_looks,ff_tetra_ooi,ff_infiltration,ff_searchlight_look,ff_push_barrel,ff_interior_cells,ff_door_looks,ff_moblin_patrol,ff_find_sister,ff_meet_korl,ff_board_korl,dr_chieftain_dragontale,dr_medli_gives_letter,dr_medli_cliff_request,dr_bomb_the_spring,dr_enter_cavern,dr_cavern_set_pieces,dr_trapped_with_bokoblins,dr_clear_room_bars_open,dr_grappling_hook,dr_carry_medli,dr_boss_warp_out,dr_valoo_calms,dr_dins_pearl,dr_secret_cave,fw_korl_sends_link_to_forest,fw_korl_forest_directions,fw_forest_haven_looks,fw_fall_into_forest_haven,fw_mori_inside,fw_meet_deku_tree,fw_woods_telop,fw_woods_cameras,fw_rescue_makar,fw_warp_out_with_makar,fw_boss_warpout_to_forest_haven,fw_getperl_deku,fw_makar_in_forest_haven,fw_korl_after_the_pearl,fw_otkura_boundary,jab_korl_points_to_greatfish,jab_korl_briefing_after_greatfish,jab_quill_at_greatfish,jab_bombshop_raid,jab_password_door,jab_board_pirate_ship,jab_rope_course_2,jab_rope_course_2_cleared,jab_get_bomb_bag,jab_korl_briefing_after_bombs,jab_receive_nayrus_pearl,jab_curse_broken,jab_abship_not_in_this_chapter,totg_pearl_din,totg_first_statue_reaction,totg_place_pearl,totg_tower_rises,totg_tower_rises_cutscene,totg_arrive_tower,totg_enter_dungeon,totg_interior_camera_beats,totg_wake_servants,totg_trial_east,totg_trial_west,totg_trial_north,totg_pedestals_done,totg_big_key,totg_darknut,totg_get_bow,totg_heart_container,totg_descend_shaft,totg_warp_to_hyrule,totg_later_return_to_hyrule,hy_warp_in,hy_descent,hy_courtyard,hy_intro,hy_draw_master_sword,hy_rebirth,hy_swing_sword,hy_fight_out,hy_return_route_opens,hy_second_visit_awake_zelda,hy_third_visit_swordroom_ambush,et_land_headstone,et_enter_edaichi,et_learn_earth_gods_lyric,et_dance_zola,et_hole_cam,et_warp_jars,et_mkie_block_cameras,et_moro_cam,et_stalfos_miniboss,et_jalhalla,et_boss_warp,et_pray_zola,wt_land_gale_isle,wt_enter_ekaze,wt_learn_wind_gods_aria,wt_dance_kokiri,wt_makar_sows_seeds,wt_wizzrobe_miniboss,wt_molgera,wt_boss_warp,wt_pray_kokiri,ff2_sail_to_fortress,ff2_land_at_fortress,ff2_enter_interior,ff2_moblins_patrol,ff2_interior_chests,ff2_skull_hammer,ff2_rescue,ff2_tower_redressed,ff2_enter_ganon_room,ff2_attack_ganon,ff2_runaway_majuto,ff2_after_endless_night,gt_tower_intro,gt_four_doors_open,gt_phantom_ganon,gt_puppet_ganon,gt_to_the_roof,gt_rooftop_confrontation,gt_endhr,gt_ending ok;
+    class aj_speak_ambient,dr_komali_refuses,dr_gohma,fw_koroks_and_lift,fw_glide_to_forbidden_woods,fw_mothula,fw_kalle_demos,jab_bombshop_owner,jab_niko_second_course_intro,totg_gohdan,ff2_phantom_ganon,ff2_climb_the_wall,ff2_reach_the_tower,ff2_helmaroc_king,gt_trial_gohma,gt_trial_kalle_demos,gt_trial_jalhalla,gt_trial_molgera partial;
+    class dr_arrive_island,dr_throw_medli_to_ledge,fw_arrive_forest_haven,fw_get_deku_leaf,fw_dungeon_items,fw_get_boomerang,fw_heart_container,jab_arrive_greatfish_ruined,jab_arrive_windfall_night,jab_return_to_outset,jab_blow_open_the_cave,totg_warp_up,totg_boss_warp,totg_return_from_tower,hy_hint,hy_floor_puzzle,hy_statue_moves,hy_warp_back,hy_third_visit_break_barrier,et_duet_opens_earth_temple,et_partner_hint_tags,et_inner_tablets,wt_duet_opens_wind_temple,wt_partner_hint_tags,wt_inner_tablets,gt_warp_appears missing;
 ```
 
 | chapter | step | trigger | event | sets | status | why |
@@ -657,10 +657,10 @@ flowchart TD
 | dragonroost | dr_enter_cavern | tag | TELOP_DORAGON |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
 | dragonroost | dr_cavern_set_pieces | tag | moro_cut |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
 | dragonroost | dr_trapped_with_bokoblins | tag | MORI1_EVENT |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
-| dragonroost | dr_clear_room_bars_open | defeat | DEFAULT_STOP_OPEN | 0x1140 | missing | an enemy or boss dying has to raise a flag. Two flavours: a room cleared (a live enemy count per room) and a dungeon boss dead (a per-stage boss field, which is NOT an event bit - dComIfGs_onStageBossEnemy writes its own save area) |
+| dragonroost | dr_clear_room_bars_open | defeat | DEFAULT_STOP_OPEN | 0x1140 | ok | actors/enemy.gd death -> Game.story_enemy_defeated / story_room_cleared; a dungeon boss also writes the per-stage boss_dead field, which is NOT an event bit |
 | dragonroost | dr_grappling_hook | talk | Md_RopeGet | 0x1101 | ok | Game.story_talk - via actors/npc.gd |
 | dragonroost | dr_carry_medli | npc | Md_Fly2 | 0x1280 | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
-| dragonroost | dr_gohma | defeat |  |  | missing | an enemy or boss dying has to raise a flag. Two flavours: a room cleared (a live enemy count per room) and a dungeon boss dead (a per-stage boss field, which is NOT an event bit - dComIfGs_onStageBossEnemy writes its own save area) |
+| dragonroost | dr_gohma | defeat |  |  | partial | the mechanism works, but 'Btd' has no mined enemy profile so nothing wraps the actor |
 | dragonroost | dr_boss_warp_out | npc | WARP_WIND |  | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
 | dragonroost | dr_valoo_calms | spawn | demo41 | 0x3908 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | dragonroost | dr_dins_pearl | spawn | getperl_komori |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
@@ -678,9 +678,9 @@ flowchart TD
 | forbiddenwoods | fw_woods_telop | tag | TELOP_FOREST |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
 | forbiddenwoods | fw_woods_cameras | tag | StartCam |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
 | forbiddenwoods | fw_dungeon_items | item |  |  | missing | picking up a placed item actor. Needs the pickup's own spawn condition (itemDek only exists once the Deku Tree scene is done) plus a collected bit per placement |
-| forbiddenwoods | fw_mothula | defeat |  |  | missing | an enemy or boss dying has to raise a flag. Two flavours: a room cleared (a live enemy count per room) and a dungeon boss dead (a per-stage boss field, which is NOT an event bit - dComIfGs_onStageBossEnemy writes its own save area) |
+| forbiddenwoods | fw_mothula | defeat |  |  | partial | the mechanism works, but 'gmos' has no mined enemy profile so nothing wraps the actor |
 | forbiddenwoods | fw_get_boomerang | item |  |  | missing | picking up a placed item actor. Needs the pickup's own spawn condition (itemDek only exists once the Deku Tree scene is done) plus a collected bit per placement |
-| forbiddenwoods | fw_kalle_demos | defeat |  |  | missing | an enemy or boss dying has to raise a flag. Two flavours: a room cleared (a live enemy count per room) and a dungeon boss dead (a per-stage boss field, which is NOT an event bit - dComIfGs_onStageBossEnemy writes its own save area) |
+| forbiddenwoods | fw_kalle_demos | defeat |  |  | partial | the mechanism works, but 'Bkm' has no mined enemy profile so nothing wraps the actor |
 | forbiddenwoods | fw_heart_container | item |  |  | missing | picking up a placed item actor. Needs the pickup's own spawn condition (itemDek only exists once the Deku Tree scene is done) plus a collected bit per placement |
 | forbiddenwoods | fw_rescue_makar | npc | cb_rescue |  | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
 | forbiddenwoods | fw_warp_out_with_makar | npc | WARP_WIND |  | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
@@ -725,7 +725,7 @@ flowchart TD
 | towerofgods | totg_big_key | chest |  |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
 | towerofgods | totg_darknut | tag | SIREN_MD |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
 | towerofgods | totg_get_bow | chest |  |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
-| towerofgods | totg_gohdan | enemy_defeat |  |  | missing | same gap as 'defeat', for Gohdan |
+| towerofgods | totg_gohdan | enemy_defeat |  |  | partial | the mechanism works, but 'Bst' has no mined enemy profile so nothing wraps the actor |
 | towerofgods | totg_heart_container | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
 | towerofgods | totg_boss_warp | warp | WARP_WIND |  | missing | a warp object plays an event as Link steps in, then changes stage, choosing WHICH event by reading save state. The engine has door warps but they order no event |
 | towerofgods | totg_descend_shaft | spawn | JMP_DEMO |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
@@ -780,23 +780,23 @@ flowchart TD
 | fortress2 | ff2_enter_interior | spawn | kankin2 |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | fortress2 | ff2_moblins_patrol | tag | moro_cam |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
 | fortress2 | ff2_interior_chests | chest |  |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
-| fortress2 | ff2_phantom_ganon | defeat |  |  | missing | an enemy or boss dying has to raise a flag. Two flavours: a room cleared (a live enemy count per room) and a dungeon boss dead (a per-stage boss field, which is NOT an event bit - dComIfGs_onStageBossEnemy writes its own save area) |
+| fortress2 | ff2_phantom_ganon | defeat |  |  | partial | the mechanism works, but 'Fganon' has no mined enemy profile so nothing wraps the actor |
 | fortress2 | ff2_skull_hammer | chest |  |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
 | fortress2 | ff2_climb_the_wall | tag | MapToolCamera |  | partial | mined with low confidence |
 | fortress2 | ff2_reach_the_tower | room_enter |  |  | partial | mined with low confidence |
 | fortress2 | ff2_rescue | spawn | rescue | 0x2D01 0x2D01 0x2D01 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | fortress2 | ff2_tower_redressed | spawn |  |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
-| fortress2 | ff2_helmaroc_king | defeat |  | 0x3C01 | missing | an enemy or boss dying has to raise a flag. Two flavours: a room cleared (a live enemy count per room) and a dungeon boss dead (a per-stage boss field, which is NOT an event bit - dComIfGs_onStageBossEnemy writes its own save area) |
+| fortress2 | ff2_helmaroc_king | defeat |  | 0x3C01 | partial | the mechanism works, but 'Bdk' has no mined enemy profile so nothing wraps the actor |
 | fortress2 | ff2_enter_ganon_room | spawn | attack_ganon | 0x3910 0x3910 0x3910 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | fortress2 | ff2_attack_ganon | spawn | attack_ganon | 0x3910 0x3910 0x3910 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | fortress2 | ff2_runaway_majuto | spawn | runaway_majuto | 0x3280 0x3280 0x3280 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | fortress2 | ff2_after_endless_night | room_enter | kankin1 |  | ok | stage.gd - the stage's arrival event runs on load |
 | ganon | gt_warp_appears | actor | APPEAR_WARP | 0x3D02 | missing | a placed object resolves its event by NAME through the event manager |
 | ganon | gt_tower_intro | tag | Gintro2 |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
-| ganon | gt_trial_gohma | boss | 4_door_dn | 0x3240 0x3904 | missing | same gap as 'defeat', for the four Ganon's Tower rematches |
-| ganon | gt_trial_kalle_demos | boss | 4_door_mr | 0x3220 0x3902 | missing | same gap as 'defeat', for the four Ganon's Tower rematches |
-| ganon | gt_trial_jalhalla | boss | 4_door_dc | 0x3210 0x3901 | missing | same gap as 'defeat', for the four Ganon's Tower rematches |
-| ganon | gt_trial_molgera | boss | 4_door_kz | 0x3208 0x3A80 | missing | same gap as 'defeat', for the four Ganon's Tower rematches |
+| ganon | gt_trial_gohma | boss | 4_door_dn | 0x3240 0x3904 | partial | the mechanism works, but 'Btd' has no mined enemy profile so nothing wraps the actor |
+| ganon | gt_trial_kalle_demos | boss | 4_door_mr | 0x3220 0x3902 | partial | the mechanism works, but 'Bkm' has no mined enemy profile so nothing wraps the actor |
+| ganon | gt_trial_jalhalla | boss | 4_door_dc | 0x3210 0x3901 | partial | the mechanism works, but 'Bpw' has no mined enemy profile so nothing wraps the actor |
+| ganon | gt_trial_molgera | boss | 4_door_kz | 0x3208 0x3A80 | partial | the mechanism works, but 'Bmgn' has no mined enemy profile so nothing wraps the actor |
 | ganon | gt_four_doors_open | bits | 4_door_fin | 0x3204 | ok | Game.story_bits_tick - fires as soon as every requires_bits entry is set |
 | ganon | gt_phantom_ganon | spawn | GANON_ARRIVE |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | ganon | gt_puppet_ganon | spawn | kugutu_ganon | 0x3B02 0x3B02 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
