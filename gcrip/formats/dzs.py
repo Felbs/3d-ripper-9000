@@ -62,11 +62,24 @@ class Exit:  # SCLS entry: where a door/exit leads
 
 
 @dataclass
+@dataclass
+class ShipPoint:  # SHIP entry: where the King of Red Lions can be moored (sea rooms)
+    pos: tuple[float, float, float]
+    rot_y: int
+    ship_id: int
+
+    @property
+    def rot_y_deg(self) -> float:
+        return self.rot_y * 180.0 / 0x8000
+
+
+@dataclass
 class Dzs:
     chunks: dict[str, tuple[int, int]] = field(default_factory=dict)  # fourcc -> (n, offset)
     placements: list[Placement] = field(default_factory=list)
     mult: dict[int, RoomTransform] = field(default_factory=dict)  # room_no -> transform
     scls: list[Exit] = field(default_factory=list)  # exit table (doors index into it)
+    ships: list[ShipPoint] = field(default_factory=list)  # SHIP: boat mooring points
 
 
 def _canonical(fourcc: str) -> tuple[str, int]:
@@ -106,6 +119,11 @@ def parse(data: bytes) -> Dzs:
                 tx, tz, ry, room, wave = struct.unpack_from(">ffHBb", data, off + k * 12)
                 ry = ry - 0x10000 if ry >= 0x8000 else ry
                 out.mult[room] = RoomTransform(tx, tz, ry, room, wave)
+        elif fourcc == "SHIP":
+            for k in range(n):
+                x, y, z, ry, sid = struct.unpack_from(">3fHB", data, off + k * 0x10)
+                ry = ry - 0x10000 if ry >= 0x8000 else ry
+                out.ships.append(ShipPoint((x, y, z), ry, sid))
         elif fourcc == "SCLS":
             for k in range(n):
                 base = off + k * 0x0C

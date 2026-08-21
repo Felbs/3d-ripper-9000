@@ -249,6 +249,7 @@ def _build(
     placements: list[tuple[int | None, dzs_mod.Placement, list]] = []
     stage_scls: list = []
     own_scls: list = []
+    ship_pts: list[dict] = []  # SHIP chunk: King of Red Lions mooring points
     if "Stage.arc" in stage_arcs:
         raw = disc.read_inner(f"res/Stage/{stage_name}/Stage.arc", "stage.dzs")
         if raw:
@@ -272,6 +273,11 @@ def _build(
             own_scls += d.scls
             scls = d.scls or stage_scls
             placements += [(room_no, p, scls) for p in d.placements]
+            ship_pts += [
+                {"room": room_no, "id": sp.ship_id, "pos": list(sp.pos),
+                 "rot_y_deg": round(sp.rot_y_deg, 2)}
+                for sp in d.ships
+            ]
 
     # ---- room geometry (already ripped; MULT places it)
     room_models = 0
@@ -421,6 +427,11 @@ def _build(
             {**sp, "pos": [sp["pos"][0] - offset[0], sp["pos"][1], sp["pos"][2] - offset[2]]}
             for sp in sorted(spawn_pts, key=lambda sp: sp["room"] is None)
         ],
+        "ships": [
+            {**sp, "pos": [sp["pos"][0] - offset[0], sp["pos"][1], sp["pos"][2] - offset[2]]}
+            for sp in ship_pts
+        ],
+        "wave_max": {str(r): t.wave_max for r, t in mult.items() if r in room_nos},
         "gltf": str(out_path),
         "seconds": seconds,
     }
