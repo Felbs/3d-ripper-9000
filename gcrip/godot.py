@@ -5504,7 +5504,6 @@ func setup(actor_name: String, _p: int, mesh_node: Node3D, rot_y_deg: float) -> 
     facing = deg_to_rad(rot_y_deg)
     home_facing = facing
     swimmer = actor == "NpcSo"
-    messages = Game.npc_messages(actor)
     anim = mesh.find_child("AnimationPlayer", true, false) if mesh else null
     if anim:
         var names := anim.get_animation_list()
@@ -5580,6 +5579,10 @@ func _talk() -> void:
     talking = true
     if anim and talk_clip != "":
         anim.play(talk_clip, 0.2)
+    # ask NOW: the conditional rules read the story bits and the items Link is carrying at
+    # this moment, and they mark themselves said.  Choosing at spawn froze the answer to
+    # whatever was true when the room loaded.
+    messages = Game.npc_messages(actor)
     if messages.is_empty():
         Game.show_text("...")
     else:
