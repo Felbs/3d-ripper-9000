@@ -18,6 +18,7 @@ Sound and particle objects are recorded by name only - the engine has no emitter
 from __future__ import annotations
 
 import json
+import math
 import struct
 from dataclasses import dataclass
 from pathlib import Path
@@ -85,7 +86,10 @@ class _TrackView:
         except (TypeError, ValueError):
             return None
         if 0 <= i < len(self.functions):
-            return float(self.functions[i].value_at(t))
+            v = float(self.functions[i].value_at(t))
+            # stb._sample returns nan for the curve kinds it cannot evaluate (composite):
+            # that means "unknown", and baking it would write invalid JSON (Godot rejects NaN)
+            return v if math.isfinite(v) else None
         return None
 
 
@@ -99,13 +103,14 @@ def _vec(views: dict[str, _TrackView], frame: int, triple: str, axes: tuple[str,
     one component each (the game writes both, e.g. TRANSLATION_XYZ plus TRANSLATION_Y)."""
     out = list(last) if last else None
     v = views[triple].value_at(frame) if triple in views else None
-    if isinstance(v, (list, tuple)) and len(v) >= 3 and all(x is not None for x in v[:3]):
+    if (isinstance(v, (list, tuple)) and len(v) >= 3
+            and all(isinstance(x, (int, float)) and math.isfinite(x) for x in v[:3])):
         out = [float(x) for x in v[:3]]
     for i, axis in enumerate(axes):
         if axis not in views:
             continue
         a = views[axis].value_at(frame)
-        if isinstance(a, (int, float)):
+        if isinstance(a, (int, float)) and math.isfinite(a):
             if out is None:
                 out = [0.0, 0.0, 0.0]
             out[i] = float(a)
@@ -118,7 +123,7 @@ def _scalar(views: dict[str, _TrackView], frame: int, name: str) -> float | None
     v = views[name].value_at(frame)
     if isinstance(v, (list, tuple)):
         v = v[0] if v else None
-    return float(v) if isinstance(v, (int, float)) else None
+    return float(v) if isinstance(v, (int, float)) and math.isfinite(v) else None
 
 
 def _ident(views: dict[str, _TrackView], frame: int, name: str) -> int | None:
@@ -329,7 +334,10 @@ def dump_cutscenes(rip_dir, out_dir=None, *, quiet: bool = False) -> dict:
             if not quiet:
                 print(f"[{i}/{len(found)}] {name}: FAILED {ex}")
             continue
-        (out_dir / f"{name}.json").write_text(json.dumps(baked), encoding="utf-8")
+        # allow_nan=False: NaN/Infinity are not JSON and Godot's parser rejects the file
+        (out_dir / f"{name}.json").write_text(
+            json.dumps(baked, allow_nan=False), encoding="utf-8"
+        )
         index[name] = {
             "arc": arc_path,
             "frames": baked["frames"],

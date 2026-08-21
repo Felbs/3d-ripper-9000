@@ -699,6 +699,8 @@ func play_clip(name: String, blend := ANIM_BLEND, rate := 1.0) -> void:
 # ---------------------------------------------------------------- helpers
 
 func stick() -> Vector2:
+    if Game.control_stick_frames > 0:
+        return Game.control_stick
     # camera-relative stick: x = right, y = forward, length 0..1
     # (Iron Boots scale the stick itself, like the game: move.heavy_speed_scale)
     var raw := Input.get_vector("move_left", "move_right", "move_forward", "move_back")
@@ -841,6 +843,7 @@ func _physics_process(_delta: float) -> void:
     _camera_tick()
 
     if global_position.y < start_pos.y - 4000.0:  # fell out of the world (interiors have no floor past the door)
+        start_pos = Game.safe_respawn(start_pos)
         global_position = start_pos
         velocity = Vector3.ZERO
         _enter_ground()
@@ -3011,6 +3014,39 @@ var scope_test: bool = "--scope" in OS.get_cmdline_user_args()
 var near_test: bool = "--near" in OS.get_cmdline_user_args()
 # --opening: play the mined opening graph end to end, one step at a time, and report each
 var opening_test: bool = "--opening" in OS.get_cmdline_user_args()
+# --sweep[=<from>:<to>]: walk every exported stage, land Link on its first spawn and check that
+# the ground is really under him.  This is the check a play-test cannot do 161 times.
+var sweep_test := false
+var sweep_from := 0
+var sweep_to := 100000
+var sweep_list: Array = []
+var sweep_idx := -1
+var sweep_wait := 0
+var sweep_y := 0.0
+var sweep_report: Array = []
+# --doors[=<from>:<to>]: arrive at every door landing in the game (door_targets.json, written
+# by the export from the Warp nodes) and check Link has ground under him.  "I went through a
+# door and fell into a void" is the one bug a play-test keeps finding and cannot enumerate.
+var doors_test := false
+var doors_list: Array = []
+var doors_idx := -1
+var doors_wait := 0
+var doors_report: Array = []
+# --models: load every animated actor model and report the ones with no mesh, no clips, or a
+# head model that does not resolve.  --cutscenes: play every baked .stb through to its end.
+var models_test: bool = "--models" in OS.get_cmdline_user_args()
+# --control[=<port>]: open the debug command channel (control.gd) on 127.0.0.1
+var control_port := 0
+var control: Node = null
+var control_stick := Vector2.ZERO      # a stick position pushed in over the channel
+var control_stick_frames := 0
+var cuts_test := false
+var cuts_list: Array = []
+var cuts_idx := -1
+var cuts_wait := 0
+var cuts_report: Array = []
+var cuts_frame := 0
+var cuts_stall := 0
 var open_idx := -1
 var open_wait := 0
 var open_settle := 0
@@ -3110,6 +3146,29 @@ func _ready() -> void:
             event_test = a.substr(8)
         elif a.begins_with("--talk="):
             talk_test = a.substr(7)
+        elif a.begins_with("--control"):
+            control_port = int(a.substr(10)) if a.begins_with("--control=") else 8787
+        elif a.begins_with("--cutscenes"):
+            cuts_test = true
+            if a.begins_with("--cutscenes="):
+                var cspan := a.substr(12).split(":")
+                sweep_from = int(cspan[0])
+                if cspan.size() > 1:
+                    sweep_to = int(cspan[1])
+        elif a.begins_with("--doors"):
+            doors_test = true
+            if a.begins_with("--doors="):
+                var dspan := a.substr(8).split(":")
+                sweep_from = int(dspan[0])
+                if dspan.size() > 1:
+                    sweep_to = int(dspan[1])
+        elif a.begins_with("--sweep"):
+            sweep_test = true
+            if a.begins_with("--sweep="):
+                var span := a.substr(8).split(":")
+                sweep_from = int(span[0])
+                if span.size() > 1:
+                    sweep_to = int(span[1])
         elif a.begins_with("--stage="):
             var want := a.substr(8).split(":")
             start_stage = want[0]
@@ -3132,6 +3191,18 @@ func _ready() -> void:
     bgm_player.volume_db = -6.0
     add_child(bgm_player)
     process_mode = Node.PROCESS_MODE_ALWAYS   # the pause menu must not freeze the autoload
+    if cuts_test:
+        # playback-only test: step the 30 Hz timeline as fast as the machine can, or a sweep
+        # of 49 scenes takes their real running time (over an hour)
+        Engine.physics_ticks_per_second = 960
+        Engine.max_physics_steps_per_frame = 64
+    if control_port > 0:
+        control = load("res://control.gd").new()
+        control.process_mode = Node.PROCESS_MODE_ALWAYS
+        add_child(control)
+        if not control.start(control_port):
+            control.queue_free()
+            control = null
     var fade_layer := CanvasLayer.new()
     fade_layer.layer = 40
     add_child(fade_layer)
@@ -3212,6 +3283,227 @@ func _restore_position() -> void:
         link.set("start_pos", link.global_position)
 
 const OPEN_STEP_FRAMES := 3000     # a single step may not hold the walk up for ever
+
+func _models_report() -> void:
+    var bad := 0
+    var n := 0
+    var keys: Array = actor_models.keys()
+    keys.sort()
+    for k in keys:
+        n += 1
+        var am: Dictionary = actor_models[k]
+        var glb := str(am.get("glb", ""))
+        if glb == "" or not ResourceLoader.exists(glb):
+            print("gcrip models: MISSING %s - %s" % [k, glb])
+            bad += 1
+            continue
+        var scene: PackedScene = load(glb)
+        if scene == null:
+            print("gcrip models: FAIL    %s - will not load" % k)
+            bad += 1
+            continue
+        var rig: Node3D = scene.instantiate()
+        var meshes := 0
+        var clips := 0
+        for c in rig.find_children("*", "MeshInstance3D", true, false):
+            meshes += 1
+        for a in rig.find_children("*", "AnimationPlayer", true, false):
+            clips += (a as AnimationPlayer).get_animation_list().size()
+        var head := str(am.get("head", ""))
+        var head_ok := head == "" or ResourceLoader.exists(head)
+        if meshes == 0:
+            print("gcrip models: NOMESH  %s - %d clips" % [k, clips])
+            bad += 1
+        elif not head_ok:
+            print("gcrip models: NOHEAD  %s - head %s is missing" % [k, head])
+            bad += 1
+        elif clips == 0 and am.get("clips", []).size() > 0:
+            print("gcrip models: NOCLIP  %s - json lists %d clips, the glb has none" % [
+                k, (am.get("clips", []) as Array).size()])
+            bad += 1
+        rig.queue_free()
+    print("gcrip models: %d models, %d with a problem" % [n, bad])
+
+func _cuts_tick() -> void:
+    if get_tree().current_scene == null:
+        return          # nothing to parent a cutscene to yet: the boot stage is still loading
+    if cuts_list.is_empty():
+        var dir := DirAccess.open("res://cutscenes")
+        var all: Array = []
+        if dir:
+            for f in dir.get_files():
+                if f.ends_with(".json") and f != "index.json":
+                    all.append(f.get_basename())
+        all.sort()
+        if all.is_empty():
+            print("gcrip cutscenes: no baked cutscenes in res://cutscenes")
+            get_tree().quit()
+            return
+        for i in all.size():
+            if i >= sweep_from and i < sweep_to:
+                cuts_list.append(all[i])
+        print("gcrip cutscenes: ", cuts_list.size(), " scenes (", sweep_from, "..", sweep_to, ")")
+    if cuts_wait > 0:
+        cuts_wait -= 1
+        if cutscene_running():
+            # a scene is only wrong if its OWN frame counter stops: process frames run far
+            # faster than the 30 Hz timeline in a headless run, so a wall-clock cap lies
+            var fr := int(cutscene.frame)
+            if fr > cuts_frame:
+                cuts_frame = fr
+                cuts_stall = 0
+            else:
+                cuts_stall += 1
+            if cuts_stall < CUTS_STALL and cuts_wait > 0:
+                return
+            cuts_report.append("STUCK %s - frame %d of %d stopped advancing" % [
+                str(cuts_list[cuts_idx]), fr, int(cutscene.frames)])
+            cutscene.queue_free()
+            cutscene = null
+            cuts_wait = 0
+            return
+        cuts_report.append("ok    %s - played %d frames" % [str(cuts_list[cuts_idx]), cuts_frame])
+        cuts_wait = 0
+        return
+    cuts_idx += 1
+    if cuts_idx >= cuts_list.size():
+        print("gcrip cutscenes: ---- result ----")
+        var bad := 0
+        for line in cuts_report:
+            print("gcrip cutscenes: ", line)
+            if not str(line).begins_with("ok"):
+                bad += 1
+        print("gcrip cutscenes: %d scenes, %d with a problem" % [cuts_report.size(), bad])
+        get_tree().quit()
+        return
+    var nm := str(cuts_list[cuts_idx])
+    if not play_cutscene(nm, Vector3.ZERO, 0.0):
+        cuts_report.append("FAIL  %s - play_cutscene refused it" % nm)
+        return
+    cuts_wait = CUTS_CAP
+    cuts_frame = 0
+    cuts_stall = 0
+
+const CUTS_CAP := 200000
+const CUTS_STALL := 900
+
+func _doors_tick() -> void:
+    if doors_list.is_empty():
+        var f := FileAccess.open("res://door_targets.json", FileAccess.READ)
+        var parsed = JSON.parse_string(f.get_as_text()) if f else null
+        if not (parsed is Array) or (parsed as Array).is_empty():
+            print("gcrip doors: door_targets.json is missing or empty")
+            get_tree().quit()
+            return
+        for i in (parsed as Array).size():
+            if i >= sweep_from and i < sweep_to:
+                doors_list.append(parsed[i])
+        print("gcrip doors: ", doors_list.size(), " landings (", sweep_from, "..", sweep_to, ")")
+    if doors_wait > 0:
+        doors_wait -= 1
+        if doors_wait == 0:
+            _doors_check()
+        return
+    doors_idx += 1
+    if doors_idx >= doors_list.size():
+        print("gcrip doors: ---- result ----")
+        var bad := 0
+        for line in doors_report:
+            print("gcrip doors: ", line)
+            if not str(line).begins_with("ok"):
+                bad += 1
+        print("gcrip doors: %d landings, %d with a problem" % [doors_report.size(), bad])
+        get_tree().quit()
+        return
+    var d: Dictionary = doors_list[doors_idx]
+    var st := str(d.get("stage", ""))
+    if not stage_data.has(st):
+        doors_report.append("FAIL  %s spawn %d - stage is not in the build (from %s)" % [
+            st, int(d.get("spawn", 0)), str(d.get("from", []))])
+        doors_wait = 0
+        return
+    last_warp_ms = -100000
+    warp(st, int(d.get("room", 0)), int(d.get("spawn", 0)))
+    doors_wait = SWEEP_SETTLE
+
+func _doors_check() -> void:
+    var d: Dictionary = doors_list[doors_idx]
+    var label := "%s room %d spawn %d" % [
+        str(d.get("stage", "")), int(d.get("room", 0)), int(d.get("spawn", 0))]
+    var lk := player()
+    if lk == null:
+        doors_report.append("FAIL  %s - no player" % label)
+        return
+    var pos: Vector3 = lk.global_position
+    var start = lk.get("start_pos")
+    var fell := 0.0
+    if start is Vector3:
+        fell = float(start.y) - pos.y
+    var under := ground_under(pos)
+    if under == "":
+        doors_report.append("VOID  %s - nothing under Link at %s (from %s)" % [
+            label, str(pos.round()), str(d.get("from", []))])
+    elif fell > 2000.0:
+        doors_report.append("DROP  %s - fell %.0f to %s (from %s)" % [
+            label, fell, under, str(d.get("from", []))])
+    else:
+        doors_report.append("ok    %s - on %s" % [label, under])
+
+const SWEEP_SETTLE := 150
+
+func _sweep_tick() -> void:
+    if sweep_list.is_empty():
+        var all: Array = stage_data.keys()
+        all.sort()
+        for i in all.size():
+            if i >= sweep_from and i < sweep_to:
+                sweep_list.append(all[i])
+        print("gcrip sweep: ", sweep_list.size(), " stages (", sweep_from, "..", sweep_to, ")")
+    if sweep_wait > 0:
+        sweep_wait -= 1
+        if sweep_wait == 0:
+            _sweep_check()
+        return
+    sweep_idx += 1
+    if sweep_idx >= sweep_list.size():
+        print("gcrip sweep: ---- result ----")
+        var bad := 0
+        for line in sweep_report:
+            print("gcrip sweep: ", line)
+            if not str(line).begins_with("ok"):
+                bad += 1
+        print("gcrip sweep: %d stages, %d with a problem" % [sweep_report.size(), bad])
+        get_tree().quit()
+        return
+    var key := str(sweep_list[sweep_idx])
+    go_to_stage(key)
+    sweep_wait = SWEEP_SETTLE
+    sweep_y = 0.0
+
+func _sweep_check() -> void:
+    var key := str(sweep_list[sweep_idx])
+    var cs := get_tree().current_scene
+    var lk := player()
+    if cs == null or String(cs.name) == "":
+        sweep_report.append("FAIL  %s - no scene" % key)
+        return
+    if lk == null:
+        sweep_report.append("FAIL  %s - no player" % key)
+        return
+    var pos: Vector3 = lk.global_position
+    var start = lk.get("start_pos")
+    var fell := 0.0
+    if start is Vector3:
+        fell = float(start.y) - pos.y
+    var under := ground_under(pos)
+    var actors := get_tree().get_nodes_in_group("interact").size() \
+        + get_tree().get_nodes_in_group("enemy").size()
+    if under == "":
+        sweep_report.append("VOID  %s - nothing under Link at %s (fell %.0f)" % [key, str(pos.round()), fell])
+    elif fell > 2000.0:
+        sweep_report.append("DROP  %s - fell %.0f to %s" % [key, fell, under])
+    else:
+        sweep_report.append("ok    %s - on %s, %d actors" % [key, under, actors])
 
 func _open_scene_for(step: Dictionary) -> String:
     var stage := str(step.get("stage", ""))
@@ -3411,6 +3703,11 @@ func _dialogue_report() -> void:
             print("  %-4s %s then %s  |  %s" % [actor, str(a), str(b2), _dlg_peek(a)])
 
 func _process(delta: float) -> void:
+    _arrival_guard()
+    if control_stick_frames > 0:
+        control_stick_frames -= 1
+        if control_stick_frames == 0:
+            control_stick = Vector2.ZERO
     story_tick += 1
     if story_tick % 15 == 0:
         story_npc_tick()
@@ -3422,6 +3719,16 @@ func _process(delta: float) -> void:
         return
     if shot_actor != "":
         _shot_tick()
+    if models_test:
+        _models_report()
+        get_tree().quit()
+        return
+    if cuts_test:
+        _cuts_tick()
+    if doors_test:
+        _doors_tick()
+    if sweep_test:
+        _sweep_tick()
     if opening_test:
         _opening_tick()
     if near_test:
@@ -3445,7 +3752,7 @@ func _process(delta: float) -> void:
                 print("gcrip scope: done")
                 get_tree().quit()
     if newgame_test or event_test != "" or talk_test != "" or story_test or scope_test \
-            or near_test or opening_test:
+            or near_test or opening_test or sweep_test or doors_test or cuts_test:
         # tests have no player: advance text boxes directly (a synthesised action press raises
         # no InputEvent, so the box would never turn its page and the event would never end)
         auto_a += 1
@@ -4061,7 +4368,17 @@ func close_menu() -> void:
     get_tree().paused = false
     Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
+func playable(stage: String) -> bool:
+    # a few ripped stages are empty shells (no PLYR chunk at all): the name-entry screen, an
+    # unused second cut of Outset, and two room scenes with no room.  There is nowhere to stand.
+    var info: Dictionary = stage_data.get(stage, {})
+    return not (info.get("spawns", []) as Array).is_empty()
+
 func go_to_stage(stage: String, want_spawn := -1) -> void:
+    if not playable(stage):
+        print("gcrip: ", stage, " has no spawn point - nothing to stand on, staying put")
+        _show_banner("%s has no spawn point in the rip" % stage)
+        return
     var info: Dictionary = stage_data.get(stage, {})
     var spawns: Array = info.get("spawns", [])
     var room := 0
@@ -4154,7 +4471,8 @@ func burst(pos: Vector3, color: Color) -> void:
 
 func scripted() -> bool:
     # any headless harness run: nobody is holding the pad, so "press any key" waits must pass
-    return selftest or story_test or newgame_test or dialogue_test or door_test         or talk_test != "" or event_test != "" or shot_actor != "" or scope_test or near_test or opening_test
+    return selftest or story_test or newgame_test or dialogue_test or door_test         or talk_test != "" or event_test != "" or shot_actor != "" or scope_test or near_test or opening_test or sweep_test or doors_test \
+        or models_test or cuts_test
 
 func story_npc_tick() -> void:
     # an NPC orders its own event: Aryll greets Link in his new clothes when he comes within
@@ -4427,6 +4745,9 @@ func _on_calibrated(guid: String, mapping: String) -> void:
         _show_banner("")
 
 func warp(dest_stage: String, dest_room: int, dest_spawn: int) -> void:
+    if stage_data.has(dest_stage) and not playable(dest_stage):
+        print("gcrip: refusing to warp to ", dest_stage, " - it has no spawn point")
+        return
     if Time.get_ticks_msec() - last_warp_ms < 1500:
         return  # just arrived; don't bounce straight back through the door
     var path := "res://scenes/%s.tscn" % dest_stage
@@ -4470,13 +4791,18 @@ func _place_player() -> void:
                 break
     if player and best != null:
         var p := Vector3(best["pos"][0], best["pos"][1] + 30.0, best["pos"][2])
+        # NOTE: a raycast on this frame always misses - the scene was added this frame and the
+        # physics server has not registered its bodies yet.  So the real check is the arrival
+        # guard below, which runs once physics is live.  This one only helps on a re-entry.
         if not has_ground(p):
-            # that spawn hangs over nothing here: take the first spawn of this stage that has a floor
             for sp in info.get("spawns", []):
                 var q := Vector3(sp["pos"][0], sp["pos"][1] + 30.0, sp["pos"][2])
                 if has_ground(q):
                     p = q
                     break
+        arrive_from = p
+        arrive_frames = ARRIVE_GUARD_FRAMES
+        arrive_phys = Engine.get_physics_frames()
         player.global_position = p
         player.velocity = Vector3.ZERO
         player.start_pos = player.global_position
@@ -4499,6 +4825,59 @@ func _place_player() -> void:
     if spawn_event != "" and events.has(spawn_event):
         await get_tree().physics_frame
         run_event(spawn_event)
+
+const ARRIVE_GUARD_FRAMES := 45
+var arrive_from := Vector3.ZERO   # where the spawn put Link, so a fall through it is obvious
+var arrive_frames := 0
+var arrive_phys := 0
+
+func _arrival_guard() -> void:
+    # For the first frames after a warp, watch for Link dropping through the world.  The check
+    # cannot be done at placement time: the scene is added on that frame and the physics server
+    # has not registered its collision yet, so every raycast comes back empty - which is exactly
+    # how a door could drop you into a void even though the room has a floor.
+    if arrive_frames <= 0:
+        return
+    # wait for physics to have stepped at least twice on the new scene, then check once
+    if Engine.get_physics_frames() < arrive_phys + 2:
+        return
+    arrive_frames = 0
+    var lk := player()
+    if lk == null:
+        return
+    if scripted():
+        print("gcrip arrive: guard at ", arrive_from.round(), " ground=", ground_under(arrive_from),
+              " link=", lk.global_position.round(), " under=", ground_under(lk.global_position))
+    if has_ground(arrive_from) or has_ground(lk.global_position):
+        return          # the spawn does have a floor: nothing to rescue
+    var info: Dictionary = stage_data.get(current_scene_key(), {})
+    for sp in info.get("spawns", []):
+        var q := Vector3(sp["pos"][0], sp["pos"][1] + 30.0, sp["pos"][2])
+        if has_ground(q):
+            print("gcrip: spawn had no floor under it - moving Link to a spawn that does")
+            lk.global_position = q
+            lk.velocity = Vector3.ZERO
+            lk.start_pos = q
+            arrive_from = q
+            arrive_frames = 0
+            return
+
+func safe_respawn(fallback: Vector3) -> Vector3:
+    # Link fell out of the world.  Putting him back exactly where he started loops for ever if
+    # THAT is the spot with the hole (Pfigure's figureG doorway), so prefer a spawn with a floor.
+    if has_ground(fallback):
+        return fallback
+    var info: Dictionary = stage_data.get(current_scene_key(), {})
+    for sp in info.get("spawns", []):
+        var q := Vector3(sp["pos"][0], sp["pos"][1] + 30.0, sp["pos"][2])
+        if has_ground(q):
+            print("gcrip: fell through the spawn floor - respawning at a spawn that has one")
+            return q
+    return fallback
+
+func current_scene_key() -> String:
+    var cs := get_tree().current_scene
+    return String(cs.name) if cs else ""
 
 func has_ground(p: Vector3) -> bool:
     return ground_under(p) != ""
@@ -5371,7 +5750,9 @@ func _fill() -> void:
     keys = []
     if mode == "stages":
         var names: Dictionary = Game.stage_names
-        keys = Game.stage_data.keys()
+        for k in Game.stage_data.keys():
+            if Game.playable(k):
+                keys.append(k)
         keys.sort_custom(func(a, b): return str(names.get(a, a)).to_lower() < str(names.get(b, b)).to_lower())
         for k in keys:
             var n: String = str(names.get(k, ""))
@@ -5504,6 +5885,8 @@ layout_mode = 2
 size_flags_vertical = 3
 theme_override_font_sizes/font_size = 18
 """
+
+_CONTROL_GD = 'extends Node\n# gcrip: a debug control channel.  Started only by --control[=<port>] and bound to 127.0.0.1,\n# it accepts one JSON object per line and answers with one JSON object per line, so an outside\n# tool (the gcrip MCP server) can drive a running game instead of the game running a canned\n# script.  Never start this in a build you hand to anyone.\n\nconst DEFAULT_PORT := 8787\n\nvar server := TCPServer.new()\nvar peers: Array[StreamPeerTCP] = []\nvar buffers: Array[String] = []\nvar port := DEFAULT_PORT\nvar held: Dictionary = {}          # action -> frames left to hold\n\nfunc start(p: int) -> bool:\n    port = p\n    var err := server.listen(port, "127.0.0.1")\n    if err != OK:\n        push_error("gcrip control: cannot listen on 127.0.0.1:%d (%d)" % [port, err])\n        return false\n    print("gcrip control: listening on 127.0.0.1:", port)\n    return true\n\nfunc _process(_delta: float) -> void:\n    while server.is_connection_available():\n        var peer := server.take_connection()\n        peers.append(peer)\n        buffers.append("")\n        print("gcrip control: client connected")\n    for a in held.keys():\n        held[a] -= 1\n        if held[a] <= 0:\n            Input.action_release(a)\n            held.erase(a)\n    var i := 0\n    while i < peers.size():\n        var peer: StreamPeerTCP = peers[i]\n        peer.poll()\n        if peer.get_status() != StreamPeerTCP.STATUS_CONNECTED:\n            peers.remove_at(i)\n            buffers.remove_at(i)\n            continue\n        var n := peer.get_available_bytes()\n        if n > 0:\n            buffers[i] += peer.get_utf8_string(n)\n        while buffers[i].find("\\n") >= 0:\n            var cut := buffers[i].find("\\n")\n            var line := buffers[i].substr(0, cut).strip_edges()\n            buffers[i] = buffers[i].substr(cut + 1)\n            if line != "":\n                var reply := _handle(line)\n                peer.put_data((JSON.stringify(reply) + "\\n").to_utf8_buffer())\n        i += 1\n\nfunc _handle(line: String) -> Dictionary:\n    var msg = JSON.parse_string(line)\n    if not (msg is Dictionary):\n        return {"ok": false, "error": "not a JSON object"}\n    var cmd := str(msg.get("cmd", ""))\n    match cmd:\n        "state":\n            return {"ok": true, "state": _state()}\n        "stages":\n            var out: Array = []\n            for k in Game.stage_data.keys():\n                if Game.playable(k):\n                    out.append(k)\n            out.sort()\n            return {"ok": true, "stages": out, "names": Game.stage_names}\n        "warp":\n            var st := str(msg.get("stage", ""))\n            if not Game.stage_data.has(st):\n                return {"ok": false, "error": "no such stage: " + st}\n            Game.last_warp_ms = -100000\n            Game.warp(st, int(msg.get("room", 0)), int(msg.get("spawn", 0)))\n            return {"ok": true}\n        "place":\n            var lk := Game.player()\n            if lk == null:\n                return {"ok": false, "error": "no player"}\n            lk.global_position = Vector3(\n                float(msg.get("x", lk.global_position.x)),\n                float(msg.get("y", lk.global_position.y)),\n                float(msg.get("z", lk.global_position.z)))\n            lk.velocity = Vector3.ZERO\n            if msg.has("facing_deg"):\n                lk.set("facing", deg_to_rad(float(msg["facing_deg"])))\n            return {"ok": true, "state": _state()}\n        "input":\n            # hold an input action for N frames, the way a player would tap or hold it\n            var action := str(msg.get("action", ""))\n            if action == "":\n                return {"ok": false, "error": "no action"}\n            if not InputMap.has_action(action):\n                return {"ok": false, "error": "no such action: " + action,\n                        "actions": InputMap.get_actions()}\n            Input.action_press(action, float(msg.get("strength", 1.0)))\n            held[action] = maxi(int(msg.get("frames", 2)), 1)\n            return {"ok": true}\n        "stick":\n            # the analog stick, as a held vector (x right, y forward)\n            Game.control_stick = Vector2(float(msg.get("x", 0.0)), float(msg.get("y", 0.0)))\n            Game.control_stick_frames = int(msg.get("frames", 30))\n            return {"ok": true}\n        "actors":\n            var out2: Array = []\n            for grp in ["interact", "enemy"]:\n                for nd in get_tree().get_nodes_in_group(grp):\n                    if is_instance_valid(nd):\n                        out2.append({"actor": str(nd.get("actor")), "group": grp,\n                                     "pos": _v(nd.global_position)})\n            return {"ok": true, "actors": out2}\n        "talk":\n            var who := str(msg.get("actor", ""))\n            var target := Game._find_actor(who)\n            var lk2 := Game.player()\n            if target == null or lk2 == null:\n                return {"ok": false, "error": "no " + who + " here"}\n            lk2.global_position = target.global_position + Vector3(0, 5, 120)\n            target.interact(lk2)\n            return {"ok": true, "state": _state()}\n        "event":\n            var ev := str(msg.get("name", ""))\n            if not Game.events.has(ev):\n                return {"ok": false, "error": "no event " + ev + " in this stage",\n                        "events": Game.events.keys()}\n            return {"ok": Game.run_event(ev)}\n        "dialog":\n            if Game.dialog and Game.dialog_open:\n                Game.dialog.advance()\n            return {"ok": true, "open": Game.dialog_open}\n        "bit":\n            var id := int(msg.get("id", 0))\n            if msg.has("set"):\n                if bool(msg["set"]):\n                    Game.set_event_bit(id)\n                return {"ok": true, "value": Game.event_bit(id)}\n            return {"ok": true, "value": Game.event_bit(id)}\n        "item":\n            var nm := str(msg.get("name", ""))\n            if bool(msg.get("give", false)):\n                Game.give_item(nm)\n            return {"ok": true, "has": Game.has_item(nm), "items": Game.save.get("items", {})}\n        "screenshot":\n            var img := get_viewport().get_texture().get_image()\n            if img == null:\n                return {"ok": false, "error": "no viewport image (running headless?)"}\n            var path := str(msg.get("path", "user://control_shot.png"))\n            img.save_png(path)\n            return {"ok": true, "path": ProjectSettings.globalize_path(path)}\n        "ground":\n            var lk3 := Game.player()\n            var at: Vector3 = lk3.global_position if lk3 else Vector3.ZERO\n            if msg.has("x"):\n                at = Vector3(float(msg["x"]), float(msg.get("y", 0.0)), float(msg["z"]))\n            return {"ok": true, "under": Game.ground_under(at), "at": _v(at)}\n        "quit":\n            get_tree().quit()\n            return {"ok": true}\n    return {"ok": false, "error": "unknown cmd: " + cmd,\n            "commands": ["state", "stages", "warp", "place", "input", "stick", "actors",\n                         "talk", "event", "dialog", "bit", "item", "screenshot", "ground",\n                         "quit"]}\n\nfunc _v(p: Vector3) -> Array:\n    return [snappedf(p.x, 0.1), snappedf(p.y, 0.1), snappedf(p.z, 0.1)]\n\nfunc _state() -> Dictionary:\n    var cs := get_tree().current_scene\n    var lk := Game.player()\n    var st := {\n        "scene": String(cs.name) if cs else "",\n        "stage": Game.current_stage_key(),\n        "event_running": Game.event_running,\n        "cutscene": Game.cutscene_running(),\n        "dialog_open": Game.dialog_open,\n        "hearts": Game.save.get("hearts", 0),\n        "items": Game.save.get("items", {}),\n        "story_done": (Game.save.get("story_done", {}) as Dictionary).keys(),\n    }\n    if lk:\n        st["pos"] = _v(lk.global_position)\n        st["facing_deg"] = snappedf(rad_to_deg(float(lk.get("facing"))), 0.1)\n        st["state"] = int(lk.get("state"))\n        st["ground"] = Game.ground_under(lk.global_position)\n    return st\n'
 
 _DIALOG_GD = """extends CanvasLayer
 # gcrip text box: shows BMG messages (tags already decoded by gcrip msg);
@@ -5865,7 +6248,7 @@ _HOOKSHOT_GD = 'extends Node3D\n# gcrip: Hookshot (d_a_hookshot.cpp). 105 units/
 
 _SHIP_GD = 'extends CharacterBody3D\n# gcrip: the King of Red Lions (d_a_ship.cpp). Tiller / yaw, wind-driven sail speed,\n# paddling, buoyancy spring on the wave heightfield, four-probe wave tilt, hull circles.\n# Units per frame at 30 Hz; s16 angles kept as floats where the decomp uses them.\n\nconst S16 := PI / 32768.0\nconst TILLER_MAX := 0x2000\nconst TILLER_SPEED := 700.0\nconst WIND_INC_SPEED := 55.0\nconst PADDLE_SPEED := 10.0\nconst BURST_CAP := 80.0\nconst HULL_R := 250.0\nconst SEAT := Vector3(0.0, 15.0, -35.0)\nconst LEDGE_L := Vector3(57.0, 35.0, -35.0)\nconst LEDGE_R := Vector3(-57.0, 35.0, -35.0)\nconst JUMP_MIN_FWD := 16.5\nconst JUMP_MIN_WIND := 11.0\nconst FLY_GRAVITY := -2.5\nconst FLY_PITCH := -0x800 * PI / 32768.0\n\nenum Mode { WAIT, PADDLE, STEER }\nvar mode: int = Mode.WAIT\nvar rider: Node3D = null\nvar yaw := 0.0              # radians, atan2(x, z) convention like Link\'s facing\nvar tiller := 0.0           # s16 units\nvar speed_f := 0.0\nvar burst_target := 1.0e9\nvar sail_on := false\nvar braking := false\nvar vy := 0.0\nvar bob := 0.0\nvar pitch := 0.0            # s16 units (positive = nose down)\nvar roll := 0.0\nvar pitch_vel := 0.0\nvar roll_vel := 0.0\nvar noise_a := 0.0\nvar noise_b := 0.0\nvar heel := 0.0\nvar heel_vel := 0.0\nvar prev_yaw := 0.0\nvar landing := 0\nvar model: Node3D = null\nvar sail_mesh: MeshInstance3D = null\nvar sail_raise := 0.0          # 0 stowed .. 1 up\nvar wake_l: CPUParticles3D = null\nvar wake_r: CPUParticles3D = null\nvar flying := false\nvar fly_vy := 0.0\nvar jump_ok := false\nvar fly_pitch := 0.0\n\nfunc setup(rot_y_deg: float) -> void:\n    yaw = deg_to_rad(rot_y_deg)\n    prev_yaw = yaw\n    collision_layer = 0\n    collision_mask = 1\n    var shape := CollisionShape3D.new()\n    var cyl := CylinderShape3D.new()\n    cyl.radius = HULL_R\n    cyl.height = 150.0\n    shape.shape = cyl\n    shape.position.y = 150.0   # wall circles only: keep the hull clear of the seabed\n    add_child(shape)\n    motion_mode = CharacterBody3D.MOTION_MODE_FLOATING\n    add_to_group("interact")\n    model = Node3D.new()\n    add_child(model)\n    for part in ["ship", "ship_head"]:\n        var path := "res://items/%s.glb" % part\n        if ResourceLoader.exists(path):\n            model.add_child(load(path).instantiate())\n    _build_sail()\n    _build_wake()\n    global_position.y = Game.sea_height(global_position.x, global_position.z)\n    _update_transform()\n\nfunc _build_sail() -> void:\n    # the game\'s sail is a cloth grid actor (d_a_grid) with no model: a red triangle on the mast\n    var im := ImmediateMesh.new()\n    var mat := StandardMaterial3D.new()\n    mat.albedo_color = Color(0.75, 0.12, 0.1)\n    mat.cull_mode = BaseMaterial3D.CULL_DISABLED\n    mat.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL\n    im.surface_begin(Mesh.PRIMITIVE_TRIANGLES, mat)\n    # mast foot (0, 60, 40), mast top (0, 340, 40), boom end (0, 80, -170): a lateen sail\n    var a := Vector3(0, 70.0, 40.0)\n    var b := Vector3(0, 330.0, 40.0)\n    var c := Vector3(0, 90.0, -180.0)\n    for tri in [[a, b, c], [a, c, b]]:\n        var n: Vector3 = (tri[1] - tri[0]).cross(tri[2] - tri[0]).normalized()\n        for v in tri:\n            im.surface_set_normal(n)\n            im.surface_add_vertex(v)\n    im.surface_end()\n    sail_mesh = MeshInstance3D.new()\n    sail_mesh.mesh = im\n    sail_mesh.scale = Vector3(1.0, 0.01, 1.0)\n    sail_mesh.visible = false\n    add_child(sail_mesh)\n    var mast := MeshInstance3D.new()\n    var cyl := CylinderMesh.new()\n    cyl.top_radius = 4.0\n    cyl.bottom_radius = 6.0\n    cyl.height = 290.0\n    mast.mesh = cyl\n    var mm := StandardMaterial3D.new()\n    mm.albedo_color = Color(0.45, 0.3, 0.15)\n    mast.material_override = mm\n    mast.position = Vector3(0, 200.0, 40.0)\n    add_child(mast)\n\nfunc _build_wake() -> void:\n    for side in [-1.0, 1.0]:\n        var p := CPUParticles3D.new()\n        p.amount = 40\n        p.lifetime = 0.9\n        p.emitting = false\n        p.position = Vector3(-80.0 * side, -40.0, 140.0)\n        p.direction = Vector3(side * 0.5, 1.0, -0.3)\n        p.spread = 25.0\n        p.initial_velocity_min = 120.0\n        p.initial_velocity_max = 220.0\n        p.gravity = Vector3(0, -300.0, 0)\n        p.scale_amount_min = 6.0\n        p.scale_amount_max = 14.0\n        var qm := QuadMesh.new()\n        qm.size = Vector2(1.0, 1.0)\n        p.mesh = qm\n        var pm := StandardMaterial3D.new()\n        pm.albedo_color = Color(0.9, 0.95, 1.0, 0.7)\n        pm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA\n        pm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED\n        pm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED\n        p.material_override = pm\n        add_child(p)\n        if side < 0.0:\n            wake_l = p\n        else:\n            wake_r = p\n\nfunc forward() -> Vector3:\n    return Vector3(sin(yaw), 0.0, cos(yaw))\n\nfunc right() -> Vector3:\n    return forward().cross(Vector3.UP)\n\n# --- Link-side interaction API ---\nfunc interact_prompt(link: Node3D) -> String:\n    if rider != null or mode != Mode.WAIT:\n        return ""\n    return "Ride" if link.global_position.distance_to(global_position) < 420.0 else ""\n\nfunc interact(link: Node3D) -> void:\n    if rider == null and link.has_method("board"):\n        link.board(self)\n\nfunc set_rider(link: Node3D) -> void:\n    rider = link\n    mode = Mode.PADDLE\n    sail_on = false\n\nfunc clear_rider() -> void:\n    rider = null\n    mode = Mode.WAIT\n    sail_on = false\n\nfunc try_jump() -> bool:\n    # procSteerMove: R with the sail up, enough way on and wind -> hop (FLY | JUMP)\n    if not jump_ok or flying:\n        return false\n    flying = true\n    fly_vy = clampf(_wind_speed(), 15.0, 40.0)\n    tiller *= 0.5\n    return true\n\nfunc toggle_sail() -> void:\n    if sail_on:\n        sail_on = false\n        mode = Mode.PADDLE\n        return\n    sail_on = true\n    mode = Mode.STEER\n    # raising the sail: instant burst to 2x the wind speed (cap 80), decays to the wind speed\n    var ws := _wind_speed()\n    speed_f = maxf(speed_f, minf(ws * 2.0, BURST_CAP))\n    burst_target = ws\n\nfunc seat_point() -> Vector3:\n    return global_transform * SEAT\n\nfunc ledge_point(left: bool) -> Vector3:\n    return global_transform * (LEDGE_L if left else LEDGE_R)\n\n# --- cLib helpers ---\nstatic func add_calc(v: float, target: float, scale: float, max_step: float, min_step: float) -> float:\n    var step := (target - v) * scale\n    step = clampf(step, -max_step, max_step)\n    if absf(step) < min_step:\n        step = signf(target - v) * minf(min_step, absf(target - v))\n    return v + step\n\nstatic func add_calc_angle(v: float, target: float, scale: float, max_step: float, min_step: float) -> float:\n    var diff := target - v\n    var step := clampf(diff / scale, -max_step, max_step)\n    if absf(step) <= min_step:\n        step = signf(diff) * minf(min_step, absf(diff))\n    return v + step\n\nfunc _wind_speed() -> float:\n    var w: Vector3 = Game.wind_vec()\n    var pow01: float = minf(1.0, Game.wind_power / 0.5)\n    var a := absf(wrapf(atan2(w.x, w.z) - yaw, -PI, PI)) / S16   # 0..0x8000\n    var f: float\n    if a < 0x4000:\n        f = 1.0 - a / 65536.0\n    elif a <= 0x6000:\n        f = 0.75 - (a - 0x4000) * 5.493164e-5\n    else:\n        f = maxf(0.0, 0.3 - (a - 0x6000) * 3.2967e-4)\n    return pow01 * f * WIND_INC_SPEED\n\nfunc _decrement(target: float) -> void:\n    speed_f = add_calc(speed_f, target, 0.05, 0.1, 0.015)\n\nfunc _first_decrement(target: float) -> void:\n    speed_f = add_calc(speed_f, target, 0.1, 5.0, 1.0)\n\nfunc _physics_process(_delta: float) -> void:\n    var stick_fwd := 0.0\n    var stick_right := 0.0\n    if rider and is_instance_valid(rider):\n        var s: Vector2 = rider.stick()   # raw pad: x right, y forward (the ship ignores the camera)\n        if s.length() > 0.1:\n            stick_fwd = clampf(s.y, -1.0, 1.0)\n            stick_right = clampf(s.x, -1.0, 1.0)\n    else:\n        mode = Mode.WAIT\n    # tiller and yaw (setSelfMove / setMoveAngle)\n    var tiller_target := stick_right * TILLER_MAX if mode != Mode.WAIT else 0.0\n    tiller = add_calc_angle(tiller, tiller_target, 4.0, TILLER_SPEED, 0x100)\n    var turn_rate := clampf(4.0 - absf(speed_f) / 55.0 * 3.0, 0.1, 3.6)\n    if landing > 0:\n        landing -= 1\n        turn_rate += (3.6 - turn_rate) * minf(landing, 15) / 15.0\n    prev_yaw = yaw\n    if not flying:\n        yaw -= turn_rate * (tiller / 64.0) * S16\n    # forward speed\n    match mode:\n        Mode.WAIT:\n            speed_f = add_calc(speed_f, 0.0, 0.1, 1.0, 0.05)\n        Mode.PADDLE:\n            if braking and speed_f >= 3.0:\n                speed_f = add_calc(speed_f, 0.0, 0.1, 1.0, 0.1)\n            else:\n                _decrement(maxf(stick_fwd, 0.0) * PADDLE_SPEED)\n        Mode.STEER:\n            var ws := _wind_speed()\n            if burst_target < speed_f:\n                _first_decrement(burst_target)\n                if speed_f - burst_target < 3.0:\n                    burst_target = 1.0e9\n            elif not sail_on or ws <= 0.0:\n                _decrement(stick_fwd * PADDLE_SPEED)\n            elif speed_f >= ws:\n                _decrement(ws)\n            else:\n                speed_f = add_calc(speed_f, ws, 0.1, 0.5, 0.1)\n    jump_ok = sail_on and mode == Mode.STEER and not flying and speed_f > JUMP_MIN_FWD and _wind_speed() >= JUMP_MIN_WIND\n    # sail raise / lower animation and the wake\n    sail_raise = move_toward(sail_raise, 1.0 if sail_on else 0.0, 0.1)\n    if sail_mesh:\n        sail_mesh.visible = sail_raise > 0.02\n        sail_mesh.scale = Vector3(1.0, maxf(sail_raise, 0.01), 1.0)\n    var wake_on: bool = absf(speed_f) > 11.0 and not flying\n    if wake_l:\n        wake_l.emitting = wake_on\n        wake_r.emitting = wake_on\n    # hull against the islands\n    var before := global_position\n    velocity = forward() * speed_f * 30.0\n    move_and_slide()\n    global_position.y = before.y   # the water, not the collider, owns the height\n    if is_on_wall():\n        var n := get_wall_normal()\n        if n.dot(forward()) < cos(0x5000 * S16):   # normal > 112.5 deg off the heading: head-on\n            _first_decrement(0.0)\n    var water_y: float = Game.sea_height(global_position.x, global_position.z)\n    if flying:\n        # airborne: gravity -2.5, no steering, nose lifts toward -0x800; land on the water\n        fly_vy += FLY_GRAVITY\n        global_position.y += fly_vy\n        fly_pitch = lerpf(fly_pitch, FLY_PITCH, 0.1)\n        if fly_vy < 0.0 and global_position.y <= water_y:\n            global_position.y = water_y\n            flying = false\n            vy = maxf(fly_vy, -15.0) * 0.5\n            speed_f *= 0.85\n            landing = 30\n            fly_pitch = 0.0\n        _update_transform(pitch * S16 + fly_pitch, (roll + heel) * S16)\n        return\n    # follow the water (setYPos): proportional pull + buoyancy spring, bob, clamp\n    var r := minf(1.0, absf(speed_f) / 55.0)\n    var y := global_position.y\n    y += r * (water_y - y) * 0.1\n    vy += (water_y - y) * 0.05\n    vy = clampf(vy, -20.0, 20.0)\n    y += vy\n    bob += (1000.0 + randf() * 1000.0 + 500.0 * r) * S16\n    y += r * 0.25 * sin(bob) + 0.6\n    vy = add_calc(vy, 0.0, 0.05, 1.0, 0.05)\n    y = clampf(y, water_y - 60.0, water_y + 40.0)\n    global_position.y = y\n    # wave tilt (setWaveAngle): four probes, second-order follow\n    var xf := global_transform\n    var front := Game.sea_height((xf * Vector3(0, 0, 180)).x, (xf * Vector3(0, 0, 180)).z)\n    var back := Game.sea_height((xf * Vector3(0, 0, -190)).x, (xf * Vector3(0, 0, -190)).z)\n    var rgt := Game.sea_height((xf * Vector3(-80, 0, 0)).x, (xf * Vector3(-80, 0, 0)).z)\n    var lft := Game.sea_height((xf * Vector3(80, 0, 0)).x, (xf * Vector3(80, 0, 0)).z)\n    var pitch_t := atan2(-(front - back), 370.0) / S16\n    var roll_t := atan2(-(rgt - lft), 160.0) / S16\n    pitch_vel += (pitch_t - pitch) * 0.045\n    pitch += pitch_vel\n    pitch_vel = add_calc_angle(pitch_vel, 0.0, 0x14, 0x1000, 4)\n    roll_vel += (roll_t - roll) * 0.045\n    roll += roll_vel\n    roll_vel = add_calc_angle(roll_vel, 0.0, 0x14, 0x1000, 4)\n    noise_a += (0.5 * r + 1.0) * (800.0 + randf() * 800.0) * S16\n    noise_b += (0.5 * r + 1.0) * (600.0 + randf() * 600.0) * S16\n    var pitch_noise := r * 100.0 * sin(noise_a) + 30.0\n    var roll_noise := r * 115.0 * sin(noise_b) + 35.0\n    # steering heel spring\n    var heel_t := clampf(wrapf(yaw - prev_yaw, -PI, PI) / S16 * 7.0, -0x600, 0x600)\n    heel_vel += 0.05 * (heel_t - heel)\n    heel += heel_vel\n    heel_vel = add_calc_angle(heel_vel, 0.0, 0x14, 0x1000, 4)\n    _update_transform((pitch + pitch_noise) * S16, (roll + roll_noise + heel) * S16)\n    if before.distance_to(global_position) > 1.0e6:\n        global_position = before\n\nfunc _update_transform(p := 0.0, r := 0.0) -> void:\n    rotation = Vector3(p, yaw, r)\n'
 
-_EVENT_GD = 'extends Node\n# gcrip: runs one event_list.dat event (d_event_manager.cpp semantics, simplified).\n# Every staff (cast member) walks its cut list; a cut starts when its start flags are set\n# (or, with start flag -1, when the previous cut of that staff ended) and sets its end flag\n# when its action completes. The event ends when every staff is out of cuts (or 60 s).\n\nsignal finished\n\nconst TIMEOUT := 30 * 15   # a stuck script must not lock the game for a minute\nconst LINK_EVENT_WALK := 8.0\n\nvar ev: Dictionary = {}\nvar flags: Dictionary = {}\nvar staffs: Array = []\nvar frames := 0\nvar stalled := 0            # frames since any staff last advanced\nvar link: Node3D = null\nvar fade_dir := 1   # alternate FADE cuts: out, then in\n\nfunc start(event: Dictionary) -> void:\n    ev = event\n    link = Game.player()\n    for sf in ev.get("actors", []):\n        staffs.append({"data": sf, "idx": 0, "cur": null, "node": _find_node(sf)})\n    Game.event_running = true\n    if link and link.has_method("event_begin"):\n        link.event_begin()\n\nfunc _find_node(sf: Dictionary) -> Node:\n    var nm: String = sf.get("name", "")\n    if nm == "Link":\n        return link\n    if sf.get("type", "") != "NORMAL":\n        return null\n    for grp in ["interact", "enemy"]:\n        for n in get_tree().get_nodes_in_group(grp):\n            if is_instance_valid(n) and str(n.get("actor")) == nm:\n                return n\n    return null\n\nfunc _set_flag(flag: int) -> void:\n    if flag >= 0:\n        flags[flag] = true\n\nfunc _ready_to_start(st: Dictionary, cut: Dictionary) -> bool:\n    var sfl: Array = cut.get("start_flags", [-1, -1, -1])\n    if int(sfl[0]) == -1:\n        return true   # follows the previous cut of this staff\n    for f in sfl:\n        if int(f) >= 0 and not flags.has(int(f)):\n            return false\n    return true\n\nfunc _physics_process(_delta: float) -> void:\n    frames += 1\n    var alive := false\n    var moved := false\n    for st in staffs:\n        var acts: Array = st["data"].get("actions", [])\n        if st["cur"] == null:\n            if st["idx"] >= acts.size():\n                continue\n            var cut: Dictionary = acts[st["idx"]]\n            if not _ready_to_start(st, cut) and stalled < 90:\n                alive = true\n                continue\n            if not _ready_to_start(st, cut):\n                # nothing has moved for 3 s: a start flag this cut waits on is never produced\n                # (our runner does not implement every actor action), so let it through\n                print("gcrip event: unblocking ", st["data"].get("name", "?"), " cut ",\n                      cut.get("name", "?"), " in ", ev.get("name", "?"))\n            st["cur"] = {"cut": cut, "t": 0, "dialog_seen": false, "from_eye": Vector3.ZERO,\n                         "from_center": Vector3.ZERO, "from_fov": 60.0}\n            _begin(st, st["cur"])\n        var cur: Dictionary = st["cur"]\n        alive = true\n        if _tick(st, cur):\n            _set_flag(int(cur["cut"].get("end_flag", -1)))\n            st["cur"] = null\n            st["idx"] += 1\n            moved = true\n    stalled = 0 if moved else stalled + 1\n    if Game.scripted() and frames % 60 == 0:\n        var report := []\n        for st in staffs:\n            var acts2: Array = st["data"].get("actions", [])\n            var cn: String = "-" if st["cur"] == null else str(st["cur"]["cut"].get("name", "?"))\n            report.append("%s[%d/%d]%s" % [st["data"].get("name", "?"), st["idx"], acts2.size(), cn])\n        print("gcrip event ", ev.get("name", "?"), " f", frames, ": ", " ".join(report), "  link=", link.global_position.round() if link else "?", " walking=", str(link.get("ev_walking")) if link else "?")\n    if not alive or frames > TIMEOUT:\n        _finish()\n\nfunc _prop(cut: Dictionary, key: String, default = null):\n    var props: Dictionary = cut.get("properties", {})\n    if props.has(key):\n        return props[key]["value"]\n    return default\n\nfunc _vec(v) -> Vector3:\n    if v is Array and v.size() >= 3:\n        var p := Vector3(float(v[0]), float(v[1]), float(v[2]))\n        if v[0] is Array:\n            p = Vector3(float(v[0][0]), float(v[0][1]), float(v[0][2]))\n        return p - Game.world_offset\n    return Vector3.ZERO\n\nfunc _begin(st: Dictionary, cur: Dictionary) -> void:\n    var cut: Dictionary = cur["cut"]\n    var kind: String = st["data"].get("type", "")\n    var name: String = cut.get("name", "")\n    var node: Node = st["node"]\n    match kind:\n        "CAMERA":\n            cur["from_eye"] = Game.event_cam_eye()\n            cur["from_center"] = Game.event_cam_center()\n            cur["from_fov"] = Game.event_cam_fov()\n            match name:\n                "FIXEDPOS":\n                    var c: Vector3 = (link.global_position + Vector3(0, 100.0, 0)) if link else cur["from_center"]\n                    Game.set_event_cam(_vec(_prop(cut, "Eye")), c, float(_prop(cut, "Fovy", 60.0)))\n                "FIXEDFRM":\n                    Game.set_event_cam(_vec(_prop(cut, "Eye")), _vec(_prop(cut, "Center")), float(_prop(cut, "Fovy", 60.0)))\n                "PAUSE", "CHECK", "RESTOREPOS", "STYLE":\n                    Game.set_event_cam(cur["from_eye"], cur["from_center"], cur["from_fov"])\n                "TALK", "TURNTOACTOR":\n                    var who := _talker()\n                    if who and link:\n                        var a: Vector3 = link.global_position + Vector3(0, 100.0, 0)\n                        var b: Vector3 = who.global_position + Vector3(0, 100.0, 0)\n                        var mid := (a + b) * 0.5\n                        var side := (b - a).cross(Vector3.UP).normalized()\n                        if side.length() < 0.5:\n                            side = Vector3.RIGHT\n                        Game.set_event_cam(mid + side * 300.0 + Vector3(0, 60.0, 0), mid, 50.0)\n                    else:\n                        Game.set_event_cam(cur["from_eye"], cur["from_center"], cur["from_fov"])\n                "GETITEM", "USEITEM0":\n                    if link:\n                        var c2: Vector3 = link.global_position + Vector3(0, 110.0, 0)\n                        var fwd: Vector3 = link.forward()\n                        Game.set_event_cam(c2 + fwd * 260.0 + Vector3(0, 40.0, 0), c2, 55.0)\n        "DIRECTOR":\n            if name == "FADE":\n                var t := int(_prop(cut, "Timer", 30))\n                Game.fade(1.0 if fade_dir > 0 else 0.0, maxi(t, 1))\n                fade_dir = -fade_dir\n        "SOUND":\n            if name == "BGMSTOP" and Game.bgm_player:\n                Game.bgm_player.stop()\n        "PACKAGE":\n            if name == "PLAY":\n                var file := str(_prop(cut, "FileName", ""))\n                var off = _prop(cut, "OffsetPos")\n                var ang := float(_prop(cut, "OffsetAngY", 0.0))\n                var opos := Vector3.ZERO\n                if off is Array and off.size() >= 3 and not (off[0] is Array):\n                    opos = Vector3(float(off[0]), float(off[1]), float(off[2]))\n                elif off is Array and off.size() >= 1 and off[0] is Array:\n                    opos = Vector3(float(off[0][0]), float(off[0][1]), float(off[0][2]))\n                Game.play_cutscene(file.get_basename(), opos, ang)\n        "NORMAL":\n            if node == link and link:\n                _begin_link(cur, name, cut)\n            else:\n                _begin_actor(node, cur, name, cut)\n\nfunc _talker() -> Node3D:\n    for st in staffs:\n        if st["data"].get("type", "") == "NORMAL" and st["node"] != null and st["node"] != link:\n            return st["node"]\n    return null\n\nfunc _begin_link(cur: Dictionary, name: String, cut: Dictionary) -> void:\n    if name.begins_with("002") or name.contains("walk"):\n        var pos = _prop(cut, "pos")\n        if pos != null:\n            if Game.scripted():\n                print("gcrip event: walk ", link.global_position.round(), " -> ", _vec(pos).round())\n            link.event_walk_to(_vec(pos))\n        else:\n            link.event_clip("walk")\n    elif name.contains("talk"):\n        link.event_clip("talka")\n    elif name.contains("get_item"):\n        var item := int(_prop(cut, "prm0", -1))\n        link.event_clip("wait")\n        if item >= 0 and Game.messages.has(101 + item):\n            Game.show_message(101 + item)\n    elif name.contains("dash"):\n        link.event_clip("dash")\n    elif name.contains("jump"):\n        link.event_clip("mjmp")\n    else:\n        link.event_clip("wait")\n\nfunc _begin_actor(node: Node, cur: Dictionary, name: String, cut: Dictionary) -> void:\n    var msg = _prop(cut, "MsgNo")\n    if msg == null:\n        msg = _prop(cut, "msg_no")\n    if msg != null and (name.begins_with("MES_SET") or name.contains("TALK") or name.contains("MSG")):\n        if node and node.has_method("event_talk"):\n            node.event_talk(true)\n        Game.show_message(int(msg))\n    elif name == "SETANM" and node and node.has_method("play_clip"):\n        var anm = _prop(cut, "AnmName")\n        if anm != null:\n            node.play_clip(str(anm))\n\nfunc _tick(st: Dictionary, cur: Dictionary) -> bool:\n    cur["t"] += 1\n    var cut: Dictionary = cur["cut"]\n    var kind: String = st["data"].get("type", "")\n    var name: String = cut.get("name", "")\n    var timer := int(_prop(cut, "Timer", 0))\n    match kind:\n        "TIMEKEEPER":\n            return cur["t"] >= timer\n        "CAMERA":\n            if name == "UNITRANS":\n                var k := clampf(float(cur["t"]) / maxf(float(timer), 1.0), 0.0, 1.0)\n                Game.set_event_cam(cur["from_eye"].lerp(_vec(_prop(cut, "Eye")), k),\n                                   cur["from_center"].lerp(_vec(_prop(cut, "Center")), k),\n                                   lerpf(cur["from_fov"], float(_prop(cut, "Fovy", cur["from_fov"])), k))\n                return cur["t"] >= timer\n            if name == "PAUSE" and int(_prop(cut, "WaitAnyKey", 0)) == 1:\n                return Input.is_action_just_pressed("action_a") or Game.scripted()\n            return cur["t"] >= timer\n        "DIRECTOR":\n            return cur["t"] >= (timer if name == "FADE" else 0)\n        "NORMAL":\n            if kind == "PACKAGE":\n                return not Game.cutscene_running()\n            if _waits_dialog(name, cut):\n                if Game.dialog_open:\n                    cur["dialog_seen"] = true\n                    return false\n                if cur["dialog_seen"] or cur["t"] > 2:\n                    var node: Node = st["node"]\n                    if node and node != link and node.has_method("event_talk"):\n                        node.event_talk(false)\n                    return true\n                return false\n            if st["node"] == link and link and (name.begins_with("002") or name.contains("walk")):\n                return link.event_reached() or cur["t"] > 600\n            return cur["t"] >= timer\n        _:\n            return cur["t"] >= timer\n\nfunc _waits_dialog(name: String, cut: Dictionary) -> bool:\n    if name.contains("get_item"):\n        return true\n    var props: Dictionary = cut.get("properties", {})\n    return (props.has("MsgNo") or props.has("msg_no")) and (name.begins_with("MES_SET") or name.contains("TALK") or name.contains("MSG"))\n\nfunc abort() -> void:\n    # stage change under a running event: drop the camera / fade / Link control cleanly\n    if Game.event_running:\n        _finish()\n\nfunc _exit_tree() -> void:\n    if Game.event_running and Game.event_runner == self and not Game.cutscene_running():\n        Game.event_running = false\n        Game.clear_event_cam()\n        Game.fade(0.0, 1)\n\nfunc _finish() -> void:\n    # a .stb the event started can outlive the event script: it owns the flag until it ends\n    Game.event_running = Game.cutscene_running()\n    if not Game.cutscene_running():\n        # a .stb it launched is still running: that scene raises the bits when IT ends\n        Game.story_event_done(str(ev.get("name", "")))\n    Game.clear_event_cam()\n    Game.fade(0.0, 15)\n    if link and is_instance_valid(link) and link.has_method("event_end"):\n        link.event_end()\n    finished.emit()\n    queue_free()\n'
+_EVENT_GD = 'extends Node\n# gcrip: runs one event_list.dat event (d_event_manager.cpp semantics, simplified).\n# Every staff (cast member) walks its cut list; a cut starts when its start flags are set\n# (or, with start flag -1, when the previous cut of that staff ended) and sets its end flag\n# when its action completes. The event ends when every staff is out of cuts (or 60 s).\n\nsignal finished\n\nconst TIMEOUT := 30 * 15   # a stuck script must not lock the game for a minute\nconst LINK_EVENT_WALK := 8.0\n\nvar ev: Dictionary = {}\nvar flags: Dictionary = {}\nvar staffs: Array = []\nvar frames := 0\nvar stalled := 0            # frames since any staff last advanced\nvar link: Node3D = null\nvar fade_dir := 1   # alternate FADE cuts: out, then in\n\nfunc start(event: Dictionary) -> void:\n    ev = event\n    link = Game.player()\n    for sf in ev.get("actors", []):\n        staffs.append({"data": sf, "idx": 0, "cur": null, "node": _find_node(sf)})\n    Game.event_running = true\n    if link and link.has_method("event_begin"):\n        link.event_begin()\n\nfunc _find_node(sf: Dictionary) -> Node:\n    var nm: String = sf.get("name", "")\n    if nm == "Link":\n        return link\n    if sf.get("type", "") != "NORMAL":\n        return null\n    for grp in ["interact", "enemy"]:\n        for n in get_tree().get_nodes_in_group(grp):\n            if is_instance_valid(n) and str(n.get("actor")) == nm:\n                return n\n    return null\n\nfunc _set_flag(flag: int) -> void:\n    if flag >= 0:\n        flags[flag] = true\n\nfunc _ready_to_start(st: Dictionary, cut: Dictionary) -> bool:\n    var sfl: Array = cut.get("start_flags", [-1, -1, -1])\n    if int(sfl[0]) == -1:\n        return true   # follows the previous cut of this staff\n    for f in sfl:\n        if int(f) >= 0 and not flags.has(int(f)):\n            return false\n    return true\n\nfunc _physics_process(_delta: float) -> void:\n    frames += 1\n    var alive := false\n    var moved := false\n    for st in staffs:\n        var acts: Array = st["data"].get("actions", [])\n        if st["cur"] == null:\n            if st["idx"] >= acts.size():\n                continue\n            var cut: Dictionary = acts[st["idx"]]\n            if not _ready_to_start(st, cut) and stalled < 90:\n                alive = true\n                continue\n            if not _ready_to_start(st, cut):\n                # nothing has moved for 3 s: a start flag this cut waits on is never produced\n                # (our runner does not implement every actor action), so let it through\n                print("gcrip event: unblocking ", st["data"].get("name", "?"), " cut ",\n                      cut.get("name", "?"), " in ", ev.get("name", "?"))\n            st["cur"] = {"cut": cut, "t": 0, "dialog_seen": false, "from_eye": Vector3.ZERO,\n                         "from_center": Vector3.ZERO, "from_fov": 60.0}\n            _begin(st, st["cur"])\n        var cur: Dictionary = st["cur"]\n        alive = true\n        if _tick(st, cur):\n            _set_flag(int(cur["cut"].get("end_flag", -1)))\n            st["cur"] = null\n            st["idx"] += 1\n            moved = true\n    stalled = 0 if moved else stalled + 1\n    if Game.scripted() and frames % 60 == 0:\n        var report := []\n        for st in staffs:\n            var acts2: Array = st["data"].get("actions", [])\n            var cn: String = "-" if st["cur"] == null else str(st["cur"]["cut"].get("name", "?"))\n            report.append("%s[%d/%d]%s" % [st["data"].get("name", "?"), st["idx"], acts2.size(), cn])\n        print("gcrip event ", ev.get("name", "?"), " f", frames, ": ", " ".join(report), "  link=", link.global_position.round() if link else "?", " walking=", str(link.get("ev_walking")) if link else "?")\n    if not alive or frames > TIMEOUT:\n        _finish()\n\nfunc _prop(cut: Dictionary, key: String, default = null):\n    var props: Dictionary = cut.get("properties", {})\n    if props.has(key):\n        return props[key]["value"]\n    return default\n\nfunc _num(v, dflt: float) -> float:\n    # a cut property is often authored as a one-element list, and int([30]) throws\n    if v is Array:\n        return _num(v[0], dflt) if (v as Array).size() > 0 else dflt\n    if v is float or v is int or v is bool:\n        return float(v)\n    if v is String and (v as String).is_valid_float():\n        return float(v)\n    return dflt\n\nfunc _vec(v) -> Vector3:\n    if v is Array and v.size() >= 3:\n        var p := Vector3(float(v[0]), float(v[1]), float(v[2]))\n        if v[0] is Array:\n            p = Vector3(float(v[0][0]), float(v[0][1]), float(v[0][2]))\n        return p - Game.world_offset\n    return Vector3.ZERO\n\nfunc _begin(st: Dictionary, cur: Dictionary) -> void:\n    var cut: Dictionary = cur["cut"]\n    var kind: String = st["data"].get("type", "")\n    var name: String = cut.get("name", "")\n    var node: Node = st["node"]\n    match kind:\n        "CAMERA":\n            cur["from_eye"] = Game.event_cam_eye()\n            cur["from_center"] = Game.event_cam_center()\n            cur["from_fov"] = Game.event_cam_fov()\n            match name:\n                "FIXEDPOS":\n                    var c: Vector3 = (link.global_position + Vector3(0, 100.0, 0)) if link else cur["from_center"]\n                    Game.set_event_cam(_vec(_prop(cut, "Eye")), c, _num(_prop(cut, "Fovy", 60.0), 60.0))\n                "FIXEDFRM":\n                    Game.set_event_cam(_vec(_prop(cut, "Eye")), _vec(_prop(cut, "Center")), _num(_prop(cut, "Fovy", 60.0), 60.0))\n                "PAUSE", "CHECK", "RESTOREPOS", "STYLE":\n                    Game.set_event_cam(cur["from_eye"], cur["from_center"], cur["from_fov"])\n                "TALK", "TURNTOACTOR":\n                    var who := _talker()\n                    if who and link:\n                        var a: Vector3 = link.global_position + Vector3(0, 100.0, 0)\n                        var b: Vector3 = who.global_position + Vector3(0, 100.0, 0)\n                        var mid := (a + b) * 0.5\n                        var side := (b - a).cross(Vector3.UP).normalized()\n                        if side.length() < 0.5:\n                            side = Vector3.RIGHT\n                        Game.set_event_cam(mid + side * 300.0 + Vector3(0, 60.0, 0), mid, 50.0)\n                    else:\n                        Game.set_event_cam(cur["from_eye"], cur["from_center"], cur["from_fov"])\n                "GETITEM", "USEITEM0":\n                    if link:\n                        var c2: Vector3 = link.global_position + Vector3(0, 110.0, 0)\n                        var fwd: Vector3 = link.forward()\n                        Game.set_event_cam(c2 + fwd * 260.0 + Vector3(0, 40.0, 0), c2, 55.0)\n        "DIRECTOR":\n            if name == "FADE":\n                var t := int(_num(_prop(cut, "Timer", 30), 30.0))\n                Game.fade(1.0 if fade_dir > 0 else 0.0, maxi(t, 1))\n                fade_dir = -fade_dir\n        "SOUND":\n            if name == "BGMSTOP" and Game.bgm_player:\n                Game.bgm_player.stop()\n        "PACKAGE":\n            if name == "PLAY":\n                var file := str(_prop(cut, "FileName", ""))\n                var off = _prop(cut, "OffsetPos")\n                var ang := _num(_prop(cut, "OffsetAngY", 0.0), 0.0)\n                var opos := Vector3.ZERO\n                if off is Array and off.size() >= 3 and not (off[0] is Array):\n                    opos = Vector3(float(off[0]), float(off[1]), float(off[2]))\n                elif off is Array and off.size() >= 1 and off[0] is Array:\n                    opos = Vector3(float(off[0][0]), float(off[0][1]), float(off[0][2]))\n                Game.play_cutscene(file.get_basename(), opos, ang)\n        "NORMAL":\n            if node == link and link:\n                _begin_link(cur, name, cut)\n            else:\n                _begin_actor(node, cur, name, cut)\n\nfunc _talker() -> Node3D:\n    for st in staffs:\n        if st["data"].get("type", "") == "NORMAL" and st["node"] != null and st["node"] != link:\n            return st["node"]\n    return null\n\nfunc _begin_link(cur: Dictionary, name: String, cut: Dictionary) -> void:\n    if name.begins_with("002") or name.contains("walk"):\n        var pos = _prop(cut, "pos")\n        if pos != null:\n            if Game.scripted():\n                print("gcrip event: walk ", link.global_position.round(), " -> ", _vec(pos).round())\n            link.event_walk_to(_vec(pos))\n        else:\n            link.event_clip("walk")\n    elif name.contains("talk"):\n        link.event_clip("talka")\n    elif name.contains("get_item"):\n        var item := int(_num(_prop(cut, "prm0", -1), -1.0))\n        link.event_clip("wait")\n        if item >= 0 and Game.messages.has(101 + item):\n            Game.show_message(101 + item)\n    elif name.contains("dash"):\n        link.event_clip("dash")\n    elif name.contains("jump"):\n        link.event_clip("mjmp")\n    else:\n        link.event_clip("wait")\n\nfunc _begin_actor(node: Node, cur: Dictionary, name: String, cut: Dictionary) -> void:\n    var msg = _prop(cut, "MsgNo")\n    if msg == null:\n        msg = _prop(cut, "msg_no")\n    if msg != null and (name.begins_with("MES_SET") or name.contains("TALK") or name.contains("MSG")):\n        if node and node.has_method("event_talk"):\n            node.event_talk(true)\n        Game.show_message(int(_num(msg, -1.0)))\n    elif name == "SETANM" and node and node.has_method("play_clip"):\n        var anm = _prop(cut, "AnmName")\n        if anm != null:\n            node.play_clip(str(anm))\n\nfunc _tick(st: Dictionary, cur: Dictionary) -> bool:\n    cur["t"] += 1\n    var cut: Dictionary = cur["cut"]\n    var kind: String = st["data"].get("type", "")\n    var name: String = cut.get("name", "")\n    var timer := int(_num(_prop(cut, "Timer", 0), 0.0))\n    match kind:\n        "TIMEKEEPER":\n            return cur["t"] >= timer\n        "CAMERA":\n            if name == "UNITRANS":\n                var k := clampf(float(cur["t"]) / maxf(float(timer), 1.0), 0.0, 1.0)\n                Game.set_event_cam(cur["from_eye"].lerp(_vec(_prop(cut, "Eye")), k),\n                                   cur["from_center"].lerp(_vec(_prop(cut, "Center")), k),\n                                   lerpf(cur["from_fov"], _num(_prop(cut, "Fovy", cur["from_fov"]), cur["from_fov"]), k))\n                return cur["t"] >= timer\n            if name == "PAUSE" and int(_num(_prop(cut, "WaitAnyKey", 0), 0.0)) == 1:\n                return Input.is_action_just_pressed("action_a") or Game.scripted()\n            return cur["t"] >= timer\n        "DIRECTOR":\n            return cur["t"] >= (timer if name == "FADE" else 0)\n        "NORMAL":\n            if kind == "PACKAGE":\n                return not Game.cutscene_running()\n            if _waits_dialog(name, cut):\n                if Game.dialog_open:\n                    cur["dialog_seen"] = true\n                    return false\n                if cur["dialog_seen"] or cur["t"] > 2:\n                    var node: Node = st["node"]\n                    if node and node != link and node.has_method("event_talk"):\n                        node.event_talk(false)\n                    return true\n                return false\n            if st["node"] == link and link and (name.begins_with("002") or name.contains("walk")):\n                return link.event_reached() or cur["t"] > 600\n            return cur["t"] >= timer\n        _:\n            return cur["t"] >= timer\n\nfunc _waits_dialog(name: String, cut: Dictionary) -> bool:\n    if name.contains("get_item"):\n        return true\n    var props: Dictionary = cut.get("properties", {})\n    return (props.has("MsgNo") or props.has("msg_no")) and (name.begins_with("MES_SET") or name.contains("TALK") or name.contains("MSG"))\n\nfunc abort() -> void:\n    # stage change under a running event: drop the camera / fade / Link control cleanly\n    if Game.event_running:\n        _finish()\n\nfunc _exit_tree() -> void:\n    if Game.event_running and Game.event_runner == self and not Game.cutscene_running():\n        Game.event_running = false\n        Game.clear_event_cam()\n        Game.fade(0.0, 1)\n\nfunc _finish() -> void:\n    # a .stb the event started can outlive the event script: it owns the flag until it ends\n    Game.event_running = Game.cutscene_running()\n    if not Game.cutscene_running():\n        # a .stb it launched is still running: that scene raises the bits when IT ends\n        Game.story_event_done(str(ev.get("name", "")))\n    Game.clear_event_cam()\n    Game.fade(0.0, 15)\n    if link and is_instance_valid(link) and link.has_method("event_end"):\n        link.event_end()\n    finished.emit()\n    queue_free()\n'
 
 _ROPE_GD = 'extends Node3D\n# gcrip: Grappling Hook rope (d_a_himo2.cpp). Free flight 20 u/f for 40 frames, lobbed by a\n# pitch bias; locked flight to a grapple post at 30 u/f homing; a hooked rope hands Link the\n# pendulum (player.gd ROPE states). Returns at 50 u/f x a ramp after a miss.\n\nconst FLY_SPEED := 20.0\nconst FLY_FRAMES := 40\nconst LOCK_SPEED := 30.0\nconst LOCK_TURN := 0x800 * PI / 32768.0\nconst LOCK_ARRIVE := 50.0\nconst LOCK_FRAMES := 70\nconst PITCH_BIAS_PER_UNIT := -5.0        # s16 per unit of distance\nconst PITCH_BIAS_MIN := -3000.0\nconst S16 := PI / 32768.0\n\nenum State { FLY_FREE, FLY_LOCK, RETURN, HOOKED }\nvar state: int = State.FLY_FREE\nvar player: Node3D = null\nvar post: Node3D = null\nvar target := Vector3.ZERO\nvar yaw := 0.0\nvar pitch := 0.0          # positive = down\nvar t := 0\nvar ramp := 0.0\nvar line: MeshInstance3D = null\nvar tip: Node3D = null\n\nstatic func fwd(y: float, p: float) -> Vector3:\n    return Vector3(sin(y) * cos(p), -sin(p), cos(y) * cos(p))\n\nfunc launch(link: Node3D, from: Vector3, aim_yaw: float, aim_pitch: float, post_node: Node3D) -> void:\n    player = link\n    post = post_node\n    global_position = from\n    yaw = aim_yaw\n    pitch = aim_pitch\n    if post and is_instance_valid(post):\n        state = State.FLY_LOCK\n        target = post.hook_point()\n    else:\n        state = State.FLY_FREE\n        var d := from.distance_to(from + fwd(yaw, pitch) * 800.0)\n        pitch += maxf(PITCH_BIAS_PER_UNIT * d, PITCH_BIAS_MIN) * S16\n    line = MeshInstance3D.new()\n    var cyl := CylinderMesh.new()\n    cyl.top_radius = 1.8\n    cyl.bottom_radius = 1.8\n    cyl.height = 1.0\n    line.mesh = cyl\n    var mat := StandardMaterial3D.new()\n    mat.albedo_color = Color(0.55, 0.42, 0.25)\n    line.material_override = mat\n    line.top_level = true\n    add_child(line)\n    var scene := load("res://items/ropeend.glb") if ResourceLoader.exists("res://items/ropeend.glb") else null\n    if scene:\n        tip = scene.instantiate()\n        add_child(tip)\n\nfunc root() -> Vector3:\n    if player and is_instance_valid(player) and player.has_method("rope_hand"):\n        return player.rope_hand()\n    return global_position\n\nfunc _physics_process(_delta: float) -> void:\n    t += 1\n    match state:\n        State.FLY_FREE:\n            var old := global_position\n            var next := old + fwd(yaw, pitch) * FLY_SPEED\n            var space := get_world_3d().direct_space_state\n            var q := PhysicsRayQueryParameters3D.create(old, next, 1 | 8)\n            q.collide_with_areas = true\n            var hit := space.intersect_ray(q)\n            if hit:\n                var c = hit.collider\n                if c and c.has_method("take_hit"):\n                    c.take_hit(1, old)\n                global_position = hit.position\n                _start_return()\n            else:\n                global_position = next\n                if t >= FLY_FRAMES:\n                    _start_return()\n        State.FLY_LOCK:\n            var to := target - global_position\n            if to.length() < LOCK_ARRIVE or t > LOCK_FRAMES:\n                global_position = target\n                state = State.HOOKED\n                if player and is_instance_valid(player) and player.has_method("rope_hooked"):\n                    player.rope_hooked(self, target)\n            else:\n                var want_yaw := atan2(to.x, to.z)\n                var want_pitch := atan2(-to.y, Vector2(to.x, to.z).length())\n                yaw += clampf(wrapf(want_yaw - yaw, -PI, PI), -LOCK_TURN, LOCK_TURN)\n                pitch += clampf(want_pitch - pitch, -LOCK_TURN, LOCK_TURN)\n                global_position += fwd(yaw, pitch) * LOCK_SPEED\n        State.RETURN:\n            ramp += 0.01\n            var to := root() - global_position\n            var step := 400.0 * ramp\n            if to.length() <= maxf(step, 5.0):\n                if player and is_instance_valid(player) and player.has_method("rope_done"):\n                    player.rope_done()\n                queue_free()\n                return\n            global_position += to.normalized() * step\n        State.HOOKED:\n            pass\n    _draw(root())\n\nfunc _start_return() -> void:\n    state = State.RETURN\n    ramp = 0.0\n\nfunc release() -> void:\n    # Link let go: the rope comes back to the hand\n    _start_return()\n\nfunc _draw(r: Vector3) -> void:\n    if line == null:\n        return\n    var a := r\n    var b := global_position\n    var d := b - a\n    var l := d.length()\n    if l < 1.0:\n        line.visible = false\n        return\n    line.visible = true\n    line.global_position = (a + b) * 0.5\n    line.look_at(b, Vector3.UP if absf(d.normalized().y) < 0.99 else Vector3.FORWARD)\n    line.rotate_object_local(Vector3.RIGHT, PI / 2.0)\n    line.scale = Vector3(1.0, l, 1.0)\n'
 
@@ -5873,7 +6256,7 @@ _KUI_GD = 'extends Node3D\n# gcrip: grapple post (d_a_kui). Marks where the grap
 
 _TAG_EVENT_GD = 'extends Area3D\n# gcrip: TagEv (d_a_tag_event.cpp) - an invisible cylinder (scale x 100) that orders the\n# stage event named by the EVNT table entry params >> 24 when Link walks in. A switch bit\n# (params >> 8) remembers it fired; an event bit in rot.z gates it (0 / 0xFFFF = none).\n\nvar params := 0\nvar event_flag := 0\nvar event_name := ""\nvar swbit := 0xFF\nvar room := 0\nvar done := false\n\nfunc setup(p: int, rot_z: int, r: int, table: Array, sc: Array) -> void:\n    params = p\n    room = r\n    event_flag = rot_z & 0xFFFF\n    swbit = (p >> 8) & 0xFF\n    var no := (p >> 24) & 0xFF\n    if no < table.size():\n        event_name = str(table[no])\n    var shape := CollisionShape3D.new()\n    var cyl := CylinderShape3D.new()\n    cyl.radius = maxf(float(sc[0]) * 100.0, 40.0)\n    cyl.height = maxf(float(sc[1]) * 100.0, 60.0) * 2.0\n    shape.shape = cyl\n    add_child(shape)\n    collision_layer = 0\n    collision_mask = 1\n    monitoring = true\n    body_entered.connect(_on_body_entered)\n\nfunc _on_body_entered(body: Node3D) -> void:\n    if done or not (body is CharacterBody3D) or not body.is_in_group("player"):\n        return\n    if event_name == "" or not Game.events.has(event_name):\n        return\n    if swbit != 0xFF and Game.is_switch(room, swbit):\n        done = true\n        return\n    if event_flag != 0 and event_flag != 0xFFFF and not Game.event_bit(event_flag):\n        return\n    if Game.run_event(event_name):\n        done = true\n        if swbit != 0xFF:\n            Game.set_switch(room, swbit)\n'
 
-_ACTOR_ENEMY_GD = 'extends CharacterBody3D\n# gcrip: data-driven enemy (melee / flying / ranged) for the actors that are not worth their\n# own script yet. Constants come from enemies.json (data/ww_enemies_*.json mined from the\n# decomp); anything missing falls back to the Bokoblin-like defaults below. Per-frame units.\n\nconst DEFAULTS := {\n    "hp": 3, "radius": 40.0, "height": 100.0, "notice": 1000.0, "lose": 1800.0,\n    "walk": 3.0, "run": 10.0, "gravity": -3.0, "terminal": -50.0, "turn_s16": 0x600,\n    "attack_range": 110.0, "attack_frames": 30, "hit_frame": 14, "damage": 2,\n    "knockback": 8.0, "flinch_frames": 12, "flying": false, "hover": 250.0, "fly_speed": 8.0,\n    "ranged": null, "clips": {},\n}\n\nenum Act { STAND, APPROACH, ATTACK, DAMAGE, DEAD, RETURN }\nvar act: int = Act.STAND\nvar actor := ""\nvar cfg: Dictionary = {}\nvar hp := 3\nvar facing := 0.0\nvar speed := 0.0\nvar timer := 0\nvar cooldown := 0\nvar hit_done := false\nvar mesh: Node3D = null\nvar anim: AnimationPlayer = null\nvar home := Vector3.ZERO\nvar bob := 0.0\nvar dive_from := Vector3.ZERO\nvar dive_to := Vector3.ZERO\nvar clips: Dictionary = {}\n\nfunc setup(actor_name: String, _p: int, mesh_node: Node3D, rot_y_deg: float) -> void:\n    actor = actor_name\n    cfg = DEFAULTS.duplicate(true)\n    var table: Dictionary = Game.enemies.get(actor, {})\n    for k in table:\n        if table[k] != null:\n            cfg[k] = table[k]\n    mesh = mesh_node\n    home = global_position\n    facing = deg_to_rad(rot_y_deg)\n    hp = int(cfg["hp"])\n    collision_layer = 1 | 8\n    collision_mask = 1\n    var shape := CollisionShape3D.new()\n    var cyl := CylinderShape3D.new()\n    cyl.radius = float(cfg["radius"])\n    cyl.height = float(cfg["height"])\n    shape.shape = cyl\n    shape.position.y = float(cfg["height"]) / 2.0\n    add_child(shape)\n    add_to_group("enemy")\n    if bool(cfg["flying"]):\n        motion_mode = CharacterBody3D.MOTION_MODE_FLOATING\n    anim = mesh.find_child("AnimationPlayer", true, false) if mesh else null\n    if anim:\n        var wanted: Dictionary = cfg.get("clips", {})\n        var names := anim.get_animation_list()\n        for key in ["wait", "walk", "run", "notice", "attack", "damage", "dead", "fly"]:\n            var want := str(wanted.get(key, ""))\n            if want != "" and anim.has_animation(want):\n                clips[key] = want\n        for n in names:\n            var l := n.to_lower()\n            for key in ["wait", "walk", "run", "attack", "damage", "dead", "fly", "hakken"]:\n                var k2: String = "notice" if key == "hakken" else key\n                if key in l and not clips.has(k2):\n                    clips[k2] = n\n        for key in ["wait", "walk", "run", "fly"]:\n            if clips.has(key):\n                anim.get_animation(clips[key]).loop_mode = Animation.LOOP_LINEAR\n        _play("fly" if bool(cfg["flying"]) and clips.has("fly") else "wait")\n\nfunc _play(key: String, blend := 0.2) -> void:\n    if anim and clips.has(key) and anim.current_animation != clips[key]:\n        anim.play(clips[key], blend)\n\nfunc take_hit(damage: int, from: Vector3) -> void:\n    if act == Act.DEAD:\n        return\n    hp -= damage\n    var away := global_position - from\n    away.y = 0.0\n    if away.length() > 0.01:\n        facing = atan2(-away.x, -away.z)\n    if hp <= 0:\n        act = Act.DEAD\n        timer = 40\n        _play("dead", 0.1)\n        Game.burst(global_position + Vector3(0, float(cfg["height"]) * 0.5, 0), Color(0.5, 0.2, 0.6))\n        return\n    act = Act.DAMAGE\n    timer = int(cfg["flinch_frames"])\n    speed = -float(cfg["knockback"])\n    _play("damage", 0.05)\n\nfunc _turn_to(t: float) -> void:\n    var max_step := int(cfg["turn_s16"]) * PI / 32768.0\n    facing += clampf(wrapf(t - facing, -PI, PI), -max_step, max_step)\n\nfunc _physics_process(_delta: float) -> void:\n    var link := Game.player()\n    var to_link := Vector3.ZERO\n    var dist := 1.0e9\n    if link:\n        to_link = link.global_position - global_position\n        to_link.y = 0.0\n        dist = to_link.length()\n    var flying := bool(cfg["flying"])\n    var ranged = cfg.get("ranged")\n    var has_ranged: bool = ranged is Dictionary\n    if cooldown > 0:\n        cooldown -= 1\n    match act:\n        Act.STAND:\n            speed = 0.0\n            _play("fly" if flying and clips.has("fly") else "wait")\n            if link and dist < float(cfg["notice"]) and Game.line_of_sight(global_position + Vector3(0, 80, 0), link.global_position + Vector3(0, 80, 0)):\n                act = Act.APPROACH\n                _play("notice" if clips.has("notice") else ("fly" if flying else "run"), 0.1)\n        Act.APPROACH:\n            _turn_to(atan2(to_link.x, to_link.z))\n            if has_ranged and dist < float(ranged.get("range", 1200.0)) and dist > float(cfg["attack_range"]):\n                speed = 0.0\n                _play("wait")\n                if cooldown <= 0 and link:\n                    _shoot(ranged, link)\n            else:\n                speed = float(cfg["fly_speed"] if flying else cfg["run"])\n                _play("fly" if flying and clips.has("fly") else "run")\n            if dist < float(cfg["attack_range"]) and link:\n                act = Act.ATTACK\n                timer = int(cfg["attack_frames"])\n                hit_done = false\n                speed = 0.0\n                dive_from = global_position\n                dive_to = link.global_position + Vector3(0, 60.0, 0)\n                _play("attack", 0.1)\n            elif dist > float(cfg["lose"]):\n                act = Act.RETURN\n        Act.ATTACK:\n            timer -= 1\n            var n := int(cfg["attack_frames"])\n            if flying:\n                # swoop: dive at Link\'s body and climb back out over the attack\'s frames\n                var k := 1.0 - float(timer) / maxf(float(n), 1.0)\n                var arc := sin(k * PI)\n                global_position = dive_from.lerp(dive_to, minf(k * 2.0, 1.0)) + Vector3(0, (1.0 - arc) * 0.0, 0)\n                if k > 0.5:\n                    global_position = dive_to.lerp(dive_from + Vector3(0, float(cfg["hover"]), 0), (k - 0.5) * 2.0)\n            if timer == n - int(cfg["hit_frame"]) and not hit_done and link and link.global_position.distance_to(global_position) < float(cfg["attack_range"]) + 40.0:\n                hit_done = true\n                link.call("take_damage", int(cfg["damage"]), global_position)\n            if timer <= 0:\n                act = Act.APPROACH\n        Act.DAMAGE:\n            timer -= 1\n            speed = minf(speed + 1.0, 0.0)\n            if timer <= 0:\n                act = Act.APPROACH\n        Act.RETURN:\n            var to_home := home - global_position\n            to_home.y = 0.0\n            _turn_to(atan2(to_home.x, to_home.z))\n            speed = float(cfg["walk"] if not flying else cfg["fly_speed"])\n            _play("walk" if clips.has("walk") else "run")\n            if to_home.length() < 40.0:\n                act = Act.STAND\n            elif link and dist < float(cfg["notice"]) * 0.8:\n                act = Act.APPROACH\n        Act.DEAD:\n            timer -= 1\n            if mesh:\n                mesh.scale = mesh.scale * 0.92\n            if timer <= 0:\n                queue_free()\n            return\n    if flying:\n        if act != Act.ATTACK:\n            bob += 0.12\n            var target_y := Game.ground_height(global_position) + float(cfg["hover"]) + sin(bob) * 15.0\n            var dy := clampf(target_y - global_position.y, -6.0, 6.0)\n            velocity = (Vector3(sin(facing) * speed, dy, cos(facing) * speed)) * 30.0\n            move_and_slide()\n    else:\n        var vy := velocity.y / 30.0 + float(cfg["gravity"])\n        vy = maxf(vy, float(cfg["terminal"]))\n        velocity = Vector3(sin(facing) * speed, vy, cos(facing) * speed) * 30.0\n        move_and_slide()\n        if is_on_floor():\n            velocity.y = 0.0\n    if mesh:\n        mesh.rotation.y = facing\n\nfunc _shoot(r: Dictionary, link: Node3D) -> void:\n    cooldown = int(r.get("cooldown", 90))\n    var shot := Area3D.new()\n    shot.set_script(load("res://items/enemy_shot.gd"))\n    get_tree().current_scene.add_child(shot)\n    var from := global_position + Vector3(0, float(cfg["height"]) * 0.6, 0)\n    var aim := (link.global_position + Vector3(0, 80.0, 0)) - from\n    shot.launch(from, aim.normalized(), float(r.get("speed", 30.0)), float(r.get("range", 1500.0)), int(r.get("damage", 2)))\n    _play("attack", 0.1)\n'
+_ACTOR_ENEMY_GD = 'extends CharacterBody3D\n# gcrip: data-driven enemy (melee / flying / ranged) for the actors that are not worth their\n# own script yet. Constants come from enemies.json (data/ww_enemies_*.json mined from the\n# decomp); anything missing falls back to the Bokoblin-like defaults below. Per-frame units.\n\nconst DEFAULTS := {\n    "hp": 3, "radius": 40.0, "height": 100.0, "notice": 1000.0, "lose": 1800.0,\n    "walk": 3.0, "run": 10.0, "gravity": -3.0, "terminal": -50.0, "turn_s16": 0x600,\n    "attack_range": 110.0, "attack_frames": 30, "hit_frame": 14, "damage": 2,\n    "knockback": 8.0, "flinch_frames": 12, "flying": false, "hover": 250.0, "fly_speed": 8.0,\n    "ranged": null, "clips": {},\n}\n\nconst RANGED_DEFAULTS := {"speed": 40.0, "range": 1200.0, "cooldown": 90, "damage": 1}\n\nenum Act { STAND, APPROACH, ATTACK, DAMAGE, DEAD, RETURN }\nvar act: int = Act.STAND\nvar actor := ""\nvar cfg: Dictionary = {}\nvar hp := 3\nvar facing := 0.0\nvar speed := 0.0\nvar timer := 0\nvar cooldown := 0\nvar hit_done := false\nvar mesh: Node3D = null\nvar anim: AnimationPlayer = null\nvar home := Vector3.ZERO\nvar bob := 0.0\nvar dive_from := Vector3.ZERO\nvar dive_to := Vector3.ZERO\nvar clips: Dictionary = {}\n\nfunc setup(actor_name: String, _p: int, mesh_node: Node3D, rot_y_deg: float) -> void:\n    actor = actor_name\n    cfg = DEFAULTS.duplicate(true)\n    var table: Dictionary = Game.enemies.get(actor, {})\n    for k in table:\n        if table[k] != null:\n            cfg[k] = table[k]\n    # a few enemies are mined "low confidence" because their decomp bodies are stubs: their\n    # ranged block exists but its numbers are null, and float(null) throws every frame\n    if cfg.get("ranged") is Dictionary:\n        var r: Dictionary = (cfg["ranged"] as Dictionary).duplicate()\n        for k2 in RANGED_DEFAULTS:\n            if r.get(k2) == null:\n                r[k2] = RANGED_DEFAULTS[k2]\n        cfg["ranged"] = r\n    mesh = mesh_node\n    home = global_position\n    facing = deg_to_rad(rot_y_deg)\n    hp = int(cfg["hp"])\n    collision_layer = 1 | 8\n    collision_mask = 1\n    var shape := CollisionShape3D.new()\n    var cyl := CylinderShape3D.new()\n    cyl.radius = float(cfg["radius"])\n    cyl.height = float(cfg["height"])\n    shape.shape = cyl\n    shape.position.y = float(cfg["height"]) / 2.0\n    add_child(shape)\n    add_to_group("enemy")\n    if bool(cfg["flying"]):\n        motion_mode = CharacterBody3D.MOTION_MODE_FLOATING\n    anim = mesh.find_child("AnimationPlayer", true, false) if mesh else null\n    if anim:\n        var wanted: Dictionary = cfg.get("clips", {})\n        var names := anim.get_animation_list()\n        for key in ["wait", "walk", "run", "notice", "attack", "damage", "dead", "fly"]:\n            var want := str(wanted.get(key, ""))\n            if want != "" and anim.has_animation(want):\n                clips[key] = want\n        for n in names:\n            var l := n.to_lower()\n            for key in ["wait", "walk", "run", "attack", "damage", "dead", "fly", "hakken"]:\n                var k2: String = "notice" if key == "hakken" else key\n                if key in l and not clips.has(k2):\n                    clips[k2] = n\n        for key in ["wait", "walk", "run", "fly"]:\n            if clips.has(key):\n                anim.get_animation(clips[key]).loop_mode = Animation.LOOP_LINEAR\n        _play("fly" if bool(cfg["flying"]) and clips.has("fly") else "wait")\n\nfunc _play(key: String, blend := 0.2) -> void:\n    if anim and clips.has(key) and anim.current_animation != clips[key]:\n        anim.play(clips[key], blend)\n\nfunc take_hit(damage: int, from: Vector3) -> void:\n    if act == Act.DEAD:\n        return\n    hp -= damage\n    var away := global_position - from\n    away.y = 0.0\n    if away.length() > 0.01:\n        facing = atan2(-away.x, -away.z)\n    if hp <= 0:\n        act = Act.DEAD\n        timer = 40\n        _play("dead", 0.1)\n        Game.burst(global_position + Vector3(0, float(cfg["height"]) * 0.5, 0), Color(0.5, 0.2, 0.6))\n        return\n    act = Act.DAMAGE\n    timer = int(cfg["flinch_frames"])\n    speed = -float(cfg["knockback"])\n    _play("damage", 0.05)\n\nfunc _turn_to(t: float) -> void:\n    var max_step := int(cfg["turn_s16"]) * PI / 32768.0\n    facing += clampf(wrapf(t - facing, -PI, PI), -max_step, max_step)\n\nfunc _physics_process(_delta: float) -> void:\n    var link := Game.player()\n    var to_link := Vector3.ZERO\n    var dist := 1.0e9\n    if link:\n        to_link = link.global_position - global_position\n        to_link.y = 0.0\n        dist = to_link.length()\n    var flying := bool(cfg["flying"])\n    var ranged = cfg.get("ranged")\n    var has_ranged: bool = ranged is Dictionary\n    if cooldown > 0:\n        cooldown -= 1\n    match act:\n        Act.STAND:\n            speed = 0.0\n            _play("fly" if flying and clips.has("fly") else "wait")\n            if link and dist < float(cfg["notice"]) and Game.line_of_sight(global_position + Vector3(0, 80, 0), link.global_position + Vector3(0, 80, 0)):\n                act = Act.APPROACH\n                _play("notice" if clips.has("notice") else ("fly" if flying else "run"), 0.1)\n        Act.APPROACH:\n            _turn_to(atan2(to_link.x, to_link.z))\n            if has_ranged and dist < float(ranged.get("range", 1200.0)) and dist > float(cfg["attack_range"]):\n                speed = 0.0\n                _play("wait")\n                if cooldown <= 0 and link:\n                    _shoot(ranged, link)\n            else:\n                speed = float(cfg["fly_speed"] if flying else cfg["run"])\n                _play("fly" if flying and clips.has("fly") else "run")\n            if dist < float(cfg["attack_range"]) and link:\n                act = Act.ATTACK\n                timer = int(cfg["attack_frames"])\n                hit_done = false\n                speed = 0.0\n                dive_from = global_position\n                dive_to = link.global_position + Vector3(0, 60.0, 0)\n                _play("attack", 0.1)\n            elif dist > float(cfg["lose"]):\n                act = Act.RETURN\n        Act.ATTACK:\n            timer -= 1\n            var n := int(cfg["attack_frames"])\n            if flying:\n                # swoop: dive at Link\'s body and climb back out over the attack\'s frames\n                var k := 1.0 - float(timer) / maxf(float(n), 1.0)\n                var arc := sin(k * PI)\n                global_position = dive_from.lerp(dive_to, minf(k * 2.0, 1.0)) + Vector3(0, (1.0 - arc) * 0.0, 0)\n                if k > 0.5:\n                    global_position = dive_to.lerp(dive_from + Vector3(0, float(cfg["hover"]), 0), (k - 0.5) * 2.0)\n            if timer == n - int(cfg["hit_frame"]) and not hit_done and link and link.global_position.distance_to(global_position) < float(cfg["attack_range"]) + 40.0:\n                hit_done = true\n                link.call("take_damage", int(cfg["damage"]), global_position)\n            if timer <= 0:\n                act = Act.APPROACH\n        Act.DAMAGE:\n            timer -= 1\n            speed = minf(speed + 1.0, 0.0)\n            if timer <= 0:\n                act = Act.APPROACH\n        Act.RETURN:\n            var to_home := home - global_position\n            to_home.y = 0.0\n            _turn_to(atan2(to_home.x, to_home.z))\n            speed = float(cfg["walk"] if not flying else cfg["fly_speed"])\n            _play("walk" if clips.has("walk") else "run")\n            if to_home.length() < 40.0:\n                act = Act.STAND\n            elif link and dist < float(cfg["notice"]) * 0.8:\n                act = Act.APPROACH\n        Act.DEAD:\n            timer -= 1\n            if mesh:\n                mesh.scale = mesh.scale * 0.92\n            if timer <= 0:\n                queue_free()\n            return\n    if flying:\n        if act != Act.ATTACK:\n            bob += 0.12\n            var target_y := Game.ground_height(global_position) + float(cfg["hover"]) + sin(bob) * 15.0\n            var dy := clampf(target_y - global_position.y, -6.0, 6.0)\n            velocity = (Vector3(sin(facing) * speed, dy, cos(facing) * speed)) * 30.0\n            move_and_slide()\n    else:\n        var vy := velocity.y / 30.0 + float(cfg["gravity"])\n        vy = maxf(vy, float(cfg["terminal"]))\n        velocity = Vector3(sin(facing) * speed, vy, cos(facing) * speed) * 30.0\n        move_and_slide()\n        if is_on_floor():\n            velocity.y = 0.0\n    if mesh:\n        mesh.rotation.y = facing\n\nfunc _shoot(r: Dictionary, link: Node3D) -> void:\n    cooldown = int(r.get("cooldown", 90))\n    var shot := Area3D.new()\n    shot.set_script(load("res://items/enemy_shot.gd"))\n    get_tree().current_scene.add_child(shot)\n    var from := global_position + Vector3(0, float(cfg["height"]) * 0.6, 0)\n    var aim := (link.global_position + Vector3(0, 80.0, 0)) - from\n    shot.launch(from, aim.normalized(), float(r.get("speed", 30.0)), float(r.get("range", 1500.0)), int(r.get("damage", 2)))\n    _play("attack", 0.1)\n'
 
 _ENEMY_SHOT_GD = 'extends Area3D\n# gcrip: a simple enemy projectile (Octorok rock, Wizzrobe fire ball): straight flight, hurts\n# Link within 40 units, stops on the world.\n\nvar vel := Vector3.ZERO\nvar left := 0.0\nvar damage := 2\nvar mesh: MeshInstance3D = null\n\nfunc launch(from: Vector3, dir: Vector3, speed: float, range_units: float, dmg: int) -> void:\n    global_position = from\n    vel = dir * speed\n    left = range_units\n    damage = dmg\n    mesh = MeshInstance3D.new()\n    var sph := SphereMesh.new()\n    sph.radius = 14.0\n    sph.height = 28.0\n    mesh.mesh = sph\n    var mat := StandardMaterial3D.new()\n    mat.albedo_color = Color(0.9, 0.4, 0.1)\n    mat.emission_enabled = true\n    mat.emission = Color(1.0, 0.5, 0.1)\n    mesh.material_override = mat\n    add_child(mesh)\n\nfunc _physics_process(_delta: float) -> void:\n    var old := global_position\n    var next := old + vel\n    var space := get_world_3d().direct_space_state\n    var q := PhysicsRayQueryParameters3D.create(old, next, 1)\n    if space.intersect_ray(q):\n        queue_free()\n        return\n    global_position = next\n    left -= vel.length()\n    var link := Game.player()\n    if link and link.global_position.distance_to(global_position - Vector3(0, 60.0, 0)) < 45.0:\n        link.call("take_damage", damage, global_position)\n        queue_free()\n        return\n    if left <= 0.0:\n        queue_free()\n'
 
@@ -6820,6 +7203,8 @@ def export_godot(
 
     done = []
     stage_data: dict[str, dict] = {}
+    # every distinct place a door lands, for the --doors harness to stand on
+    door_targets: dict[tuple[str, int, int], dict] = {}
     for name in stages:
         d = available[name]
         gltf_path = sorted(d.glob("*.gltf"))[0]
@@ -6848,6 +7233,12 @@ def export_godot(
             island = f"{e.get('dest_stage', '')}_r{e.get('room', -1)}"
             if e.get("dest_stage") == "sea" and island in available:
                 e["dest_stage"] = island
+            # collect where every door lands, so the --doors harness can stand on each one
+            key = (str(e.get("dest_stage", "")), int(e.get("dest_room", 0)),
+                   int(e.get("dest_spawn", 0)))
+            door_targets.setdefault(
+                key, {"stage": key[0], "room": key[1], "spawn": key[2], "from": []}
+            )["from"].append(name)
         # the Great Sea's water is the y=0 plane (islands are authored around it); proper
         # per-stage water volumes come with the dzb liquid surfaces later
         water = 0.0 if name.lower().startswith("sea") else -1.0e9
@@ -6932,6 +7323,7 @@ def export_godot(
     (out_dir / "calib.tscn").write_text(_CALIB_TSCN, encoding="utf-8")
     (out_dir / "stage.gd").write_text(_STAGE_GD, encoding="utf-8")
     (out_dir / "dialog.gd").write_text(_DIALOG_GD, encoding="utf-8")
+    (out_dir / "control.gd").write_text(_CONTROL_GD, encoding="utf-8")
     (out_dir / "dialog.tscn").write_text(_DIALOG_TSCN, encoding="utf-8")
     (out_dir / "menu.gd").write_text(_MENU_GD, encoding="utf-8")
     (out_dir / "menu.tscn").write_text(_MENU_TSCN, encoding="utf-8")
@@ -6960,6 +7352,16 @@ def export_godot(
             merged.update(stage_data)
             stage_data = merged
     sd_path.write_text(json.dumps(stage_data), encoding="utf-8")
+    # door landings (partial re-exports merge, like stage_data)
+    dt_path = out_dir / "door_targets.json"
+    landings: dict[str, dict] = {}
+    if dt_path.exists():
+        with contextlib.suppress(OSError, ValueError):
+            for t in json.loads(dt_path.read_text(encoding="utf-8")):
+                landings[f"{t['stage']}|{t['room']}|{t['spawn']}"] = t
+    for key, t in door_targets.items():
+        landings[f"{key[0]}|{key[1]}|{key[2]}"] = t
+    dt_path.write_text(json.dumps(list(landings.values())), encoding="utf-8")
     # place names for every stage in the project (merged stage_data)
     from gcrip.data.ww_stages import WW_STAGE_NAMES
 
