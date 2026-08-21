@@ -180,9 +180,22 @@ const MAGIC_MAX := 16                   # small magic meter
 # --- Iron Boots ---
 const HEAVY_SPEED_SCALE := 0.5          # move.heavy_speed_scale
 
+# --- ledges (wallCatch / hang tables) ---
+const LEDGE_MIN := 27.09               # hard-coded lower bound
+const LEDGE_SMALL_JUMP_MAX := 75.0     # wallCatch.ledge_height_small_jump_max
+const LEDGE_WALL_CATCH_MAX := 110.0    # wallCatch.ledge_height_wall_catch_max
+const LEDGE_VJUMP_CATCH_MAX := 130.0   # wallCatch.ledge_height_vjump_catch_max
+const LEDGE_CATCH_MAX := 170.0         # wallCatch.ledge_height_catch_max
+const WALL_HOLD_FRAMES := 7            # wallCatch.wall_catch_stick_hold_frames
+const HANG_HEIGHT := 140.0             # feet below the ledge while hanging (Link is 125 tall + reach)
+const CLIMB_FRAMES := 32               # VJMPCL: 24 frames at rate 0.75
+const CLIMB_CANCEL := 23.0 / 0.75      # wallCatch.hang_climb_cancel_frame
+const CATCH_FRAMES := 6                # VJMPCHB: 5 frames at 0.8
+const VJUMP_FRAMES := 13               # wallCatch.vertical_jump_anm_end_frame
+
 const S16_TO_RAD := PI / 32768.0
 
-enum State { GROUND, AIR, ROLL, SWIM, LAND, ATTACK, JUMPCUT, JUMPCUT_LAND, DAMAGE, GLIDE, CARRY, GRAB }
+enum State { GROUND, AIR, ROLL, SWIM, LAND, ATTACK, JUMPCUT, JUMPCUT_LAND, DAMAGE, GLIDE, CARRY, GRAB, VJUMP, HANG, CLIMB }
 
 @export var water_level := -1.0e9   # stage sets this (sea stages: 0)
 
@@ -254,6 +267,14 @@ var rupees := 0
 var held: Node3D = null          # carried pot / pig / pebble
 var prompt_target: Node3D = null
 var grab_frames := 0
+# ledges
+var wall_hold := 0
+var ledge_top := Vector3.ZERO
+var ledge_dir := Vector3.FORWARD   # horizontal direction into the wall
+var climb_frame := 0
+var climb_from := Vector3.ZERO
+var hang_frames := 0
+var vjump_kind := 0                 # 8 = catch at apex, 9 = hang start at apex
 @onready var sword_pivot: Node3D = get_node_or_null("SwordPivot")
 @onready var sword_area: Area3D = get_node_or_null("SwordPivot/SwordHit")
 @onready var sword_shape: CollisionShape3D = get_node_or_null("SwordPivot/SwordHit/Shape")
@@ -511,6 +532,9 @@ func _physics_process(_delta: float) -> void:
     match state:
         State.CARRY: _carry()
         State.GRAB: _grab()
+        State.VJUMP: _vjump()
+        State.HANG: _hang()
+        State.CLIMB: _climb()
         State.GROUND: _ground()
         State.AIR: _air()
         State.ROLL: _roll()
@@ -589,6 +613,17 @@ func _ground() -> void:
     _apply(forward() * speed, -1.0)  # small downward push keeps floor contact on slopes
     if is_on_wall():
         speed *= 1.0 - WALL_PUSH_REDUCE * 0.5
+        # pushing into a wall: after 7 frames the front-wall type decides hop / catch / jump
+        var n := get_wall_normal()
+        n.y = 0.0
+        if dist > 0.3 and n.length() > 0.1 and forward().dot(-n.normalized()) > 0.7:
+            wall_hold += 1
+            if wall_hold >= WALL_HOLD_FRAMES and _try_ledge(-n.normalized()):
+                return
+        else:
+            wall_hold = 0
+    else:
+        wall_hold = 0
     if was_on_floor and not is_on_floor():
         if speed >= AUTOJUMP_MIN_SPEED:
             _enter_air_autojump()
@@ -685,6 +720,16 @@ func _air() -> void:
         if not Input.is_action_pressed("target"):
             turn_toward(heading_of(air_vel) if air_vel.length() > 0.5 else facing, TURN_MAX_STEP, TURN_MIN_STEP, TURN_DIVISOR)
     _apply(air_vel, vy)
+    # falling past a ledge with the stick pushed toward it: catch it (procHangStart)
+    if vy < 0.0 and is_on_wall() and s.length() > 0.3:
+        var n := get_wall_normal()
+        n.y = 0.0
+        if n.length() > 0.1 and stick_world_dir(s).dot(-n.normalized()) > 0.6:
+            var h := _ledge_height(-n.normalized())
+            if h > LEDGE_SMALL_JUMP_MAX and h < LEDGE_CATCH_MAX:
+                ledge_dir = -n.normalized()
+                _enter_hang(true)
+                return
     if is_on_floor():
         var drop := fall_start_y - global_position.y
         speed = air_vel.length()
@@ -876,6 +921,138 @@ func _jumpcut_land() -> void:
         _enter_ground()
         return
     if cut_frame >= JATTACK_LAND["end"]:
+        _enter_ground()
+
+# ---------------------------------------------------------------- ledges
+
+func _ledge_height(into_wall: Vector3) -> float:
+    # setFrontWallType: no wall at 170 above the feet -> probe down for the ledge top
+    var space := get_world_3d().direct_space_state
+    var feet := global_position
+    var high := feet + Vector3(0, LEDGE_CATCH_MAX, 0)
+    var q := PhysicsRayQueryParameters3D.create(high, high + into_wall * 70.0, 1)
+    if space.intersect_ray(q):
+        return -1.0  # wall continues above reach
+    var over := high + into_wall * 55.0
+    var q2 := PhysicsRayQueryParameters3D.create(over, Vector3(over.x, feet.y - 5.0, over.z), 1)
+    var hit := space.intersect_ray(q2)
+    if not hit:
+        return -1.0
+    ledge_top = hit.position
+    return hit.position.y - feet.y
+
+func _try_ledge(into_wall: Vector3) -> bool:
+    var h := _ledge_height(into_wall)
+    if h <= LEDGE_MIN or h >= LEDGE_CATCH_MAX:
+        return false
+    wall_hold = 0
+    ledge_dir = into_wall
+    facing = heading_of(into_wall)
+    if h < LEDGE_SMALL_JUMP_MAX:
+        # type 6: small jump onto the ledge (mstepover); launch just high enough
+        var vy := sqrt(2.0 * absf(GRAVITY) * (h + 12.0))
+        _enter_air(into_wall * 5.0, vy, GRAVITY)
+        play_clip("mstepover", 0.05)
+        return true
+    if h < LEDGE_WALL_CATCH_MAX:
+        _enter_hang(false)   # type 7: direct wall catch then climb
+        hang_frames = -CATCH_FRAMES
+        play_clip("vjmpchb", 2.5 / 30.0, 0.8)
+        return true
+    # types 8/9: vertical jump, then catch (8) or hang (9) at the apex
+    vjump_kind = 8 if h < LEDGE_VJUMP_CATCH_MAX else 9
+    state = State.VJUMP
+    climb_frame = 0
+    velocity.y = sqrt(2.0 * absf(GRAVITY) * (h - HANG_HEIGHT + 160.0)) * 30.0
+    play_clip("vjmp", 1.0 / 30.0, 1.0)
+    return true
+
+func _vjump() -> void:
+    climb_frame += 1
+    var vy := velocity.y / 30.0 + GRAVITY
+    _apply(ledge_dir * 1.0, vy)
+    var hands := global_position.y + HANG_HEIGHT
+    if vy <= 0.0 or hands >= ledge_top.y - 2.0 or climb_frame > 40:
+        if absf(hands - ledge_top.y) < 60.0:
+            _enter_hang(vjump_kind == 9)
+            if vjump_kind == 8:
+                hang_frames = -CATCH_FRAMES
+                play_clip("vjmpchb", 2.5 / 30.0, 0.8)
+        else:
+            _enter_air(Vector3.ZERO, vy, GRAVITY)
+
+func _enter_hang(wait: bool) -> void:
+    state = State.HANG
+    velocity = Vector3.ZERO
+    speed = 0.0
+    hang_frames = 0
+    # hands on the ledge, body 8.5 units off the wall
+    global_position = Vector3(ledge_top.x, ledge_top.y - HANG_HEIGHT, ledge_top.z) - ledge_dir * 48.5
+    facing = heading_of(ledge_dir)
+    play_clip("vjmpcha", 2.0 / 30.0, 0.8)
+    if not wait:
+        pass  # caller decides (wall catch climbs right away)
+
+func _hang() -> void:
+    hang_frames += 1
+    velocity = Vector3.ZERO
+    if hang_frames == 0:          # wall catch finished -> climb at once
+        _enter_climb(2.0)
+        return
+    if hang_frames < 0:
+        return
+    var s := stick()
+    var into := 0.0
+    if s.length() > 0.3:
+        into = stick_world_dir(s).dot(ledge_dir)
+    if hang_frames > 6 and into > 0.5:
+        _enter_climb(0.0)
+        return
+    if Input.is_action_just_pressed("action_a") or (s.length() > 0.3 and into < -0.5):
+        # let go (procFall with the 6-frame JMPEDS blend)
+        global_position -= ledge_dir * 10.0
+        _enter_air(-ledge_dir * 2.0, 0.0, GRAVITY)
+        play_clip("jmpeds", 6.0 / 30.0)
+        return
+    if s.length() > 0.3 and absf(into) < 0.5:
+        # shimmy along the ledge at the animation-driven rate (0.7..1.4 x stick)
+        var side := stick_world_dir(s)
+        var along := side - ledge_dir * side.dot(ledge_dir)
+        var rate := lerpf(0.7, 1.4, minf(s.length(), 1.0))
+        var step := along.normalized() * 2.2 * rate
+        var probe := global_position + step + ledge_dir * 60.0 + Vector3(0, HANG_HEIGHT + 5.0, 0)
+        var space := get_world_3d().direct_space_state
+        var q := PhysicsRayQueryParameters3D.create(probe, Vector3(probe.x, probe.y - 30.0, probe.z), 1)
+        if space.intersect_ray(q):
+            global_position += step
+            ledge_top += step
+            play_clip("hangmover" if along.dot(Vector3(ledge_dir.z, 0.0, -ledge_dir.x)) > 0.0 else "hangmovel", 1.0 / 30.0, rate)
+        return
+    play_clip("vjmpcha", 2.0 / 30.0, 0.0)
+
+func _enter_climb(start_frame: float) -> void:
+    state = State.CLIMB
+    climb_frame = int(start_frame / 0.75)
+    climb_from = global_position
+    play_clip("vjmpcl", 5.0 / 30.0, 0.75)
+    if anim and anim.has_animation("vjmpcl"):
+        anim.seek(start_frame / 30.0, true)
+
+func _climb() -> void:
+    climb_frame += 1
+    # root motion approximation: rise first, then move forward onto the ledge over the clip
+    var t := clampf(float(climb_frame) / CLIMB_FRAMES, 0.0, 1.0)
+    var up := smoothstep(0.0, 0.6, t)
+    var fwd := smoothstep(0.45, 1.0, t)
+    var target := Vector3(ledge_top.x, ledge_top.y + 2.0, ledge_top.z) + ledge_dir * 45.0
+    var pos := climb_from
+    pos.y = lerpf(climb_from.y, target.y, up)
+    var flat := Vector3(lerpf(climb_from.x, target.x, fwd), pos.y, lerpf(climb_from.z, target.z, fwd))
+    global_position = flat
+    velocity = Vector3.ZERO
+    if climb_frame >= CLIMB_FRAMES or (climb_frame >= CLIMB_CANCEL and stick().length() > 0.5):
+        global_position = target
+        speed = 0.0
         _enter_ground()
 
 # ---------------------------------------------------------------- interaction / carrying
@@ -1255,6 +1432,7 @@ _PLAYER_CLIPS = (
     "cuta", "cutf", "cutr", "cutl", "cutea", "cuteb", "jattack", "jattackland",
     "damf", "damb", "daml", "damr", "dam", "damff", "damfb", "talka",
     "grabup", "grabwait", "grabthrow", "walkbarrel",
+    "vjmp", "vjmpcha", "vjmpchb", "vjmpcl", "mstepover", "hangmovel", "hangmover", "jmpeds",
 )  # fmt: skip
 
 _GAME_GD = """extends Node
