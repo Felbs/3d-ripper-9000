@@ -14,10 +14,10 @@ flowchart TD
     aryll_tower_first_talk["aryll_tower_first_talk<br/><i>talk</i>"]
     grandma_birthday_talk["grandma_birthday_talk<br/>tale_1<br/><i>talk</i>"]
     tale_demo_hero_clothes["tale_demo_hero_clothes<br/>tale.stb<br/>sets 0x2A80<br/><i>spawn</i>"]
-    aryll_omedeto["aryll_omedeto<br/>omedeto<br/><i>tag</i>"]
+    aryll_omedeto["aryll_omedeto<br/>omedeto<br/><i>npc</i>"]
     aryll_get_telescope["aryll_get_telescope<br/>get_telescope<br/><i>talk</i>"]
-    telescope_watch_quill["telescope_watch_quill<br/>sets 0x0310<br/><i>tag</i>"]
-    zelda_fly_helmaroc["zelda_fly_helmaroc<br/>kaizoku_zelda_fly.stb<br/>sets 0x0001<br/><i>tag</i>"]
+    telescope_watch_quill["telescope_watch_quill<br/>sets 0x0310<br/><i>look</i>"]
+    zelda_fly_helmaroc["zelda_fly_helmaroc<br/>kaizoku_zelda_fly.stb<br/>sets 0x0001<br/><i>look</i>"]
     aryll_etalk["aryll_etalk<br/>eTalk<br/><i>talk</i>"]
     grandma_after_prologue["grandma_after_prologue<br/>sets 0x0601<br/><i>talk</i>"]
     orca_first_talk["orca_first_talk<br/>StartCamera<br/>sets 0x0640 0x0108<br/><i>room_enter</i>"]
@@ -33,7 +33,7 @@ flowchart TD
     look_shield["look_shield<br/>LOOK_SHIELD<br/>sets 0x3202<br/><i>tag</i>"]
     grandma_gives_shield["grandma_gives_shield<br/>get_shield.stb<br/><i>talk</i>"]
     grandma_after_kidnap["grandma_after_kidnap<br/>sets 0x0740<br/><i>talk</i>"]
-    tetra_dock_conversation["tetra_dock_conversation<br/>yuukaigo<br/><i>tag</i>"]
+    tetra_dock_conversation["tetra_dock_conversation<br/>yuukaigo<br/><i>npc</i>"]
     tetra_board_ship["tetra_board_ship<br/><i>talk</i>"]
     departure["departure<br/>departure.stb<br/>sets 0x2401<br/><i>spawn</i>"]
     aj_speak_ambient["aj_speak_ambient<br/>AJ_SPEAK<br/><i>talk</i>"]
@@ -78,10 +78,10 @@ flowchart TD
     aryll_tower_first_talk["aryll_tower_first_talk<br/><i>talk - OK</i>"]
     grandma_birthday_talk["grandma_birthday_talk<br/>tale_1<br/><i>talk - OK</i>"]
     tale_demo_hero_clothes["tale_demo_hero_clothes<br/>tale.stb<br/>sets 0x2A80<br/><i>spawn - OK</i>"]
-    aryll_omedeto["aryll_omedeto<br/>omedeto<br/><i>tag - OK</i>"]
+    aryll_omedeto["aryll_omedeto<br/>omedeto<br/><i>npc - OK</i>"]
     aryll_get_telescope["aryll_get_telescope<br/>get_telescope<br/><i>talk - OK</i>"]
-    telescope_watch_quill["telescope_watch_quill<br/>sets 0x0310<br/><i>tag - OK</i>"]
-    zelda_fly_helmaroc["zelda_fly_helmaroc<br/>kaizoku_zelda_fly.stb<br/>sets 0x0001<br/><i>tag - OK</i>"]
+    telescope_watch_quill["telescope_watch_quill<br/>sets 0x0310<br/><i>look - OK</i>"]
+    zelda_fly_helmaroc["zelda_fly_helmaroc<br/>kaizoku_zelda_fly.stb<br/>sets 0x0001<br/><i>look - OK</i>"]
     aryll_etalk["aryll_etalk<br/>eTalk<br/><i>talk - OK</i>"]
     grandma_after_prologue["grandma_after_prologue<br/>sets 0x0601<br/><i>talk - OK</i>"]
     orca_first_talk["orca_first_talk<br/>StartCamera<br/>sets 0x0640 0x0108<br/><i>room_enter - OK</i>"]
@@ -97,7 +97,7 @@ flowchart TD
     look_shield["look_shield<br/>LOOK_SHIELD<br/>sets 0x3202<br/><i>tag - OK</i>"]
     grandma_gives_shield["grandma_gives_shield<br/>get_shield.stb<br/><i>talk - OK</i>"]
     grandma_after_kidnap["grandma_after_kidnap<br/>sets 0x0740<br/><i>talk - OK</i>"]
-    tetra_dock_conversation["tetra_dock_conversation<br/>yuukaigo<br/><i>tag - OK</i>"]
+    tetra_dock_conversation["tetra_dock_conversation<br/>yuukaigo<br/><i>npc - OK</i>"]
     tetra_board_ship["tetra_board_ship<br/><i>talk - OK</i>"]
     departure["departure<br/>departure.stb<br/>sets 0x2401<br/><i>spawn - OK</i>"]
     aj_speak_ambient["aj_speak_ambient<br/>AJ_SPEAK<br/><i>talk - PARTIAL</i>"]
@@ -145,10 +145,10 @@ flowchart TD
 | aryll_tower_first_talk | talk | Ls1 |  |  |  |  | **ok** | story-graph talk steps (Game.story_talk) via actors/npc.gd |
 | grandma_birthday_talk | talk | Ba1 | tale_1 |  |  |  | **ok** | story-graph talk steps (Game.story_talk) via actors/npc.gd |
 | tale_demo_hero_clothes | spawn |  | TALE_DEMO | tale.stb |  | 0x2A80 | **ok** | PLYR params >> 24 indexes the stage EVNT table (Game._place_player) |
-| aryll_omedeto | tag | Ls1 | omedeto |  | 0x2A80 |  | **ok** | the NPC orders it itself, by proximity or on being placed (Game.story_npc_tick) |
+| aryll_omedeto | npc | Ls1 | omedeto |  | 0x2A80 |  | **ok** | the NPC orders it itself, by proximity or on being placed (Game.story_npc_tick) |
 | aryll_get_telescope | talk | Ls1 | get_telescope |  |  |  | **ok** | story-graph talk steps (Game.story_talk) via actors/npc.gd |
-| telescope_watch_quill | tag |  |  |  |  | 0x0310 | **ok** | the Telescope's scope look at the step's target (Game.telescope_look) |
-| zelda_fly_helmaroc | tag |  | zelda_fly | kaizoku_zelda_fly.stb | 0x0310 | 0x0001 | **ok** | the Telescope's scope look at the step's target (Game.telescope_look) |
+| telescope_watch_quill | look | Bm1 |  |  |  | 0x0310 | **ok** | the Telescope's scope look at the step's target (Game.telescope_look) |
+| zelda_fly_helmaroc | look |  | zelda_fly | kaizoku_zelda_fly.stb | 0x0310 | 0x0001 | **ok** | the Telescope's scope look at the step's target (Game.telescope_look) |
 | aryll_etalk | talk | Ls1 | eTalk |  | 0x0001 |  | **ok** | story-graph talk steps (Game.story_talk) via actors/npc.gd |
 | grandma_after_prologue | talk | Ba1 |  |  | 0x0001 | 0x0601 | **ok** | story-graph talk steps (Game.story_talk) via actors/npc.gd |
 | orca_first_talk | room_enter | Ji1 | StartCamera |  |  | 0x0640 0x0108 | **ok** | a stage's StartCamera event runs on arrival (stage.gd) |
@@ -164,7 +164,7 @@ flowchart TD
 | look_shield | tag |  | LOOK_SHIELD |  | 0x0E20 | 0x3202 | **ok** | TagEv volumes order their EVNT entry (actors/tag_event.gd) |
 | grandma_gives_shield | talk | Ba1 | get_shield | get_shield.stb | 0x0E20 0x3202 |  | **ok** | story-graph talk steps (Game.story_talk) via actors/npc.gd |
 | grandma_after_kidnap | talk | Ba1 |  |  | 0x0E20 | 0x0740 | **ok** | story-graph talk steps (Game.story_talk) via actors/npc.gd |
-| tetra_dock_conversation | tag | Zl1 | yuukaigo |  | 0x0E20 |  | **ok** | the NPC orders it itself, by proximity or on being placed (Game.story_npc_tick) |
+| tetra_dock_conversation | npc | Zl1 | yuukaigo |  | 0x0E20 |  | **ok** | the NPC orders it itself, by proximity or on being placed (Game.story_npc_tick) |
 | tetra_board_ship | talk | Zl1 |  |  | 0x0E20 |  | **ok** | story-graph talk steps (Game.story_talk) via actors/npc.gd |
 | departure | spawn |  | departure_DEMO | departure.stb | 0x0E20 | 0x2401 | **ok** | PLYR params >> 24 indexes the stage EVNT table (Game._place_player) |
 | aj_speak_ambient | talk | Aj1 | AJ_SPEAK |  |  |  | **partial** | mined with low confidence |

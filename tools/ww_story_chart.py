@@ -29,17 +29,8 @@ IMPLEMENTED = {
     "npc": "the NPC orders it itself, by proximity or on being placed (Game.story_npc_tick)",
 }
 
-# steps the mining calls "tag" that no TagEv actor actually orders: the original drives them
-# from an NPC's own code.  Whatever the engine does instead is named here.
-LOOK_STEPS = {
-    "telescope_watch_quill": "look",
-    "zelda_fly_helmaroc": "look",
-    "aryll_omedeto": "npc",
-    "tetra_dock_conversation": "npc",
-}
-
 BUILD = ROOT / "out" / "rip" / "GZLE01" / "godot" / "stage_data.json"
-SCENES: "dict[str, set[str]] | None" = None   # set from the build in main()
+SCENES: dict[str, set[str]] | None = None   # set from the build in main()
 
 # save-file state the engine models beyond the raw event bits
 MODELLED_STATE = {
@@ -105,7 +96,7 @@ def scene_key(step: dict, scenes: dict[str, set[str]]) -> str | None:
 def status(step: dict, scenes: dict[str, set[str]] | None = None) -> tuple[str, str]:
     scenes = SCENES if scenes is None else scenes
     """-> (state, why). state is ok / partial / missing."""
-    kind = LOOK_STEPS.get(str(step.get("id", ""))) or (step.get("trigger") or {}).get("kind", "")
+    kind = (step.get("trigger") or {}).get("kind", "")
     if kind not in IMPLEMENTED:
         return "missing", f"trigger kind '{kind}' has no mechanism"
     if kind == "talk" and not step_actor(step):

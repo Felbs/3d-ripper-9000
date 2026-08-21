@@ -212,6 +212,7 @@ var ship: Node3D = null           # the King of Red Lions while riding
 # --- X-button items (bow / boomerang / bombs / hookshot specs: projectile-items.md) ---
 const X_ITEMS := ["leaf", "bow", "boomerang", "bomb", "hookshot", "rope", "telescope"]
 const TELESCOPE_FOV := 25.0        # the scope's narrow view (subjectCamera zoom)
+const STORY_X_ITEMS := ["telescope"]   # X items the story has to hand over first
 const ITEM_NAMES := {"leaf": "Deku Leaf", "bow": "Bow", "boomerang": "Boomerang", "bomb": "Bombs", "hookshot": "Hookshot", "rope": "Grappling Hook"}
 # --- grappling hook (d_a_player_rope.inc): aim, post search, pendulum ---
 const ROPE_AIM_RANGE := 2200.0
@@ -794,8 +795,13 @@ func _physics_process(_delta: float) -> void:
         heavy = not heavy  # Iron Boots toggle (procBootsEquip; 19-frame anim skipped)
         _update_hud()
     if Input.is_action_just_pressed("item_next") or Input.is_action_just_pressed("item_prev"):
+        var step := 1 if Input.is_action_just_pressed("item_next") else -1
         var i := X_ITEMS.find(x_item)
-        i = (i + (1 if Input.is_action_just_pressed("item_next") else -1) + X_ITEMS.size()) % X_ITEMS.size()
+        # story items only join the rotation once Link owns them (Aryll's Telescope)
+        for _n in X_ITEMS.size():
+            i = (i + step + X_ITEMS.size()) % X_ITEMS.size()
+            if not STORY_X_ITEMS.has(X_ITEMS[i]) or Game.has_item(str(X_ITEMS[i])):
+                break
         x_item = X_ITEMS[i]
         _update_hud()
     _update_prompt()
@@ -3003,6 +3009,14 @@ var dialogue_test: bool = "--dialogue" in OS.get_cmdline_user_args()
 var scope_test: bool = "--scope" in OS.get_cmdline_user_args()
 # --near: walk Link into the NPC-ordered story event that is waiting in this stage
 var near_test: bool = "--near" in OS.get_cmdline_user_args()
+# --opening: play the mined opening graph end to end, one step at a time, and report each
+var opening_test: bool = "--opening" in OS.get_cmdline_user_args()
+var open_idx := -1
+var open_wait := 0
+var open_settle := 0
+var open_retry := false
+var open_report: Array = []
+var open_forced: Dictionary = {}
 var start_stage := ""   # --stage=<key>[:<spawn>]: boot straight into that stage
 var start_spawn := 0
 const DLG_STATES := [
@@ -3197,6 +3211,125 @@ func _restore_position() -> void:
         link.set("facing", float(save.get("last_facing", 0.0)))
         link.set("start_pos", link.global_position)
 
+const OPEN_STEP_FRAMES := 3000     # a single step may not hold the walk up for ever
+
+func _open_scene_for(step: Dictionary) -> String:
+    var stage := str(step.get("stage", ""))
+    var room = step.get("room")
+    if room != null and stage_data.has("%s_r%d" % [stage, int(room)]):
+        return "%s_r%d" % [stage, int(room)]
+    return stage if stage_data.has(stage) else ""
+
+func _opening_tick() -> void:
+    var steps: Array = story.get("steps", [])
+    # busy: let the step play out (with a cap, so one long cutscene does not own the run)
+    if event_running or cutscene_running() or dialog_open:
+        open_wait += 1
+        if open_wait < OPEN_STEP_FRAMES:
+            return
+        if event_runner and is_instance_valid(event_runner):
+            event_runner.abort()
+        if cutscene_running():
+            cutscene.queue_free()
+            cutscene = null
+        # cut short, but the graph still needs what it would have raised, or every later
+        # step that waits on those bits reports a failure this run never really had
+        if open_idx >= 0 and open_idx < steps.size():
+            var cur: Dictionary = steps[open_idx]
+            var cev := sfield(cur, "event")
+            print("gcrip opening: ", cur.get("id", "?"), " ran long - finishing it by hand")
+            open_forced[str(cur.get("id", ""))] = true
+            story_event_done(cev if cev != "" else str(cur.get("id", "")))
+        open_wait = 0
+        open_settle = 60
+        return
+    if open_settle > 0:
+        open_settle -= 1
+        return
+    if open_retry:
+        # the last tick only warped to the step's stage: run the step itself now
+        open_retry = false
+        open_wait = 0
+        _opening_start(steps[open_idx], true)
+        return
+    if open_idx >= 0 and open_idx < steps.size():
+        var prev: Dictionary = steps[open_idx]
+        var pid := str(prev.get("id", ""))
+        var mark := "MISS"
+        if story_done(pid):
+            mark = "SLOW" if open_forced.has(pid) else "OK  "
+        open_report.append("%s %s" % [mark, pid])
+    open_idx += 1
+    open_wait = 0
+    open_settle = 45
+    if open_idx >= steps.size():
+        print("gcrip opening: ---- result ----")
+        for line in open_report:
+            print("gcrip opening: ", line)
+        var ok := 0
+        for line in open_report:
+            if str(line).begins_with("OK") or str(line).begins_with("SLOW"):
+                ok += 1
+        print("gcrip opening: %d/%d steps reached" % [ok, open_report.size()])
+        get_tree().quit()
+        return
+    _opening_start(steps[open_idx])
+
+func _opening_start(step: Dictionary, arrived := false) -> void:
+    var id := str(step.get("id", ""))
+    if story_done(id):
+        print("gcrip opening: ", id, " (already done)")
+        return
+    var scene := _open_scene_for(step)
+    var cs := get_tree().current_scene
+    var here_scene := String(cs.name) if cs else ""
+    if not arrived and scene != "" and scene != here_scene:
+        last_warp_ms = -100000
+        warp(scene, int(step.get("room", 0)) if step.get("room") != null else 0, 0)
+        open_settle = 90
+        open_retry = true
+        print("gcrip opening: ", id, " - warping to ", scene)
+        return          # arrive first; the next tick triggers the step
+    var trig = step.get("trigger", {})
+    var kind := str(trig.get("kind", "")) if trig is Dictionary else ""
+    if step.get("look") is Dictionary:
+        kind = "look"
+    elif step.get("near") is Dictionary:
+        kind = "near"
+    print("gcrip opening: ", id, " by ", kind)
+    var lk := player()
+    match kind:
+        "talk":
+            var who := str(step.get("actor", ""))
+            if who == "" or _find_actor(who) == null:
+                print("gcrip opening: ", id, " - no ", who, " placed here")
+                return
+            story_talk(who)
+        "near":
+            var near: Dictionary = step["near"]
+            var n := _find_actor(str(near.get("actor", "")))
+            if n == null or lk == null:
+                print("gcrip opening: ", id, " - no ", near.get("actor", "?"), " placed here")
+                return
+            lk.global_position = n.global_position + Vector3(0, 5, 60)
+            story_npc_tick()      # check now: Link may not stay put for the next sweep
+        "look":
+            var look: Dictionary = step["look"]
+            var t := _find_actor(str(look.get("actor", "")))
+            if t == null or lk == null:
+                print("gcrip opening: ", id, " - no ", look.get("actor", "?"), " placed here")
+                return
+            give_item("telescope")
+            var eye: Vector3 = lk.global_position + Vector3(0, 105.0, 0)
+            var to: Vector3 = t.global_position + Vector3(0, float(look.get("y", 0.0)), 0) - eye
+            telescope_look(eye, to.normalized())
+        "spawn", "tag", "room_enter", _:
+            var ev := sfield(step, "event")
+            if ev != "" and events.has(ev):
+                run_event(ev)
+            else:
+                story_event_done(id if ev == "" else ev)
+
 func _near_tick() -> void:
     var step: Dictionary = {}
     for st in story.get("steps", []):
@@ -3289,6 +3422,8 @@ func _process(delta: float) -> void:
         return
     if shot_actor != "":
         _shot_tick()
+    if opening_test:
+        _opening_tick()
     if near_test:
         event_frames += 1
         if event_frames == 40:
@@ -3310,7 +3445,7 @@ func _process(delta: float) -> void:
                 print("gcrip scope: done")
                 get_tree().quit()
     if newgame_test or event_test != "" or talk_test != "" or story_test or scope_test \
-            or near_test:
+            or near_test or opening_test:
         # tests have no player: advance text boxes directly (a synthesised action press raises
         # no InputEvent, so the box would never turn its page and the event would never end)
         auto_a += 1
@@ -3613,11 +3748,11 @@ func story_talk(actor: String) -> bool:
         var st := str(step.get("stage", ""))
         if st != "" and st != here:
             continue
-        var id := str(step.get("id", ""))
+        var id := sfield(step, "id")
         if story_done(id) or not _story_bits_ok(step):
             continue
         _mark_story_done(id)
-        var ev := str(step.get("event", ""))
+        var ev := sfield(step, "event")
         if ev != "" and events.has(ev):
             print("gcrip story: ", actor, " -> ", id, " (event ", ev, ")")
             if run_event(ev):
@@ -3628,22 +3763,29 @@ func story_talk(actor: String) -> bool:
         return false
     return false
 
+func sfield(step: Dictionary, key: String) -> String:
+    # the mined graph leaves event / stb null on the steps that have none, and str(null) is
+    # the string "<null>" - which would then match EVERY such step at once
+    var v = step.get(key)
+    return "" if v == null else str(v)
+
 func story_event_done(name: String) -> void:
     # a step of the mined opening graph finished: raise the event bits it is known to set
     if name == "":
         return
     var raised: Array = []
     for step in story.get("steps", []):
-        var ev := str(step.get("event", ""))
-        var stb := str(step.get("stb", ""))
-        if ev != name and stb != name and stb != name + ".stb" and str(step.get("id", "")) != name:
+        var ev := sfield(step, "event")
+        var stb := sfield(step, "stb")
+        if ev != name and stb != name and (stb == "" or stb != name + ".stb")                 and sfield(step, "id") != name:
             continue
+        _mark_story_done(str(step.get("id", "")))
         for b in step.get("sets_bits", []):
             var id := _bit_value(b)
             if id != 0 and not event_bit(id):
                 set_event_bit(id)
                 raised.append("0x%04X" % id)
-        give_item(str(step.get("item_key", "")))
+        give_item(sfield(step, "item_key"))
     if not raised.is_empty():
         save_game("story")
         print("gcrip story: '", name, "' set ", ", ".join(raised))
@@ -4012,7 +4154,7 @@ func burst(pos: Vector3, color: Color) -> void:
 
 func scripted() -> bool:
     # any headless harness run: nobody is holding the pad, so "press any key" waits must pass
-    return selftest or story_test or newgame_test or dialogue_test or door_test         or talk_test != "" or event_test != "" or shot_actor != "" or scope_test or near_test
+    return selftest or story_test or newgame_test or dialogue_test or door_test         or talk_test != "" or event_test != "" or shot_actor != "" or scope_test or near_test or opening_test
 
 func story_npc_tick() -> void:
     # an NPC orders its own event: Aryll greets Link in his new clothes when he comes within
@@ -4040,7 +4182,7 @@ func story_npc_tick() -> void:
         if r > 0.0 and who.global_position.distance_to(lk.global_position) > r:
             continue
         _mark_story_done(id)
-        var ev := str(step.get("event", ""))
+        var ev := sfield(step, "event")
         print("gcrip story: ", near.get("actor", "?"), " orders ", id, " (event ", ev, ")")
         if ev != "" and events.has(ev) and run_event(ev):
             return
@@ -4076,7 +4218,7 @@ func telescope_look(eye: Vector3, dir: Vector3) -> bool:
         if also != "":
             _mark_story_done(also)
             story_event_done(also)      # the watch itself raises its bit (0x0310)
-        var ev := str(step.get("event", ""))
+        var ev := sfield(step, "event")
         print("gcrip story: telescope -> ", id, " (event ", ev, ")")
         if ev != "" and events.has(ev) and run_event(ev):
             return true
