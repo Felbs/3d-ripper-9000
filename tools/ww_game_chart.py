@@ -28,12 +28,31 @@ IMPLEMENTED = {
     "look": "Game.telescope_look - the Telescope's scope look at the step's target",
     "board": "player.gd board() raises RODE_KORL the first time Link boards the boat",
     "bits": "Game.story_bits_tick - fires as soon as every requires_bits entry is set",
+    "chest": "actors/chest.gd - opening the chest holding that dItemNo advances the step",
 }
-# mechanisms the mined chapters need that the engine has not built yet
+
+# Mechanisms the mined chapters need that the engine has not built yet.  Each line says what
+# it would take, so the list doubles as the build order for the rest of the game.
 UNIMPLEMENTED = {
-    "boss": "no boss fight raises its clear flag - there are no boss actors at all yet",
-    "actor": "a placed object resolves the event by name through the event manager; the engine "
-             "has no equivalent yet",
+    "defeat": "an enemy or boss dying has to raise a flag. Two flavours: a room cleared (a live"
+              " enemy count per room) and a dungeon boss dead (a per-stage boss field, which is"
+              " NOT an event bit - dComIfGs_onStageBossEnemy writes its own save area)",
+    "boss": "same gap as 'defeat', for the four Ganon's Tower rematches",
+    "enemy_defeat": "same gap as 'defeat', for Gohdan",
+    "item": "picking up a placed item actor. Needs the pickup's own spawn condition (itemDek"
+            " only exists once the Deku Tree scene is done) plus a collected bit per placement",
+    "object": "a placed non-NPC object orders its event when its own condition is met - a"
+              " sinking block, a sliding statue, a warp polling the player's distance. Needs a"
+              " per-object event predicate rather than an Area3D the player walks into",
+    "actor": "a placed object resolves its event by NAME through the event manager",
+    "warp": "a warp object plays an event as Link steps in, then changes stage, choosing WHICH"
+            " event by reading save state. The engine has door warps but they order no event",
+    "conduct": "the Wind Waker duets. Needs a conducting mode with song ids, a two-body"
+               " proximity and facing test against the partner, and a success/failure branch",
+    "npc_tag": "a trigger volume that watches an NPC rather than the player (Medli gliding into"
+               " the Dragon Roost updraft)",
+    "hit": "damaging a placed object with a weapon or bomb, which then orders its own event"
+           " (blowing open Jabun's cave wall)",
 }
 
 MODELLED_STATE = {"collect[0] bit0": 'has_item("sword")', "collect[1] bit0": 'has_item("shield")'}

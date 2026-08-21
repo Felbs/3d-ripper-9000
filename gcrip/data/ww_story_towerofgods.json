@@ -1,0 +1,923 @@
+{
+ "_source": "Mined read-only from the zeldaret/tww decompilation at Z:/memRip/sources/tww and the ripped GZLE01 (Wind Waker USA) disc data at Z:/3d ripper/out/rip/GZLE01. Chapter: the Tower of the Gods - Link carries the three goddess pearls to the three Triangle Islands, the tower rises out of the sea, he passes the three trials inside, defeats Gohdan, and is carried down to Hyrule. Same conventions as ww_story_outset.json and ww_story_fortress.json. Event names come from each stage's Stage.arc/event_list.dat (dumped whole into out/rip/GZLE01/stages/<stage>/<stage>_events.json) and from the stage.dzs EVNT table. Triggers come from stage.dzs / room.dzr placement chunks: PLYR spawn points (params>>24 = index into the stage's EVNT table -> auto-started event) and TagEv volumes. The strongest evidence in this file is d_a_obj_doguu.cpp, which is fully decompiled (no /* Nonmatching */ stubs) and states the entire pearl-placing and tower-rising sequence outright, and the dumped event scripts, which state every stage-to-stage jump (DIRECTOR NEXT / PACKAGE PLAY) and every event bit a cutscene raises (dEvDt PACKAGE PLAY passes its \"EventFlag\" integer straight to dComIfGs_onEventBit - src/d/d_event_data.cpp:798-800). Event-bit ids are authoritative numbers; the UNK_xxxx names are placeholders invented by the decomp team, so numeric ids are used here.",
+ "_checkpoints": {
+  "source": "src/d/d_com_inf_game.cpp:1294-1311 dComIfGs_setGameStartStage, l_checkData[]",
+  "note": "This chapter adds NO checkpoint. The continue table's first entry is RODE_KORL (0x2A08), which is already set long before the Tower of the Gods, and it forces no stage - a continuing save resumes wherever it was saved. So from here on the game's own chapter table stops helping and the chapter's ordering rests entirely on the event bits below."
+ },
+ "_bits": {
+  "0x2A08": {
+   "dec": 10760,
+   "byte_mask": [
+    42,
+    8
+   ],
+   "meaning": "RODE_KORL: Link has boarded the King of Red Lions. Set by the previous chapter; listed here only because it is why this chapter has no continue-table checkpoint of its own.",
+   "set_by": "src/d/actor/d_a_ship.cpp:1570 (previous chapter)",
+   "read_by": [
+    "src/d/d_com_inf_game.cpp:1305"
+   ],
+   "confidence": "high"
+  },
+  "0x1480": {
+   "dec": 5248,
+   "byte_mask": [
+    20,
+    128
+   ],
+   "meaning": "PLACED_DINS_PEARL. Din's Pearl has been set into the goddess statue on Northern Triangle Island (sea room 18).",
+   "set_by": "src/d/actor/d_a_obj_doguu.cpp:513 (daObjDoguu_c::setFinishMyEvent, field_0x894 == 0)",
+   "read_by": [
+    "src/d/actor/d_a_obj_doguu.cpp:224",
+    "src/d/actor/d_a_obj_doguu.cpp:238",
+    "src/d/actor/d_a_obj_doguu.cpp:497",
+    "src/d/d_menu_collect.cpp:277",
+    "src/d/actor/d_a_agb.cpp:1185"
+   ],
+   "confidence": "high"
+  },
+  "0x1440": {
+   "dec": 5184,
+   "byte_mask": [
+    20,
+    64
+   ],
+   "meaning": "PLACED_FARORES_PEARL. Farore's Pearl has been set into the goddess statue on Eastern Triangle Island (sea room 27).",
+   "set_by": "src/d/actor/d_a_obj_doguu.cpp:515 (field_0x894 == 1)",
+   "read_by": [
+    "src/d/actor/d_a_obj_doguu.cpp:225",
+    "src/d/actor/d_a_obj_doguu.cpp:239",
+    "src/d/actor/d_a_obj_doguu.cpp:500",
+    "src/d/d_menu_collect.cpp:282",
+    "src/d/actor/d_a_agb.cpp:1186"
+   ],
+   "confidence": "high"
+  },
+  "0x1410": {
+   "dec": 5136,
+   "byte_mask": [
+    20,
+    16
+   ],
+   "meaning": "PLACED_NAYRUS_PEARL. Nayru's Pearl has been set into the goddess statue on Southern Triangle Island (sea room 32).",
+   "set_by": "src/d/actor/d_a_obj_doguu.cpp:517 (field_0x894 == 2)",
+   "read_by": [
+    "src/d/actor/d_a_obj_doguu.cpp:226",
+    "src/d/actor/d_a_obj_doguu.cpp:240",
+    "src/d/actor/d_a_obj_doguu.cpp:503",
+    "src/d/d_menu_collect.cpp:287",
+    "src/d/actor/d_a_agb.cpp:1187"
+   ],
+   "confidence": "high"
+  },
+  "0x1E40": {
+   "dec": 7744,
+   "byte_mask": [
+    30,
+    64
+   ],
+   "meaning": "The Tower of the Gods has risen. Raised by the third goddess statue the instant all three pearl bits are set, immediately before it orders MEGAMI_DEMO. It is the switch that makes the tower physically exist: daObjTower_c::_create returns cPhs_STOP_e (the X_tower model and its collision are never loaded) while it is clear, and the sea's distant-island LOD refuses to draw room 26 without it.",
+   "set_by": "src/d/actor/d_a_obj_doguu.cpp:738",
+   "read_by": [
+    "src/d/actor/d_a_obj_tower.cpp:66",
+    "src/d/actor/d_a_lod_bg.cpp:340",
+    "src/d/actor/d_a_ship.cpp:486",
+    "src/d/actor/d_a_ship.cpp:4235",
+    "src/d/actor/d_a_agb.cpp:1201",
+    "src/d/actor/d_a_agbsw0.cpp:1716"
+   ],
+   "confidence": "high"
+  },
+  "0x2E80": {
+   "dec": 11904,
+   "byte_mask": [
+    46,
+    128
+   ],
+   "meaning": "The tower-rising cutscene (towerd.stb / towerf.stb / towern.stb) has played. All three ADMumi PACKAGE PLAY actions carry EventFlag 11904, and dEvDt raises whatever integer sits in EventFlag when the .stb starts.",
+   "set_by": "ADMumi event_list.dat, events towerd/towerf/towern, PACKAGE PLAY EventFlag=11904, applied at src/d/d_event_data.cpp:798-800",
+   "read_by": [],
+   "confidence": "medium"
+  },
+  "0x1780": {
+   "dec": 6016,
+   "byte_mask": [
+    23,
+    128
+   ],
+   "meaning": "The east Servant of the Tower (Os, argument 0) has woken up.",
+   "set_by": "src/d/actor/d_a_npc_os.cpp:404 (daNpc_Os_c::setWakeup)",
+   "read_by": [
+    "src/d/actor/d_a_npc_os.cpp:383",
+    "src/d/actor/d_a_pedestal.cpp:129"
+   ],
+   "confidence": "high"
+  },
+  "0x1740": {
+   "dec": 5952,
+   "byte_mask": [
+    23,
+    64
+   ],
+   "meaning": "The west Servant of the Tower (Os1, argument 1) has woken up.",
+   "set_by": "src/d/actor/d_a_npc_os.cpp:407",
+   "read_by": [
+    "src/d/actor/d_a_npc_os.cpp:388",
+    "src/d/actor/d_a_pedestal.cpp:133"
+   ],
+   "confidence": "high"
+  },
+  "0x1720": {
+   "dec": 5920,
+   "byte_mask": [
+    23,
+    32
+   ],
+   "meaning": "The north Servant of the Tower (Os2, argument 2) has woken up.",
+   "set_by": "src/d/actor/d_a_npc_os.cpp:410",
+   "read_by": [
+    "src/d/actor/d_a_npc_os.cpp:393",
+    "src/d/actor/d_a_pedestal.cpp:137"
+   ],
+   "confidence": "high"
+  },
+  "0x1710": {
+   "dec": 5904,
+   "byte_mask": [
+    23,
+    16
+   ],
+   "meaning": "The east Servant of the Tower has reached its pedestal in Siren room 7 - trial 1 cleared.",
+   "set_by": "src/d/actor/d_a_npc_os.cpp:438 (daNpc_Os_c::setFinish, reached from the Os_Finit0/Os_Finit1 events at d_a_npc_os.cpp:1327-1333)",
+   "read_by": [
+    "src/d/actor/d_a_npc_os.cpp:417",
+    "src/d/actor/d_a_pedestal.cpp:148"
+   ],
+   "confidence": "high"
+  },
+  "0x1704": {
+   "dec": 5892,
+   "byte_mask": [
+    23,
+    4
+   ],
+   "meaning": "The west Servant of the Tower has reached its pedestal in Siren room 7 - trial 2 cleared.",
+   "set_by": "src/d/actor/d_a_npc_os.cpp:441",
+   "read_by": [
+    "src/d/actor/d_a_npc_os.cpp:422",
+    "src/d/actor/d_a_pedestal.cpp:152"
+   ],
+   "confidence": "high"
+  },
+  "0x1B01": {
+   "dec": 6913,
+   "byte_mask": [
+    27,
+    1
+   ],
+   "meaning": "The north Servant of the Tower has reached its pedestal in Siren room 7 - trial 3 cleared. (Note the odd id: the other five servant bits are clustered in byte 23, this one is alone in byte 27.)",
+   "set_by": "src/d/actor/d_a_npc_os.cpp:444",
+   "read_by": [
+    "src/d/actor/d_a_npc_os.cpp:427",
+    "src/d/actor/d_a_npc_os.cpp:832",
+    "src/d/actor/d_a_pedestal.cpp:156"
+   ],
+   "confidence": "high"
+  },
+  "0x2510": {
+   "dec": 9488,
+   "byte_mask": [
+    37,
+    16
+   ],
+   "meaning": "Link has read the east servant's message 0xEF4 (the statue's one-off line). Once set, that statue stops ordering its Os_Message event.",
+   "set_by": "src/d/actor/d_a_npc_os.cpp:1908 (next_msgStatus)",
+   "read_by": [
+    "src/d/actor/d_a_npc_os.cpp:543"
+   ],
+   "confidence": "high"
+  },
+  "0x2608": {
+   "dec": 9736,
+   "byte_mask": [
+    38,
+    8
+   ],
+   "meaning": "The west servant's one-off message has been seen.",
+   "set_by": "src/d/actor/d_a_npc_os.cpp:1335",
+   "read_by": [
+    "src/d/actor/d_a_npc_os.cpp:548"
+   ],
+   "confidence": "high"
+  },
+  "0x2604": {
+   "dec": 9732,
+   "byte_mask": [
+    38,
+    4
+   ],
+   "meaning": "The north servant's one-off message has been seen.",
+   "set_by": "src/d/actor/d_a_npc_os.cpp:1338",
+   "read_by": [
+    "src/d/actor/d_a_npc_os.cpp:553"
+   ],
+   "confidence": "high"
+  },
+  "0x2D10": {
+   "dec": 11536,
+   "byte_mask": [
+    45,
+    16
+   ],
+   "meaning": "warp_in.stb has played: Link has been carried down from the Tower of the Gods into Hyrule. This is the end of the chapter. It is what makes the Gohdan warp flower behave normally afterwards (daWarpf_c::checkEndDemo returns TRUE for STAGE_TOTG once it is set, so the flower orders WARP_WIND_AFTER instead of WARP_WIND), and the King of Red Lions changes what he says while it is set and the Master Sword is not equipped.",
+   "set_by": "ADMumi event_list.dat, event warp_in, PACKAGE PLAY EventFlag=11536, applied at src/d/d_event_data.cpp:798-800",
+   "read_by": [
+    "src/d/actor/d_a_warpf.cpp:230-232",
+    "src/d/actor/d_a_ship.cpp:362",
+    "src/d/actor/d_a_ship.cpp:483",
+    "src/d/actor/d_a_ship.cpp:4226"
+   ],
+   "confidence": "high"
+  },
+  "0x2D08": {
+   "dec": 11528,
+   "byte_mask": [
+    45,
+    8
+   ],
+   "meaning": "warphole.stb has played - the LATER, second descent into Hyrule, entered from the sea rather than from the tower. Documented here only because it shares the ADMumi stage with this chapter and because it is what switches the Gdemo20 warp pillar in sea room 26 on. It is NOT raised by this chapter.",
+   "set_by": "ADMumi event_list.dat, event warphole, PACKAGE PLAY EventFlag=11528",
+   "read_by": [
+    "src/d/actor/d_a_warpdm20.cpp:118",
+    "src/d/actor/d_a_warpdm20.cpp:188",
+    "src/d/actor/d_a_warphr.cpp:132",
+    "src/d/actor/d_a_tag_mk.cpp:497"
+   ],
+   "confidence": "medium"
+  }
+ },
+ "_actors": {
+  "Doguu": {
+   "name": "Goddess Statue (Triangle Islands)",
+   "file": "src/d/actor/d_a_obj_doguu.cpp",
+   "which_statue": "field_0x894 = fopAcM_GetParam(this) & 0xFF (src/d/actor/d_a_obj_doguu.cpp:532). 0 -> dItemNo_PEARL_DIN_e, 1 -> dItemNo_PEARL_FARORE_e, 2 -> dItemNo_PEARL_NAYRU_e (lines 199-205).",
+   "placements": {
+    "0 (Din)": "sea room 18, dIsleRoom_NorthernTriangleIsland_e, params 0x0000FF00, pos (12479, 540, -100483)",
+    "1 (Farore)": "sea room 27, dIsleRoom_EasternTriangleIsland_e, params 0x0000FF01, pos (213135, 540, 99)",
+    "2 (Nayru)": "sea room 32, dIsleRoom_SouthernTriangleIsland_e, params 0x0000FF02, pos (12290, 540, 100398)"
+   },
+   "event_table": [
+    "DOGUU_DEMO1",
+    "DOGUU_DEMO2",
+    "DOGUU_DEMO3",
+    "MEGAMI_DEMO"
+   ],
+   "table_source": "src/d/actor/d_a_obj_doguu.cpp:255-258 (dComIfGp_evmng_getEventIdx x4)",
+   "state_machine": "field_0x8AC, src/d/actor/d_a_obj_doguu.cpp:671-763. 0 = waiting: if checkItemGet(mItemNo) and its 200-unit collision cylinder is hit by fpcNm_PLAYER_e, shrink the cylinder to 50 and order DOGUU_DEMO1. 2 -> 3 = DEMO1 over. 3: if getFinishEventCount() == 0 play DOGUU_DEMO2 first (Link's surprise at the very first statue), then DOGUU_DEMO3; otherwise go straight to DOGUU_DEMO3. 9 = setFinishMyEvent(); if getFinishEventCount() >= 3, raise 0x1E40 and order MEGAMI_DEMO; else reset the event and idle at 10.",
+   "cut_names": [
+    "SETGOAL",
+    "SETBALL",
+    "SETANGLE",
+    "EYEFLASH",
+    "MESSAGE_KOKOE",
+    "MESSAGE_OITA",
+    "QUAKE",
+    "JDEMO",
+    "SETLIGHT"
+   ],
+   "cut_source": "src/d/actor/d_a_obj_doguu.cpp:360-370; the JDEMO cut calls setJDemo -> dComIfGp_setNextStage(\"ADMumi\", (short)field_0x894, 0, 8) at line 355"
+  },
+  "Os": {
+   "name": "Servant of the Tower / \u304a\u4f9b\u77f3\u50cf (companion statue)",
+   "file": "src/d/actor/d_a_npc_os.cpp",
+   "arguments": "Three placement names share one actor profile: Os = argument 0, Os1 = argument 1, Os2 = argument 2 (src/d/d_stage.cpp:704-706).",
+   "event_table": [
+    "OPTION_CHAR_END",
+    "Os_Wakeup",
+    "Os_Finish",
+    "Os1_Wakeup",
+    "Os1_Finish",
+    "Os2_Wakeup",
+    "Os2_Finish",
+    "Os_Message",
+    "Os1_Message",
+    "Os2_Message",
+    "Os_Finit0",
+    "Os_Finit1",
+    "Os1_Finit0",
+    "Os1_Finit1",
+    "Os2_Finit0",
+    "Os2_Finit1"
+   ],
+   "table_source": "src/d/actor/d_a_npc_os.cpp:1995-2011, resolved into field_0x7C4[] at line 2056",
+   "index_rule": "field_0x7A5 holds the index to order; eventOrder() calls fopAcM_orderOtherEventId(this, field_0x7C4[field_0x7A5]) whenever field_0x7A5 is in 0..0xF (src/d/actor/d_a_npc_os.cpp:1877-1884).",
+   "wake": "getWakeupOrderEventNum() returns 1/3/5 for argument 0/1/2 (line 449-460); it is assigned at line 787 when Link comes close to a statue that has not woken.",
+   "finish": "checkGoalRoom() (line 519-526): if the statue's room is 7 and it is awake and not finished, field_0x7A5 = getFinishOrderEventNum(), which is 0xA/0xC/0xE when the statue is standing and 0xB/0xD/0xF when Link is carrying it (line 463-480) - i.e. the Os*_Finit0 / Os*_Finit1 pair. Those indices land in the 0xA..0xF branch at line 1327-1333 which calls setFinish().",
+   "switch": "initialSwitchOnEvent (line 1587-1588) turns on switch (params>>16)&0xFF in room 7. The three placements carry switches 0x29=41 (Os), 0x2A=42 (Os1), 0x28=40 (Os2)."
+  }
+ },
+ "steps": [
+  {
+   "id": "totg_pearl_din",
+   "stage": "sea",
+   "room": 18,
+   "layer": -1,
+   "trigger": {
+    "kind": "npc",
+    "detail": "The goddess statue orders the event itself. daObjDoguu_c::_execute state 0 requires checkItemGet(dItemNo_PEARL_DIN_e, TRUE) and a hit on its dCcD_Cyl - radius 200.0f, height 200.0f (l_cyl_src, src/d/actor/d_a_obj_doguu.cpp:15-43), shrunk to 50.0f at CreateInit if Link does not yet own the pearl - by an actor whose fopAcM_GetName is fpcNm_PLAYER_e. It then calls fopAcM_orderOtherEventId with the DOGUU_DEMO1 index."
+   },
+   "event": "DOGUU_DEMO1",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_obj_doguu.cpp:199-205",
+    "src/d/actor/d_a_obj_doguu.cpp:208-212",
+    "src/d/actor/d_a_obj_doguu.cpp:671-691",
+    "out/rip/GZLE01/stages/sea/sea_report.json:actors (Doguu, room 18, params 0x0000FF00)",
+    "out/rip/GZLE01/stages/sea/sea_events.json:DOGUU_DEMO1",
+    "include/d/d_save.h:322"
+   ],
+   "notes": "Northern Triangle Island. DOGUU_DEMO1 is short: the statue's SETGOAL walks Link to (0,0,200) in front of it, SETANGLE turns him 180 degrees, EYEFLASH lights its eyes, and a fixed camera holds for 60 frames. The item requirement is on the pearl itself, not on an event bit, so nothing stops the three statues being done in any order."
+  },
+  {
+   "id": "totg_first_statue_reaction",
+   "stage": "sea",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "npc",
+    "detail": "Same statue, one state later. daObjDoguu_c::_execute state 3 branches on getFinishEventCount(): if NO pearl has been placed yet it orders DOGUU_DEMO2 before DOGUU_DEMO3; otherwise it skips straight to DOGUU_DEMO3. So this beat plays exactly once per file, at whichever of the three islands Link visits first."
+   },
+   "event": "DOGUU_DEMO2",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_obj_doguu.cpp:698-718",
+    "src/d/actor/d_a_obj_doguu.cpp:495-507",
+    "out/rip/GZLE01/stages/sea/sea_events.json:DOGUU_DEMO2"
+   ],
+   "notes": "The whole script is a camera on Link plus his 049s_surp (surprise) animation - Link reacting to a statue speaking to him for the first time. room is null because it is not tied to an island: it belongs to whichever statue is first."
+  },
+  {
+   "id": "totg_place_pearl",
+   "stage": "sea",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "npc",
+    "detail": "DOGUU_DEMO3 is ordered by the statue via fopAcM_orderChangeEventId from state 3 or 6. Its Doguu cuts are MESSAGE_KOKOE (the statue's 'here' line, message 3822/3823/3824 by statue), SETGOAL to (0,0,70), SETBALL (which sets field_0x8A0 and plays JA_SE_LK_PUT_PEARL - the pearl going into the socket), SETLIGHT, then MESSAGE_OITA and a walk back to (0,0,200). When the event ends, state 9 calls setFinishMyEvent()."
+   },
+   "event": "DOGUU_DEMO3",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x1480",
+    "0x1440",
+    "0x1410"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_obj_doguu.cpp:359-406",
+    "src/d/actor/d_a_obj_doguu.cpp:511-519",
+    "src/d/actor/d_a_obj_doguu.cpp:719-745",
+    "out/rip/GZLE01/stages/sea/sea_events.json:DOGUU_DEMO3"
+   ],
+   "notes": "sets_bits lists all three pearl bits but a single run of this step raises exactly ONE of them, chosen by field_0x894. This one step stands for all three islands: the statue at sea room 18 raises 0x1480 (Din), room 27 raises 0x1440 (Farore), room 32 raises 0x1410 (Nayru). The three are identical code paths differing only by field_0x894, so they are not split into three steps. SETBALL also starts JA_BGM_GET_PEARL as a sub-BGM (MESSAGE_OITA cut, line 394-396)."
+  },
+  {
+   "id": "totg_tower_rises",
+   "stage": "sea",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "npc",
+    "detail": "Still the statue. In state 9, after setFinishMyEvent(), if getFinishEventCount() >= 3 it raises 0x1E40 and calls fopAcM_orderChangeEventId(this, mMegamiDemoEventIdx, 0, 0xFFFF). MEGAMI_DEMO is a fade plus one Doguu cut, JDEMO, and JDEMO is daObjDoguu_c::setJDemo -> dComIfGp_setNextStage(\"ADMumi\", (short)field_0x894, 0, 8). So the third statue placed is the one that hands off, and it hands off to ADMumi spawn 0, 1 or 2 depending on which statue it was."
+   },
+   "event": "MEGAMI_DEMO",
+   "stb": null,
+   "requires_bits": [
+    "0x1480",
+    "0x1440",
+    "0x1410"
+   ],
+   "sets_bits": [
+    "0x1E40"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_obj_doguu.cpp:734-745",
+    "src/d/actor/d_a_obj_doguu.cpp:353-356",
+    "src/d/actor/d_a_obj_doguu.cpp:400-402",
+    "out/rip/GZLE01/stages/sea/sea_events.json:MEGAMI_DEMO"
+   ],
+   "notes": "'megami' is goddess. Note the bit is raised BEFORE the cutscene is ordered, so a file that somehow interrupts here still has the tower. This is the chapter's real hinge: 0x1E40 is what makes daObjTower_c load X_tower at all."
+  },
+  {
+   "id": "totg_tower_rises_cutscene",
+   "stage": "ADMumi",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "ADMumi spawn 0 carries EVNT index 3 = towerd, spawn 1 index 4 = towerf, spawn 2 index 5 = towern; all three sit at (-21100, 300, 28300). Which one runs is decided by the Doguu's JDEMO cut, which passes field_0x894 (0 = Din, 1 = Farore, 2 = Nayru) as the start code."
+   },
+   "event": "towerd",
+   "stb": "towerd.stb",
+   "requires_bits": [
+    "0x1E40"
+   ],
+   "sets_bits": [
+    "0x2E80",
+    "0x2E80",
+    "0x2E80"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/ADMumi/ADMumi_report.json:spawns",
+    "out/rip/GZLE01/stages/ADMumi/ADMumi_events.json:towerd,towerf,towern",
+    "src/d/actor/d_a_obj_doguu.cpp:353-356",
+    "src/d/d_event_data.cpp:798-800"
+   ],
+   "notes": "The naive reading - d = Din placed, f = Farore, n = Nayru - is right about the letters but wrong about the beat. All three scripts are byte-identical apart from the filename: same EventFlag 11904, same OffsetPos (-50179, -1000, 7070), same OffsetAngY 90, and all three end at Stage 'sea', RoomNo 26, StartCode 0. They are one beat, the tower rising out of the sea, filmed from whichever Triangle Island Link finished at, and every one of them deposits him at the foot of the Tower of the Gods. towerf.stb and towern.stb are the alternates; the step is listed once under towerd. towerd.stb raises 0x2E80 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). towerd.stb raises 0x2E80 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+  },
+  {
+   "id": "totg_arrive_tower",
+   "stage": "sea",
+   "room": 26,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "The tower cutscene's PACKAGE PLAY ends with Stage 'sea', RoomNo 26, Layer -1, StartCode 0. sea room 26 spawn 0 is at (112640, 0, 14000) facing -180 degrees, in the water south of the tower."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x1E40"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/ADMumi/ADMumi_events.json:towerd (PACKAGE PLAY)",
+    "out/rip/GZLE01/stages/sea/sea_report.json:spawns (room 26 id 0)",
+    "src/d/actor/d_a_obj_tower.cpp:60-78",
+    "include/d/d_save.h:330"
+   ],
+   "notes": "sea room 26 = dIsleRoom_ToweroftheGods_e. Its stage-level actors are X_tower (the tower itself, at 112640,0,0), Gdemo20 (the warp pillar down to Hyrule - dormant, it needs 0x2D08 which belongs to a later chapter), NpcSo and TagSo/TagMSo (the Fishman), a Kui post at the tower's summit (112641, 31899, -7555), and one Zl1 (Tetra) on layer 9 at (112541, 29500, -8800) whose purpose I could not determine."
+  },
+  {
+   "id": "totg_enter_dungeon",
+   "stage": "Siren",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "Siren room 0 spawn 0 at (-2, -2112, 11383) carries EVNT index 0 = moro_scam, so entering the tower auto-plays it. The King of Red Lions is placed right behind that spawn (Ship actor at (-2, -2112, 11775))."
+   },
+   "event": "moro_scam",
+   "stb": null,
+   "requires_bits": [
+    "0x1E40"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "out/rip/GZLE01/stages/Siren/Siren_report.json:spawns",
+    "out/rip/GZLE01/stages/Siren/Siren_events.json:moro_scam",
+    "out/rip/GZLE01/stages/Siren/Siren_report.json:actors (Ship)"
+   ],
+   "notes": "moro_scam is the dungeon's arrival sweep: a MESSAGE TELOP_ON with tlpNo 15 (the 'Tower of the Gods' name card) held for 180 frames, then four camera moves through the flooded entrance hall, then RESTOREPOS. The confidence is medium only for the transition itself: sea's stage.dzs has 27 SCLS exits and NONE of them targets Siren, so the sea -> Siren door must live in X_tower's own collision (X_tower.dzb), which I did not decode."
+  },
+  {
+   "id": "totg_interior_camera_beats",
+   "stage": "Siren",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "tag",
+    "detail": "Four TagEv volumes, one per interior beat, each naming a Siren EVNT entry: room 6 at (7, -1442, 4241) switch 27 -> moro_R06; room 14 at (-3507, 229, 1097) switch 10 -> Kami_R0e; room 16 at (-6395, 198, 886) switch 36 -> Kami_R10; room 18 at (30, 7950, -3679) switch 45 -> moro_kairou. Siren room 17 spawn 0 at (0, 7790, -879) additionally auto-plays EVNT index 3 = SirenR11 on arrival."
+   },
+   "event": "moro_R06",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Siren/Siren_report.json:tags,spawns",
+    "out/rip/GZLE01/stages/Siren/Siren_events.json:moro_R06,Kami_R0e,Kami_R10,moro_kairou,SirenR11",
+    "tools/ww_story_mine.py Siren"
+   ],
+   "notes": "Grouped as one step because none of them carries an event bit or moves the story - each is a FIXEDFRM/UNIBRAKE camera followed by RESTOREPOS. 'Kami' is god and the suffix is the room number in hex (R0e = 14, R10 = 16, and SirenR11 = 17), 'kairou' is corridor, so moro_kairou is the high walk toward the boss door; Siren's boss door (door20, params 0x0FFFF13C) stands just above it at (-2191, 9245, 46). Kami_R10's script names Gbrg00 (fpcNm_LIGHTBRIDGE_e) as a participant and room 16 does hold one at (-6292, 226, 873) on switch 8 - that beat is a light bridge forming for a servant statue to cross. A caveat about the miner's output for this stage: tools/ww_story_mine.py reports 30-odd AttTag/AttTagB volumes as ordering moro_scam. They do not - AttTag's high parameter byte is not an EVNT index, it is zero in every one of them, so they all decode to entry 0. Only the five TagEv volumes and the two event-carrying PLYR spawns are real event triggers in Siren."
+  },
+  {
+   "id": "totg_wake_servants",
+   "stage": "Siren",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "npc",
+    "detail": "Each Servant of the Tower orders its own wake-up when Link gets close: daNpc_Os_c sets field_0x7A5 = getWakeupOrderEventNum() (1, 3 or 5) once the squared distance to Link drops below l_HIO.field_0x60 and the statue is not already awake, then eventOrder() calls fopAcM_orderOtherEventId with that index. The exact radius lives in a runtime-tunable HIO struct, so it is not a constant I can quote."
+   },
+   "event": "Os_Wakeup",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x1780",
+    "0x1740",
+    "0x1720"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_os.cpp:448-461",
+    "src/d/actor/d_a_npc_os.cpp:778-790",
+    "src/d/actor/d_a_npc_os.cpp:1877-1884",
+    "src/d/actor/d_a_npc_os.cpp:1995-2011",
+    "src/d/actor/d_a_npc_os.cpp:400-411",
+    "src/d/d_stage.cpp:704-706"
+   ],
+   "notes": "One bit per statue - Os raises 0x1780, Os1 raises 0x1740, Os2 raises 0x1720 - so a single run of this step raises exactly one of the three listed in sets_bits. The three statues are placed in Siren's stage.dzs, not in a room.dzr, so the rip reports no room for them: Os (argument 0) at (7558, 502, 876) on the east arm, Os1 (argument 1) at (-7687, 503, 873) on the west arm, Os2 (argument 2) at (0, 715, -7499) on the north arm. Os1_Wakeup and Os2_Wakeup are the other two names. Each statue also has an Os*_Message event, ordered while its one-off message bit (0x2510 / 0x2608 / 0x2604) is clear."
+  },
+  {
+   "id": "totg_trial_east",
+   "stage": "Siren",
+   "room": 7,
+   "layer": -1,
+   "trigger": {
+    "kind": "npc",
+    "detail": "daNpc_Os_c::checkGoalRoom(): once the statue's own room number is 7 and it is awake and not finished, field_0x7A5 = getFinishOrderEventNum(), which is 0xA (Os_Finit0) when it walks in on its own or 0xB (Os_Finit1) when Link is carrying it. Both land in the 0xA..0xF branch of the event-end handler, which calls setFinish(). Delivery also turns on switch 0x29 = 41 in room 7."
+   },
+   "event": "Os_Finit0",
+   "stb": null,
+   "requires_bits": [
+    "0x1780"
+   ],
+   "sets_bits": [
+    "0x1710"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_os.cpp:463-480",
+    "src/d/actor/d_a_npc_os.cpp:519-526",
+    "src/d/actor/d_a_npc_os.cpp:1325-1333",
+    "src/d/actor/d_a_npc_os.cpp:433-445",
+    "src/d/actor/d_a_npc_os.cpp:1585-1590",
+    "out/rip/GZLE01/stages/Siren/Siren_report.json:actors (Os, params 0x002900FF)"
+   ],
+   "notes": "The east trial. Os_Finish (index 2) is the sister event and is the one that plays when the delivery is a full cutscene rather than the short Finit form; the code orders Finit0/Finit1 from checkGoalRoom, so those are what the placement actually reaches. The associated camera beat on the way in is Kami_R10 (see totg_kami_r10)."
+  },
+  {
+   "id": "totg_trial_west",
+   "stage": "Siren",
+   "room": 7,
+   "layer": -1,
+   "trigger": {
+    "kind": "npc",
+    "detail": "Same mechanism, argument 1: getFinishOrderEventNum returns 0xC (Os1_Finit0) standing or 0xD (Os1_Finit1) carried. Delivery turns on switch 0x2A = 42 in room 7."
+   },
+   "event": "Os1_Finit0",
+   "stb": null,
+   "requires_bits": [
+    "0x1740"
+   ],
+   "sets_bits": [
+    "0x1704"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_os.cpp:463-480",
+    "src/d/actor/d_a_npc_os.cpp:519-526",
+    "src/d/actor/d_a_npc_os.cpp:439-442",
+    "out/rip/GZLE01/stages/Siren/Siren_report.json:actors (Os1, params 0x002A00FF)"
+   ],
+   "notes": "The west trial. The route runs through rooms 14/15/16, which is where the Kami_R0e and Kami_R10 camera tags and one of the two Gbrg00 light bridges sit."
+  },
+  {
+   "id": "totg_trial_north",
+   "stage": "Siren",
+   "room": 7,
+   "layer": -1,
+   "trigger": {
+    "kind": "npc",
+    "detail": "Same mechanism, argument 2: getFinishOrderEventNum returns 0xE (Os2_Finit0) standing or 0xF (Os2_Finit1) carried. Delivery turns on switch 0x28 = 40 in room 7."
+   },
+   "event": "Os2_Finit0",
+   "stb": null,
+   "requires_bits": [
+    "0x1720"
+   ],
+   "sets_bits": [
+    "0x1B01"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_npc_os.cpp:463-480",
+    "src/d/actor/d_a_npc_os.cpp:519-526",
+    "src/d/actor/d_a_npc_os.cpp:443-445",
+    "out/rip/GZLE01/stages/Siren/Siren_report.json:actors (Os2, params 0x002800FF)"
+   ],
+   "notes": "The north trial, the one reached across the water past rooms 8/9/10. Its finish bit 0x1B01 is the odd one out of the six servant bits."
+  },
+  {
+   "id": "totg_pedestals_done",
+   "stage": "Siren",
+   "room": 7,
+   "layer": -1,
+   "trigger": {
+    "kind": "npc",
+    "detail": "Room 7 holds the three pedestals: Hdai1 (argument 0) at (684, 100, 874), Hdai2 (argument 1) at (-684, 100, 874) and Hdai3 (argument 2) at (0, 100, 190). daPds_c mirrors the servant bits exactly - wakeupCheck() reads 0x1780/0x1740/0x1720 and finishCheck() reads 0x1710/0x1704/0x1B01 for arguments 0/1/2 - and each pedestal's event cuts are WAIT / MOVE / EFFSET / EFFEND."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x1710",
+    "0x1704",
+    "0x1B01"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "src/d/actor/d_a_pedestal.cpp:112-160",
+    "src/d/actor/d_a_pedestal.cpp:198-217",
+    "src/d/d_stage.cpp:1023-1025",
+    "out/rip/GZLE01/stages/Siren/Siren_report.json:actors (Hdai1/Hdai2/Hdai3, room 7)"
+   ],
+   "notes": "The step is medium, not high, because I could not find what actually opens the way up once all three pedestals are lit. Room 7 holds an Hsh object (fpcNm_Obj_HSH_e, params 0x29) that has no corresponding source file in this decomp, and Siren's Hys/Hys2 gates each key off a single switch (params & 0xFF: 7 in room 1, 0x12 in room 9, 0x22 in room 11, 0x18 in room 14) rather than off the three servant bits. So the mechanism is stated by the bits but the door is not identified."
+  },
+  {
+   "id": "totg_warp_up",
+   "stage": "Siren",
+   "room": 7,
+   "layer": -1,
+   "trigger": {
+    "kind": "warp",
+    "detail": "A Ywarp00 (fpcNm_WARPLIGHT_e / daWarpls_c) at (2, 569, 870) in room 7, params 0x00010128 - directly above the pedestal circle. Stepping into it plays TOWER_WARP_U (Link's 062s_warp, a ROLLING camera and a fade) and TOWER_WARP_D on the other side, which drops him in at (0, 7900, -10300) with the 064sfall landing animation. Room 17 spawn 0 at (0, 7790, -879) carries EVNT index 3 = SirenR11 and there is a second Ywarp00 in room 17 at (0, 7300, -506), params 0x00FF01FF."
+   },
+   "event": "TOWER_WARP_U",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "out/rip/GZLE01/stages/Siren/Siren_report.json:actors (Ywarp00)",
+    "out/rip/GZLE01/stages/Siren/Siren_events.json:TOWER_WARP_U,TOWER_WARP_D,SirenR11",
+    "src/d/d_stage.cpp:906",
+    "src/d/actor/d_a_warpls.cpp"
+   ],
+   "notes": "Medium because daWarpls_c is entirely /* Nonmatching */ in this decomp - every one of its methods including checkOrder, eventOrder and check_warp_link is a stub - so the event names TOWER_WARP_U / TOWER_WARP_D appear nowhere in src/ and the pairing with these two Ywarp00 placements is inferred from the event scripts' own coordinates (TOWER_WARP_D puts Link at y = 7900, which is the room 17 / room 18 band) plus the fact that Siren is the only stage whose event list carries them. SirenR11 (room 0x11 = 17) is a 20-frame fixed camera at (119, 7739, -11139)."
+  },
+  {
+   "id": "totg_big_key",
+   "stage": "Siren",
+   "room": 17,
+   "layer": -1,
+   "trigger": {
+    "kind": "chest",
+    "detail": "A takara4 chest (fpcNm_TBOX_e) at (-4, 7650, 1467), params 0xFF300000, rot.z 19984 -> item number (rot.z >> 8) & 0xFF = 0x4E = dItemNo_BOSS_KEY_e. Its switch field ((params>>12)&0xFF) is 0, i.e. it is not gated on a room switch."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "dItemNo_BOSS_KEY_e (0x4E) - the Tower of the Gods Big Key",
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Siren/Siren_report.json:actors (takara4)",
+    "include/d/actor/d_a_tbox.h:36-37",
+    "include/d/d_item_data.h:85"
+   ],
+   "notes": "Chest item numbers live in home.angle.z, not in the params word (daTbox_c::getItemNo). The rest of Siren's chests decode as: dungeon Map 0x4C at (5170,-1554,11831), Compass 0x4D at (-5054,-1591,7451), two Small Keys 0x15, three Joy Pendants 0x1F, two sea-chart pieces 0xEA/0xF4, and Tingle Statue 3 0xA5 at (2,505,4265)."
+  },
+  {
+   "id": "totg_darknut",
+   "stage": "SirenMB",
+   "room": 23,
+   "layer": -1,
+   "trigger": {
+    "kind": "tag",
+    "detail": "SirenMB is reached by Siren's single SCLS exit, at (-3511, 229, 2861) in room 23 -> SirenMB spawn 0. Inside, a TagEv at (-6, 1, 703) with switch 224 orders SirenMB's only EVNT entry, SIREN_MD."
+   },
+   "event": "SIREN_MD",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Siren/Siren_report.json:exits",
+    "out/rip/GZLE01/stages/SirenMB/SirenMB_report.json:tags,actors",
+    "out/rip/GZLE01/stages/SirenMB/SirenMB_events.json:SIREN_MD",
+    "src/d/d_stage.cpp:985"
+   ],
+   "notes": "SirenMB holds exactly one enemy: Tn at (-2, 0, 1608), params 0xE0FFC80D - fpcNm_TN_e, the Darknut, and d_a_tn.cpp's header calls it 'Enemy - Darknut / Mini-Boss - Darknut (Tower of the Gods)'. SIREN_MD is the entry cutscene: Link is placed at (0,0,-775), plays 049s_surp, and two cameras pan across the Darknut. Siren itself carries a duplicate of this room's contents (a Tn and a takara8 at room 23), so the same room exists in both stages."
+  },
+  {
+   "id": "totg_get_bow",
+   "stage": "SirenMB",
+   "room": 23,
+   "layer": -1,
+   "trigger": {
+    "kind": "chest",
+    "detail": "A takara8 chest at (-2, 0, 1599) - the same spot the Darknut stands on - params 0xFF216282, rot.z 9995 -> item (9995 >> 8) & 0xFF = 0x27 = dItemNo_BOW_e. Its switch field is (0xFF216282 >> 12) & 0xFF = 0x16 = 22, so the chest is gated on room switch 22, which is what the Darknut's death turns on."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "dItemNo_BOW_e (0x27) - the Hero's Bow",
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/SirenMB/SirenMB_report.json:actors",
+    "include/d/actor/d_a_tbox.h:36-37",
+    "include/d/d_item_data.h:46",
+    "src/d/actor/d_a_tbox.cpp:407-428"
+   ],
+   "notes": "The dungeon item. daTbox_c::checkNormal only shows a switch-gated chest once dComIfGs_isSwitch(swNo, roomNo) is true; I did not trace which line of d_a_tn.cpp raises switch 22, so 'the Darknut's death' is the inference, not a quoted line."
+  },
+  {
+   "id": "totg_gohdan",
+   "stage": "SirenB",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "enemy_defeat",
+    "detail": "SirenB's only actors are three Bst pieces (fpcNm_BST_e - d_a_bst.cpp's header names it 'Boss - Gohdan': the head and the two hands), a door20 boss door at (-1750, 0, 0) and a Bitem. Gohdan's death sequence, state 53, calls dComIfGs_onStageBossEnemy() and then fopAcM_createWarpFlower(&(0,0,0), 0, room, 0) - the warp back out is spawned by the boss itself."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_bst.cpp:2434-2438",
+    "src/d/d_stage.cpp:1188-1189",
+    "out/rip/GZLE01/stages/SirenB/SirenB_report.json:actors"
+   ],
+   "notes": "Gohdan's defeat is not an event bit at all: it is the per-stage boss flag, dSv_save_c::STAGE_TOTG = 5. d_a_bst.cpp is fully decompiled (no /* Nonmatching */ stubs). SirenB's EVNT table is empty - nothing in the placement data auto-plays anything - and its only story-looking scripts are AHEAHE (the shared boss-defeat event every boss stage carries), WARP_WIND and WARP_WIND_AFTER."
+  },
+  {
+   "id": "totg_heart_container",
+   "stage": "SirenB",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "room_enter",
+    "detail": "The Bitem actor at (814, 0, -24), params 0x00000005, is a fpcNm_BOSSITEM_e. daBossItem_Create reads its stage number from the params (5 = dSv_save_c::STAGE_TOTG) and, if dComIfGs_isStageBossEnemy(5) is true and dComIfGs_isStageLife(5) is not, calls fopAcM_createItemForBoss at its own position; then it returns cPhs_ERROR_e and deletes itself. So the prize is placed at room-load time, not dropped by the boss."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "the boss Heart Container (fopAcM_createItemForBoss item index 1)",
+   "confidence": "medium",
+   "sources": [
+    "src/d/actor/d_a_boss_item.cpp:23-39",
+    "include/d/d_save.h:885",
+    "out/rip/GZLE01/stages/SirenB/SirenB_report.json:actors (Bitem, params 0x00000005)"
+   ],
+   "notes": "Medium on the item identity only: createItemForBoss is passed the literal 1, which I did not confirm resolves to the Heart Container item number rather than an index into a boss-item table. The stage number 5 = STAGE_TOTG is certain."
+  },
+  {
+   "id": "totg_boss_warp",
+   "stage": "SirenB",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "warp",
+    "detail": "The warp flower Gohdan spawns is a Warpf (daWarpf_c). Its CreateInit picks which event it will order: checkEndDemo() returns FALSE for STAGE_TOTG while 0x2D10 is clear, so it takes the WARP_WIND branch. WARP_WIND ends with DIRECTOR NEXT -> Stage 'ADMumi', RoomNo 0, Layer 9, StartCode 200."
+   },
+   "event": "WARP_WIND",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_warpf.cpp:229-233",
+    "src/d/actor/d_a_warpf.cpp:263-278",
+    "src/d/actor/d_a_bst.cpp:2438",
+    "out/rip/GZLE01/stages/SirenB/SirenB_events.json:WARP_WIND"
+   ],
+   "notes": "This is the single cleanest gate in the chapter: one bit, 0x2D10, decides whether the Tower of the Gods boss warp sends Link to Hyrule or back out to the sea. Every other dungeon's Warpf branches on an item instead (Din's Pearl for STAGE_DRC, Farore's Pearl for STAGE_FW, the Master Sword upgrades for STAGE_ET and STAGE_WT)."
+  },
+  {
+   "id": "totg_descend_shaft",
+   "stage": "ADMumi",
+   "room": 0,
+   "layer": 9,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "ADMumi spawn 200 at (0, 31070, -8800) plays no event; Link simply arrives at the top of a vertical shaft and descends. Three TagEv volumes stacked at x 24, z -7531 and y 31561 / 29929 / 28297, all on switch 57, order EVNT index 1 = JMP_DEMO. JMP_DEMO is three UNITRANS camera moves around y = 30800-31800 and then DIRECTOR NEXT -> Stage 'ADMumi', RoomNo 0, Layer 9, StartCode 201."
+   },
+   "event": "JMP_DEMO",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/ADMumi/ADMumi_report.json:spawns,tags",
+    "out/rip/GZLE01/stages/ADMumi/ADMumi_events.json:JMP_DEMO"
+   ],
+   "notes": "ADMumi ('Tower of the Gods Cutscenes' per gcrip/data/ww_stages.py:6) is a bare cutscene stage: three spawns for the tower-rising films at ground level and a 30000-unit-tall shaft at (0, ~30000, -8800) for the descent to Hyrule. The three JMP_DEMO tags at different heights are the same camera re-armed as Link falls past."
+  },
+  {
+   "id": "totg_warp_to_hyrule",
+   "stage": "ADMumi",
+   "room": 0,
+   "layer": 9,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "ADMumi spawn 201 at (-3, 29570, -8800) carries EVNT index 0 = warp_in. warp_in is a single PACKAGE PLAY of warp_in.stb with EventFlag 11536, ending at Stage 'Hyrule', RoomNo 0, Layer 8, StartCode 200."
+   },
+   "event": "warp_in",
+   "stb": "warp_in.stb",
+   "requires_bits": [],
+   "sets_bits": [
+    "0x2D10",
+    "0x2D10",
+    "0x2D10"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/ADMumi/ADMumi_report.json:spawns",
+    "out/rip/GZLE01/stages/ADMumi/ADMumi_events.json:warp_in",
+    "src/d/d_event_data.cpp:798-800",
+    "src/d/actor/d_a_warpf.cpp:230-232"
+   ],
+   "notes": "The end of the chapter: Link is carried down through the sea into the sealed Hyrule under it. 0x2D10 is raised the moment the .stb starts, not when it ends. What follows belongs to the Hyrule chapter (Hyrule layer 8 is the layer daWarphr_c special-cases when it plays warp_out on the way back). warp_in.stb raises 0x2D10 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). warp_in.stb raises 0x2D10 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+  },
+  {
+   "id": "totg_return_from_tower",
+   "stage": "sea",
+   "room": 26,
+   "layer": -1,
+   "trigger": {
+    "kind": "warp",
+    "detail": "On any later visit the same Warpf in SirenB takes the other branch: with 0x2D10 set, checkEndDemo() returns TRUE for STAGE_TOTG, CreateInit picks WARP_WIND_AFTER and calls setEndAnim(). WARP_WIND_AFTER ends with DIRECTOR NEXT -> Stage 'sea', RoomNo 26, Layer -1, StartCode 1, and sea room 26 spawn 1 at (112638, 0, -1) carries EVNT index 50 = TOWER_WARPOUT."
+   },
+   "event": "TOWER_WARPOUT",
+   "stb": null,
+   "requires_bits": [
+    "0x2D10"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_warpf.cpp:263-278",
+    "out/rip/GZLE01/stages/SirenB/SirenB_events.json:WARP_WIND_AFTER",
+    "out/rip/GZLE01/stages/sea/sea_report.json:spawns (room 26 id 1)",
+    "out/rip/GZLE01/stages/sea/sea_events.json:TOWER_WARPOUT"
+   ],
+   "notes": "TOWER_WARPOUT is a Warpfo actor doing WARP1..WARP4 while Link plays 048warp with prm0 = 2 - the same script as BOSS_WARPOUT (prm0 = 1) with a different parameter. This is the tail of the chapter rather than a story beat, but it is the only thing sea room 26's spawn 1 exists for."
+  },
+  {
+   "id": "totg_later_return_to_hyrule",
+   "stage": "ADMumi",
+   "room": 0,
+   "layer": 10,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "ADMumi spawn 232 at (-1, 29570, -8800) carries EVNT index 2 = warphole, a PACKAGE PLAY of warphole.stb with EventFlag 11528 ending at Stage 'Hyrule', RoomNo 0, Layer -1, StartCode 219. It is reached from sea's tagwp3 event (DIRECTOR NEXT -> ADMumi RoomNo 0 Layer 10 StartCode 232), which is ordered by the TagWp SCOB in sea room 26 at (112590, -2, -50): daTag_Mk_c type 2 requires 0x3380 and 0x2D02 and requires 0x2D08 to be CLEAR, and setTagWpEvId picks tagwp3 only when the equipped sword is the fully powered Master Sword and the Triforce count is 8."
+   },
+   "event": "warphole",
+   "stb": "warphole.stb",
+   "requires_bits": [],
+   "sets_bits": [
+    "0x2D08",
+    "0x2D08",
+    "0x2D08"
+   ],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "out/rip/GZLE01/stages/ADMumi/ADMumi_report.json:spawns",
+    "out/rip/GZLE01/stages/ADMumi/ADMumi_events.json:warphole",
+    "out/rip/GZLE01/stages/sea/sea_events.json:tagwp3",
+    "src/d/actor/d_a_tag_mk.cpp:132-141",
+    "src/d/actor/d_a_tag_mk.cpp:495-505",
+    "src/d/actor/d_a_warpdm20.cpp:118-123",
+    "out/rip/GZLE01/stages/sea/sea_report.json:tags (TagWp room 26, params 0xFFFFFF02)"
+   ],
+   "notes": "NOT part of this chapter - it is the second, much later descent into Hyrule, made from the sea rather than from inside the tower. It is recorded here because it shares the ADMumi stage and because 0x2D08 is what finally switches on the Gdemo20 warp pillar that stands, dormant, in sea room 26 from the moment the tower rises. ADMumi's remaining spawn, 244 -> runaway_majuto.stb (EventFlag 12928, -> Hyrule StartCode 0), is reached from M2ganon's attack_ganon event and belongs to the endgame, not here. warphole.stb raises 0x2D08 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). warphole.stb raises 0x2D08 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+  }
+ ]
+}

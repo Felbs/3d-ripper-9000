@@ -238,7 +238,7 @@
     "src/d/actor/d_a_obj_vgnfd.cpp:236-244",
     "out/rip/GZLE01/stages/GanonB/GanonB_report.json"
    ],
-   "notes": "GanonB is 'Ganon's Tower Before Gohma Rematch'; the rematch itself is Xboss0. GanonB has an empty EVNT table and three AttTagB volumes, so its trigger volumes cannot order an event - the boss room does the work."
+   "notes": "GanonB is 'Ganon's Tower Before Gohma Rematch'; the rematch itself is Xboss0. GanonB has an empty EVNT table and three AttTagB volumes, so its trigger volumes cannot order an event - the boss room does the work. AttTag / AttTagB are a different actor (fpcNm_Tag_Attention_e) and carry NO event index: d_a_tag_attention.h:55-72 decodes only type = (params >> 8) & 0x3 and swSave = params & 0xFF. An earlier draft of this file read them as TagEv volumes; corrected 2026-08-22."
   },
   {
    "id": "gt_trial_kalle_demos",
@@ -262,7 +262,7 @@
     "src/d/actor/d_a_obj_vgnfd.cpp:25-49",
     "src/d/actor/d_a_obj_vgnfd.cpp:236-244"
    ],
-   "notes": null
+   "notes": " AttTag / AttTagB are a different actor (fpcNm_Tag_Attention_e) and carry NO event index: d_a_tag_attention.h:55-72 decodes only type = (params >> 8) & 0x3 and swSave = params & 0xFF. An earlier draft of this file read them as TagEv volumes; corrected 2026-08-22."
   },
   {
    "id": "gt_trial_jalhalla",
@@ -286,7 +286,7 @@
     "src/d/actor/d_a_obj_vgnfd.cpp:25-49",
     "src/d/actor/d_a_obj_vgnfd.cpp:236-244"
    ],
-   "notes": null
+   "notes": " AttTag / AttTagB are a different actor (fpcNm_Tag_Attention_e) and carry NO event index: d_a_tag_attention.h:55-72 decodes only type = (params >> 8) & 0x3 and swSave = params & 0xFF. An earlier draft of this file read them as TagEv volumes; corrected 2026-08-22."
   },
   {
    "id": "gt_trial_molgera",
@@ -313,7 +313,7 @@
     "src/d/actor/d_a_obj_vgnfd.cpp:25-49",
     "src/d/actor/d_a_obj_vgnfd.cpp:236-244"
    ],
-   "notes": "requires_bits is left listing its own bits deliberately: the four trials can be done in any order, so no trial requires another. The engine reads this step as 'available once its own flags are not yet set'."
+   "notes": "requires_bits is left listing its own bits deliberately: the four trials can be done in any order, so no trial requires another. The engine reads this step as 'available once its own flags are not yet set'. AttTag / AttTagB are a different actor (fpcNm_Tag_Attention_e) and carry NO event index: d_a_tag_attention.h:55-72 decodes only type = (params >> 8) & 0x3 and swSave = params & 0xFF. An earlier draft of this file read them as TagEv volumes; corrected 2026-08-22."
   },
   {
    "id": "gt_four_doors_open",
@@ -373,21 +373,24 @@
    "layer": -1,
    "trigger": {
     "kind": "spawn",
-    "detail": "GanonK room 0 spawn 0 at (-1, 0, 1424) carries EVNT index 2 = \"kugutu_ganon\" - kugutu is a puppet. The baked cutscene kugutu_ganon.stb matches. A TagEv with switch 27 orders StartCam2 as Link enters, and a ring of AttTag / TagEv volumes order WarpCam during the fight."
+    "detail": "GanonK room 0 spawn 0 at (-1, 0, 1424) carries EVNT index 2 = \"kugutu_ganon\" - kugutu is a puppet. The baked cutscene kugutu_ganon.stb matches. A TagEv with switch 27 orders StartCam2 as Link enters, and four TagEv volumes with switch 14 order WarpCam during the fight. CORRECTION: an earlier draft also counted the AttTag / AttTagB volumes here as ordering WarpCam. AttTag / AttTagB are a different actor (fpcNm_Tag_Attention_e) and carry NO event index: d_a_tag_attention.h:55-72 decodes only type = (params >> 8) & 0x3 and swSave = params & 0xFF. An earlier draft of this file read them as TagEv volumes; corrected 2026-08-22."
    },
    "event": "kugutu_ganon",
    "stb": "kugutu_ganon.stb",
    "requires_bits": [
     "0x3204"
    ],
-   "sets_bits": [],
+   "sets_bits": [
+    "0x3B02",
+    "0x3B02"
+   ],
    "gives_item": null,
    "confidence": "high",
    "sources": [
     "out/rip/GZLE01/stages/GanonK/GanonK_report.json",
     "out/rip/GZLE01/godot/cutscenes/kugutu_ganon.json"
    ],
-   "notes": null
+   "notes": "kugutu_ganon.stb raises 0x3B02 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). kugutu_ganon.stb raises 0x3B02 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
   },
   {
    "id": "gt_to_the_roof",
@@ -422,7 +425,10 @@
    "event": "g2before",
    "stb": "g2before.stb",
    "requires_bits": [],
-   "sets_bits": [],
+   "sets_bits": [
+    "0x4002",
+    "0x4002"
+   ],
    "gives_item": null,
    "confidence": "high",
    "sources": [
@@ -431,7 +437,7 @@
     "src/d/actor/d_a_obj_gnnbtltaki.cpp",
     "out/rip/GZLE01/godot/cutscenes/g2before.json"
    ],
-   "notes": "GTower also carries AHEAHE, the shared boss-defeat event every boss stage has, and PZ_TALK."
+   "notes": "GTower also carries AHEAHE, the shared boss-defeat event every boss stage has, and PZ_TALK. g2before.stb raises 0x4002 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). g2before.stb raises 0x4002 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
   },
   {
    "id": "gt_endhr",
@@ -445,14 +451,17 @@
    "event": "endhr",
    "stb": "endhr.stb",
    "requires_bits": [],
-   "sets_bits": [],
+   "sets_bits": [
+    "0x3F40",
+    "0x3F40"
+   ],
    "gives_item": null,
    "confidence": "high",
    "sources": [
     "out/rip/GZLE01/stages/GTower/GTower_report.json:spawns",
     "out/rip/GZLE01/godot/cutscenes/endhr.json"
    ],
-   "notes": "Nothing in src/ names endhr, so the spawn params are its whole wiring."
+   "notes": "Nothing in src/ names endhr, so the spawn params are its whole wiring. endhr.stb raises 0x3F40 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). endhr.stb raises 0x3F40 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
   },
   {
    "id": "gt_ending",

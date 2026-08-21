@@ -1,0 +1,1017 @@
+{
+ "_source": "Mined read-only from the zeldaret/tww decompilation at Z:/memRip/sources/tww and the ripped GZLE01 (Wind Waker USA) disc data at Z:/3d ripper/out/rip/GZLE01. Chapter: THE TWO SAGES - Link carries Medli into the Earth Temple and Makar into the Wind Temple, each learns the sage's song at a stone tablet, each temple is cleared, and the two sages' prayer restores the Master Sword's power in two steps. Same conventions as ww_story_outset.json and ww_story_fortress.json. Event names come from each stage's Stage.arc/event_list.dat (ripped to out/rip/GZLE01/stages/<stage>/<stage>_events.json) and from the stage.dzs EVNT table; triggers come from stage.dzs / room.dzr placement chunks dumped by tools/ww_story_mine.py (PLYR spawn params>>24 = EVNT index -> auto-started event; TagEv/AttTag volumes; ACTR params). Two new pieces of evidence carried this chapter and are worth recording for later chapters: (1) an event script's PACKAGE/PLAY action carries a 'FileName' (.stb), a 'Stage'/'RoomNo'/'StartCode' to return to, and an 'EventFlag' integer which is the event bit that cutscene raises - this is the mechanism behind the 'raised by event data, no setter in src/' bits of the earlier chapters; (2) an event script's DIRECTOR/NEXT action carries the stage change the event performs when it ends. Both are read straight out of <stage>_events.json. The continue table dComIfGs_setGameStartStage (src/d/d_com_inf_game.cpp:1294-1311) has NO entry for this chapter, so the chapter's real progress ladder is the King of Red Lions' advice-message chain in src/d/actor/d_a_ship.cpp:435-460, which walks (newest first) UNK_2D08 > UNK_4004 (Wind Temple done) > UNK_2E02 (Gale Isle open) > UNK_1610 (Makar joined) > UNK_3A02 (Earth Temple done) > UNK_2E04 (Headstone Island open) > UNK_1620 (Medli joined). That chain is the backbone of the ordering used here. Event-bit ids are authoritative numbers; the UNK_xxxx names are placeholders invented by the decomp team, so numeric ids are used.",
+ "_checkpoints": {
+  "source": "src/d/d_com_inf_game.cpp:1294-1311 dComIfGs_setGameStartStage, l_checkData[]",
+  "order": [],
+  "note": "This chapter has NO entry in the continue table: once RODE_KORL (0x2A08) is set - which happens at the end of the Forsaken Fortress chapter - the first row of l_checkData matches and the file always resumes wherever it was saved. Nothing forces a stage for the temples. The nearest thing to a checkpoint here is the pair of return warps baked into the two prayer cutscenes: pray_zola puts the player at sea room 45 (Headstone Island) start code 229 and pray_kokiri at sea room 4 (Gale Isle) start code 232, and the boss-clear warp flower re-enters its own boss stage (M_DaiB start 228 / kazeB start 231) to play them."
+ },
+ "_bits": {
+  "0x1608": {
+   "dec": 5640,
+   "byte_mask": [
+    22,
+    8
+   ],
+   "meaning": "Medli has joined Link and is aboard the King of Red Lions. Raised together with 0x1620 at the end of her recruitment conversation (message 0x19DD / 0x19DE), which also warps the game to sea room 13 (Dragon Roost Island) start code 0xE3. It is the prerequisite the island-arrival tag for Headstone Island tests before it will let the player land, and it is what makes Medli spawn as her Md_ship variant on the boat.",
+   "set_by": "src/d/actor/d_a_npc_md.cpp:3556, src/d/actor/d_a_npc_md.cpp:3910",
+   "read_by": [
+    "src/d/actor/d_a_tag_island.cpp:99",
+    "src/d/actor/d_a_npc_md.cpp:604"
+   ],
+   "confidence": "high"
+  },
+  "0x1620": {
+   "dec": 5664,
+   "byte_mask": [
+    22,
+    32
+   ],
+   "meaning": "Medli is an active partner. Set at the same two places as 0x1608. The player-side code checks it (src/d/actor/d_a_player_main.cpp:7175) and the King of Red Lions uses it as the lowest rung of this chapter's advice ladder (message 0xD6B).",
+   "set_by": "src/d/actor/d_a_npc_md.cpp:3555, src/d/actor/d_a_npc_md.cpp:3909, src/d/actor/d_a_npc_md.cpp:563",
+   "read_by": [
+    "src/d/actor/d_a_ship.cpp:460",
+    "src/d/actor/d_a_player_main.cpp:7175",
+    "src/d/actor/d_a_npc_md.cpp:1381",
+    "src/d/actor/d_a_npc_md.cpp:5671"
+   ],
+   "confidence": "high"
+  },
+  "0x1604": {
+   "dec": 5636,
+   "byte_mask": [
+    22,
+    4
+   ],
+   "meaning": "Makar has joined Link and is aboard the King of Red Lions. Raised with 0x1610 when his recruitment message 0x1526 ends, which also warps the game to stage Otkura start code 0xE6. It is the prerequisite the Gale Isle arrival tag tests before it will let the player land.",
+   "set_by": "src/d/actor/d_a_npc_cb1.cpp:1596",
+   "read_by": [
+    "src/d/actor/d_a_tag_island.cpp:103",
+    "src/d/actor/d_a_npc_cb1.cpp:287",
+    "src/d/actor/d_a_npc_cb1.cpp:971",
+    "src/d/actor/d_a_npc_cb1.cpp:2220"
+   ],
+   "confidence": "high"
+  },
+  "0x1610": {
+   "dec": 5648,
+   "byte_mask": [
+    22,
+    16
+   ],
+   "meaning": "Makar is an active partner. Set with 0x1604. In daNpc_Cb1_c::create it is the rung that says 'Makar exists only as the sea/boat copy', and the King of Red Lions' message 0xD6F sits on it.",
+   "set_by": "src/d/actor/d_a_npc_cb1.cpp:1595",
+   "read_by": [
+    "src/d/actor/d_a_npc_cb1.cpp:286",
+    "src/d/actor/d_a_ship.cpp:446",
+    "src/d/actor/d_a_mmusic.cpp:43"
+   ],
+   "confidence": "high"
+  },
+  "0x2E04": {
+   "dec": 11780,
+   "byte_mask": [
+    46,
+    4
+   ],
+   "meaning": "Headstone Island may be landed at - the Earth Temple chapter is open. Raised by the island arrival tag (daTag_Island_c type 5) when its arrival demo starts; that tag refuses to fire unless 0x1608 is set, i.e. unless Medli is on the boat. It is also the row for dIsleRoom_HeadstoneIsland_e in dComIfGs_checkSeaLandingEvent, so with it clear the sea simply will not let the boat dock. Medli's Edaichi and M_Dai copies both require it.",
+   "set_by": "src/d/actor/d_a_tag_island.cpp:135 (demoInitProc, flag chosen by getArrivalFlag case 5 at :88)",
+   "read_by": [
+    "src/d/d_com_inf_game.cpp:1278",
+    "src/d/actor/d_a_npc_md.cpp:590",
+    "src/d/actor/d_a_npc_md.cpp:595",
+    "src/d/actor/d_a_ship.cpp:457"
+   ],
+   "confidence": "high"
+  },
+  "0x2E02": {
+   "dec": 11778,
+   "byte_mask": [
+    46,
+    2
+   ],
+   "meaning": "Gale Isle may be landed at - the Wind Temple chapter is open. Same shape as 0x2E04 but daTag_Island_c type 6, gated on 0x1604 (Makar on the boat). Makar's Ekaze copy is the only Makar that exists while this is the highest set rung.",
+   "set_by": "src/d/actor/d_a_tag_island.cpp:135 (getArrivalFlag case 6 at :89)",
+   "read_by": [
+    "src/d/d_com_inf_game.cpp:1274",
+    "src/d/actor/d_a_npc_cb1.cpp:281",
+    "src/d/actor/d_a_ship.cpp:443",
+    "src/d/actor/d_a_mmusic.cpp:42"
+   ],
+   "confidence": "high"
+  },
+  "0x2D40": {
+   "dec": 11584,
+   "byte_mask": [
+    45,
+    64
+   ],
+   "meaning": "The dance_zola cutscene has played - Link and Medli have read the Earth God's Lyric off the Headstone tablet. Raised by the cutscene itself: the PACKAGE/PLAY action of the dance_zola event script carries EventFlag 11584. The only reader in src/ is the picto-box NPC's dialogue branch, so in gameplay terms it is a 'this scene has been seen' record.",
+   "set_by": "out/rip/GZLE01/stages/Edaichi/Edaichi_events.json event 'dance_zola', PACKAGE/PLAY property EventFlag = 11584",
+   "read_by": [
+    "src/d/actor/d_a_npc_photo.cpp:2217"
+   ],
+   "confidence": "high"
+  },
+  "0x2D20": {
+   "dec": 11552,
+   "byte_mask": [
+    45,
+    32
+   ],
+   "meaning": "The dance_kokiri cutscene has played - Link and Makar have read the Wind God's Aria off the Gale Isle tablet. Raised by the cutscene: dance_kokiri's PACKAGE/PLAY EventFlag is 11552.",
+   "set_by": "out/rip/GZLE01/stages/Ekaze/Ekaze_events.json event 'dance_kokiri', PACKAGE/PLAY property EventFlag = 11552",
+   "read_by": [
+    "src/d/actor/d_a_npc_photo.cpp:2212"
+   ],
+   "confidence": "high"
+  },
+  "0x2920": {
+   "dec": 10528,
+   "byte_mask": [
+    41,
+    32
+   ],
+   "meaning": "Medli is inside the Earth Temple - the Headstone tablet duet has been played and the way down has opened. Two things raise it: the tablet actor raises it at the instant it orders MKNJD_D_DEMO (the successful duet), and the TagMd1 volume standing over the hole at the far end of Edaichi raises it too. It is the switch that moves Medli's placement from Edaichi to M_Dai: daNpc_Md_c::create refuses to build the Edaichi copy when it is set and refuses to build the M_Dai copy when it is clear.",
+   "set_by": "src/d/actor/d_a_obj_mknjd.cpp:772 (m0430, assigned UNK_2920 at :273), src/d/actor/d_a_tag_md_cb.cpp:189-196 warpAction with event_bit[0] (src/d/actor/d_a_tag_md_cb.cpp:48)",
+   "read_by": [
+    "src/d/actor/d_a_npc_md.cpp:590",
+    "src/d/actor/d_a_npc_md.cpp:595",
+    "src/d/actor/d_a_tag_md_cb.cpp:52"
+   ],
+   "confidence": "high"
+  },
+  "0x2910": {
+   "dec": 10512,
+   "byte_mask": [
+    41,
+    16
+   ],
+   "meaning": "Makar is inside the Wind Temple - the Gale Isle tablet duet has been played. Exactly the mirror of 0x2920: raised by the K-type tablet when it orders MKNJD_K_DEMO and by the TagCb1 volume at the end of Ekaze, and it is what moves Makar's placement from Ekaze to kaze.",
+   "set_by": "src/d/actor/d_a_obj_mknjd.cpp:772 (m0430, assigned UNK_2910 at :262), src/d/actor/d_a_tag_md_cb.cpp:189-196 warpAction with event_bit[1]",
+   "read_by": [
+    "src/d/actor/d_a_npc_cb1.cpp:276",
+    "src/d/actor/d_a_mmusic.cpp:41",
+    "src/d/actor/d_a_tag_md_cb.cpp:52"
+   ],
+   "confidence": "high"
+  },
+  "0x3A02": {
+   "dec": 14850,
+   "byte_mask": [
+    58,
+    2
+   ],
+   "meaning": "Medli has awakened as the Sage of Earth - the pray_zola cutscene has played and the Master Sword has half its power back. Raised by the cutscene itself (pray_zola's PACKAGE/PLAY EventFlag is 14850). The King of Red Lions' message 0xD6D/0xD6E rung sits on it, which is what makes it the Earth Temple's 'chapter done' marker.",
+   "set_by": "out/rip/GZLE01/stages/M_DaiB/M_DaiB_events.json event 'pray_zola', PACKAGE/PLAY property EventFlag = 14850",
+   "read_by": [
+    "src/d/actor/d_a_ship.cpp:449"
+   ],
+   "confidence": "high"
+  },
+  "0x4004": {
+   "dec": 16388,
+   "byte_mask": [
+    64,
+    4
+   ],
+   "meaning": "Makar has awakened as the Sage of Wind - the pray_kokiri cutscene has played and the Master Sword is fully restored. Raised by the cutscene (pray_kokiri's PACKAGE/PLAY EventFlag is 16388). It is the rung of the King of Red Lions ladder immediately above Gale Isle, and it is where this chapter ends and the Triforce chapter begins.",
+   "set_by": "out/rip/GZLE01/stages/kazeB/kazeB_events.json event 'pray_kokiri', PACKAGE/PLAY property EventFlag = 16388",
+   "read_by": [
+    "src/d/actor/d_a_ship.cpp:435"
+   ],
+   "confidence": "high"
+  },
+  "0x3310": {
+   "dec": 13072,
+   "byte_mask": [
+    51,
+    16
+   ],
+   "meaning": "One of the ten 'partner hint already given' bits used by daTag_MdCb_c (argument 2 = the TagMd11 volume in M_Dai room 1). Each of these volumes plays a one-off Medli/Makar line and then never respawns, because daTag_MdCb_c::create returns cPhs_ERROR_e once checkEventFinish() reports the bit set.",
+   "set_by": "(event data - the md_tag_message / cb_tag_message scripts; no onEventBit for it exists in src/)",
+   "read_by": [
+    "src/d/actor/d_a_tag_md_cb.cpp:131",
+    "src/d/actor/d_a_npc_md.cpp:3224 (0x3320/0x3310 pair, unrelated use)"
+   ],
+   "confidence": "medium"
+  },
+  "0x3480": {
+   "dec": 13440,
+   "byte_mask": [
+    52,
+    128
+   ],
+   "meaning": "The same kind of one-off partner-hint bit, for daTag_MdCb_c argument 8 = the TagCb11 volume in kaze room 1. The full mapping read off src/d/actor/d_a_tag_md_cb.cpp:129-152 is arg2=0x3310, arg3=0x4180, arg4=0x3308, arg5=0x3304, arg6=0x3302, arg7=0x3301, arg8=0x3480, arg9=0x3440, arg10=0x3420, arg11=0x3410.",
+   "set_by": "(event data - the cb_tag_message scripts; no onEventBit for it exists in src/)",
+   "read_by": [
+    "src/d/actor/d_a_tag_md_cb.cpp:143"
+   ],
+   "confidence": "medium"
+  }
+ },
+ "_actors": {
+  "MknjD": {
+   "name": "The sage's stone tablet (Earth God's Lyric / Wind God's Aria)",
+   "file": "src/d/actor/d_a_obj_mknjd.cpp",
+   "event_table": [
+    "MKNJD_D_DEMO",
+    "MKNJD_K_DEMO",
+    "MKNJD_D_CHECK",
+    "MKNJD_K_CHECK",
+    "MKNJD_D_ERROR",
+    "MKNJD_K_ERROR",
+    "MKNJD_D_LESSON",
+    "MKNJD_K_LESSON"
+   ],
+   "table_source": "src/d/actor/d_a_obj_mknjd.cpp:60-68 (daObjMknjD_EventName)",
+   "index_rule": "The actor has one bit of type in its params: prm_get_Type() = (params >> 16) & 1 (include/d/actor/d_a_obj_mknjd.h:19-26). Type 0 is 'D' (Earth): melody number 3, gives dItemNo_EARTH_GODS_LYRIC_e (0x70), talk event MKNJD_D_TALK, event bit UNK_2920. Type 1 is 'K' (Wind): melody number 4, gives dItemNo_WIND_GODS_ARIA_e (0x71), talk event MKNJD_K_TALK, event bit UNK_2910. Both branches at src/d/actor/d_a_obj_mknjd.cpp:253-274. The placed tablets are Edaichi params 0x0000003E (type 0), Ekaze params 0x0001003F (type 1), M_Dai params 0x00000045 and 0x00000059 (type 0), kaze params 0x0001001E and 0x00010038 (type 1).",
+   "how_each_is_ordered": {
+    "MKNJD_D_TALK / MKNJD_K_TALK / MKNJD_*_LESSON": "If the song item is not owned yet the actor starts in state 8, which is an ordinary talk (src/d/actor/d_a_obj_mknjd.cpp:280-285, 868-905). Talking runs the LESSON script: Link plays the tablet's melody (Link action 034tact) and takes the item (059get_dance, CAMERA/GETITEM), then the script's DIRECTOR/NEXT sends the game back into the same stage at the cutscene spawn.",
+    "MKNJD_*_CHECK": "Once the song is owned the actor sits in state 0. When Link is within 800.0f in XZ, roughly facing the tablet (the angle difference from the tablet's own facing must be outside +/-0x4000) and in the WIND_WAKER_CONDUCT player state, it calls player->setTactZev(id, 3 or 4, MKNJD_?_CHECK) - the 3/4 is the song number (src/d/actor/d_a_obj_mknjd.cpp:718-751).",
+    "MKNJD_*_DEMO": "When the CHECK event starts, the actor re-tests that the PARTNER (dComIfGp_getCb1Player()) is also within 800.0f of Link and on the far side, and only then orders the DEMO - the successful duet - and raises its event bit (src/d/actor/d_a_obj_mknjd.cpp:762-780). Otherwise it orders MKNJD_*_ERROR instead.",
+    "MKNJD_*_ERROR": "The 'you two are standing in the wrong place' retry, ordered at src/d/actor/d_a_obj_mknjd.cpp:784 and :791."
+   },
+   "notes": "A quirk worth copying or deliberately not copying: at src/d/actor/d_a_obj_mknjd.cpp:774-779 the actor looks up fpcNm_NPC_MD_e (Medli) and makes her the event talk partner in BOTH branches, including the Wind/Makar branch."
+  },
+  "Md1": {
+   "name": "Medli",
+   "file": "src/d/actor/d_a_npc_md.cpp",
+   "event_table": [
+    "Md_ItemGet",
+    "Md_RopeGet",
+    "MD_FLY",
+    "md_cliff",
+    "Md_Fly2",
+    "Md_Tact",
+    "Md_TactTrue",
+    "Md_HarpTalk",
+    "OPTION_CHAR_END",
+    "DEFAULT_TALK_XY"
+   ],
+   "table_source": "src/d/actor/d_a_npc_md.cpp:214-224 (event_name_tbl)",
+   "index_rule": "Medli has no state-byte-minus-3 table like Aryll or Tetra. Her copy is chosen by start stage in daNpc_Md_c::create (src/d/actor/d_a_npc_md.cpp:565-600): isCollect(0,2) (the half-power Master Sword) and stage M_DaiB -> the M_DaiB sage copy; stage Edaichi requires 0x2E04 set and 0x2920 clear; stage M_Dai requires 0x2E04 and 0x2920 both set; and if 0x2E04 is clear but 0x1608 is set she becomes the Md_ship copy on the boat (:604). Type predicates are include/d/actor/d_a_npc_md.h:101-108.",
+   "how_each_is_ordered": {
+    "Md_Tact": "Selecting the Wind Waker on Medli. daNpc_Md_c::XyCheckCB accepts dItemNo_WIND_WAKER_e while she is the sea/boat copy (src/d/actor/d_a_npc_md.cpp:511-514) and XyEventCB then returns mEventIdxTable[5], which is event_name_tbl[5] = Md_Tact (:536-541).",
+    "Md_TactTrue / Md_HarpTalk": "event_name_tbl entries 6 and 7. Nothing in src/ selects them by index the way [5] is selected; they are ordered from inside the Md_Tact script itself.",
+    "harp at the pedestal": "Once she is the M_DaiB copy her action is harpWaitNpcAction rather than waitNpcAction (src/d/actor/d_a_npc_md.cpp:5650-5652, defined at :1656) - she stays in the boss room playing."
+   },
+   "notes": "Md_Tact, Md_TactTrue and Md_HarpTalk are NOT in any of this chapter's eight stages. Grepping out/rip/GZLE01/godot/events/ finds them only in sea.json and sea_r44.json, so the conducting lessons happen on the open sea aboard the King of Red Lions, before Headstone Island. They are recorded here as the gate into the chapter, not as steps in it."
+  },
+  "Cb1": {
+   "name": "Makar",
+   "file": "src/d/actor/d_a_npc_cb1.cpp",
+   "event_table": [
+    "cb_rescue",
+    "OPTION_CHAR_END",
+    "cb_tact",
+    "cb_tactCancel",
+    "cb_sow"
+   ],
+   "table_source": "src/d/actor/d_a_npc_cb1.cpp:2904-2910 (l_eventNameTbl, USA/PAL branch; the same list is repeated for JPN at :2961)",
+   "index_rule": "Makar's copy is chosen by fopAcM_GetParam alone - 0 BossDie, 1 Forest, 2 WaterFall, 3 Ekaze, 4 Kaze, 5 KazeBoss (include/d/actor/d_a_npc_cb1.h:61-66) - and daNpc_Cb1_c::create then deletes every copy that does not match the current story rung, testing in this order (src/d/actor/d_a_npc_cb1.cpp:262-305): MASTER_SWORD_3 owned -> only the KazeBoss copy survives; else 0x2910 -> only Kaze; else 0x2E02 -> only Ekaze; else 0x1610 -> only the sea/boat copy; else MASTER_SWORD_2 owned -> only WaterFall; else 0x1820 -> none; else Farore's Pearl -> only Forest. That ladder is the cleanest statement in the decomp that the Earth Temple comes before the Wind Temple: Makar only returns to the Forest Haven waterfall once the half-power Master Sword exists.",
+   "how_each_is_ordered": {
+    "cb_sow": "Not by Makar. The seedling object daObjVmc sets its own eventInfo event name to \"cb_sow\" (src/d/actor/d_a_obj_vmc.cpp:174) with a talk/speak attention radius of 0xA7, so the event is ordered by approaching a planting spot with Makar in tow.",
+    "cb_tact / cb_tactCancel": "The Wind Waker command-melody handshake. cb_tact only appears in out/rip/GZLE01/godot/events/Otkura.json, not in any temple stage.",
+    "cb_rescue": "Only in Xboss1.json and kinBOSS.json - outside this chapter.",
+    "instrument at the pedestal": "isTypeKazeBoss() puts him straight into musicNpcAction (src/d/actor/d_a_npc_cb1.cpp:2925-2930), the counterpart of Medli's harpWaitNpcAction."
+   }
+  },
+  "TagMd1 / TagCb1 / TagMd11-16 / TagCb11-14": {
+   "name": "Partner tag volumes",
+   "file": "src/d/actor/d_a_tag_md_cb.cpp",
+   "event_table": [
+    "md_tag_message",
+    "md_tag_message_carry",
+    "md_tag_message_fm",
+    "cb_tag_message",
+    "cb_tag_message_carry",
+    "cb_tag_message_fm",
+    "cb_tag_message_sekizo"
+   ],
+   "table_source": "src/d/actor/d_a_tag_md_cb.cpp:18-25 (event_name_tbl)",
+   "index_rule": "The object name picks an argument (src/d/d_stage.cpp:588-599): TagMd1=0, TagCb1=1, TagMd11..16=2..7, TagCb11..14=8..11. Arguments 0 and 1 are 'warp' tags whose only job is to raise event_bit[argument] = {0x2920, 0x2910} (src/d/actor/d_a_tag_md_cb.cpp:48, warpAction at :189-196) and which delete themselves if that bit is already set (:50-56). Arguments 2 and up are message tags: they scale x50, pick their message number from params & 0xFFFF, and each has its own one-off completion bit in checkEventFinish (:129-152).",
+   "how_each_is_ordered": {
+    "md_tag_message_carry / cb_tag_message_carry": "The '_carry' variants exist because the partner is a carried object: daNpc_Cb1_c::draw special-cases fopAcM_checkCarryNow(this) (src/d/actor/d_a_npc_cb1.cpp:2996-3000). Picking the partner up and setting them down is a distinct mechanic from following.",
+    "cb_tag_message_sekizo": "'sekizo' is a stone statue - the Wind Temple's statue puzzles.",
+    "voice": "Message 0x19F3 makes Medli call out (JA_SE_CV_MD_I_AM_HERE) and 0x1531 makes Makar call out (JA_SE_CV_CB_I_AM_HERE) - src/d/actor/d_a_tag_md_cb.cpp:419-440. Both of those message numbers are actually placed: TagMd14 in M_Dai room 3 carries 0x19F3 and TagCb12 in kaze room 2 carries 0x1531."
+   }
+  },
+  "Warpf": {
+   "name": "Warp flower (the boss-clear wind warp)",
+   "file": "src/d/actor/d_a_warpf.cpp",
+   "event_table": [
+    "WARP_WIND",
+    "WARP_WIND_AFTER"
+   ],
+   "table_source": "src/d/actor/d_a_warpf.cpp:273-276",
+   "index_rule": "daWarpf_c::CreateInit deletes itself unless the in-memory boss-defeated bit is set, then picks WARP_WIND the first time and WARP_WIND_AFTER on every later visit. The 'first time' test is checkEndDemo() (:208-256), which for STAGE_ET asks whether the half-power Master Sword has been collected and for STAGE_WT whether the fully restored one has. So the sword upgrade IS the flag that flips the warp from 'play the prayer scene' to 'just take me out'.",
+   "how_each_is_ordered": "Jalhalla and Molgera both create the flower themselves on death: src/d/actor/d_a_bpw.cpp:2910 and :3442, src/d/actor/d_a_bwd.cpp:1772, each right after dComIfGs_onStageBossEnemy()."
+  }
+ },
+ "steps": [
+  {
+   "id": "et_land_headstone",
+   "stage": "sea",
+   "room": 45,
+   "layer": -1,
+   "trigger": {
+    "kind": "board",
+    "detail": "Sailing the King of Red Lions to Headstone Island (dIsleRoom_HeadstoneIsland_e = 45, include/d/d_save.h:349). dComIfGs_checkSeaLandingEvent refuses to let the boat dock there while 0x2E04 is clear (src/d/d_com_inf_game.cpp:1278), and the arrival tag that raises 0x2E04 - daTag_Island_c type 5 - refuses to fire unless 0x1608 is set, i.e. unless Medli is aboard (src/d/actor/d_a_tag_island.cpp:95-101). Its demoInitProc then raises the flag (:133-136)."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x1608",
+    "0x1620"
+   ],
+   "sets_bits": [
+    "0x2E04"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_tag_island.cpp:81-91",
+    "src/d/actor/d_a_tag_island.cpp:95-108",
+    "src/d/actor/d_a_tag_island.cpp:133-136",
+    "src/d/d_com_inf_game.cpp:1266-1280",
+    "include/d/d_save.h:349"
+   ],
+   "notes": "Stage sea is outside this chapter's eight stages but this is the gate into it, so it is recorded as step zero. The arrival tag names an ARRIVAL_* event per island; the specific event name for Headstone was not read, so 'event' is left null rather than guessed."
+  },
+  {
+   "id": "et_enter_edaichi",
+   "stage": "Edaichi",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "Edaichi spawn 0 at (-49, 400, 2603) - event byte 255, so nothing auto-plays. Medli is placed twice at (24, 400, 2733) on layers 0 and 1 with params 0x00FFFF00, right beside the arrival point; the tablet stands ahead at (-48, 300, 506) and the hole down into the temple is at the far end past (-48, 250, -1664)."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x2E04"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Edaichi/Edaichi_report.json:spawns",
+    "out/rip/GZLE01/stages/Edaichi/Edaichi_report.json:actors",
+    "src/d/actor/d_a_npc_md.cpp:588-593",
+    "tools/ww_story_mine.py Edaichi"
+   ],
+   "notes": "Edaichi contains exactly two placed actors: the tablet and Medli. daNpc_Md_c::create builds the Edaichi Medli only while 0x2E04 is set and 0x2920 is clear, so this room state exists for exactly one visit."
+  },
+  {
+   "id": "et_learn_earth_gods_lyric",
+   "stage": "Edaichi",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "Talking to the MknjD tablet at (-48, 300, 506), params 0x0000003E so prm_get_Type() = 0 = the Earth variant. Because dItemNo_EARTH_GODS_LYRIC_e is not owned yet the actor starts in state 8, the plain-talk state (src/d/actor/d_a_obj_mknjd.cpp:280-285), with talk/speak attention radius 0x3D. The MKNJD_D_LESSON script has Link conduct (Link actions 034tact x4) and take the item (059get_dance plus CAMERA/GETITEM), with MknjD/LESSON MsgNo 1459, then its DIRECTOR/NEXT sends the game to Edaichi room 0 start code 226 layer 8."
+   },
+   "event": "MKNJD_D_LESSON",
+   "stb": null,
+   "requires_bits": [
+    "0x2E04"
+   ],
+   "sets_bits": [],
+   "gives_item": "EARTH_GODS_LYRIC (dItemNo 0x70)",
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_obj_mknjd.cpp:60-68",
+    "src/d/actor/d_a_obj_mknjd.cpp:264-285",
+    "src/d/actor/d_a_obj_mknjd.cpp:868-905",
+    "include/d/actor/d_a_obj_mknjd.h:19-33",
+    "include/d/d_item_data.h:119-120",
+    "out/rip/GZLE01/stages/Edaichi/Edaichi_events.json:MKNJD_D_LESSON"
+   ],
+   "notes": "The actor's getMsg() calls dComIfGp_setMelodyNum(3) for the Earth tablet and returns message 0x05B3, so the song number for the Earth God's Lyric is 3 (and 4 for the Wind God's Aria). The tablet itself has 20 'Hahen' shard bones and a separate break model - it is built to shatter."
+  },
+  {
+   "id": "et_dance_zola",
+   "stage": "Edaichi",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "Edaichi spawn 226 at (-43, 300, 851), params 0x01FF0100 so params>>24 = 1 = EVNT entry 1 = dance_zola. That start code is exactly what MKNJD_D_LESSON's DIRECTOR/NEXT jumps to, so the lesson hands straight over to this cutscene. The cutscene's own PACKAGE/PLAY names dance_zola.stb, raises EventFlag 11584 (0x2D40) and returns to Edaichi room 0 start 226."
+   },
+   "event": "dance_zola",
+   "stb": "dance_zola.stb",
+   "requires_bits": [],
+   "sets_bits": [
+    "0x2D40",
+    "0x2D40",
+    "0x2D40"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Edaichi/Edaichi_report.json:spawns",
+    "out/rip/GZLE01/stages/Edaichi/Edaichi_events.json:dance_zola",
+    "out/rip/GZLE01/godot/cutscenes/dance_zola.json",
+    "tools/ww_story_mine.py Edaichi"
+   ],
+   "notes": "1220 frames / 40.7s, four cutscene actors (Link, d_act0, d_act1, d_act2) and ten message beats 1260-1269 - those message ids are not in the ripped zel_00.bmg, so the text was not read. 'zola' is the Zora side, i.e. Medli's ancestor Laruto; the pairing is confirmed by placement, not by assumption: dance_zola and pray_zola are the EVNT entries of Edaichi and M_DaiB (the Earth Temple), dance_kokiri and pray_kokiri those of Ekaze and kazeB (the Wind Temple). dance_zola.stb raises 0x2D40 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). dance_zola.stb raises 0x2D40 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+  },
+  {
+   "id": "et_duet_opens_earth_temple",
+   "stage": "Edaichi",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "conduct",
+    "detail": "NEW KIND. Link must be in the WIND_WAKER_CONDUCT player state within 800.0f XZ of the tablet and facing it (angle difference from the tablet's own facing outside +/-0x4000); the tablet then calls setTactZev(id, 3, MKNJD_D_CHECK) so the Wind Waker demands song 3. When that check event starts, the tablet re-tests that the partner returned by dComIfGp_getCb1Player() is also within 800.0f of Link and on the opposite side of the tablet, and only then orders MKNJD_D_DEMO and raises 0x2920; a failed placement gets MKNJD_D_ERROR instead."
+   },
+   "event": "MKNJD_D_DEMO",
+   "stb": null,
+   "requires_bits": [
+    "0x2E04"
+   ],
+   "sets_bits": [
+    "0x2920"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_obj_mknjd.cpp:718-751",
+    "src/d/actor/d_a_obj_mknjd.cpp:762-800",
+    "src/d/actor/d_a_obj_mknjd.cpp:264-273",
+    "out/rip/GZLE01/stages/Edaichi/Edaichi_events.json:MKNJD_D_DEMO"
+   ],
+   "notes": "The DEMO script is the whole 'temple opens' beat in one piece: MknjD does SETGOAL/SETANGLE then BREAK (the tablet shatters), MESSAGE does TELOP_ON tlpNo 16 (the title card), Medli walks to (-51, 444, -2116) and then runs (WALK RunRate 0.5 speed 9.0) to (3, 329, -2445), Link walks the same line and finishes on 003n_dash with fall=1 - he drops into the hole - and DIRECTOR/NEXT lands the game in M_Dai room 0 start code 0 layer 0. No .stb: this cutscene is scripted actor moves plus 11 camera cuts, not a baked demo, and dance_zola/pray_zola are the only baked files on the Earth side."
+  },
+  {
+   "id": "et_hole_cam",
+   "stage": "Edaichi",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "tag",
+    "detail": "The one TagEv in Edaichi, at (-50, -1000, -1667) with a 2.5 x 12.0 x 2.5 box (a tall shaft volume), params 0x00FFFFFF -> EVNT entry 0 = HoleCam, switch 255 (none), no event-bit gate. The TagMd1 volume sits directly above it at (-48, 250, -1664) and its only job is to raise 0x2920."
+   },
+   "event": "HoleCam",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x2920"
+   ],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "out/rip/GZLE01/stages/Edaichi/Edaichi_report.json:tags",
+    "src/d/actor/d_a_tag_md_cb.cpp:48",
+    "src/d/actor/d_a_tag_md_cb.cpp:189-196",
+    "tools/ww_story_mine.py Edaichi"
+   ],
+   "notes": "This is the descent camera for anyone who walks into the hole outside the DEMO cutscene - the geometry supports it (the shaft is at the far end past the tablet) but nothing in src/ states when HoleCam is used, so the reading is medium. The 0x2920 in sets_bits comes from TagMd1, not from HoleCam; TagMd1 raises the bit unconditionally in warpAction, which makes it the belt-and-braces setter behind the tablet's own."
+  },
+  {
+   "id": "et_partner_hint_tags",
+   "stage": "M_Dai",
+   "room": 3,
+   "layer": -1,
+   "trigger": {
+    "kind": "tag",
+    "detail": "Sixteen daTag_MdCb_c volumes are placed through the Earth Temple: TagMd11 (arg 2, msg 0x19F0) in room 1, TagMd12 (arg 3, msg 0x19F1) in room 1, TagMd13 (arg 4, msg 0x19F2) in room 4, four TagMd14 (arg 5, msg 0x19F3 - the 'I am here!' voice cue) in room 3, two TagMd15 (arg 6, msg 0x19F4) in room 3, and seven TagMd16 (arg 7, msg 0x19F5) in a row across room 13 at z = 5600. They order md_tag_message, md_tag_message_carry or md_tag_message_fm depending on whether Medli is following, being carried, or elsewhere."
+   },
+   "event": "md_tag_message",
+   "stb": null,
+   "requires_bits": [
+    "0x2920"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/M_Dai/M_Dai_report.json:tags",
+    "src/d/actor/d_a_tag_md_cb.cpp:18-25",
+    "src/d/actor/d_a_tag_md_cb.cpp:87-120",
+    "src/d/actor/d_a_tag_md_cb.cpp:129-152",
+    "src/d/actor/d_a_tag_md_cb.cpp:419-440",
+    "src/d/d_stage.cpp:588-599"
+   ],
+   "notes": "Grouped as one step because they are one beat: escorting Medli. The '_carry' variant is the mechanic worth calling out for the remake - the partner is a carryable object (daNpc_Cb1_c::draw tests fopAcM_checkCarryNow) that Link picks up and sets down, and the tag volumes have a separate line for that state. Each volume is one-shot: daTag_MdCb_c::create returns cPhs_ERROR_e once its bit (0x3310/0x4180/0x3308/0x3304/0x3302/0x3301 for args 2-7) is set. Nothing in src/ raises those bits, so like the fortress chapter's 0x0340 they come from the message scripts themselves."
+  },
+  {
+   "id": "et_inner_tablets",
+   "stage": "M_Dai",
+   "room": 9,
+   "layer": -1,
+   "trigger": {
+    "kind": "conduct",
+    "detail": "Two more MknjD tablets stand inside the Earth Temple - room 9 at (5925, -1300, 1000) params 0x00000045 and room 14 at (1841, -1200, 4200) params 0x00000059, both type 0 (Earth). Because the Earth God's Lyric is already owned by then, these never enter the talk state: they go straight to the state-0 conduct test, so each is a duet puzzle. The M_Dai copy of MKNJD_D_DEMO has no DIRECTOR/NEXT, so these tablets only shatter and open the way."
+   },
+   "event": "MKNJD_D_DEMO",
+   "stb": null,
+   "requires_bits": [
+    "0x2920"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/M_Dai/M_Dai_report.json:actors",
+    "src/d/actor/d_a_obj_mknjd.cpp:276-285",
+    "src/d/actor/d_a_obj_mknjd.cpp:762-780",
+    "out/rip/GZLE01/stages/M_Dai/M_Dai_events.json"
+   ],
+   "notes": "Their event bit is 0x2920 again, which is already set by then, so re-raising it is harmless. A Stalfos is placed right beside the room 14 tablet at (3425, -1200, 3910)."
+  },
+  {
+   "id": "et_warp_jars",
+   "stage": "M_Dai",
+   "room": 2,
+   "layer": -1,
+   "trigger": {
+    "kind": "npc",
+    "detail": "Three daObj_Warpt jars are placed in the Earth Temple: Warpts1 in room 2 at (-1070, 200, -4850) params 0x02010042, Warpts2 in room 6 at (5575, 350, -5650) params 0x03020143, Warpts3 in room 15 at (-1475, -2000, 4900) params 0x03020144. getArg reads m2B4 = params & 0xF, which is 2, 3 and 4 respectively, mapping to warp bits 1, 2 and 4 - the three destinations of one warp network. Each jar also has a matching PLYR spawn at the same coordinates (M_Dai spawns 22, 23, 24)."
+   },
+   "event": "WARPT_OPEN",
+   "stb": null,
+   "requires_bits": [
+    "0x2920"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "out/rip/GZLE01/stages/M_Dai/M_Dai_report.json:actors",
+    "out/rip/GZLE01/stages/M_Dai/M_Dai_report.json:spawns",
+    "src/d/actor/d_a_obj_warpt.cpp:706-760",
+    "src/d/d_stage.cpp:607-609",
+    "out/rip/GZLE01/stages/M_Dai/M_Dai_events.json"
+   ],
+   "notes": "WARPT_OPEN and DEFAULT_WARP_OPEN are both in the stage's event list, but nothing in the placement data names either, so which one a jar orders was not confirmed - hence medium. The Wind Temple has the same three jars: kaze room 0 (0x02010032), room 2 (0x02010033) and room 12 (0x03020134)."
+  },
+  {
+   "id": "et_mkie_block_cameras",
+   "stage": "M_Dai",
+   "room": 1,
+   "layer": -1,
+   "trigger": {
+    "kind": "tag",
+    "detail": "Seven AttTag volumes, all on switch 2 and all pointing at EVNT entry 0 = MkieB_die, spread over rooms 1 (two, types ARRIVAL and HUNT), 2 (SPE_READY), 3, 4, 5 and 13. They are the reaction cameras for the Earth Temple's vanishing blocks: MkieB_die belongs to daObjMkie (src/d/actor/d_a_obj_mkie.cpp:43) and the companion MkieK_die to daObjMkiek (src/d/actor/d_a_obj_mkiek.cpp:78). The placed blocks are MkieBB in rooms 6 and 10 and eighteen MkieK across rooms 4, 6, 7, 16 and 18."
+   },
+   "event": "MkieB_die",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "tools/ww_story_mine.py M_Dai",
+    "out/rip/GZLE01/stages/M_Dai/M_Dai_report.json:tags",
+    "src/d/actor/d_a_obj_mkie.cpp:43",
+    "src/d/actor/d_a_obj_mkiek.cpp:78"
+   ],
+   "notes": "Pure puzzle feedback, no event bits - grouped as one step the way ff_tower_looks was. M_Dai's EVNT table is MkieB_die followed by fifteen MapToolCamera entries, so apart from these and moro_D03 the stage's placement data carries no story cameras at all."
+  },
+  {
+   "id": "et_moro_cam",
+   "stage": "M_Dai",
+   "room": 3,
+   "layer": -1,
+   "trigger": {
+    "kind": "tag",
+    "detail": "The only TagEv in M_Dai: at (-188, 200, -3502) in room 3, switch 13, params selecting EVNT entry 7 = moro_D03, no event-bit gate."
+   },
+   "event": "moro_D03",
+   "stb": null,
+   "requires_bits": [
+    "0x2920"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "tools/ww_story_mine.py M_Dai",
+    "out/rip/GZLE01/stages/M_Dai/M_Dai_report.json:tags"
+   ],
+   "notes": "'moro' is the Moblin (actor mo2), and a mo2 is placed in the temple. Same naming as the fortress chapter's moro_cam."
+  },
+  {
+   "id": "et_stalfos_miniboss",
+   "stage": "M_DaiMB",
+   "room": 12,
+   "layer": -1,
+   "trigger": {
+    "kind": "room_enter",
+    "detail": "M_DaiMB has a single spawn (id 0, room 12, at (0, 0, 650), event byte 255 so nothing auto-plays) behind one door12. Placed inside: three Stal (Stalfos) at (0,0,2200), (-1140,100,3140) and (1140,100,3140), an Msdan pedestal at (0,0,3300), a Tenmado skylight at (0,1430,2200) and one takara3 chest at (0,450,4400). Its EVNT table is MkieB_die plus six MapToolCamera entries and it has no trigger volumes at all."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x2920"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "tools/ww_story_mine.py M_DaiMB",
+    "out/rip/GZLE01/stages/M_DaiMB/M_DaiMB_report.json:actors",
+    "out/rip/GZLE01/stages/M_DaiMB/M_DaiMB_report.json:spawns"
+   ],
+   "notes": "No event and no bit: the mini-boss room is pure combat plus a chest. The chest's contents were NOT determined - the report's params field for TRES chunks does not decode to a plausible item id through daTbox's params & 0x7F, so no item is claimed here."
+  },
+  {
+   "id": "et_jalhalla",
+   "stage": "M_DaiB",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "room_enter",
+    "detail": "Entering through the boss door: M_DaiB spawn 0 at (-1, 0, 1359) sits exactly on the stage's one door12 and its event byte is 255, so no cutscene is ordered by arrival. Placed in the arena: big_pow (Jalhalla) at (-1, 0, -511) params 0x00E0FFFF, a Bitem boss reward at (755, 0, -1052) params 6, some bable, and a Medli (Md1, params 0x00FFFF01) at (299, 0, -211) who only exists after the fact. The stage has no trigger volumes."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x2920"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "tools/ww_story_mine.py M_DaiB",
+    "out/rip/GZLE01/stages/M_DaiB/M_DaiB_report.json:actors",
+    "out/rip/GZLE01/stages/M_DaiB/M_DaiB_report.json:spawns"
+   ],
+   "notes": "The placed Medli here is NOT present for the fight. daNpc_Md_c::create only builds the M_DaiB copy when dComIfGs_isCollect(0, 2) is true - that is the collect flag set by item_func_lv3_sword together with the half-power Master Sword - so she appears only after the prayer, and then in harpWaitNpcAction: the sage stays in the boss room playing her harp."
+  },
+  {
+   "id": "et_boss_warp",
+   "stage": "M_DaiB",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "npc",
+    "detail": "Jalhalla's death code calls dComIfGs_onStageBossEnemy() and then fopAcM_createWarpFlower at its own body position (src/d/actor/d_a_bpw.cpp:2888-2911, repeated at :3434-3442). The flower deletes itself unless that boss bit is set, and picks its event with checkEndDemo(): for STAGE_ET that asks whether dItemNo_MASTER_SWORD_2_e has been collected. It has not been yet, so the flower orders WARP_WIND, whose DIRECTOR does FADE to (160,160,160) then NEXT to M_DaiB room 0 start code 228 layer 8, wipe 7."
+   },
+   "event": "WARP_WIND",
+   "stb": null,
+   "requires_bits": [
+    "0x2920"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_bpw.cpp:2888-2911",
+    "src/d/actor/d_a_warpf.cpp:208-256",
+    "src/d/actor/d_a_warpf.cpp:263-278",
+    "out/rip/GZLE01/stages/M_DaiB/M_DaiB_events.json:WARP_WIND"
+   ],
+   "notes": "Trigger kind 'npc' is being stretched here - the Warpf is an object, not an NPC, but it does order its own event when Link steps into it, which is what the 'npc' kind means in this schema. On every later visit checkEndDemo() is true and the same flower orders WARP_WIND_AFTER instead, which NEXTs straight to sea room 45 start code 229 with no cutscene."
+  },
+  {
+   "id": "et_pray_zola",
+   "stage": "M_DaiB",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "M_DaiB spawn 228 at (-1, 0, 200) - the middle of the arena - params 0x00FF0000 so params>>24 = 0 = the stage's only EVNT entry, pray_zola. That start code is exactly what WARP_WIND's NEXT jumps to, so clearing the boss and stepping into the warp flower re-enters the same room and plays the prayer. The event's PACKAGE/PLAY names pray_zola.stb, raises EventFlag 14850 (0x3A02) and returns the game to sea room 45 (Headstone Island) start code 229."
+   },
+   "event": "pray_zola",
+   "stb": "pray_zola.stb",
+   "requires_bits": [
+    "0x2920"
+   ],
+   "sets_bits": [
+    "0x3A02",
+    "0x3A02",
+    "0x3A02"
+   ],
+   "gives_item": "MASTER_SWORD_2 (dItemNo 0x3A, half power - item_func_lv3_sword sets collect(0,2))",
+   "confidence": "high",
+   "sources": [
+    "tools/ww_story_mine.py M_DaiB",
+    "out/rip/GZLE01/stages/M_DaiB/M_DaiB_events.json:pray_zola",
+    "out/rip/GZLE01/godot/cutscenes/pray_zola.json",
+    "src/d/d_item.cpp:861-864",
+    "src/d/actor/d_a_warpf.cpp:236-244",
+    "src/d/actor/d_a_npc_md.cpp:565-570",
+    "src/d/actor/d_a_ship.cpp:449"
+   ],
+   "notes": "3100 frames / 103s, seven cutscene actors, and its first sound cue is literally named BGM_GETMS - the get-Master-Sword fanfare. The sword upgrade is not granted by any code in src/: it is inside the .stb, and three independent pieces of evidence pin it here - the BGM_GETMS cue, daWarpf_c::checkEndDemo using MASTER_SWORD_2 as the STAGE_ET 'this dungeon is finished' test, and daNpc_Md_c::create using isCollect(0, 2) as the condition for the M_DaiB sage Medli to exist. This is the end of the Earth half. pray_zola.stb raises 0x3A02 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). pray_zola.stb raises 0x3A02 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+  },
+  {
+   "id": "wt_land_gale_isle",
+   "stage": "sea",
+   "room": 4,
+   "layer": -1,
+   "trigger": {
+    "kind": "board",
+    "detail": "Sailing to Gale Isle (dIsleRoom_GaleIsle_e = 4, include/d/d_save.h:308). Exactly the Headstone shape one rung up: dComIfGs_checkSeaLandingEvent blocks the dock while 0x2E02 is clear (src/d/d_com_inf_game.cpp:1274) and daTag_Island_c type 6 will not raise it unless 0x1604 is set - Makar aboard the King of Red Lions."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x1604",
+    "0x1610"
+   ],
+   "sets_bits": [
+    "0x2E02"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_tag_island.cpp:81-91",
+    "src/d/actor/d_a_tag_island.cpp:95-108",
+    "src/d/actor/d_a_tag_island.cpp:133-136",
+    "src/d/d_com_inf_game.cpp:1266-1280",
+    "include/d/d_save.h:308"
+   ],
+   "notes": "Makar can only be collected once the half-power Master Sword exists - daNpc_Cb1_c::create puts him at the Forest Haven waterfall on the MASTER_SWORD_2 rung and nowhere else - so the Wind half strictly follows the Earth half."
+  },
+  {
+   "id": "wt_enter_ekaze",
+   "stage": "Ekaze",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "Ekaze spawn 0 at (42, 400, 2580), event byte 255. Like Edaichi the stage holds exactly two actors: Makar (Cb1, params 3 = isTypeEkaze) at (102, 400, 2707) and the Wind tablet (MknjD, params 0x0001003F, prm_get_Type() = 1) at (42, 300, 527). The TagCb1 volume that raises 0x2910 stands at (38, 250, -1645), the mirror of TagMd1's position in Edaichi."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x2E02"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Ekaze/Ekaze_report.json:actors",
+    "out/rip/GZLE01/stages/Ekaze/Ekaze_report.json:spawns",
+    "out/rip/GZLE01/stages/Ekaze/Ekaze_report.json:tags",
+    "include/d/actor/d_a_npc_cb1.h:61-66",
+    "src/d/actor/d_a_npc_cb1.cpp:281-285"
+   ],
+   "notes": "Ekaze has no TagEv at all - no HoleCam counterpart. Its EVNT table is one entry, dance_kokiri."
+  },
+  {
+   "id": "wt_learn_wind_gods_aria",
+   "stage": "Ekaze",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "Talking to the type-1 MknjD tablet. Same state-8 talk path as the Earth tablet, but with mMelodyNum 4, mGiveItemNo dItemNo_WIND_GODS_ARIA_e (0x71), talk event name MKNJD_K_TALK and event bit UNK_2910. MKNJD_K_LESSON's DIRECTOR/NEXT sends the game to Ekaze room 0 start code 229 layer 8."
+   },
+   "event": "MKNJD_K_LESSON",
+   "stb": null,
+   "requires_bits": [
+    "0x2E02"
+   ],
+   "sets_bits": [],
+   "gives_item": "WIND_GODS_ARIA (dItemNo 0x71)",
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_obj_mknjd.cpp:253-263",
+    "src/d/actor/d_a_obj_mknjd.cpp:280-285",
+    "include/d/d_item_data.h:119-120",
+    "out/rip/GZLE01/stages/Ekaze/Ekaze_events.json:MKNJD_K_LESSON"
+   ],
+   "notes": "The Ekaze copy of the lesson script was not dumped action-by-action the way the Edaichi one was; only its DIRECTOR/NEXT was read. The rest is asserted from the shared actor code, which is the same object with one params bit flipped."
+  },
+  {
+   "id": "wt_dance_kokiri",
+   "stage": "Ekaze",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "Ekaze spawn 229 at (42, 300, 803), params 0x00FF0000 so params>>24 = 0 = EVNT entry 0 = dance_kokiri - the start code MKNJD_K_LESSON jumps to. The event's PACKAGE/PLAY names dance_kokiri.stb, raises EventFlag 11552 (0x2D20) and returns to Ekaze room 0 start 229."
+   },
+   "event": "dance_kokiri",
+   "stb": "dance_kokiri.stb",
+   "requires_bits": [],
+   "sets_bits": [
+    "0x2D20",
+    "0x2D20",
+    "0x2D20"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Ekaze/Ekaze_report.json:spawns",
+    "out/rip/GZLE01/stages/Ekaze/Ekaze_events.json:dance_kokiri",
+    "out/rip/GZLE01/godot/cutscenes/dance_kokiri.json",
+    "tools/ww_story_mine.py Ekaze"
+   ],
+   "notes": "1340 frames / 44.7s, four cutscene actors (Link, d_act1, d_act2, d_act10) and eleven message beats 1270-1279, none of which are in the ripped zel_00.bmg. 'kokiri' is the Korok side - Makar's ancestor Fado. dance_kokiri.stb raises 0x2D20 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). dance_kokiri.stb raises 0x2D20 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+  },
+  {
+   "id": "wt_duet_opens_wind_temple",
+   "stage": "Ekaze",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "conduct",
+    "detail": "The Wind God's Aria duet, identical machinery to the Earth one but with song number 4: setTactZev(id, 4, MKNJD_K_CHECK), 800.0f radius for both Link and Makar, facing test outside +/-0x4000, then MKNJD_K_DEMO and event bit 0x2910 - or MKNJD_K_ERROR on a bad placement."
+   },
+   "event": "MKNJD_K_DEMO",
+   "stb": null,
+   "requires_bits": [
+    "0x2E02"
+   ],
+   "sets_bits": [
+    "0x2910"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_obj_mknjd.cpp:718-751",
+    "src/d/actor/d_a_obj_mknjd.cpp:762-800",
+    "src/d/actor/d_a_obj_mknjd.cpp:253-262",
+    "out/rip/GZLE01/stages/Ekaze/Ekaze_events.json:MKNJD_K_DEMO"
+   ],
+   "notes": "MKNJD_K_DEMO's DIRECTOR/NEXT goes to stage kaze RoomNo 15 StartCode 15 Layer 0 Mode 15 - the Wind Temple's entry room is 15, not 0 as in the Earth Temple. kaze spawn 15 is at (-9115, 1958, 8722) in room 15, which matches. TagCb1 at the end of Ekaze raises 0x2910 as the same belt-and-braces setter TagMd1 is on the Earth side."
+  },
+  {
+   "id": "wt_partner_hint_tags",
+   "stage": "kaze",
+   "room": 2,
+   "layer": -1,
+   "trigger": {
+    "kind": "tag",
+    "detail": "Five daTag_MdCb_c volumes in the Wind Temple: TagCb11 (arg 8, msg 0x1530) in room 1 at (-9118, 1000, -3885), two TagCb12 (arg 9, msg 0x1531 - Makar's 'I am here!' voice cue) in room 2, TagCb14 (arg 11, msg 0x1532) in room 2 at (-4898, 1100, -6885), and TagCb13 (arg 10, msg 0x1534) in room 3 at (-9098, 1100, -4585). They order cb_tag_message, cb_tag_message_carry, cb_tag_message_fm or cb_tag_message_sekizo."
+   },
+   "event": "cb_tag_message",
+   "stb": null,
+   "requires_bits": [
+    "0x2910"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/kaze/kaze_report.json:tags",
+    "src/d/actor/d_a_tag_md_cb.cpp:18-25",
+    "src/d/actor/d_a_tag_md_cb.cpp:129-152",
+    "src/d/actor/d_a_tag_md_cb.cpp:419-440",
+    "src/d/d_stage.cpp:596-599"
+   ],
+   "notes": "Their one-shot bits are 0x3480 (arg 8), 0x3440 (arg 9), 0x3420 (arg 10) and 0x3410 (arg 11). Note that daTag_MdCb_c::create explicitly CLEARS 0x3410 for argument 11 before testing it (src/d/actor/d_a_tag_md_cb.cpp:59-62), so the TagCb14 line is deliberately repeatable. 'sekizo' (stone statue) is the Wind Temple-only variant."
+  },
+  {
+   "id": "wt_makar_sows_seeds",
+   "stage": "kaze",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "npc",
+    "detail": "The planting spots are daObjVmc objects, which set their own event name to \"cb_sow\" and carry talk/speak attention distances of 0xA7 (src/d/actor/d_a_obj_vmc.cpp:167-175). Bringing Makar to one and using him plants a seed; the object then grows its tree model and, once grown, becomes hookshot-able (it tracks an mHookshotAnim / mHasTree state). cb_sow appears in only four ripped event lists - kaze.json plus Cave08, K_Teste and TEST - so the Wind Temple is the only real place it happens."
+   },
+   "event": "cb_sow",
+   "stb": null,
+   "requires_bits": [
+    "0x2910"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "src/d/actor/d_a_obj_vmc.cpp:150-175",
+    "src/d/actor/d_a_npc_cb1.cpp:2904-2910",
+    "out/rip/GZLE01/godot/events/kaze.json"
+   ],
+   "notes": "Medium, not high, because the Vmc actor was not placed under a name I could match in the kaze report's actor list - the seedling spots may be carried by one of the Homen/Hami/Hbrf entries or created from code - so the count and positions of the planting spots in kaze are NOT determined. What is certain is the actor-to-event binding and that kaze is the stage that carries the script."
+  },
+  {
+   "id": "wt_inner_tablets",
+   "stage": "kaze",
+   "room": 5,
+   "layer": -1,
+   "trigger": {
+    "kind": "conduct",
+    "detail": "Two more MknjD tablets inside the Wind Temple - room 5 at (3893, 1055, -4683) params 0x0001001E and room 12 at (8651, -5062, 3164) params 0x00010038, both type 1 (Wind). Same duet-puzzle role as the Earth Temple's pair; the Wind God's Aria is already owned so they go straight to the conduct test."
+   },
+   "event": "MKNJD_K_DEMO",
+   "stb": null,
+   "requires_bits": [
+    "0x2910"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/kaze/kaze_report.json:actors",
+    "src/d/actor/d_a_obj_mknjd.cpp:276-285",
+    "src/d/actor/d_a_obj_mknjd.cpp:762-780"
+   ],
+   "notes": "A Warpts3 warp jar sits right next to the room 12 tablet at (9048, -5062, 4265), which is how the pair are meant to be reached together. kaze's own EVNT table is nine MapToolCamera entries and its five trigger volumes all point at MapToolCamera, so the Wind Temple's placement data carries no story cameras whatsoever - every story beat in it is actor-driven."
+  },
+  {
+   "id": "wt_wizzrobe_miniboss",
+   "stage": "kazeMB",
+   "room": 6,
+   "layer": -1,
+   "trigger": {
+    "kind": "room_enter",
+    "detail": "kazeMB has one spawn (id 0, room 6, at (0, 0, 665), event byte 255) behind one door12, two wiz_r (Wizzrobes) at (-1000, 400, -1741) params 0x00FF3B02 and (0, 0, -1841) params 0x03FF3B01, an Hfuck1, an MhmrSW0 hammer switch and one takara8 chest. Its EVNT table is EMPTY - zero entries - and it has no trigger volumes and no story-looking event scripts at all, the only one of the eight stages of which that is true."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x2910"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "tools/ww_story_mine.py kazeMB",
+    "out/rip/GZLE01/stages/kazeMB/kazeMB_report.json:actors",
+    "out/rip/GZLE01/stages/kazeMB/kazeMB_report.json:spawns"
+   ],
+   "notes": "Chest contents not determined, same reason as the Earth mini-boss."
+  },
+  {
+   "id": "wt_molgera",
+   "stage": "kazeB",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "room_enter",
+    "detail": "kazeB spawn 0 at (0, 1500, 3520), on the stage's one door12, event byte 255. The arena holds Bwd (Molgera) at (0, -507, -1376), a Bitem boss reward at (250, 300, -1126) params 7, and two Makars (Cb1 params 5 = isTypeKazeBoss) at (-253, 350, -1129) on layers 0 and 1. No trigger volumes."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x2910"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "tools/ww_story_mine.py kazeB",
+    "out/rip/GZLE01/stages/kazeB/kazeB_report.json:actors",
+    "out/rip/GZLE01/stages/kazeB/kazeB_report.json:spawns",
+    "src/d/actor/d_a_npc_cb1.cpp:266-274"
+   ],
+   "notes": "As in the Earth boss room, the placed partner is not there for the fight: daNpc_Cb1_c::create only keeps the KazeBoss copy once dItemNo_MASTER_SWORD_3_e is owned, i.e. after the prayer, and then puts him in musicNpcAction - Makar stays at the pedestal playing his violin. The daMmusic actor's Macore_is_playing() is the matching audio switch: it returns FALSE once the Wind Temple boss bit, 0x2910, 0x2E02 or 0x1610 is set, or while the half-power Master Sword is still missing (src/d/actor/d_a_mmusic.cpp:38-47)."
+  },
+  {
+   "id": "wt_boss_warp",
+   "stage": "kazeB",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "npc",
+    "detail": "Molgera's death calls dComIfGs_onStageBossEnemy() and then fopAcM_createWarpFlower at (0, 300, 0) (src/d/actor/d_a_bwd.cpp:1766-1773). checkEndDemo() for STAGE_WT asks whether dItemNo_MASTER_SWORD_3_e has been obtained; it has not, so the flower orders WARP_WIND, whose DIRECTOR NEXTs to kazeB room 0 start code 231 layer 8, wipe 7."
+   },
+   "event": "WARP_WIND",
+   "stb": null,
+   "requires_bits": [
+    "0x2910"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_bwd.cpp:1766-1773",
+    "src/d/actor/d_a_warpf.cpp:245-250",
+    "src/d/actor/d_a_warpf.cpp:263-278",
+    "out/rip/GZLE01/stages/kazeB/kazeB_events.json:WARP_WIND"
+   ],
+   "notes": "Molgera is the one boss whose warp flower position is a literal constant rather than the boss's own body position."
+  },
+  {
+   "id": "wt_pray_kokiri",
+   "stage": "kazeB",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "kazeB spawn 231 at (-21, 1500, 2931), params 0x00FF0000 so params>>24 = 0 = the stage's only EVNT entry, pray_kokiri - the start code WARP_WIND jumps to. Its PACKAGE/PLAY names pray_kokiri.stb with OffsetPos (0, 300, 0), raises EventFlag 16388 (0x4004) and returns the game to sea room 4 (Gale Isle) start code 232."
+   },
+   "event": "pray_kokiri",
+   "stb": "pray_kokiri.stb",
+   "requires_bits": [
+    "0x2910",
+    "0x3A02"
+   ],
+   "sets_bits": [
+    "0x4004",
+    "0x4004",
+    "0x4004"
+   ],
+   "gives_item": "MASTER_SWORD_3 (dItemNo 0x3E, fully restored - item_func_master_sword_ex sets collect(0,3))",
+   "confidence": "high",
+   "sources": [
+    "tools/ww_story_mine.py kazeB",
+    "out/rip/GZLE01/stages/kazeB/kazeB_events.json:pray_kokiri",
+    "out/rip/GZLE01/godot/cutscenes/pray_kokiri.json",
+    "src/d/d_item.cpp:884-888",
+    "src/d/actor/d_a_warpf.cpp:245-250",
+    "src/d/actor/d_a_npc_cb1.cpp:266-274",
+    "src/d/actor/d_a_ship.cpp:435-441"
+   ],
+   "notes": "2445 frames / 81.5s, seven cutscene actors, first sound cue GETBGM. As with pray_zola the sword upgrade lives in the .stb, and the same three independent checks pin it: the get-item BGM, daWarpf_c::checkEndDemo using MASTER_SWORD_3 as the STAGE_WT completion test, and daNpc_Cb1_c::create using MASTER_SWORD_3 as the condition for the kazeB sage Makar. 0x4004 is the top of this chapter's rung on the King of Red Lions' advice ladder; the next rung up, 0x2D08, belongs to the Triforce chapter. The requires_bits entry 0x3A02 is an ordering claim from that ladder and from the Makar placement chain, not a gate written into kazeB itself. pray_kokiri.stb raises 0x4004 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). pray_kokiri.stb raises 0x4004 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+  }
+ ]
+}

@@ -1,0 +1,598 @@
+{
+ "_source": "Mined read-only from the zeldaret/tww decompilation at Z:/memRip/sources/tww and the ripped GZLE01 (Wind Waker USA) disc data at Z:/3d ripper/out/rip/GZLE01. Chapter: the SECOND visit to the Forsaken Fortress - Link returns with the Master Sword, fights back through the fortress, wins the Skull Hammer, frees Aryll (the pirates carry her off), kills the Helmaroc King on the tower, and is beaten by Ganondorf before Valoo and the pirates get everyone out. Sequel to ww_story_fortress.json, same schema and same conventions. Event names come from each stage's Stage.arc/event_list.dat and from the stage.dzs EVNT table (dumped by tools/ww_story_mine.py). Triggers come from stage.dzs / room.dzr placement chunks: PLYR spawn points (params>>24 = index into the stage's EVNT table -> auto-started event) and TagEv/AttTag volumes (params: >>24 EVNT index, >>16&0xFF switch2, >>8&0xFF switch, &0xFF daTag_Event_c::Action_e; rot.z = required event bit). TWO MECHANISMS DO MOST OF THE WORK IN THIS CHAPTER AND ARE NOT USED BY THE EARLIER ONES: (1) an event's PACKAGE staff PLAY action carries an integer property \"EventFlag\" and dEvDtStaff_c::specialProcPackage calls dComIfGs_onEventBit(*eventFlag) the frame the .stb starts (src/d/d_event_data.cpp:798-800) - that is how rescue, attack_ganon and runaway_majuto raise their bits; (2) the same PLAY action carries Stage / StartCode / RoomNo / Layer and dEvDt_Next_Stage warps there when the demo finishes (src/d/d_event_data.cpp:13-51, called from src/d/d_event_data.cpp:812-818) - that is how the three cutscenes chain M2tower -> M2ganon -> ADMumi -> Hyrule. Event-bit ids are authoritative numbers; the UNK_xxxx names are placeholders invented by the decomp team (include/d/d_save_event_flag.inc says so itself), so numeric ids are used here. Dialogue quoted in notes is from out/rip/GZLE01/text/messages.json, matched by the message ids baked into each .stb (out/rip/GZLE01/godot/cutscenes/<name>.json 'messages').",
+ "_checkpoints": {
+  "source": "src/d/d_com_inf_game.cpp:1294-1311 dComIfGs_setGameStartStage, l_checkData[]",
+  "order": [
+   {
+    "bit": "RODE_KORL (0x2A08)",
+    "stage": "(none - resume wherever the file was saved)",
+    "meaning": "By this chapter RODE_KORL is long since set, so the continue table's FIRST entry wins and it stops forcing a stage. NOTHING in l_checkData mentions any stage of this chapter: from here on the save file simply resumes where it was saved, and the chapter is ordered by event bits alone."
+   }
+  ],
+  "landing_gate": {
+   "source": "src/d/d_com_inf_game.cpp:1265-1291 dComIfGs_checkSeaLandingEvent, l_landingEvent[]",
+   "note": "The sea refuses to let the King of Red Lions land at dIsleRoom_ForsakenFortress_e (room 1) until event bit 0x3040 is set. 0x3040 is raised by the BEAST_GATE trigger volume itself when its demo ends (src/d/actor/d_a_tag_event.cpp:143, daTag_Event_c::demoEndProc case 0xB = MJ_READY). So the approach cutscene is literally what unlocks the island."
+  }
+ },
+ "_bits": {
+  "0x3040": {
+   "dec": 12352,
+   "byte_mask": [
+    48,
+    64
+   ],
+   "meaning": "Landing at the Forsaken Fortress is permitted. Raised when the BEAST_GATE demo ENDS by the trigger volume that ordered it: daTag_Event_c::demoEndProc, case 0xB (Action_e MJ_READY), which is exactly the type the three volumes in sea room 1 carry. Until it is set dComIfGs_checkSeaLandingEvent returns FALSE for room 1.",
+   "set_by": "src/d/actor/d_a_tag_event.cpp:143",
+   "read_by": [
+    "src/d/d_com_inf_game.cpp:1273",
+    "src/d/actor/d_a_ship.cpp:474"
+   ],
+   "confidence": "high"
+  },
+  "0x2D01": {
+   "dec": 11521,
+   "byte_mask": [
+    45,
+    1
+   ],
+   "meaning": "The 'rescue' cutscene has played - Aryll and the two other girls are off the fortress with the pirates. It is the PACKAGE PLAY \"EventFlag\" of rescue.stb (11521 = 0x2D01), so it is raised the frame the cutscene starts. Setting it flips M2tower from layer|0 to layer|2 (i.e. from the cell/pirates dressing to the Helmaroc King dressing), flips sea room dIsleRoom_WindfallIsland_e to layer|4, and makes dScnPly load Link demo-animation archive 1 instead of 0.",
+   "set_by": "out/rip/GZLE01/godot/events/M2tower.json rescue -> PACKAGE/PLAY EventFlag 11521, via src/d/d_event_data.cpp:798-800",
+   "read_by": [
+    "src/d/d_com_inf_game.cpp:202",
+    "src/d/d_com_inf_game.cpp:252",
+    "src/d/d_s_play.cpp:1244",
+    "src/d/actor/d_a_obj_figure.cpp:1006",
+    "src/d/actor/d_a_npc_rsh1.cpp:724",
+    "src/d/actor/d_a_npc_people.cpp:6901"
+   ],
+   "confidence": "high",
+   "note": "The debug file-select screen also toggles this bit by hand and labels it \"\u30c7\u30e223\" (demo 23) - src/d/d_s_menu.cpp:121 and 242-244. That is a developer shortcut, not a second meaning."
+  },
+  "0x3C01": {
+   "dec": 15361,
+   "byte_mask": [
+    60,
+    1
+   ],
+   "meaning": "Link has landed a Skull Hammer blow on the Helmaroc King's mask at least once. daBdk_c only accepts it when mResultingAttackType == 9 (the hammer) and the bird is below y = 10000; four such hits crack the mask. A hint actor reads the bit to stop telling the player what to do.",
+   "set_by": "src/d/actor/d_a_bdk.cpp:1583",
+   "read_by": [
+    "src/d/actor/d_a_tag_hint.cpp:202"
+   ],
+   "confidence": "high"
+  },
+  "0x3910": {
+   "dec": 14608,
+   "byte_mask": [
+    57,
+    16
+   ],
+   "meaning": "The 'attack_ganon' cutscene has started - Ganondorf has told Link the Master Sword's power is gone and has recognised Tetra as Zelda. PACKAGE PLAY \"EventFlag\" of attack_ganon.stb. While it is set and 0x2D02 is not, the King of Red Lions changes what he says and refuses several of his normal behaviours - the game's way of holding the player on the 'restore the Master Sword' errand.",
+   "set_by": "out/rip/GZLE01/godot/events/M2ganon.json attack_ganon -> PACKAGE/PLAY EventFlag 14608, via src/d/d_event_data.cpp:798-800",
+   "read_by": [
+    "src/d/actor/d_a_ship.cpp:466",
+    "src/d/actor/d_a_ship.cpp:3485",
+    "src/d/actor/d_a_ship.cpp:3499",
+    "src/d/actor/d_a_ship.cpp:3515",
+    "src/d/actor/d_a_ship.cpp:4136",
+    "src/d/actor/d_a_npc_photo.cpp:2186"
+   ],
+   "confidence": "high"
+  },
+  "0x3280": {
+   "dec": 12928,
+   "byte_mask": [
+    50,
+    128
+   ],
+   "meaning": "The 'runaway_majuto' cutscene has started - Valoo has burst in, Quill has carried Link out and the King of Red Lions is taking him and Zelda down to Hyrule. PACKAGE PLAY \"EventFlag\" of runaway_majuto.stb. It is the last bit of this chapter: it dresses Hyrule and Hyroom with layer|2, which is the next chapter's state.",
+   "set_by": "out/rip/GZLE01/godot/events/ADMumi.json runaway_majuto -> PACKAGE/PLAY EventFlag 12928, via src/d/d_event_data.cpp:798-800",
+   "read_by": [
+    "src/d/d_com_inf_game.cpp:226",
+    "src/d/d_com_inf_game.cpp:232",
+    "src/d/d_com_inf_game.cpp:242",
+    "src/d/d_com_inf_game.cpp:248"
+   ],
+   "confidence": "high"
+  },
+  "0x1820": {
+   "dec": 6176,
+   "byte_mask": [
+    24,
+    32
+   ],
+   "meaning": "The Forsaken Fortress has moved on past this chapter. Two effects matter for a remake: dRes_control_c::setStageRes silently loads /res/Stage/ma3room/ whenever the start stage is named \"ma2room\" and this bit is set, and dComIfG_play_c::getLayerNo forces sea room dIsleRoom_ForsakenFortress_e to layer 3 instead of layer 1. That is the whole of the ma2room -> ma3room swap: the stage keeps the name ma2room, only the archive path changes.",
+   "set_by": "src/d/actor/d_a_warpdm20.cpp:125-127 (daWarpdm20_c::CreateInit raises it when 0x2D02 is already set)",
+   "read_by": [
+    "src/d/d_resorce.cpp:708",
+    "src/d/d_com_inf_game.cpp:208",
+    "src/d/actor/d_a_lod_bg.cpp:169",
+    "src/d/actor/d_a_tag_event.cpp:363",
+    "src/d/d_kankyo_dayproc.inc:9",
+    "src/d/actor/d_a_ship.cpp:4241",
+    "src/d/actor/d_a_npc_bm1.cpp:1511"
+   ],
+   "confidence": "high"
+  },
+  "0x2D02": {
+   "dec": 11522,
+   "byte_mask": [
+    45,
+    2
+   ],
+   "meaning": "Read only. It is the condition on which warpdm20 raises 0x1820, and it is what releases the King of Red Lions from the restrictions 0x3910 imposed. No onEventBit call for it exists anywhere in src/, so it is raised by event data belonging to a LATER chapter (the Master Sword restoration in Hyrule), not by this one. Listed here only because it is the switch that ends this chapter's after-state.",
+   "set_by": "(event data - no setter in src/)",
+   "read_by": [
+    "src/d/actor/d_a_warpdm20.cpp:125",
+    "src/d/actor/d_a_npc_zl1.cpp:344",
+    "src/d/actor/d_a_ship.cpp:368",
+    "src/d/actor/d_a_ship.cpp:3485",
+    "src/d/actor/d_a_tag_mk.cpp:499"
+   ],
+   "confidence": "medium"
+  }
+ },
+ "_actors": {
+  "Dk": {
+   "name": "Helmaroc King (NPC / non-combat copy)",
+   "file": "src/d/actor/d_a_dk.cpp",
+   "file_header": "\"NPC - Helmaroc King (Forsaken Fortress 1 tower, Outset Island)\"",
+   "placed": "M2tower room 0 LAYER 1, params 0xFFFFFF02, at (3503, 4548, -3390) - out/rip/GZLE01/stages/M2tower/M2tower_report.json:actors",
+   "note": "Layer 1 of M2tower is the pre-rescue dressing, so the bird that Gonzo warns about ('The bird will be here any second!') is this NPC copy, not the boss."
+  },
+  "Bdk": {
+   "name": "Helmaroc King (boss)",
+   "file": "src/d/actor/d_a_bdk.cpp",
+   "file_header": "\"Boss - Helmaroc King / \u6226\u95d8\u7528\u5927\u602a\u9ce5 (Giant monstrous bird for battle)\"",
+   "placed": "M2tower room 0 LAYER 3, params 0xFFFFFFFF, at (4715, 11335, -4261) - the very top of the tower, just above the door to M2ganon at (1891, 11124, -8795)",
+   "note": "The layer split is the cleanest evidence for this chapter's order: the boss copy only exists on layer 3, and M2tower is only put on layer|2 once 0x2D01 (set by 'rescue') is on (src/d/d_com_inf_game.cpp:251-253). The pirates leave with Aryll FIRST, the boss fight happens SECOND."
+  },
+  "Ls1": {
+   "name": "Aryll",
+   "file": "src/d/actor/d_a_npc_ls1.cpp",
+   "placed": "M2tower room 0 LAYER 1, params 0x2, at (3469, 3945, -2659)",
+   "note": "In her cell, next to spawn 16. She orders no event of her own here - she is a demo actor for rescue.stb. Her own l_evn_tbl (src/d/actor/d_a_npc_ls1.cpp:54) is the Outset table and none of its entries belongs to this chapter."
+  },
+  "Zl1": {
+   "name": "Tetra",
+   "file": "src/d/actor/d_a_npc_zl1.cpp",
+   "event_table": [
+    "yuukaigo",
+    "ooi",
+    "majyuu_shinnyuu",
+    "nakaniwa"
+   ],
+   "table_source": "src/d/actor/d_a_npc_zl1.cpp:127-131 (l_evn_tbl)",
+   "placed": "M2tower room 0 LAYER 1 params 0x6 at (3951, 3939, -3788); M2ganon room 0 layer -1 params 0x6 at (2007, 11677, -8886)",
+   "note": "None of her four event-table entries is used in this chapter - all four belong to Outset, the first fortress visit and Hyrule (init_ZL1_5 orders 'nakaniwa' only on stages Hyrule/Hyroom, src/d/actor/d_a_npc_zl1.cpp:344-366). In M2tower and M2ganon she is a demo actor only, driven by rescue.stb and attack_ganon.stb."
+  },
+  "P1a / P1b": {
+   "name": "pirates (Gonzo and a second crewman)",
+   "file": "src/d/actor/d_a_npc_p1.cpp",
+   "placed": "M2tower room 0 LAYER 1, at (4100, 3939, -3967) and (3852, 3938, -3629)",
+   "note": "d_a_npc_p1.cpp has no l_evn_tbl and every event bit it touches (0x0910, 0x0880, 0x0840, 0x0820 at lines 399-440) belongs to the ship and the first fortress visit. Here they are demo actors for rescue.stb."
+  },
+  "Fganon": {
+   "name": "Phantom Ganon (miniboss)",
+   "file": "src/d/actor/d_a_fganon.cpp (header: \"Mini-Boss - Phantom Ganon\")",
+   "placed": "sea room 1 LAYER 1, params 0xE02A6400, at (-287254, 713, -303662), with a boss door SMBdor params 0x0FFFF02A at (-287287, 713, -304001) beside it",
+   "note": "Layer 1 of sea room 1 is the second-visit dressing of the fortress island (src/d/d_com_inf_game.cpp:208). The Skull Hammer chest sits in the same courtyard."
+  },
+  "Shmrgrd": {
+   "name": "Skull Hammer switch (spiked)",
+   "file": "src/d/actor/d_a_obj_shmrgrd.cpp (header: \"Object - Skull Hammer switch (spiked)\")",
+   "placed": "19 copies in ma2room, 19 in ma3room, 6 in sea room 1",
+   "note": "The peg switches that make the interior of the second visit a Skull Hammer dungeon."
+  }
+ },
+ "steps": [
+  {
+   "id": "ff2_sail_to_fortress",
+   "stage": "sea",
+   "room": 1,
+   "layer": -1,
+   "trigger": {
+    "kind": "tag",
+    "detail": "Three TagEv volumes in sea room 1 on layer -1, at (-288880, -278, -297727), (-288611, -278, -297735) and (-288247, -278, -297743), all with Action_e 0xB = MJ_READY and switch 88, all ordering EVNT entry 25 = BEAST_GATE. They lie in the water on the approach line to the fortress gate. daTag_Event_c::actionMjReady orders the event and then sets switch 88 so it cannot repeat."
+   },
+   "event": "BEAST_GATE",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x3040"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/sea/sea_report.json:tags",
+    "src/d/actor/d_a_tag_event.cpp:384-406",
+    "src/d/actor/d_a_tag_event.cpp:143",
+    "src/d/d_com_inf_game.cpp:1265-1291",
+    "out/rip/GZLE01/godot/events/sea.json:BEAST_GATE"
+   ],
+   "notes": "This is the chapter's front door and its prerequisite is the Master Sword, stated by the event itself: BEAST_GATE is a CAMERA + Ship + Link + MESSAGE event whose one message is msgNo 3449 - 'Ganon has likely been made aware of our little incursion already... ...But you have the Master Sword! That sword shall shine in the darkness, casting back evil...'. sea's event_list also defines BEAST_GATE2, a shorter variant with no fortress-reveal camera, and d_a_tag_event.cpp names it explicitly for the case where Link is NOT riding the boat (daPyStts0_SHIP_RIDE_e, lines 396-401 and 1119-1124 equivalents). In practice both branches resolve to BEAST_GATE here, because dEvent_manager_c::getEventIdx prefers the stage EVNT entry whenever the passed index is valid (src/d/d_event_manager.cpp:346-348) and sea's EVNT has 57 entries, so index 25 always wins. Recorded as a real difference in intent, not in effect."
+  },
+  {
+   "id": "ff2_land_at_fortress",
+   "stage": "sea",
+   "room": 1,
+   "layer": 1,
+   "trigger": {
+    "kind": "room_enter",
+    "detail": "With 0x3040 set the sea allows landing at room 1. dComIfG_play_c::getLayerNo hard-codes this island: 'return dComIfGs_isEventBit(UNK_1820) ? 3 : 1;' - it ignores the day/night base layer entirely, so the Forsaken Fortress is always the night dressing, layer 1 for this chapter and layer 3 afterwards."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x3040"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/d_com_inf_game.cpp:207-209",
+    "src/d/d_com_inf_game.cpp:1273",
+    "out/rip/GZLE01/stages/sea/sea_report.json:actors"
+   ],
+   "notes": "sea room 1 IS the fortress exterior on the second visit - it plays the part MajyuE played on the first. Layer 1 dresses it for this chapter: Fganon (Phantom Ganon), MhmrSW0, 7 Odokuro, 3 Bokoblins (Bk), a Moblin statue (moZOU), Gaship1. Layer 3 (post-0x1820) swaps in Gaship2, a Bitem and the Warpmj warp that sea room 1 spawn 16 uses for FROM_GANON - that is the endgame, not this chapter. The exterior has ten doors into the interior, SCLS entries leading to ma2room spawns 0..9."
+  },
+  {
+   "id": "ff2_enter_interior",
+   "stage": "ma2room",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "ma2room spawns 0, 1 and 18 all sit at (6734, 2215, 6046) and carry EVNT index 0 = kankin2, so coming in through the main door auto-plays the cell-block camera. A TagEv in room 0 at (6440, 2072, 6225) with switch 18 orders EVNT entry 9 = moro_cam2 a few metres further in."
+   },
+   "event": "kankin2",
+   "stb": null,
+   "requires_bits": [
+    "0x3040"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/ma2room/ma2room_report.json:spawns",
+    "out/rip/GZLE01/stages/ma2room/ma2room_report.json:tags",
+    "tools/ww_story_mine.py ma2room"
+   ],
+   "notes": "ma2room's EVNT table (10): kankin2, Go_00, Go_01, Go_02, FIRST_HINT2, FIRST_HINT3, DoorLook1, DoorLook2, moro_cam, moro_cam2. It is the first-visit majroom table with 'kankin1' replaced by 'kankin2' and moro_cam2 appended - 'kankin' is imprisonment. Room 3 spawn 10 at (-7169, 2083, -5070) auto-plays Go_01. The stage also carries DoorLook1/DoorLook2 and FIRST_HINT2/FIRST_HINT3 in its EVNT table but NO spawn or trigger volume in the placement data orders them, unlike the first visit where two volumes in majroom room 3 did."
+  },
+  {
+   "id": "ff2_moblins_patrol",
+   "stage": "ma2room",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "tag",
+    "detail": "A stage-level TagEv (no room number) at (2731, 728, 3671) with switch 6 orders EVNT entry 8 = moro_cam. Same volume, same switch and almost the same position as the first visit's (majroom, (-2376, 728, 3800), switch 6)."
+   },
+   "event": "moro_cam",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/ma2room/ma2room_report.json:tags",
+    "tools/ww_story_mine.py ma2room"
+   ],
+   "notes": "'moro' is the Moblin (actor mo2, src/d/actor/d_a_mo2.cpp \"Enemy - Moblin / \u30e2\uff12\"). ma2room places 8 mo2, 7 Puti and 19 Shmrgrd (Skull Hammer peg switches) - this visit Link fights the Moblins instead of sneaking past them. As on the first visit the stage also carries a MOZO_CAM script that nothing in the placement data orders."
+  },
+  {
+   "id": "ff2_interior_chests",
+   "stage": "ma2room",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "chest",
+    "detail": "Four TRES chests, all on layer -1. Item ids are the high byte of rot.z: takara 0x4CFF at (3095, 1704, 4346) and takara 0x4CFF at (6336, 1714, -2013) -> 0x4C dItemNo_MAP_e; takara2 0x03FF at (-3685, 821, 3351) -> 0x03 dItemNo_YELLOW_RUPEE_e; takara3 0x07FF at (1349, 728, 4212) -> 0x07 dItemNo_HEART_PIECE_e."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "HEART_PIECE (0x07), plus two dungeon MAPs (0x4C) and a yellow rupee (0x03)",
+   "confidence": "medium",
+   "sources": [
+    "out/rip/GZLE01/stages/ma2room/ma2room_report.json:actors",
+    "include/d/d_item_data.h:58",
+    "include/d/d_item_data.h:10",
+    "include/d/d_item_data.h:14",
+    "include/d/d_item_data.h:83"
+   ],
+   "notes": "The item-id decode (high byte of the TRES record's rot.z, low byte = the save flag) is inferred from the placement data, not from a line of C++ read for this file; it is corroborated by sea room 1's takara6, whose rot.z high byte is 0x33 = dItemNo_SKULL_HAMMER_e, exactly the item this chapter is about. ma3room carries the same four chests at the same coordinates."
+  },
+  {
+   "id": "ff2_phantom_ganon",
+   "stage": "sea",
+   "room": 1,
+   "layer": 1,
+   "trigger": {
+    "kind": "defeat",
+    "detail": "Phantom Ganon (actor Fganon, params 0xE02A6400) stands at (-287254, 713, -303662) on layer 1 of sea room 1, behind a boss door (SMBdor, params 0x0FFFF02A - switch 0x2A = 42) at (-287287, 713, -304001). Defeating him is what opens the courtyard the Skull Hammer chest sits in."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x3040"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "out/rip/GZLE01/stages/sea/sea_report.json:actors",
+    "src/d/actor/d_a_fganon.cpp:1-4"
+   ],
+   "notes": "Confidence medium because the ordering (miniboss first, then the chest) is read off the placement geometry - the two are 1300 units apart behind the same boss door - and not from any gate in the data. Fganon appears in only four other stages in the whole rip (GanonC, GanonJ, GanonM, KATA_RM), so this really is the fortress copy. No event bit and no EVNT entry is attached to the fight."
+  },
+  {
+   "id": "ff2_skull_hammer",
+   "stage": "sea",
+   "room": 1,
+   "layer": -1,
+   "trigger": {
+    "kind": "chest",
+    "detail": "TRES 'takara6', params 0xFF22A801, at (-287662, 715, -302364) in sea room 1, layer -1 (so it is there in every dressing of the island). rot.z = 0x336A: high byte 0x33 = dItemNo_SKULL_HAMMER_e, low byte 0x6A = the save flag that remembers it was opened."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x3040"
+   ],
+   "sets_bits": [],
+   "gives_item": "SKULL_HAMMER (0x33)",
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/sea/sea_report.json:actors",
+    "include/d/d_item_data.h:58"
+   ],
+   "notes": "The Skull Hammer is the key to the rest of the chapter three times over: the 19 Shmrgrd peg switches in ma2room, the MhmrSW0 high on the fortress wall, and the Helmaroc King's mask, which daBdk_c only lets Link crack with mResultingAttackType == 9 (src/d/actor/d_a_bdk.cpp:1570-1583)."
+  },
+  {
+   "id": "ff2_climb_the_wall",
+   "stage": "sea",
+   "room": 1,
+   "layer": 1,
+   "trigger": {
+    "kind": "tag",
+    "detail": "Two AttTag volumes on layer 1 high on the fortress, at (-290461, 4544, -304247) with type 0x70 and switch 2 and at (-287890, 4967, -304156) with type 0xFF and switch 3, both ordering EVNT entry 0/4 = MapToolCamera. The actor MhmrSW0 (params 0x000370FF) stands at (-290456, 4544, -304252), 6 units from the first volume, and an SMBdor with params 0x0FFFF070 (switch 0x70 = 112) is at (-289890, 4539, -304522)."
+   },
+   "event": "MapToolCamera",
+   "stb": null,
+   "requires_bits": [
+    "0x3040"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "low",
+   "sources": [
+    "out/rip/GZLE01/stages/sea/sea_report.json:tags",
+    "out/rip/GZLE01/stages/sea/sea_report.json:actors"
+   ],
+   "notes": "Low confidence and honest about it: MhmrSW0 has NO source file in the decompilation at all, so the reading of its name as a Skull-Hammer-only switch is an inference from the name plus the fact that it sits at the exact height (y = 4544) of a camera volume that only exists on the second-visit layer. MapToolCamera is the miner's boilerplate name, so the two volumes are camera framing, not story."
+  },
+  {
+   "id": "ff2_reach_the_tower",
+   "stage": "M2tower",
+   "room": 0,
+   "layer": 1,
+   "trigger": {
+    "kind": "room_enter",
+    "detail": "Link arrives at M2tower spawn 16, (2721, 4059, -4424) facing 55 degrees - which is bit-for-bit the same position as Mjtower spawn 16 on the first visit, the one that auto-played FIND_SISTER. A boss door (SMBdor, params 0x0FFFF0FF) stands at (2489, 4056, -4544), 240 units away, and two ATdoor at (3879, 3938, -2844) and (3979, 3938, -4569) close the little cell landing off."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x3040"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "low",
+   "sources": [
+    "out/rip/GZLE01/stages/M2tower/M2tower_report.json:spawns",
+    "out/rip/GZLE01/stages/M2tower/M2tower_report.json:actors",
+    "out/rip/GZLE01/stages/sea/sea_report.json:exits",
+    "out/rip/GZLE01/stages/ma2room/ma2room_report.json:exits"
+   ],
+   "notes": "I COULD NOT DETERMINE HOW THE GAME ENTERS M2tower. Not one SCLS exit in the entire rip names M2tower except M2ganon's (which is the way back out), no event's PACKAGE names it as a next Stage except rescue's own, no dComIfGp_setNextStage(\"M2tower\", ...) exists in src/, and a byte search of every file under out/rip/GZLE01/res for the string 'M2tower' finds nothing. The first visit's Mjtower has exactly the same hole. The step is recorded because the rest of the chapter provably happens here; the mechanism is unknown. The most likely candidates are the actors M2tower leaves unresolved - Stgate (3), Stdoorl, Stdoorr, Sttoge - or the Warpmj actor, whose whole translation unit in src/d/actor/d_a_warpmj.cpp is /* Nonmatching */ stubs."
+  },
+  {
+   "id": "ff2_rescue",
+   "stage": "M2tower",
+   "room": 0,
+   "layer": 1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "M2tower's EVNT table has exactly one entry, 'rescue', and spawn 16 at (2721, 4059, -4424) carries index 0 - so reaching Aryll's cell auto-plays it. The event's PACKAGE PLAY anchors rescue.stb at OffsetPos (3214, 3939, -3011) with OffsetAngY 57.5, raises EventFlag 11521 = 0x2D01, and when the demo ends warps to Stage 'M2tower' StartCode 20 RoomNo 0 Layer 3 - i.e. back into the same tower, re-dressed."
+   },
+   "event": "rescue",
+   "stb": "rescue.stb",
+   "requires_bits": [
+    "0x3040"
+   ],
+   "sets_bits": [
+    "0x2D01",
+    "0x2D01",
+    "0x2D01"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/M2tower/M2tower_report.json:spawns",
+    "out/rip/GZLE01/godot/events/M2tower.json:rescue",
+    "out/rip/GZLE01/godot/cutscenes/rescue.json",
+    "src/d/d_event_data.cpp:798-800",
+    "src/d/d_event_data.cpp:13-51",
+    "src/d/actor/d_a_obj_tide.cpp:390-396"
+   ],
+   "notes": "4221 frames, 140.7 s - the longest cutscene of the chapter. Its demo actors are all placed on M2tower layer 1 around spawn 16: Ls1 (Aryll) at (3469, 3945, -2659), Zl1 (Tetra) at (3951, 3939, -3788), P1a at (4100, 3939, -3967), P1b at (3852, 3938, -3629) and Dk, the NPC Helmaroc King, at (3503, 4548, -3390). Dialogue (messages 1211-1232 of zel_00, baked into the .stb): 'Big Brother!' / 'The cell won't open that easily!' / 'we had to draw that monster bird off for you' / '...That sword! Where did you get that?!' / 'For now, we'll just take these girls' / 'Gonzo! Excellent! Take this one for me.' / 'We'll be back. I swear it!'. daObjTide's Act_c::chk_demo_rescue watches for this event by name and drives the water with it - M2tower places two Tide3 actors. rescue.stb raises 0x2D01 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). rescue.stb raises 0x2D01 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+  },
+  {
+   "id": "ff2_tower_redressed",
+   "stage": "M2tower",
+   "room": 0,
+   "layer": 3,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "rescue's own next-stage warp puts Link at M2tower spawn 20, (4599, 4137, -3176), on layer 3. dComIfG_play_c::getLayerNo agrees independently: for start stage 'M2tower' it returns layer|2 once 0x2D01 is set, and the fortress is always night (base layer 1), so 1|2 = 3."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x2D01"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/godot/events/M2tower.json:rescue",
+    "src/d/d_com_inf_game.cpp:251-253",
+    "out/rip/GZLE01/stages/M2tower/M2tower_report.json:actors"
+   ],
+   "notes": "This is the pivot of the chapter and it is entirely a layer swap. Layer 1 (Aryll, Tetra, the two pirates, the NPC bird) is gone; layer 3 brings in Bdk the boss at (4715, 11335, -4261), four Bokoblins climbing the tower at y 5851-8228, a Bitem (heart container) at (5213, 9809, -3899) and one more ATdoor. The 28 Bdkobj 's_tower_bridge' planks and 12 Kui posts at y ~9910 are on layer -1, so the spiral walkway up the tower is there the whole time."
+  },
+  {
+   "id": "ff2_helmaroc_king",
+   "stage": "M2tower",
+   "room": 0,
+   "layer": 3,
+   "trigger": {
+    "kind": "defeat",
+    "detail": "Bdk, the battle copy of the Helmaroc King, at (4715, 11335, -4261) at the top of the tower. daBdk_c::at_check only accepts a mask hit when the attack type is 9 (Skull Hammer) and the bird's tracked height is below 10000; each accepted hit raises 0x3C01, bumps the mask counter, and the fourth switches the boss to ACTION_KAMEN_DEMO with JA_SE_CM_DK_BREAK_MASK. The kill goes through the standard dComIfGs_onStageBossEnemy path."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x2D01"
+   ],
+   "sets_bits": [
+    "0x3C01"
+   ],
+   "gives_item": "heart container (Bitem at (5213, 9809, -3899))",
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_bdk.cpp:1555-1600",
+    "src/d/actor/d_a_bdk.cpp:3235",
+    "src/d/actor/d_a_bdk.cpp:4239-4240",
+    "src/d/actor/d_a_tag_hint.cpp:202",
+    "out/rip/GZLE01/stages/M2tower/M2tower_report.json:actors"
+   ],
+   "notes": "0x3C01 is a hint flag, not a progress gate: daTag_Hint case 0xE stops giving the hammer hint once it is on. Nothing in the placement data gates the door to M2ganon on the boss being dead; M2tower's only other story script is AHEAHE, the shared boss-defeat event every boss stage carries, and it is NOT in M2tower's EVNT table, so no spawn or volume orders it."
+  },
+  {
+   "id": "ff2_enter_ganon_room",
+   "stage": "M2ganon",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "M2tower's single SCLS exit is a door10 at (1891, 11124, -8795) facing 180 degrees, leading to M2ganon room 0 spawn 0. M2ganon spawn 0 at (2192, 11677, -8893) carries EVNT index 0, and M2ganon's EVNT table has exactly one entry: attack_ganon. So the door and the cutscene are the same beat - stepping through starts it."
+   },
+   "event": "attack_ganon",
+   "stb": "attack_ganon.stb",
+   "requires_bits": [
+    "0x2D01"
+   ],
+   "sets_bits": [
+    "0x3910",
+    "0x3910",
+    "0x3910"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/M2tower/M2tower_report.json:exits",
+    "out/rip/GZLE01/stages/M2ganon/M2ganon_report.json:spawns",
+    "out/rip/GZLE01/godot/events/M2ganon.json:attack_ganon",
+    "out/rip/GZLE01/godot/cutscenes/attack_ganon.json"
+   ],
+   "notes": "M2ganon is a tiny stage - 21 placed actors: the door back to M2tower (spawn 20), three Search searchlights far below, eleven Ikari anchors, four RopeR at y 13202 (the rigging over the room), a dmgroom, and Zl1 (Tetra) at (2007, 11677, -8886) waiting just inside. Ganondorf himself is not in the placement data; he is a demo actor created by the .stb. attack_ganon.stb raises 0x3910 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). attack_ganon.stb raises 0x3910 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+  },
+  {
+   "id": "ff2_attack_ganon",
+   "stage": "M2ganon",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "Same spawn as the previous step - separated here because the cutscene is the story beat, not the doorway. attack_ganon's PACKAGE PLAY anchors attack_ganon.stb at OffsetPos (2000, 11780, -8000), raises EventFlag 14608 = 0x3910 as it starts, and on finishing warps to Stage 'ADMumi' StartCode 244 RoomNo 0 Layer 11."
+   },
+   "event": "attack_ganon",
+   "stb": "attack_ganon.stb",
+   "requires_bits": [
+    "0x2D01"
+   ],
+   "sets_bits": [
+    "0x3910",
+    "0x3910",
+    "0x3910"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/godot/events/M2ganon.json:attack_ganon",
+    "out/rip/GZLE01/godot/cutscenes/attack_ganon.json",
+    "src/d/d_event_data.cpp:798-800",
+    "src/d/d_event_data.cpp:13-51"
+   ],
+   "notes": "4105 frames, 136.8 s. Dialogue (messages 1234-1252 of zel_00): 'It's been a while, boy.' / 'My name is Ganondorf... And I am the master of Forsaken Fortress.' / 'By withdrawing the blade, you have broken that seal...' / 'You cannot defeat me with a blade that does not sparkle with the power to repel evil!' / 'Its power is gone, and its edges are dull!' / Tetra: '{name}! Get up!' / 'My Triforce of Power is resonating! ...Princess Zelda!'. This is why 0x3910 exists: while it is set and 0x2D02 is not, the King of Red Lions changes his line to msgNo 0xD7B and several of his behaviours are refused (src/d/actor/d_a_ship.cpp:466-472, 3485, 3499, 3515, 4136). attack_ganon.stb raises 0x3910 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). attack_ganon.stb raises 0x3910 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+  },
+  {
+   "id": "ff2_runaway_majuto",
+   "stage": "ADMumi",
+   "room": 0,
+   "layer": 11,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "attack_ganon's next-stage warp lands at ADMumi room 0 spawn 244, (1, 29570, -8800), layer 11. That spawn carries EVNT index 6 = runaway_majuto, so the escape plays the instant the stage loads. Its PACKAGE PLAY raises EventFlag 12928 = 0x3280 and warps to Stage 'Hyrule' StartCode 0 RoomNo 0 Layer -1."
+   },
+   "event": "runaway_majuto",
+   "stb": "runaway_majuto.stb",
+   "requires_bits": [
+    "0x3910"
+   ],
+   "sets_bits": [
+    "0x3280",
+    "0x3280",
+    "0x3280"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/ADMumi/ADMumi_report.json:spawns",
+    "out/rip/GZLE01/godot/events/ADMumi.json:runaway_majuto",
+    "out/rip/GZLE01/godot/cutscenes/runaway_majuto.json",
+    "tools/ww_story_mine.py ADMumi"
+   ],
+   "notes": "OUTSIDE THE ASSIGNED STAGE SET, included because it is the other half of the confrontation and nothing else reaches it: ADMumi ('the sea, demo') is where attack_ganon deposits Link. 1780 frames, 59.3 s. Dialogue (messages 1253-1259): 'It's all right, {name}! She has merely lost consciousness.' / 'Your sister has escaped the Forsaken Fortress with the pirates. You can relax. She's safe now.' / 'Lord Valoo! You arrived not a moment too soon...' / 'Ganon cannot be destroyed by such simple means as wrath and fire.' / '{name}, I will explain things later! Now we must return to the world beneath the sea!'. ADMumi's other spawns (201 warp_in, 232 warphole, 0/1/2 towerd/towerf/towern) belong to the Tower of the Gods and the endgame, not here. 0x3280 is the chapter's last bit and it dresses Hyrule and Hyroom with layer|2 for the next one. runaway_majuto.stb raises 0x3280 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). runaway_majuto.stb raises 0x3280 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+  },
+  {
+   "id": "ff2_after_endless_night",
+   "stage": "ma2room",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "room_enter",
+    "detail": "Not a beat but the chapter's after-state, and it is worth a step because it is invisible in the placement data. Once 0x1820 is set, dRes_control_c::setStageRes builds the path '/res/Stage/ma3room/' whenever the start stage is named 'ma2room' - the stage keeps its name, the archive changes underneath it. At the same moment sea room 1 goes to layer 3. Nothing else in the game references ma3room: not one SCLS exit, not one event, not one setNextStage."
+   },
+   "event": "kankin1",
+   "stb": null,
+   "requires_bits": [
+    "0x1820"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/d_resorce.cpp:706-709",
+    "src/d/d_com_inf_game.cpp:207-209",
+    "out/rip/GZLE01/stages/ma3room/ma3room_report.json",
+    "tools/ww_story_mine.py ma3room"
+   ],
+   "notes": "ma3room is the same fortress interior with the same four chests at the same coordinates and the same 10 doors' worth of geometry, but its EVNT table is 9 entries (kankin1, Go_00, Go_01, Go_02, FIRST_HINT2, FIRST_HINT3, DoorLook1, DoorLook2, moro_cam - no moro_cam2), spawns 0/1/18 auto-play kankin1 instead of kankin2, its one TagEv (switch 6, at (2811, 728, 3788)) orders moro_cam, and every Moblin and Puti has been replaced by 21 keeth. The Fmastr2, Oq, Bk and moZOU-plus-Bk dressing of ma2room is gone too. 0x1820 is raised by daWarpdm20_c::CreateInit, the Hyrule warp actor on the sea, and only when 0x2D02 is already set - so the swap happens a chapter later, not at the end of this one."
+  }
+ ]
+}

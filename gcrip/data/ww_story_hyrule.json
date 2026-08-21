@@ -1,0 +1,687 @@
+{
+ "_source": "Mined read-only from the zeldaret/tww decompilation at Z:/memRip/sources/tww and the ripped GZLE01 (Wind Waker USA) disc data at Z:/3d ripper/out/rip/GZLE01. Chapter 4: Link is pulled down through the sea into the frozen Hyrule under it, crosses the castle courtyard, solves the throne-room floor, draws the Master Sword in the chamber below, colour and time come back to Hyrule, and he fights his way out and warps back up to the Tower of the Gods. Same conventions as ww_story_outset.json and ww_story_fortress.json. Event names come from each stage's stage.dzs EVNT table and from Stage.arc/event_list.dat (dumped by tools/ww_story_mine.py and re-exported as out/rip/GZLE01/godot/events/<stage>.json). Triggers come from stage.dzs / room.dzr placement chunks: PLYR spawn points (params>>24 = index into the stage's EVNT table -> auto-started event) and TagEv volumes (params: >>24 EVNT index, >>16&0xFF switch2, >>8&0xFF switch, &0xFF daTag_Event_c::Action_e; rot.z = required event bit). The single most useful new source in this chapter is the exported event script itself: every cutscene-playing event has a PACKAGE actor with a PLAY action whose properties name the .stb file, the event bit the demo raises (\"EventFlag\"), and the Stage/RoomNo/StartCode/Layer the game is sent to when the demo ends. That property chain is what proves the order master_sword -> rebirth_hyral -> swing_sword, and it is what pins every event bit below to a name rather than a guess. Event-bit ids are authoritative numbers; the UNK_xxxx names are placeholders invented by the decomp team (include/d/d_save_event_flag.inc says so itself), so numeric ids are used here. COLORS_IN_HYRULE (0x3802) and BARRIER_BREAK (0x2C02) are two of the very few bits the decomp actually named, and both belong to this chapter's neighbourhood.",
+ "_checkpoints": {
+  "source": "src/d/d_com_inf_game.cpp:1294-1311 dComIfGs_setGameStartStage, l_checkData[]",
+  "note": "This chapter has NO entry in the continue table. The table's first row is RODE_KORL (0x2A08) with an empty stage name, so from the moment Link first boards the King of Red Lions (end of the Forsaken Fortress chapter) the game stops forcing a start stage and a continuing save simply resumes where it was saved. Everything from here on is gated by event bits and by the per-stage layer chooser instead.",
+  "layer_chooser": {
+   "source": "src/d/d_com_inf_game.cpp:190-250",
+   "rule": "The base layer is the time of day: hour in [6,18) -> 0, otherwise 1. Stage-specific branches then OR in 2, 4 or 6. A DIRECTOR NEXT / PACKAGE PLAY action that names an explicit Layer overrides this.",
+   "Hyrule": "getTriforceNum()==8 -> layer|4; else 0x3280 -> layer|2; else layer (0/1). Layer 8 is forced by the arrival demo (see hy_descent).",
+   "Hyroom": "getTriforceNum()==8 && !0x2C01 -> layer|4; else 0x3280 -> layer|2; else 0x3B40 -> layer|6; else layer (0/1). Layer 8 is forced by the master_sword demo.",
+   "kenroom": "0x2C01 || (COLORS_IN_HYRULE && !0x3280) -> layer|6; else getTriforceNum()==8 -> layer|4; else COLORS_IN_HYRULE -> layer|2; else layer (0/1). Layers 9 and 10 are forced by to_awake_zl and rebirth_hyral."
+  },
+  "what_lives_on_which_layer": "Placement data confirms the reading above. Hyroom's 7 Tn (Darknuts) and 10 mo2 (Moblins) exist ONLY on layers 0, 1 and 8 - the first-visit layers - so the frozen-guard fight belongs to visit 1. kenroom layers 2/3 carry Hi1 (King of Hyrule) and Zl1 (Tetra); layers 4/5 carry p_zelda, Yswdr00 and two Tn (the btl_of_swroom ambush); layer 9 carries Zl1 param 6 and p_zelda (the awake_zelda staging). Layers 6/7, the state this chapter ends in, carry nothing: an empty pedestal room."
+ },
+ "_bits": {
+  "0x2E80": {
+   "dec": 11904,
+   "byte_mask": [
+    46,
+    128
+   ],
+   "meaning": "The Tower of the Gods has risen from the sea. Raised by all three of ADMumi's tower demos (towerd / towerf / towern), which share the EventFlag and all return to sea room 26 (dIsleRoom_ToweroftheGods_e). This is the previous chapter's bit, listed here because it is this chapter's practical prerequisite.",
+   "set_by": "out/rip/GZLE01/godot/events/ADMumi.json events towerd/towerf/towern, PACKAGE PLAY EventFlag 11904",
+   "read_by": [],
+   "confidence": "medium"
+  },
+  "0x2D10": {
+   "dec": 11536,
+   "byte_mask": [
+    45,
+    16
+   ],
+   "meaning": "Link has been taken down to Hyrule. Raised by the ADMumi event warp_in, which plays warp_in.stb and then sends the game to Hyrule spawn 200 layer 8. The King of Red Lions' hint table nails its position in the story: setInitMessage checks 0x2D10 LAST, below checkMasterSwordEquip() and below 0x3810, so 0x2D10 is raised before Link owns the Master Sword - i.e. warp_in is the FIRST descent, not a repeat one. checkForceMessage also nags with message 0xD65 whenever 0x2D10 is set and the Master Sword is not equipped.",
+   "set_by": "out/rip/GZLE01/godot/events/ADMumi.json event warp_in, PACKAGE PLAY EventFlag 11536",
+   "read_by": [
+    "src/d/actor/d_a_ship.cpp:362",
+    "src/d/actor/d_a_ship.cpp:483",
+    "src/d/actor/d_a_ship.cpp:4226",
+    "src/d/actor/d_a_warpf.cpp:231"
+   ],
+   "confidence": "high"
+  },
+  "0x2D04": {
+   "dec": 11524,
+   "byte_mask": [
+    45,
+    4
+   ],
+   "meaning": "The Master Sword has been drawn. Raised by the kenroom event master_sword (PACKAGE PLAY EventFlag 11524). daObjVmsms_c::check_demo() returns it, and _create() refuses to build the sword-in-the-stone model at all when it is set - so once it is on, the pedestal stands empty forever.",
+   "set_by": "out/rip/GZLE01/godot/events/kenroom.json event master_sword, PACKAGE PLAY EventFlag 11524",
+   "read_by": [
+    "src/d/actor/d_a_obj_vmsms.cpp:70",
+    "src/d/actor/d_a_obj_vmsms.cpp:44-49",
+    "src/d/actor/d_a_obj_toripost.cpp:939"
+   ],
+   "confidence": "high"
+  },
+  "0x3802": {
+   "dec": 14338,
+   "byte_mask": [
+    56,
+    2
+   ],
+   "meaning": "COLORS_IN_HYRULE - one of the handful of bits the decomp team actually named. It is the master switch for 'time has started again under the sea'. While it is CLEAR, d_s_play forces the monotone (greyscale) post-effect on for Hyrule, Hyroom and kenroom. While it is CLEAR, every Darknut and Moblin in those stages sits in its d_dozou frozen-statue state; the moment it is SET (and their spawn switch is 0xFF, which is how the Hyrule ones are placed) they finish their pose animation, get their collision back and turn hostile. It also chooses kenroom's layer.",
+   "set_by": "(event data - the only setter in src/ is the demo00 table below, and no C++ raises it directly). d_a_demo00.cpp's l_eventBit[] maps demo argument 48 to COLORS_IN_HYRULE, so it is raised from inside an .stb. Inferred to be rebirth_hyral.stb (see step hy_rebirth) - name, chained position and effect all match, but the argument byte lives in the .stb and is not visible in src/.",
+   "read_by": [
+    "src/d/d_s_play.cpp:1414-1432",
+    "src/d/actor/d_a_tn.cpp:2322",
+    "src/d/actor/d_a_tn.cpp:4375",
+    "src/d/actor/d_a_mo2.cpp:2712",
+    "src/d/actor/d_a_bk.cpp:2908",
+    "src/d/actor/d_a_obj_Ygush00.cpp:117",
+    "src/d/d_com_inf_game.cpp:242",
+    "src/d/d_com_inf_game.cpp:248"
+   ],
+   "confidence": "medium"
+  },
+  "0x3A04": {
+   "dec": 14852,
+   "byte_mask": [
+    58,
+    4
+   ],
+   "meaning": "The swing_sword demo has played - the last beat of the Master Sword sequence. Raised by the kenroom event swing_sword (PACKAGE PLAY EventFlag 14852), which then drops the game back into kenroom spawn 249 on layer 6, the post-chapter state of the room. Nothing in src/ reads it; it exists to stop the demo replaying.",
+   "set_by": "out/rip/GZLE01/godot/events/kenroom.json event swing_sword, PACKAGE PLAY EventFlag 14852",
+   "read_by": [],
+   "confidence": "medium"
+  },
+  "0x3810": {
+   "dec": 14352,
+   "byte_mask": [
+    56,
+    16
+   ],
+   "meaning": "Link has warped back up out of Hyrule for the first time. daWarphr_c::normal_execute raises it when check_warp() succeeds and get_return_count() == 0, and get_return_count() returns 0 exactly while the Forsaken Fortress boss is still alive - i.e. on the first visit. The King of Red Lions' hint table puts it directly above checkMasterSwordEquip(), which is consistent: descend (0x2D10), draw the sword, come back up (0x3810).",
+   "set_by": "src/d/actor/d_a_warphr.cpp:203-209",
+   "read_by": [
+    "src/d/actor/d_a_ship.cpp:477"
+   ],
+   "confidence": "high"
+  },
+  "0x2D08": {
+   "dec": 11528,
+   "byte_mask": [
+    45,
+    8
+   ],
+   "meaning": "The permanent whirlpool warp down to Hyrule is open. Raised by the ADMumi event warphole (PACKAGE PLAY EventFlag 11528). Once it is set: daWarpdm20_c (the light shaft standing in the sea above Hyrule) starts already-open and lets Link warp down via TO_HYRULE_WARP, and daWarphr_c (the warp back up, actor Ghrwp, inside the Hyrule courtyard) switches from TO_SEA_WARP_1 to TO_SEA_WARP_2. The sea reaches warphole through its own tagwp3 volume, which sends the game to ADMumi spawn 232 layer 10 - so this is the repeat route, NOT the first descent.",
+   "set_by": "out/rip/GZLE01/godot/events/ADMumi.json event warphole, PACKAGE PLAY EventFlag 11528",
+   "read_by": [
+    "src/d/actor/d_a_warpdm20.cpp:118",
+    "src/d/actor/d_a_warpdm20.cpp:188",
+    "src/d/actor/d_a_warphr.cpp:132",
+    "src/d/actor/d_a_tag_mk.cpp:497",
+    "src/d/actor/d_a_ship.cpp:427"
+   ],
+   "confidence": "high"
+  },
+  "0x3280": {
+   "dec": 12928,
+   "byte_mask": [
+    50,
+    128
+   ],
+   "meaning": "The ADMumi event runaway_majuto has played (PACKAGE PLAY EventFlag 12928, next stage Hyrule spawn 0). It is the gate for the SECOND Hyrule visit: with it set, Hyrule, Hyroom and kenroom all switch to layer|2, which is the layer that carries Hi1 (the King of Hyrule) and Zl1 in kenroom and the to_awake_zl trigger volume in Hyroom.",
+   "set_by": "out/rip/GZLE01/godot/events/ADMumi.json event runaway_majuto, PACKAGE PLAY EventFlag 12928",
+   "read_by": [
+    "src/d/d_com_inf_game.cpp:226",
+    "src/d/d_com_inf_game.cpp:232",
+    "src/d/d_com_inf_game.cpp:242",
+    "src/d/d_com_inf_game.cpp:248"
+   ],
+   "confidence": "medium"
+  },
+  "0x2D02": {
+   "dec": 11522,
+   "byte_mask": [
+    45,
+    2
+   ],
+   "meaning": "Tetra has been woken as Zelda. Raised by the kenroom event awake_zelda (PACKAGE PLAY EventFlag 11522). daNpc_Zl1_c::init_ZL1_5 refuses to place Tetra at all once it is set, and daWarpdm20_c::CreateInit turns on 0x1820 (the late-game world flag) whenever it sees it. A later chapter's bit, recorded because awake_zelda lives in kenroom.",
+   "set_by": "out/rip/GZLE01/godot/events/kenroom.json event awake_zelda, PACKAGE PLAY EventFlag 11522",
+   "read_by": [
+    "src/d/actor/d_a_npc_zl1.cpp:344",
+    "src/d/actor/d_a_warpdm20.cpp:125",
+    "src/d/actor/d_a_npc_photo.cpp:2181",
+    "src/d/actor/d_a_ship.cpp:368",
+    "src/d/actor/d_a_ship.cpp:4238"
+   ],
+   "confidence": "high"
+  },
+  "0x1820": {
+   "dec": 6176,
+   "byte_mask": [
+    24,
+    32
+   ],
+   "meaning": "The late-game world flag. Not set by this chapter, but raised as a side effect of it: daWarpdm20_c::CreateInit turns it on whenever 0x2D02 is already set. With it on, Windfall's ma2room is swapped for ma3room, the Forsaken Fortress sea room uses layer 3, and the day/night cycle changes. Listed only so the chain 0x2D02 -> 0x1820 is not mistaken for something this chapter does.",
+   "set_by": "src/d/actor/d_a_warpdm20.cpp:125-126",
+   "read_by": [
+    "src/d/d_resorce.cpp:708",
+    "src/d/d_com_inf_game.cpp:208",
+    "src/d/d_kankyo_dayproc.inc:9",
+    "src/d/actor/d_a_tag_event.cpp:363"
+   ],
+   "confidence": "high"
+  },
+  "0x3980": {
+   "dec": 14720,
+   "byte_mask": [
+    57,
+    128
+   ],
+   "meaning": "The decomp's own comment at the read site calls it \"Saw Hyrule 3 Electric Barrier Demo\". daObjBarrier_c will not let the barrier be broken until it is set. A third-visit bit; nothing in src/ raises it.",
+   "set_by": "(event data - no setter in src/)",
+   "read_by": [
+    "src/d/actor/d_a_obj_barrier.cpp:229-230",
+    "src/d/actor/d_a_obj_barrier.cpp:281"
+   ],
+   "confidence": "medium"
+  },
+  "0x2C02": {
+   "dec": 11266,
+   "byte_mask": [
+    44,
+    2
+   ],
+   "meaning": "BARRIER_BREAK - named by the decomp. Raised by daObjBarrier_c the instant Link cuts the barrier with a fully powered Master Sword; the actor then orders the event \"seal\" and deletes itself.",
+   "set_by": "src/d/actor/d_a_obj_barrier.cpp:247 (USA) / :285 (JPN)",
+   "read_by": [
+    "src/d/actor/d_a_obj_barrier.cpp:504",
+    "src/d/actor/d_a_ship.cpp:421"
+   ],
+   "confidence": "high"
+  },
+  "0x3B08": {
+   "dec": 15112,
+   "byte_mask": [
+    59,
+    8
+   ],
+   "meaning": "The seal demo has played. Raised by the Hyrule event seal (PACKAGE PLAY EventFlag 15112). A third-visit bit.",
+   "set_by": "out/rip/GZLE01/godot/events/Hyrule.json event seal, PACKAGE PLAY EventFlag 15112",
+   "read_by": [],
+   "confidence": "medium"
+  }
+ },
+ "_actors": {
+  "VmsMS": {
+   "name": "The Master Sword in its pedestal",
+   "file": "src/d/actor/d_a_obj_vmsms.cpp",
+   "placement": "kenroom, one ACTR at (0, -3223, -1297), layer -1 (all layers). VmsDZ, the pedestal itself, sits at exactly the same point.",
+   "behaviour": "_create() calls check_demo() first and returns cPhs_ERROR_e without loading anything when 0x2D04 is set - the sword simply does not exist once it has been drawn. _execute() deletes the actor the moment dComIfGp_evmng_startCheck(\"master_sword\") goes true, i.e. the blade vanishes from the stone as the cutscene starts and the .stb takes over with its own model.",
+   "source": "src/d/actor/d_a_obj_vmsms.cpp:39-56, 68-80"
+  },
+  "YLzou": {
+   "name": "The Hero-of-Time statue in the throne room (\"Hyrule Castle - Link statue\")",
+   "file": "src/d/actor/d_a_obj_YLzou.cpp",
+   "placement": "Hyroom, one ACTR at (-50, -1550, -1125), params 6, layer -1.",
+   "behaviour": "Its member functions are named after the two events it drives: move_ylzou_demo_start_wait_act_proc / move_ylzou_demo_vib_act_init_proc / move_ylzou_demo_move_act_proc for \"move_YLzou\", and go_up_stairs_demo_move_start_wait_act_init_proc / go_up_stairs_demo_move_act_proc for \"go_up_stairs\". Every single body in the file is a /* Nonmatching */ stub, so the trigger condition, the distances and the order of the two demos cannot be read out of the decomp - only the fact that this actor owns both events.",
+   "source": "src/d/actor/d_a_obj_YLzou.cpp:1-4, 75-105, 115-165"
+  },
+  "zouK / zouK1..zouK4": {
+   "name": "The five knight statues in the Master Sword chamber (\"Hyrule Castle - Knight statues (Master Sword chamber)\")",
+   "file": "src/d/actor/d_a_obj_zouK.cpp",
+   "placement": "kenroom, five ACTRs on layer -1 in a ring around the pedestal: params 0 at (-913,-3400,-770), 1 at (-912,-3400,-1823), 2 at (0,-3400,-2348), 3 at (913,-3400,-1823), 4 at (913,-3400,-770).",
+   "behaviour": "Each statue carries two collision models, mBgBefore and mBgAfter, and swaps from the first to the second when dComIfGs_isCollect(0, 1) goes true - so the statues physically change shape at a story point. They also hand themselves to the demo system (jokai_demo -> dDemo_setDemoData with the \"VzouK\" animation set) so the cutscenes can pose them.",
+   "source": "src/d/actor/d_a_obj_zouK.cpp:1-4, 237-249, 251-296"
+  },
+  "Ghrwp": {
+   "name": "The warp back up to the sea, in the flooded courtyard pool",
+   "file": "src/d/actor/d_a_warphr.cpp",
+   "placement": "Hyrule, one ACTR at (0, -100, 1649), layer -1 - the same pool the King of Red Lions (Ship, at (-22,-100,1644)) and spawns 200/219 sit in.",
+   "behaviour": "CreateInit picks its event once: TO_SEA_WARP_2 if 0x2D08 is set, otherwise TO_SEA_WARP_1. normal_execute raises 0x3810 on the first use. Its demo cut list is WAIT / WARP / WARP_ARRIVE / WARP_ARRIVE_END / START_WARP, and it finds itself in a script under the staff name \"Ghrwp\".",
+   "source": "src/d/actor/d_a_warphr.cpp:127-137, 196-213, 234, 393-400"
+  },
+  "Tn / mo2": {
+   "name": "The frozen Darknuts and Moblins",
+   "file": "src/d/actor/d_a_tn.cpp, src/d/actor/d_a_mo2.cpp",
+   "placement": "Hyroom carries 7 Tn and 10 mo2, duplicated across layers 0, 1 and 8 only. Hyrule carries 2 Tn and 4 mo2 but only on layers 4/5. kenroom carries 2 Tn on layers 4/5.",
+   "behaviour": "Both run a d_dozou (\"statue\") action whose case 1 is a single test: if their spawn switch is 0xFF - which is how the Hyrule copies are placed - they stay frozen until COLORS_IN_HYRULE is set, then resume their animation, get their damage table and lock-on flag, and start patrolling. daTn_Create also flips fopAcStts_UNK4000_e on the same bit. mo2 additionally uses a different item drop table when the start stage is \"Hyroom\".",
+   "source": "src/d/actor/d_a_tn.cpp:2300-2336, 4373-4380, src/d/actor/d_a_mo2.cpp:2695-2725, 4108-4112"
+  },
+  "Barrier": {
+   "name": "The electric barrier around Ganon's Tower in the courtyard",
+   "file": "src/d/actor/d_a_obj_barrier.cpp",
+   "behaviour": "break_start_wait_proc requires 0x3980 set, the player at least 8800 units away in XZ, dComIfGs_getSelectEquip(0) == dItemNo_MASTER_SWORD_3_e, and one of ten sword-swing cut types. It then raises BARRIER_BREAK, resolves the event index for \"seal\" and orders it; when the event ends it deletes itself. brkAnmPlay drives the barrier's crackle animation from the player's distance.",
+   "source": "src/d/actor/d_a_obj_barrier.cpp:205-260, 275-300"
+  }
+ },
+ "steps": [
+  {
+   "id": "hy_warp_in",
+   "stage": "ADMumi",
+   "room": 0,
+   "layer": 9,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "ADMumi (\"Tower of the Gods Cutscenes\") spawn 201 at (-3, 29570, -8800) carries EVNT index 0 = \"warp_in\". The game reaches ADMumi's top-of-the-tower spawns from the Tower of the Gods boss room: SirenB's event WARP_WIND is a DIRECTOR NEXT to ADMumi spawn 200, layer 9, and ADMumi's own JMP_DEMO is a DIRECTOR NEXT to spawn 201, layer 9, which is the spawn that fires warp_in."
+   },
+   "event": "warp_in",
+   "stb": "warp_in.stb",
+   "requires_bits": [
+    "0x2E80"
+   ],
+   "sets_bits": [
+    "0x2D10",
+    "0x2D10",
+    "0x2D10"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/ADMumi/ADMumi_report.json:spawns",
+    "out/rip/GZLE01/godot/events/ADMumi.json:warp_in",
+    "out/rip/GZLE01/godot/events/ADMumi.json:JMP_DEMO",
+    "out/rip/GZLE01/godot/events/SirenB.json:WARP_WIND",
+    "src/d/actor/d_a_ship.cpp:362",
+    "src/d/actor/d_a_ship.cpp:483"
+   ],
+   "notes": "Outside the three stages of this chapter but it is the door into them, so it is recorded the way ww_story_fortress.json recorded A_umikz. warp_in's PACKAGE PLAY sets EventFlag 11536 (0x2D10) and hands the game straight to Hyrule, spawn 200, room 0, LAYER 8. The requires_bits entry 0x2E80 is inferred from chapter order - nothing in src/ or the placement data actually gates warp_in on it. warp_in.stb is not in the baked cutscene list used by the Godot player but it is a real .stb named by the script; it is attached here because the script names it outright. warp_in.stb raises 0x2D10 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). warp_in.stb raises 0x2D10 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+  },
+  {
+   "id": "hy_descent",
+   "stage": "Hyrule",
+   "room": 0,
+   "layer": 8,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "Hyrule spawn 200 at (0, -100, 1647) - the flooded courtyard pool - carries EVNT index 0 = \"warp_out\", so arriving there auto-plays the descent. warp_out's PACKAGE PLAY names warp_out.stb and then sends the game to Hyrule spawn 201, layer 0."
+   },
+   "event": "warp_out",
+   "stb": "warp_out.stb",
+   "requires_bits": [
+    "0x2D10"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Hyrule/Hyrule_report.json:spawns",
+    "out/rip/GZLE01/godot/events/Hyrule.json:warp_out",
+    "out/rip/GZLE01/godot/cutscenes/warp_out.json",
+    "src/d/actor/d_a_warphr.cpp:171-186",
+    "src/d/d_s_play.cpp:1414-1432"
+   ],
+   "notes": "The chapter's set piece. warp_out.stb is 2300 frames (76.7 s), the longest cutscene in the chapter, and its camera starts at y = 199575 - above the ocean surface - and sinks to y = -501 before settling in the courtyard, which is the shot of Link and the boat falling through the parted sea. Two pieces of code special-case it: d_s_play forces monotone rate -600 (instead of the usual 400) when the start stage is Hyrule and the layer is 8, and daWarphr_c::_execute watches for evmng_startCheck(\"warp_out\") and, at demo frame 0x225, kills its particle emitter and applies the same -600 monotone. The greyscale itself is not layer 8's doing: d_s_play turns monotone on for Hyrule, Hyroom and kenroom for as long as COLORS_IN_HYRULE is clear, which is the whole first half of this chapter."
+  },
+  {
+   "id": "hy_courtyard",
+   "stage": "Hyrule",
+   "room": 0,
+   "layer": 0,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "warp_out ends by placing Link at Hyrule spawn 201, (-264, 51, 274), facing -90 degrees, on layer 0 - ground level in the courtyard, a few metres from the pool. Spawn 201 carries EVNT index 255, so nothing auto-plays: this is where control is handed back and the chapter becomes playable."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x2D10"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/godot/events/Hyrule.json:warp_out",
+    "out/rip/GZLE01/stages/Hyrule/Hyrule_report.json:spawns",
+    "out/rip/GZLE01/stages/Hyrule/Hyrule_report.json:actors"
+   ],
+   "notes": "The courtyard on layer 0 is empty of enemies - Hyrule's 2 Tn and 4 mo2 are placed only on layers 4/5, and its 2 Zl1 (Tetra) only on layers 2/3, so on the first visit the whole exterior is scenery: 13 HcFlag banners the exporter could not resolve, lwood trees, p_hat and c_red decorations, the Ship (King of Red Lions) and Ghrwp in the pool. Hyrule's EVNT table has only three entries (warp_out, WARP_ARRIVE, seal) and the stage has no TagEv volumes at all, so nothing else in the courtyard is event-driven. Spawns 2 (0, 150, -955) and 3 (0, -1978, -7758) are the unevented doorway spawns that pair with Hyroom."
+  },
+  {
+   "id": "hy_intro",
+   "stage": "Hyroom",
+   "room": 0,
+   "layer": 0,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "Hyroom (\"Hyrule Castle Interior\") spawn 0 at (0, -1146, -3930) carries EVNT index 2 = \"hy_intro\" - the default entrance from the courtyard, so simply walking into the castle plays it."
+   },
+   "event": "hy_intro",
+   "stb": null,
+   "requires_bits": [
+    "0x2D10"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Hyroom/Hyroom_report.json:spawns",
+    "out/rip/GZLE01/godot/events/Hyroom.json",
+    "src/d/d_s_play.cpp:1414-1432"
+   ],
+   "notes": "The reveal of the frozen throne room. hy_intro has no PACKAGE actor and so no .stb - it is an in-engine camera event built out of the stage's own event script, not a baked cutscene. What the player sees is Hyroom on layer 0 with 7 Tn and 10 mo2 standing dead still (see _actors) and the whole scene in greyscale, because COLORS_IN_HYRULE is still clear. Hyroom's EVNT table has only three entries; the other eight story-ish scripts in its event_list (StartCamera, MtryB_sink, break_tntrap, break_tntrap2, go_up_stairs, go_up_stairs2, HIRL_HINT, move_YLzou) are ordered by actors, not by placement."
+  },
+  {
+   "id": "hy_hint",
+   "stage": "Hyroom",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "tag",
+    "detail": "A TagHt hint volume at (0, -1950, 575), scale 12, params 0xFF060F0A. daTag_Hint_c::makeEventId reads the low byte of params as the type; type 10 is the one case that resolves the event name \"HIRL_HINT\" instead of the generic DEFAULT_HINT / DEFAULT_HINT2, and 0x0A is exactly 10."
+   },
+   "event": "HIRL_HINT",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Hyroom/Hyroom_report.json:tags",
+    "src/d/actor/d_a_tag_hint.cpp:318-330"
+   ],
+   "notes": "The Hyrule hint - the game nudging the player about the throne-room floor. kenroom carries the same HIRL_HINT script and two TagHt2 volumes at (0, -3600, -1344) and (0, -3600, -1235), but TagHt2 is a different actor from TagHt and its params do not decode with the type rule above, so which of those two orders the hint is not established."
+  },
+  {
+   "id": "hy_floor_puzzle",
+   "stage": "Hyroom",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "object",
+    "detail": "Three MtryB actors, params 1536, at (0, -1970, -284), (-500, -1970, 871) and (-500, -1970, 1015), all layer -1, plus three MtryBCr placements the exporter could not resolve to a model. The event \"MtryB_sink\" is in Hyroom's event_list but NOT in its EVNT table and no TagEv orders it, so the blocks order it themselves when they come to rest. MtryB_sink's own script is a pure camera event: a FIXEDFRM shot at eye (-520, -1905, 986) looking at (0, -1800, 525), then a UNIBRAKE pull-back to eye (0, -1100, 1250) - i.e. the camera drops to the floor as a block sinks and then lifts to show the crest."
+   },
+   "event": "MtryB_sink",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "out/rip/GZLE01/stages/Hyroom/Hyroom_report.json:actors",
+    "out/rip/GZLE01/godot/events/Hyroom.json:MtryB_sink"
+   ],
+   "notes": "The Triforce crest on the throne-room floor. There is no d_a_obj_mtryb.cpp in the decomp at all - the closest relative is src/d/actor/d_a_obj_tribox.cpp, headed \"Object - Hyrule Castle - Pushable triangle blocks\", which contains no event calls whatsoever. So the block-to-socket logic is not recoverable from src/; the camera framing above is the only hard evidence for what the beat looks like. break_tntrap / break_tntrap2 (Hyroom has 2 unresolved TnTrap placements, and src/d/actor/d_a_obj_tntrap.cpp exists) are a second, separate object-driven event in the same room that has not been tied to a trigger."
+  },
+  {
+   "id": "hy_statue_moves",
+   "stage": "Hyroom",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "object",
+    "detail": "The single YLzou actor at (-50, -1550, -1125), params 6, layer -1, orders both of its events itself. Neither \"move_YLzou\" nor \"go_up_stairs\" nor \"go_up_stairs2\" is in Hyroom's EVNT table and no TagEv references them; the actor's own function names are the proof: move_ylzou_demo_start_wait_act_proc, move_ylzou_demo_vib_start_wait_act_init_proc, move_ylzou_demo_vib_act_init_proc, move_ylzou_demo_move_act_proc for the first, and go_up_stairs_demo_move_start_wait_act_init_proc, go_up_stairs_demo_move_act_init_proc, go_up_stairs_demo_move_act_proc for the second."
+   },
+   "event": "move_YLzou",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "src/d/actor/d_a_obj_YLzou.cpp:1-4",
+    "src/d/actor/d_a_obj_YLzou.cpp:75-105",
+    "src/d/actor/d_a_obj_YLzou.cpp:115-165",
+    "out/rip/GZLE01/stages/Hyroom/Hyroom_report.json:actors"
+   ],
+   "notes": "The statue of the Hero of Time grinds aside and opens the stair down to the Master Sword chamber. EVERY function body in d_a_obj_YLzou.cpp is a /* Nonmatching */ stub - the file is nothing but signatures - so the condition that starts move_YLzou, the relationship between move_YLzou and go_up_stairs/go_up_stairs2, and what the statue does with the crest are all unknown. Only the ownership is certain. Confidence is medium for that reason. The actor also has open_wait_act_init_proc / close_wait_act_init_proc, so the passage it opens can evidently close again."
+  },
+  {
+   "id": "hy_draw_master_sword",
+   "stage": "kenroom",
+   "room": 0,
+   "layer": 0,
+   "trigger": {
+    "kind": "tag",
+    "detail": "A TagEv volume in kenroom (\"Master Sword Chamber\") on layer 0 at (0, -3198, -1297), scale 2, params 0x000E0BFF: EVNT index 0 = \"master_sword\", switch2 14, switch 11, action 0xFF. It sits directly on top of the pedestal - VmsMS and VmsDZ are both at (0, -3223, -1297) - so it fires when Link steps up to the sword. The identical volume on layer 1 carries index 255 and orders nothing."
+   },
+   "event": "master_sword",
+   "stb": "master_sword.stb",
+   "requires_bits": [
+    "0x2D10"
+   ],
+   "sets_bits": [
+    "0x2D04",
+    "0x2D04",
+    "0x2D04"
+   ],
+   "gives_item": "MASTER_SWORD_1",
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/kenroom/kenroom_report.json:tags",
+    "out/rip/GZLE01/stages/kenroom/kenroom_report.json:actors",
+    "out/rip/GZLE01/godot/events/kenroom.json:master_sword",
+    "out/rip/GZLE01/godot/cutscenes/master_sword.json",
+    "src/d/actor/d_a_obj_vmsms.cpp:68-80",
+    "src/d/actor/d_a_demo00.cpp:711-721"
+   ],
+   "notes": "The chapter's pivot. master_sword.stb is 876 frames (29.2 s); the event's PACKAGE PLAY carries OffsetPos (-124, -3223, -7823) and OffsetAngY 180 (kenroom's world_offset is (-124, 0, -6526)), EventFlag 11524 = 0x2D04, and Stage \"Hyroom\" / StartCode 248 / Layer 8 - so the demo does NOT return control here, it hands the game straight to Hyroom spawn 248 on layer 8. daObjVmsms_c::_execute deletes the sword-in-stone actor the instant evmng_startCheck(\"master_sword\") goes true, and _create() refuses to build it ever again once 0x2D04 is set. gives_item is INFERRED, not proven: the mechanism is dDemo00's l_itemNo[] table (index 0 = dItemNo_MASTER_SWORD_1_e), which a demo invokes by passing an argument byte inside its .stb, and that byte is not visible in src/ or in the exported script. Spawn 200 at (-6,-3220,-983) also carries EVNT index 0, so the same event can be entered by spawn as well as by the volume. master_sword.stb raises 0x2D04 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). master_sword.stb raises 0x2D04 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+  },
+  {
+   "id": "hy_rebirth",
+   "stage": "Hyroom",
+   "room": 0,
+   "layer": 8,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "master_sword's PACKAGE PLAY sends the game to Hyroom spawn 248, layer 8. Spawn 248 sits at (1795, -650, -3410) - up on the throne-room's upper floor, the same height as the 16 ootubo1 pots - and carries EVNT index 0 = \"rebirth_hyral\", so it plays immediately on arrival. This is a demo-to-demo handoff, not a walk."
+   },
+   "event": "rebirth_hyral",
+   "stb": "rebirth_hyral.stb",
+   "requires_bits": [
+    "0x2D04"
+   ],
+   "sets_bits": [
+    "0x3802"
+   ],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "out/rip/GZLE01/godot/events/kenroom.json:master_sword",
+    "out/rip/GZLE01/godot/events/Hyroom.json:rebirth_hyral",
+    "out/rip/GZLE01/stages/Hyroom/Hyroom_report.json:spawns",
+    "out/rip/GZLE01/godot/cutscenes/rebirth_hyral.json",
+    "src/d/actor/d_a_demo00.cpp:651-706",
+    "src/d/d_s_play.cpp:1414-1432"
+   ],
+   "notes": "\"Rebirth of Hyrule\": colour and time come back to the drowned kingdom. rebirth_hyral.stb is 955 frames (31.8 s), its camera sweeping down through the throne room from (716, 1278, -2147) with OffsetPos (0, -2100, 3910). Its PACKAGE PLAY carries NO EventFlag - it chains on to kenroom spawn 249, layer 10 - so the bit it raises is not in the script header. COLORS_IN_HYRULE is assigned to this step because (a) d_a_demo00.cpp's l_eventBit[] proves COLORS_IN_HYRULE is raised from inside an .stb, by demo argument 48, and no C++ anywhere raises it; (b) COLORS_IN_HYRULE is exactly \"greyscale off, frozen guards awake\" and this is the only event in the chapter whose name and camera are about the whole castle changing; (c) the layer chooser it feeds (kenroom layer|6 when COLORS_IN_HYRULE && !0x3280) is the very layer the next demo drops Link on. It is still an inference - the argument byte lives in the .stb - hence medium."
+  },
+  {
+   "id": "hy_swing_sword",
+   "stage": "kenroom",
+   "room": 0,
+   "layer": 10,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "rebirth_hyral's PACKAGE PLAY sends the game to kenroom spawn 249, layer 10. Spawn 249 at (-5, -3220, -983) carries EVNT index 2 = \"swing_sword\", which plays at once. Third link in the same chain."
+   },
+   "event": "swing_sword",
+   "stb": "swing_sword.stb",
+   "requires_bits": [
+    "0x2D04"
+   ],
+   "sets_bits": [
+    "0x3A04",
+    "0x3A04",
+    "0x3A04"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/godot/events/Hyroom.json:rebirth_hyral",
+    "out/rip/GZLE01/godot/events/kenroom.json:swing_sword",
+    "out/rip/GZLE01/stages/kenroom/kenroom_report.json:spawns",
+    "out/rip/GZLE01/godot/cutscenes/swing_sword.json"
+   ],
+   "notes": "Link raises the Master Sword in the chamber, in colour, with the five knight statues around him. 840 frames (28 s), OffsetPos (-124, -3223, -7823), EventFlag 14852 = 0x3A04. It ends by putting the game back at kenroom spawn 249 on LAYER 6 - the post-chapter state of the room, which the placement data shows is empty of actors. That forced layer 6 matches the layer chooser's first kenroom branch, COLORS_IN_HYRULE && !0x3280, which is corroboration that COLORS_IN_HYRULE went on during the chain. The three demos master_sword -> rebirth_hyral -> swing_sword are one uninterrupted sequence with no gameplay between them, which is why they cross stages twice. swing_sword.stb raises 0x3A04 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). swing_sword.stb raises 0x3A04 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+  },
+  {
+   "id": "hy_fight_out",
+   "stage": "Hyroom",
+   "room": 0,
+   "layer": 0,
+   "trigger": {
+    "kind": "room_enter",
+    "detail": "No event and no volume: the fight is a consequence of a bit. Link walks back up from kenroom into Hyroom on layer 0 (the layer chooser's default branch - 0x3280 is not set on this visit and the Triforce count is not 8), and the 7 Tn and 10 mo2 placed on that layer are no longer statues."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x3802"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_tn.cpp:2300-2336",
+    "src/d/actor/d_a_mo2.cpp:2695-2725",
+    "src/d/actor/d_a_tn.cpp:4373-4380",
+    "out/rip/GZLE01/stages/Hyroom/Hyroom_report.json:actors",
+    "src/d/d_s_play.cpp:1414-1432"
+   ],
+   "notes": "The escape from the castle. Both enemy actors run an action called d_dozou (\"statue\") whose case 1 is one test: spawn switch != 0xFF and that switch set, OR spawn switch == 0xFF and COLORS_IN_HYRULE set. The Hyrule copies use 0xFF, so COLORS_IN_HYRULE alone wakes them; they then play out their frozen pose (Tn from frame 41 of akyoro1 or frame 27 of aat_yoko1, mo2 from frame 3 of tackledemo or frame 37 of walk), re-Init their damage table, set fopAc_Attn_LOCKON_BATTLE_e and switch to ACTION_JYUNKAI (patrol). daTn_Create also clears fopAcStts_UNK4000_e on the same bit. The layer evidence is what makes this a first-visit beat and not a later one: Hyroom's Tn and mo2 exist on layers 0, 1 and 8 only - the first-visit layers - and are absent from layers 2/3 and 4/5. The greyscale lifts at the same moment for the same reason (d_s_play)."
+  },
+  {
+   "id": "hy_warp_back",
+   "stage": "Hyrule",
+   "room": 0,
+   "layer": 0,
+   "trigger": {
+    "kind": "object",
+    "detail": "The Ghrwp actor at (0, -100, 1649) in the courtyard pool. daWarphr_c::normal_execute polls check_warp(), which measures the player's XZ distance to the actor; when it succeeds the actor drives its own demo (cut list WAIT / WARP / WARP_ARRIVE / WARP_ARRIVE_END / START_WARP, staff name \"Ghrwp\") and orders the event it chose in CreateInit."
+   },
+   "event": "TO_SEA_WARP_1",
+   "stb": null,
+   "requires_bits": [
+    "0x2D04"
+   ],
+   "sets_bits": [
+    "0x3810"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_warphr.cpp:127-137",
+    "src/d/actor/d_a_warphr.cpp:196-213",
+    "src/d/actor/d_a_warphr.cpp:234",
+    "src/d/actor/d_a_warphr.cpp:393-400",
+    "out/rip/GZLE01/godot/events/Hyrule.json:TO_SEA_WARP_1",
+    "out/rip/GZLE01/stages/Hyrule/Hyrule_report.json:actors",
+    "include/d/d_save.h:330"
+   ],
+   "notes": "The end of the chapter. CreateInit resolves TO_SEA_WARP_1 because 0x2D08 is NOT yet set on this visit (warphole has not played), and TO_SEA_WARP_1 is a DIRECTOR NEXT to sea room 26 = dIsleRoom_ToweroftheGods_e, spawn 200, which is sea EVNT index 36 = FROM_HYRULE_1. So Link surfaces at the Tower of the Gods. normal_execute raises 0x3810 because get_return_count() returns 0 while the Forsaken Fortress boss is still alive. On every later visit CreateInit picks TO_SEA_WARP_2 instead, which lands on sea spawn 201 = FROM_HYRULE_2. Neither TO_SEA_WARP event has a PACKAGE actor, so neither plays an .stb - the warp animation is the actor's own."
+  },
+  {
+   "id": "hy_return_route_opens",
+   "stage": "ADMumi",
+   "room": 0,
+   "layer": 10,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "ADMumi spawn 232, at the same tower-top point as spawn 201, carries EVNT index 2 = \"warphole\". The sea reaches it through its own event tagwp3, a DIRECTOR NEXT to ADMumi spawn 232, layer 10. warphole plays warphole.stb, raises EventFlag 11528 = 0x2D08 and sends the game to Hyrule spawn 219 - which carries EVNT index 1 = WARP_ARRIVE, the short arrival in the courtyard pool."
+   },
+   "event": "warphole",
+   "stb": "warphole.stb",
+   "requires_bits": [],
+   "sets_bits": [
+    "0x2D08",
+    "0x2D08",
+    "0x2D08"
+   ],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "out/rip/GZLE01/godot/events/ADMumi.json:warphole",
+    "out/rip/GZLE01/godot/events/sea.json:tagwp3",
+    "out/rip/GZLE01/godot/events/sea.json:TO_HYRULE_WARP",
+    "out/rip/GZLE01/stages/ADMumi/ADMumi_report.json:spawns",
+    "out/rip/GZLE01/stages/Hyrule/Hyrule_report.json:spawns",
+    "src/d/actor/d_a_warpdm20.cpp:110-130",
+    "src/d/actor/d_a_warphr.cpp:132"
+   ],
+   "notes": "NOT part of the first visit - this is how Hyrule becomes re-enterable afterwards. Once 0x2D08 is on, daWarpdm20_c (the light shaft standing in the open sea above Hyrule) starts with its opening animation already finished and lets Link warp down through TO_HYRULE_WARP, which is a DIRECTOR NEXT to Hyrule spawn 219 as well. What ORDERS warphole - i.e. at what story point the whirlpool appears - could not be determined: nothing in src/ mentions warphole or tagwp3, and no event bit gates the tagwp3 volume in the exported script. requires_bits is left empty for that reason rather than guessed. warphole.stb raises 0x2D08 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). warphole.stb raises 0x2D08 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+  },
+  {
+   "id": "hy_second_visit_awake_zelda",
+   "stage": "Hyroom",
+   "room": 0,
+   "layer": 2,
+   "trigger": {
+    "kind": "tag",
+    "detail": "A TagEv at (-119, -1888, -1344), scale 2, params 0x01FF11FF (EVNT index 1 = \"to_awake_zl\", switch2 255, switch 17, action 0xFF), placed twice - once on layer 2 and once on layer 3, the day/night pair of the layer|2 branch. to_awake_zl has no PACKAGE actor; it is a bare DIRECTOR NEXT to kenroom spawn 201, layer 9, and spawn 201 carries EVNT index 3 = \"awake_zelda\"."
+   },
+   "event": "to_awake_zl",
+   "stb": "awake_zelda.stb",
+   "requires_bits": [
+    "0x3280"
+   ],
+   "sets_bits": [
+    "0x2D02",
+    "0x2D02",
+    "0x2D02"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Hyroom/Hyroom_report.json:tags",
+    "out/rip/GZLE01/godot/events/Hyroom.json:to_awake_zl",
+    "out/rip/GZLE01/godot/events/kenroom.json:awake_zelda",
+    "out/rip/GZLE01/stages/kenroom/kenroom_report.json:actors",
+    "out/rip/GZLE01/godot/cutscenes/awake_zelda.json",
+    "src/d/actor/d_a_npc_zl1.cpp:344-366",
+    "src/d/d_com_inf_game.cpp:228-236"
+   ],
+   "notes": "A LATER visit, recorded because it lives in this chapter's stages and shows exactly how the second visit differs. The bit 0x3280 (raised by ADMumi's runaway_majuto) switches all three stages to layer|2, and only on that layer does this volume exist; on layers 2/3 kenroom also gains Hi1 (the King of Hyrule, at (-206,-3220,-1130)) and Zl1 (Tetra, at (-374,-2949,2399)), and Hyrule and Hyroom each gain a Zl1 of their own. awake_zelda.stb is by far the longest cutscene in the chapter at 4956 frames (165 s); it raises EventFlag 11522 = 0x2D02 and returns the game to Hyroom spawn 2. After that daNpc_Zl1_c::init_ZL1_5 will not place Tetra anywhere again, and daWarpdm20_c::CreateInit starts turning on the late-game bit 0x1820. Zl1's own event table also holds \"nakaniwa\" (courtyard), which init_ZL1_5 orders in Hyrule or Hyroom while 0x2D02 is clear and 0x3804 is clear - a beat in this stage pair that has not been placed in the timeline here. awake_zelda.stb raises 0x2D02 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). awake_zelda.stb raises 0x2D02 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+  },
+  {
+   "id": "hy_third_visit_swordroom_ambush",
+   "stage": "kenroom",
+   "room": 0,
+   "layer": 4,
+   "trigger": {
+    "kind": "tag",
+    "detail": "A TagEv at (-16, -3619, -999), scale 25 x 20 x 25 - a large box filling the floor in front of the pedestal - params 0x01FE03FF (EVNT index 1 = \"btl_of_swroom\", switch2 254, switch 3, action 0xFF). Placed twice, on layers 4 and 5, the day/night pair of the layer|4 branch, which the layer chooser selects when dComIfGs_getTriforceNum() == 8."
+   },
+   "event": "btl_of_swroom",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/kenroom/kenroom_report.json:tags",
+    "out/rip/GZLE01/stages/kenroom/kenroom_report.json:actors",
+    "src/d/actor/d_a_tn.cpp:2386-2400",
+    "src/d/actor/d_a_tn.cpp:2443-2456",
+    "src/d/d_com_inf_game.cpp:237-250"
+   ],
+   "notes": "A LATER visit again - the Darknut ambush in the Master Sword chamber, gated by the Triforce count rather than by an event bit, which is why requires_bits is empty. Layers 4/5 are the only ones carrying the two Tn at (-296,-3240,-1274) and (254,-3220,-1274), plus p_zelda at (1,-3220,-1261) and Yswdr00 at (2,-3220,-1301). daTn's s_demo case 10 waits for evmng_existence(\"btl_of_swroom\") or \"btl_of_swroom2\", mutes the BGM, drops each Darknut in from 2000-2750 units above its home position on the demo cut named \"Appear\", and case 0xb repositions them on the cut named \"Appear2\". btl_of_swroom has no PACKAGE actor and therefore no .stb. btl_of_swroom2 is in kenroom's event_list but is in no EVNT table and has no trigger in the placement data."
+  },
+  {
+   "id": "hy_third_visit_break_barrier",
+   "stage": "Hyrule",
+   "room": 0,
+   "layer": 0,
+   "trigger": {
+    "kind": "object",
+    "detail": "daObjBarrier_c orders the event itself. break_start_wait_proc requires all of: event bit 0x3980 set; the player at least 8800 units away in XZ from the barrier; dComIfGs_getSelectEquip(0) == dItemNo_MASTER_SWORD_3_e (the fully re-powered Master Sword); and the player's cut type being one of ten sword swings (CUT_A, CUT_F, CUT_R, CUT_L, BT_JUMPCUT, CUT_EA, CUT_EB, CUT_TURN, CUT_ROLL, JUMPCUT_SWORD). It then raises BARRIER_BREAK, resolves the index of \"seal\" and orders it; when the event ends the barrier deletes itself."
+   },
+   "event": "seal",
+   "stb": "seal.stb",
+   "requires_bits": [
+    "0x3980",
+    "0x2C02"
+   ],
+   "sets_bits": [
+    "0x2C02",
+    "0x3B08",
+    "0x3B08",
+    "0x3B08"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_obj_barrier.cpp:227-260",
+    "src/d/actor/d_a_obj_barrier.cpp:275-300",
+    "src/d/actor/d_a_obj_barrier.cpp:500-510",
+    "out/rip/GZLE01/godot/events/Hyrule.json:seal",
+    "out/rip/GZLE01/stages/Hyrule/Hyrule_report.json:spawns",
+    "out/rip/GZLE01/godot/cutscenes/seal.json"
+   ],
+   "notes": "The last thing that ever happens in these stages, and a LATER visit - listed because \"seal\" is one of Hyrule's three EVNT entries and its .stb is baked. seal.stb is 751 frames (25 s); its camera runs along (151..300, -2309, -11359..-11767), which is exactly where Hyrule spawn 233 sits at (-13, -2553, -11451), and spawn 233 carries EVNT index 2 = seal, so the demo can also be entered by spawn. The JPN build makes that explicit: instead of ordering the event, break_check calls dComIfGp_setNextStage(\"Hyrule\", 0xE9, 0, 9) - 0xE9 is 233 and 9 is a forced layer. The event's PACKAGE PLAY raises EventFlag 15112 = 0x3B08. requires_bits lists 0x2C02 as well as 0x3980 because BARRIER_BREAK is raised in the same frame the event is ordered, so any replay of the step sees it set. Hyrule's event_list also holds \"break_barrier\", which is in no EVNT table and has no trigger in the placement data. seal.stb raises 0x3B08 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). seal.stb raises 0x3B08 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+  }
+ ]
+}

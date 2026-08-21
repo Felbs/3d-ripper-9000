@@ -104,8 +104,10 @@ def show(stage: str, rooms: set[int] | None) -> None:
         if str(t.get("actor", "")).startswith(("TagEv", "AttTag"))
         and (rooms is None or t.get("room") in rooms)
     ]
-    print(f"  trigger volumes ({len(tags)}):")
-    for t in sorted(tags, key=lambda t: (t.get("room") or 0, t.get("params", 0))):
+    evs = [t for t in tags if str(t.get("actor", "")).startswith("TagEv")]
+    atts = [t for t in tags if str(t.get("actor", "")).startswith("AttTag")]
+    print(f"  TagEv trigger volumes ({len(evs)}) - these DO order an event:")
+    for t in sorted(evs, key=lambda t: (t.get("room") or 0, t.get("params", 0))):
         p = int(t.get("params", 0))
         no = (p >> 24) & 0xFF
         gate = int(t.get("rot", [0, 0, 0])[2]) & 0xFFFF
@@ -115,6 +117,17 @@ def show(stage: str, rooms: set[int] | None) -> None:
             f"    room {t.get('room')} layer {t.get('layer'):>3} {t['actor']:7}"
             f" -> {name_of(no):24} type {ACTION_E.get(p & 0xFF, hex(p & 0xFF)):11}"
             f" sw {(p >> 8) & 0xFF:3} gate {gate_s:7} at {pos}"
+        )
+    # AttTag / AttTagB are a DIFFERENT actor (fpcNm_Tag_Attention_e) and carry no event index
+    # at all: include/d/actor/d_a_tag_attention.h:55-72 decodes only type = (params >> 8) & 0x3
+    # and swSave = params & 0xFF.  Reading params >> 24 on one of these is meaningless.
+    print(f"  AttTag attention volumes ({len(atts)}) - NO event, look-at markers only:")
+    for t in sorted(atts, key=lambda t: (t.get("room") or 0, t.get("params", 0))):
+        p = int(t.get("params", 0))
+        pos = [round(v) for v in t["pos"]]
+        print(
+            f"    room {t.get('room')} layer {t.get('layer'):>3} {t['actor']:7}"
+            f" type {(p >> 8) & 0x3} swSave {p & 0xFF:3} at {pos}"
         )
 
 

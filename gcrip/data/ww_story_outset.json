@@ -1,128 +1,229 @@
 {
  "_source": "Mined read-only from the zeldaret/tww decompilation at Z:/memRip/sources/tww and the ripped GZLE01 (Wind Waker USA) disc data at Z:/3d ripper/out/rip/GZLE01. Event names come from each stage's Stage.arc/event_list.dat (dumped to out/rip/GZLE01/stages/<stage>/<stage>_events.json). Triggers come from stage.dzs / room.dzr placement chunks read live off the ISO with gcrip.formats.dzs: PLYR spawn points (params>>24 = index into the stage's EVNT table -> auto-started event; include/d/actor/d_a_player_main.h:1881 getStartEvent + src/d/actor/d_a_player_main.cpp:12321 dComIfGp_evmng_startDemo) and TagEv trigger volumes (params: >>24 EVNT index, >>16&0xFF switch2, >>8&0xFF switch, &0xFF type; rot.z = required event bit; scale*100 = trigger box; src/d/actor/d_a_tag_event.cpp:18-45 and 206-320). Layer selection is dComIfG_play_c::getLayerNo, src/d/d_com_inf_game.cpp:184-268 (already distilled in gcrip/data/ww_layers.json). Event-bit ids are authoritative numbers; the UNK_xxxx names are placeholders invented by the decomp team (include/d/d_save_event_flag.inc opens by saying all names in it are fake), so this file uses numeric ids. NOTE: gcrip.formats.dzs.parse has an off-by-3 bug reading EVNT names (it reads the name at chunk+4; the real field is chunk+1, 15 bytes) - every EVNT name quoted here was re-read with the corrected offset.",
-
  "_bits": {
   "0x0001": {
    "dec": 1,
-   "byte_mask": [0, 1],
+   "byte_mask": [
+    0,
+    1
+   ],
    "meaning": "Prologue done: the zelda_fly telescope cutscene finished (Tetra dropped into the Fairy Woods). Gates the second-stage Grandma / Orca / Tetra behaviour.",
    "set_by": "src/d/actor/d_a_npc_ls1.cpp:1619",
-   "read_by": ["src/d/actor/d_a_npc_ba1.cpp:150", "src/d/actor/d_a_npc_ba1.cpp:165", "src/d/actor/d_a_npc_ji1.cpp:798", "src/d/actor/d_a_npc_ji1.cpp:2224", "src/d/actor/d_a_npc_zl1.cpp:302", "src/d/actor/d_a_dk.cpp:264", "src/d/actor/d_a_obj_pirateship.cpp:443", "src/d/actor/d_a_npc_bm1.cpp:548"]
+   "read_by": [
+    "src/d/actor/d_a_npc_ba1.cpp:150",
+    "src/d/actor/d_a_npc_ba1.cpp:165",
+    "src/d/actor/d_a_npc_ji1.cpp:798",
+    "src/d/actor/d_a_npc_ji1.cpp:2224",
+    "src/d/actor/d_a_npc_zl1.cpp:302",
+    "src/d/actor/d_a_dk.cpp:264",
+    "src/d/actor/d_a_obj_pirateship.cpp:443",
+    "src/d/actor/d_a_npc_bm1.cpp:548"
+   ]
   },
   "0x0004": {
    "dec": 4,
-   "byte_mask": [0, 4],
+   "byte_mask": [
+    0,
+    4
+   ],
    "meaning": "Fairy Woods: the Bokoblin drop-in demo (AMORI_DEMO_1) has played.",
    "set_by": "src/d/actor/d_a_tag_event.cpp:89 (TagEv type 1 demoInitProc)",
-   "read_by": ["src/d/actor/d_a_tag_event.cpp:270"]
+   "read_by": [
+    "src/d/actor/d_a_tag_event.cpp:270"
+   ]
   },
   "0x0101": {
    "dec": 257,
-   "byte_mask": [1, 1],
+   "byte_mask": [
+    1,
+    1
+   ],
    "meaning": "Met Tetra in the Fairy Woods. Flips sea/Room44 to LAYER 9 (Aryll + Tetra + Gonzo + Helmaroc King on the ridge).",
    "set_by": "src/d/actor/d_a_tag_event.cpp:95 (TagEv type 2 demoInitProc)",
-   "read_by": ["src/d/d_com_inf_game.cpp:198", "src/d/actor/d_a_npc_zl1.cpp:302", "src/d/actor/d_a_tag_event.cpp:281"]
+   "read_by": [
+    "src/d/d_com_inf_game.cpp:198",
+    "src/d/actor/d_a_npc_zl1.cpp:302",
+    "src/d/actor/d_a_tag_event.cpp:281"
+   ]
   },
   "0x0108": {
    "dec": 264,
-   "byte_mask": [1, 8],
+   "byte_mask": [
+    1,
+    8
+   ],
    "meaning": "Orca's first post-prologue conversation (msg 0x965) has been seen.",
    "set_by": "src/d/actor/d_a_npc_ji1.cpp:829"
   },
   "0x0310": {
    "dec": 784,
-   "byte_mask": [3, 16],
+   "byte_mask": [
+    3,
+    16
+   ],
    "meaning": "Through the telescope, Quill (Bm1) was startled and looked up: the pirate ship and the Helmaroc King go live. Set mid-scope, before zelda_fly.",
    "set_by": "src/d/actor/d_a_npc_ls1.cpp:1830",
-   "read_by": ["src/d/actor/d_a_obj_pirateship.cpp:431", "src/d/actor/d_a_obj_pirateship.cpp:485", "src/d/actor/d_a_dk.cpp:254", "src/d/d_throwstone.cpp:94", "src/d/actor/d_a_npc_p1.cpp:1302"]
+   "read_by": [
+    "src/d/actor/d_a_obj_pirateship.cpp:431",
+    "src/d/actor/d_a_obj_pirateship.cpp:485",
+    "src/d/actor/d_a_dk.cpp:254",
+    "src/d/d_throwstone.cpp:94",
+    "src/d/actor/d_a_npc_p1.cpp:1302"
+   ]
   },
   "0x0501": {
    "dec": 1281,
-   "byte_mask": [5, 1],
+   "byte_mask": [
+    5,
+    1
+   ],
    "meaning": "Orca has finished the Ji1_kaiten (spin attack) lesson.",
    "set_by": "src/d/actor/d_a_npc_ji1.cpp:760"
   },
   "0x0520": {
    "dec": 1312,
-   "byte_mask": [5, 32],
+   "byte_mask": [
+    5,
+    32
+   ],
    "meaning": "Post-Forsaken-Fortress-1 Outset. Outranks every other Room44 rule and flips it to LAYER 4 (day) / 5 (night). Never set by actor code; it comes out of a later .stb cutscene through daDemo00_c's event-bit channel. Out of scope here, listed because it invalidates every prologue layer.",
    "set_by": "cutscene (src/d/actor/d_a_demo00.cpp:650-713)",
-   "read_by": ["src/d/d_com_inf_game.cpp:194", "src/d/actor/d_a_npc_ba1.cpp:150", "src/d/actor/d_a_npc_ji1.cpp:891"]
+   "read_by": [
+    "src/d/d_com_inf_game.cpp:194",
+    "src/d/actor/d_a_npc_ba1.cpp:150",
+    "src/d/actor/d_a_npc_ji1.cpp:891"
+   ]
   },
   "0x0601": {
    "dec": 1537,
-   "byte_mask": [6, 1],
+   "byte_mask": [
+    6,
+    1
+   ],
    "meaning": "Grandma's 'after the Helmaroc cutscene (prologue)' line, msg 0x7E8, has been heard. Name taken from the decomp's own comment at include/d/d_save_event_flag.inc:51.",
    "set_by": "src/d/actor/d_a_npc_ba1.cpp:1499"
   },
   "0x0602": {
    "dec": 1538,
-   "byte_mask": [6, 2],
+   "byte_mask": [
+    6,
+    2
+   ],
    "meaning": "Grandma's 'after the sword was obtained' line, msg 0x7EC, has been heard (decomp comment, include/d/d_save_event_flag.inc:50).",
    "set_by": "src/d/actor/d_a_npc_ba1.cpp:1503"
   },
   "0x0608": {
    "dec": 1544,
-   "byte_mask": [6, 8],
+   "byte_mask": [
+    6,
+    8
+   ],
    "meaning": "Unused Grandma dialogue (msg 0x7E6). The decomp marks it '// Unused'.",
    "set_by": "src/d/actor/d_a_npc_ba1.cpp:1495"
   },
   "0x0640": {
    "dec": 1600,
-   "byte_mask": [6, 64],
+   "byte_mask": [
+    6,
+    64
+   ],
    "meaning": "Orca's first pre-prologue line (msg 0x961) has been heard.",
    "set_by": "src/d/actor/d_a_npc_ji1.cpp:804"
   },
   "0x0740": {
    "dec": 1856,
-   "byte_mask": [7, 64],
+   "byte_mask": [
+    7,
+    64
+   ],
    "meaning": "Grandma's 'after Aryll was kidnapped' line, msg 0x7F0, has been heard (decomp comment, include/d/d_save_event_flag.inc:53).",
    "set_by": "src/d/actor/d_a_npc_ba1.cpp:1507"
   },
   "0x0780": {
    "dec": 1920,
-   "byte_mask": [7, 128],
+   "byte_mask": [
+    7,
+    128
+   ],
    "meaning": "Read by Grandma's message picker (src/d/actor/d_a_npc_ba1.cpp:727 -> msg 0x7ED) but never set anywhere in the decompiled code. Probably dead or cutscene-only; a remake can ignore it.",
    "set_by": null
   },
   "0x0E20": {
    "dec": 3616,
-   "byte_mask": [14, 32],
+   "byte_mask": [
+    14,
+    32
+   ],
    "meaning": "Aryll has been kidnapped (STOLENSISTER played). Flips sea/Room44 to LAYER 2 (day) / 3 (night): no Aryll, pirates + Quill at the dock. Also deletes the Hero's Shield wall pickup in Link's house and arms the LOOK_SHIELD tag.",
    "set_by": "src/d/actor/d_a_tag_event.cpp:98 (TagEv type 3 demoInitProc)",
-   "read_by": ["src/d/d_com_inf_game.cpp:196", "src/d/actor/d_a_npc_ba1.cpp:720", "src/d/actor/d_a_npc_zl1.cpp:313", "src/d/actor/d_a_spc_item01.cpp:79", "src/d/actor/d_a_tag_event.cpp:279", "src/d/actor/d_a_tag_event.cpp:305"]
+   "read_by": [
+    "src/d/d_com_inf_game.cpp:196",
+    "src/d/actor/d_a_npc_ba1.cpp:720",
+    "src/d/actor/d_a_npc_zl1.cpp:313",
+    "src/d/actor/d_a_spc_item01.cpp:79",
+    "src/d/actor/d_a_tag_event.cpp:279",
+    "src/d/actor/d_a_tag_event.cpp:305"
+   ]
   },
   "0x2401": {
    "dec": 9217,
-   "byte_mask": [36, 1],
+   "byte_mask": [
+    36,
+    1
+   ],
    "meaning": "Link has left Outset on the pirate ship (departure_DEMO finished).",
    "set_by": "sea event_list.dat departure_DEMO, PACKAGE PLAY property EventFlag=9217; the same id is entry 5 of daDemo00_c's l_eventBit table (src/d/actor/d_a_demo00.cpp:659)",
-   "read_by": ["src/d/actor/d_a_npc_zl1.cpp:313"]
+   "read_by": [
+    "src/d/actor/d_a_npc_zl1.cpp:313"
+   ]
   },
   "0x2A80": {
    "dec": 10880,
-   "byte_mask": [42, 128],
+   "byte_mask": [
+    42,
+    128
+   ],
    "meaning": "Link is wearing the Hero's Clothes (Grandma's birthday present). While it is clear (or clearCount != 0) the player model keeps the casual island linktex and the hat shape stays hidden.",
    "set_by": "cutscene, via daDemo00_c l_eventBit[1] (src/d/actor/d_a_demo00.cpp:654)",
-   "read_by": ["src/d/actor/d_a_player_main.cpp:12368", "src/d/actor/d_a_npc_ls1.cpp:1431", "src/d/actor/d_a_npc_ls1.cpp:1442", "src/d/actor/d_a_npc_ba1.cpp:1637"]
+   "read_by": [
+    "src/d/actor/d_a_player_main.cpp:12368",
+    "src/d/actor/d_a_npc_ls1.cpp:1431",
+    "src/d/actor/d_a_npc_ls1.cpp:1442",
+    "src/d/actor/d_a_npc_ba1.cpp:1637"
+   ]
   },
   "0x2F10": {
    "dec": 12048,
-   "byte_mask": [47, 16],
+   "byte_mask": [
+    47,
+    16
+   ],
    "meaning": "Orca has handed over the Hero's Sword after the sparring lesson.",
    "set_by": "src/d/actor/d_a_npc_ji1.cpp:2904",
-   "read_by": ["src/d/actor/d_a_npc_ji1.cpp:824", "src/d/actor/d_a_npc_ji1.cpp:2732", "src/d/actor/d_a_npc_ji1.cpp:2832"]
+   "read_by": [
+    "src/d/actor/d_a_npc_ji1.cpp:824",
+    "src/d/actor/d_a_npc_ji1.cpp:2732",
+    "src/d/actor/d_a_npc_ji1.cpp:2832"
+   ]
   },
   "0x3202": {
    "dec": 12802,
-   "byte_mask": [50, 2],
+   "byte_mask": [
+    50,
+    2
+   ],
    "meaning": "Link has looked at the empty Hero's Shield spot on the wall (LOOK_SHIELD). Makes Grandma walk to the wall to hand the shield over.",
    "set_by": "src/d/actor/d_a_tag_event.cpp:149 (TagEv type 0xA demoEndProc)",
-   "read_by": ["src/d/actor/d_a_npc_ba1.cpp:1558"]
+   "read_by": [
+    "src/d/actor/d_a_npc_ba1.cpp:1558"
+   ]
   },
   "0x3510": {
    "dec": 13584,
-   "byte_mask": [53, 16],
+   "byte_mask": [
+    53,
+    16
+   ],
    "meaning": "The 'Outset Island' place-name placard has been shown once (raised at frame 0xC8 of the awake demo, lowered at 0x15E).",
    "set_by": "src/d/d_menu_window.cpp:790"
   },
@@ -133,36 +234,77 @@
    "meaning": "Has the Hero's Shield. Raised by d_item.cpp:867. Read by Grandma (src/d/actor/d_a_npc_ba1.cpp:721,1558) and Tetra (src/d/actor/d_a_npc_zl1.cpp:1012)."
   }
  },
-
  "_layers": {
   "rule_source": "src/d/d_com_inf_game.cpp:184-268 (dComIfG_play_c::getLayerNo). base = nightStop() ? 1 : (6 <= hour < 18 ? 0 : 1). An explicit setNextStage layer >= 0 bypasses the whole chain.",
   "sea/Room44 (Outset Island)": [
-   {"order": 1, "condition": "isEventBit(0x0520)", "layer": "base|4 -> 4 day / 5 night", "content": "main-game Outset: Ah (Old Man Ho Ho), Ym2, Yw1, AttTagB; layer 5 adds Ajav/Auzu/Puti/c_green/c_red. No Aryll, no pirates."},
-   {"order": 2, "condition": "!0x0520 && isEventBit(0x0E20)", "layer": "base|2 -> 2 day / 3 night", "content": "Aryll kidnapped: Zl1 (Tetra t2), P1a (Gonzo), P2b (Niko), Bm1 (Quill), Pirates (ship moored), Aj1 (Sturgeon), Ob1/Ym1/Ym2/Ko1/Ko2/Yw1, both bridge halves, TagMsg2. No Ls1."},
-   {"order": 3, "condition": "!0x0520 && !0x0E20 && isEventBit(0x0101)", "layer": "9 (time-independent)", "content": "after meeting Tetra: Ls1 params 0x2 (Aryll), Zl1 params 0x6 (Tetra), P1a params 0xFF (Gonzo), Dk params 0xFFFFFF02 (Helmaroc King), two bridge halves. Nothing else."},
-   {"order": 4, "condition": "otherwise", "layer": "base -> 0 day / 1 night", "content": "birthday morning: Ls1 x2 (params 0 needs bit 0x2A80, params 3 needs !0x2A80), Bm1 (Quill flying), Dk (Helmaroc King), Zl1 (Tetra, for the zelda_fly demo), P1a, Pirates, Throck, Ob1/Ym1/Ym2/Ko1/Ko2/Yw1, Aj1, TagMsg2. Layer 1 holds only ikada_h, so night is effectively unused during the prologue."},
-   {"order": 5, "condition": "explicit override from src/d/actor/d_a_npc_zl1.cpp:2206", "layer": "10", "content": "departure at the dock: Pirates, Ba1 params 0x2 (Grandma), Zl1 params 0x6 (Tetra), P1a + P1b, Ym1, Ym2, Vdora, bridge."},
-   {"order": 6, "condition": "explicit override (cutscene set-up)", "layer": "8", "content": "Pirates, Zl1 sunk to y=-5000, Dk, P1a, Throck, bridge. Never reached by the story rules."}
+   {
+    "order": 1,
+    "condition": "isEventBit(0x0520)",
+    "layer": "base|4 -> 4 day / 5 night",
+    "content": "main-game Outset: Ah (Old Man Ho Ho), Ym2, Yw1, AttTagB; layer 5 adds Ajav/Auzu/Puti/c_green/c_red. No Aryll, no pirates."
+   },
+   {
+    "order": 2,
+    "condition": "!0x0520 && isEventBit(0x0E20)",
+    "layer": "base|2 -> 2 day / 3 night",
+    "content": "Aryll kidnapped: Zl1 (Tetra t2), P1a (Gonzo), P2b (Niko), Bm1 (Quill), Pirates (ship moored), Aj1 (Sturgeon), Ob1/Ym1/Ym2/Ko1/Ko2/Yw1, both bridge halves, TagMsg2. No Ls1."
+   },
+   {
+    "order": 3,
+    "condition": "!0x0520 && !0x0E20 && isEventBit(0x0101)",
+    "layer": "9 (time-independent)",
+    "content": "after meeting Tetra: Ls1 params 0x2 (Aryll), Zl1 params 0x6 (Tetra), P1a params 0xFF (Gonzo), Dk params 0xFFFFFF02 (Helmaroc King), two bridge halves. Nothing else."
+   },
+   {
+    "order": 4,
+    "condition": "otherwise",
+    "layer": "base -> 0 day / 1 night",
+    "content": "birthday morning: Ls1 x2 (params 0 needs bit 0x2A80, params 3 needs !0x2A80), Bm1 (Quill flying), Dk (Helmaroc King), Zl1 (Tetra, for the zelda_fly demo), P1a, Pirates, Throck, Ob1/Ym1/Ym2/Ko1/Ko2/Yw1, Aj1, TagMsg2. Layer 1 holds only ikada_h, so night is effectively unused during the prologue."
+   },
+   {
+    "order": 5,
+    "condition": "explicit override from src/d/actor/d_a_npc_zl1.cpp:2206",
+    "layer": "10",
+    "content": "departure at the dock: Pirates, Ba1 params 0x2 (Grandma), Zl1 params 0x6 (Tetra), P1a + P1b, Ym1, Ym2, Vdora, bridge."
+   },
+   {
+    "order": 6,
+    "condition": "explicit override (cutscene set-up)",
+    "layer": "8",
+    "content": "Pirates, Zl1 sunk to y=-5000, Dk, P1a, Throck, bridge. Never reached by the story rules."
+   }
   ],
   "LinkRM (Link's house)": "No rule -> base (0 day / 1 night). Layer 8 is forced for the tale cutscene (src/d/actor/d_a_npc_ba1.cpp:1221,1232) and layer 9 for get_shield (src/d/actor/d_a_npc_ba1.cpp:1549).",
   "A_mori (Fairy Woods)": "isEventBit(0x0F80) -> base|2. The prologue therefore uses layer 0: Zl1 params 0x1 (Tetra) on a Branch, three Bk (Bokoblins), two Bb, P1a.",
   "Ojhous / Ojhous2 (Orca / Sturgeon's house)": "No rule -> base (0 day / 1 night)."
  },
-
  "steps": [
   {
    "id": "opening_lookout_awake",
    "stage": "sea",
    "room": 44,
    "layer": 0,
-   "trigger": {"kind": "spawn", "detail": "A fresh save starts at stage \"sea\", room 44 (dIsleRoom_OutsetIsland_e), spawn point 206 - dSv_player_return_place_c::init hardcodes it. Room44's PLYR entry with spawn id 206 sits on top of the lookout tower at (-195138, 1650, 313772) with params 0x1DFF002C, so getStartEvent() = 0x1D = 29 = EVNT[29] = \"awake\"; daPy_lk_c::_create feeds that index to dComIfGp_evmng_startDemo, which auto-plays the event on load."},
+   "trigger": {
+    "kind": "spawn",
+    "detail": "A fresh save starts at stage \"sea\", room 44 (dIsleRoom_OutsetIsland_e), spawn point 206 - dSv_player_return_place_c::init hardcodes it. Room44's PLYR entry with spawn id 206 sits on top of the lookout tower at (-195138, 1650, 313772) with params 0x1DFF002C, so getStartEvent() = 0x1D = 29 = EVNT[29] = \"awake\"; daPy_lk_c::_create feeds that index to dComIfGp_evmng_startDemo, which auto-plays the event on load."
+   },
    "event": "awake",
    "stb": "awake.stb",
    "requires_bits": [],
-   "sets_bits": ["0x3510"],
+   "sets_bits": [
+    "0x3510"
+   ],
    "gives_item": null,
    "confidence": "high",
-   "sources": ["src/d/d_save.cpp:62-67", "include/d/actor/d_a_player_main.h:1881", "src/d/actor/d_a_player_main.cpp:12302-12322", "src/d/d_event_manager.cpp:24-50", "src/d/d_menu_window.cpp:787-793", "out/rip/GZLE01/stages/sea/sea_events.json:awake", "res/Stage/sea/Room44.arc room.dzr PLYR id=206"],
+   "sources": [
+    "src/d/d_save.cpp:62-67",
+    "include/d/actor/d_a_player_main.h:1881",
+    "src/d/actor/d_a_player_main.cpp:12302-12322",
+    "src/d/d_event_manager.cpp:24-50",
+    "src/d/d_menu_window.cpp:787-793",
+    "out/rip/GZLE01/stages/sea/sea_events.json:awake",
+    "res/Stage/sea/Room44.arc room.dzr PLYR id=206"
+   ],
    "notes": "Whole scene is a packaged cutscene: PACKAGE PLAY awake.stb with OffsetPos (-220000, 0, 320000), plus a CAMERA track that pauses and then holds a fixed frame on the tower top (center (-195402.4, 1759.3, 313666.1), eye (-195251.3, 1940.8, 313973.2), fovy 60). Aryll wakes Link and sends him to Grandma. At demo frame 0xC8 the 'Outset Island' placard is raised and 0x3510 is set."
   },
   {
@@ -170,14 +312,21 @@
    "stage": "sea",
    "room": 44,
    "layer": 0,
-   "trigger": {"kind": "talk", "detail": "Talk to the Ls1 placed with params 0x00000003 at (-195205, 1650, 313823). daNpc_Ls1_c::decideType only builds type 3 while event bit 0x2A80 is CLEAR, i.e. before Link has the Hero's Clothes."},
+   "trigger": {
+    "kind": "talk",
+    "detail": "Talk to the Ls1 placed with params 0x00000003 at (-195205, 1650, 313823). daNpc_Ls1_c::decideType only builds type 3 while event bit 0x2A80 is CLEAR, i.e. before Link has the Hero's Clothes."
+   },
    "event": null,
    "stb": null,
    "requires_bits": [],
    "sets_bits": [],
    "gives_item": null,
    "confidence": "medium",
-   "sources": ["src/d/actor/d_a_npc_ls1.cpp:1420-1450", "src/d/actor/d_a_npc_ls1.cpp:1167-1170", "res/Stage/sea/Room44.arc room.dzr ACT0 Ls1 params=0x00000003"],
+   "sources": [
+    "src/d/actor/d_a_npc_ls1.cpp:1420-1450",
+    "src/d/actor/d_a_npc_ls1.cpp:1167-1170",
+    "res/Stage/sea/Room44.arc room.dzr ACT0 Ls1 params=0x00000003"
+   ],
    "notes": "Type-3 Aryll has exactly one line, msg 0xBD9 ('go and see Grandma'). She is a placeholder: the moment 0x2A80 is set she stops being created and the type-0 Aryll standing a few units away - the one that owns the whole omedeto/telescope script - takes over."
   },
   {
@@ -185,14 +334,22 @@
    "stage": "LinkRM",
    "room": 0,
    "layer": 0,
-   "trigger": {"kind": "talk", "detail": "Enter Link's house from sea/Room44 (SCLS exit at (-192530.9, 720, 316800.7) -> LinkRM spawn 0) and talk to Ba1. daNpc_Ba1_c::init_BA1_0 only builds this Grandma while !0x0520 && !0x0001."},
+   "trigger": {
+    "kind": "talk",
+    "detail": "Enter Link's house from sea/Room44 (SCLS exit at (-192530.9, 720, 316800.7) -> LinkRM spawn 0) and talk to Ba1. daNpc_Ba1_c::init_BA1_0 only builds this Grandma while !0x0520 && !0x0001."
+   },
    "event": "tale_1",
    "stb": null,
    "requires_bits": [],
    "sets_bits": [],
    "gives_item": null,
    "confidence": "medium",
-   "sources": ["src/d/actor/d_a_npc_ba1.cpp:148-157", "src/d/actor/d_a_npc_ba1.cpp:707-715", "src/d/actor/d_a_npc_ba1.cpp:140-146", "out/rip/GZLE01/stages/LinkRM/LinkRM_events.json:tale_1"],
+   "sources": [
+    "src/d/actor/d_a_npc_ba1.cpp:148-157",
+    "src/d/actor/d_a_npc_ba1.cpp:707-715",
+    "src/d/actor/d_a_npc_ba1.cpp:140-146",
+    "out/rip/GZLE01/stages/LinkRM/LinkRM_events.json:tale_1"
+   ],
    "notes": "Pre-prologue Grandma speaks msg 0x7E4 (0x7E5 on repeats; 0x7E6/0x7E7 while an event is held). This is the birthday conversation that hands over the Hero's Clothes and leads into the legend. tale_1 is a tiny event: Ba1 runs one custom cut named START_TALE1 with a Timer property, Link plays 008e_talk, camera does a TALK shot."
   },
   {
@@ -200,14 +357,26 @@
    "stage": "LinkRM",
    "room": 0,
    "layer": 8,
-   "trigger": {"kind": "spawn", "detail": "daNpc_Ba1_c::cut_move_START_TALE1 waits out the cut's Timer and calls dComIfGp_setNextStage(\"LinkRM\", 200, 0, 8, ...) - or spawn 202 when dComIfGs_getClearCount() != 0. LinkRM PLYR spawn 200 has params 0x00FF0000 -> EVNT[0] = TALE_DEMO; spawn 202 has 0x04FF0000 -> EVNT[4] = TALE_DEMO2."},
+   "trigger": {
+    "kind": "spawn",
+    "detail": "daNpc_Ba1_c::cut_move_START_TALE1 waits out the cut's Timer and calls dComIfGp_setNextStage(\"LinkRM\", 200, 0, 8, ...) - or spawn 202 when dComIfGs_getClearCount() != 0. LinkRM PLYR spawn 200 has params 0x00FF0000 -> EVNT[0] = TALE_DEMO; spawn 202 has 0x04FF0000 -> EVNT[4] = TALE_DEMO2."
+   },
    "event": "TALE_DEMO",
    "stb": "tale.stb",
    "requires_bits": [],
-   "sets_bits": ["0x2A80"],
+   "sets_bits": [
+    "0x2A80"
+   ],
    "gives_item": null,
    "confidence": "medium",
-   "sources": ["src/d/actor/d_a_npc_ba1.cpp:1206-1243", "out/rip/GZLE01/stages/LinkRM/LinkRM_events.json:TALE_DEMO", "out/rip/GZLE01/stages/LinkRM/LinkRM_events.json:TALE_DEMO2", "src/d/actor/d_a_demo00.cpp:650-713", "src/d/actor/d_a_player_main.cpp:12341-12372", "res/Stage/LinkRM/Room0.arc room.dzr PLYR id=200,202"],
+   "sources": [
+    "src/d/actor/d_a_npc_ba1.cpp:1206-1243",
+    "out/rip/GZLE01/stages/LinkRM/LinkRM_events.json:TALE_DEMO",
+    "out/rip/GZLE01/stages/LinkRM/LinkRM_events.json:TALE_DEMO2",
+    "src/d/actor/d_a_demo00.cpp:650-713",
+    "src/d/actor/d_a_player_main.cpp:12341-12372",
+    "res/Stage/LinkRM/Room0.arc room.dzr PLYR id=200,202"
+   ],
    "notes": "TALE_DEMO is a bare PACKAGE PLAY of tale.stb, re-entering LinkRM at StartCode 0 / layer 0. The Hero's Clothes are NOT an inventory item: Link's model keeps the casual linktex and hides the hat shape until event bit 0x2A80 is set, and 0x2A80 is only reachable through daDemo00_c's cutscene event-bit channel (demo shape id 4, arg 1 -> l_eventBit[1]). tale.stb is the only cutscene between waking up and Aryll's telescope, and Aryll's type-0/type-3 split keys on exactly this bit, so tale.stb is the carrier - but the bit lives inside the .stb binary, which was not parsed. Hence medium confidence. Second-quest saves (clearCount != 0) get tale_2.stb via spawn 202."
   },
   {
@@ -215,14 +384,25 @@
    "stage": "sea",
    "room": 44,
    "layer": 0,
-   "trigger": {"kind": "npc", "detail": "Walk up to the Ls1 with params 0x00000000 at (-195506, 1650, 313774). daNpc_Ls1_c::wait_1 runs chk_areaIN(l_HIO.mPrm.m29 = 200.0f XZ, |dy| < 100.0f, any angle) around her home position and sets m850 = 4; eventOrder turns that into fopAcM_orderOtherEventId(mEventIDTbl[1]) = \"omedeto\". CORRECTION 2026-08-22: this is NOT a TagEv trigger - no tag volume in room 44 names \"omedeto\" (room 44's only TagEv is STOLENSISTER). Aryll's own chk_areaIN orders it."},
+   "trigger": {
+    "kind": "npc",
+    "detail": "Walk up to the Ls1 with params 0x00000000 at (-195506, 1650, 313774). daNpc_Ls1_c::wait_1 runs chk_areaIN(l_HIO.mPrm.m29 = 200.0f XZ, |dy| < 100.0f, any angle) around her home position and sets m850 = 4; eventOrder turns that into fopAcM_orderOtherEventId(mEventIDTbl[1]) = \"omedeto\". CORRECTION 2026-08-22: this is NOT a TagEv trigger - no tag volume in room 44 names \"omedeto\" (room 44's only TagEv is STOLENSISTER). Aryll's own chk_areaIN orders it."
+   },
    "event": "omedeto",
    "stb": null,
-   "requires_bits": ["0x2A80"],
+   "requires_bits": [
+    "0x2A80"
+   ],
    "sets_bits": [],
    "gives_item": null,
    "confidence": "high",
-   "sources": ["src/d/actor/d_a_npc_ls1.cpp:54-58", "src/d/actor/d_a_npc_ls1.cpp:1190-1200", "src/d/actor/d_a_npc_ls1.cpp:1927-1933", "src/d/actor/d_a_npc_ls1.cpp:1420-1450", "out/rip/GZLE01/stages/sea/sea_events.json:omedeto"],
+   "sources": [
+    "src/d/actor/d_a_npc_ls1.cpp:54-58",
+    "src/d/actor/d_a_npc_ls1.cpp:1190-1200",
+    "src/d/actor/d_a_npc_ls1.cpp:1927-1933",
+    "src/d/actor/d_a_npc_ls1.cpp:1420-1450",
+    "out/rip/GZLE01/stages/sea/sea_events.json:omedeto"
+   ],
    "notes": "In-engine event, not a .stb. Aryll waits, turns to Link (LOK_PLYER), plays anim 5, moves him into place (PLYER_MOV) and speaks msg 3001 ('happy birthday'); Link runs 004init_wait at (-195241, 1650, 313871), 012unequip, then 002n_walk. Camera frames are all relative to @STARTER (Aryll). Aryll's own event table is exactly {zelda_fly, omedeto, get_telescope, eTalk}."
   },
   {
@@ -230,14 +410,22 @@
    "stage": "sea",
    "room": 44,
    "layer": 0,
-   "trigger": {"kind": "talk", "detail": "Chained automatically: daNpc_Ls1_c::event_proc case 1 (end of \"omedeto\") sets m850 = 5, so eventOrder immediately orders mEventIDTbl[2] = \"get_telescope\". checkOrder case 2 zeroes mTelescopeScale and starts ANMNUM_GET_e."},
+   "trigger": {
+    "kind": "talk",
+    "detail": "Chained automatically: daNpc_Ls1_c::event_proc case 1 (end of \"omedeto\") sets m850 = 5, so eventOrder immediately orders mEventIDTbl[2] = \"get_telescope\". checkOrder case 2 zeroes mTelescopeScale and starts ANMNUM_GET_e."
+   },
    "event": "get_telescope",
    "stb": null,
    "requires_bits": [],
    "sets_bits": [],
    "gives_item": "0x20 (dItemNo_TELESCOPE_e)",
    "confidence": "high",
-   "sources": ["src/d/actor/d_a_npc_ls1.cpp:1643-1648", "src/d/actor/d_a_npc_ls1.cpp:1204-1222", "out/rip/GZLE01/stages/sea/sea_events.json:get_telescope", "include/d/d_item_data.h:39"],
+   "sources": [
+    "src/d/actor/d_a_npc_ls1.cpp:1643-1648",
+    "src/d/actor/d_a_npc_ls1.cpp:1204-1222",
+    "out/rip/GZLE01/stages/sea/sea_events.json:get_telescope",
+    "include/d/d_item_data.h:39"
+   ],
    "notes": "The event script is a plain get-item: CAMERA GETITEM, Link 011get_item with prm0 = 32 = 0x20 = dItemNo_TELESCOPE_e, Aryll just WAITs. Afterwards event_proc case 2 puts Aryll in state 2 (wait_2) and raises m836, so her next line is msg 0xBBE."
   },
   {
@@ -245,14 +433,25 @@
    "stage": "sea",
    "room": 44,
    "layer": 0,
-   "trigger": {"kind": "look", "detail": "Stand within l_HIO.mPrm.m1C = 700.0f of Aryll (|dy| < 100) with daPyStts0_TELESCOPE_LOOK_e active - i.e. raise the telescope near her. daNpc_Ls1_c::wait_2 then hands control to telescope_proc(), which enters scope mode via fopMsgM_getScopeMode(). CORRECTION 2026-08-22: not a TagEv either. daNpc_Ls1_c::telescope_proc runs chkTelescope(Bm1 attention pos + 2000, 60.0f, -30.0f) while daPyStts0_TELESCOPE_LOOK_e is set; success releases the scope message and sets m850 = 3 (d_a_npc_ls1.cpp:1884)."},
+   "trigger": {
+    "kind": "look",
+    "detail": "Stand within l_HIO.mPrm.m1C = 700.0f of Aryll (|dy| < 100) with daPyStts0_TELESCOPE_LOOK_e active - i.e. raise the telescope near her. daNpc_Ls1_c::wait_2 then hands control to telescope_proc(), which enters scope mode via fopMsgM_getScopeMode(). CORRECTION 2026-08-22: not a TagEv either. daNpc_Ls1_c::telescope_proc runs chkTelescope(Bm1 attention pos + 2000, 60.0f, -30.0f) while daPyStts0_TELESCOPE_LOOK_e is set; success releases the scope message and sets m850 = 3 (d_a_npc_ls1.cpp:1884)."
+   },
    "event": null,
    "stb": null,
    "requires_bits": [],
-   "sets_bits": ["0x0310"],
+   "sets_bits": [
+    "0x0310"
+   ],
    "gives_item": null,
    "confidence": "high",
-   "sources": ["src/d/actor/d_a_npc_ls1.cpp:1792-1922", "src/d/actor/d_a_npc_ls1.cpp:1966-1990", "src/d/actor/d_a_npc_ls1.cpp:217-231", "include/d/actor/d_a_npc_bm1.h:61-65", "res/Stage/sea/Room44.arc room.dzr ACT0 Bm1 params=0x00FFFF00"],
+   "sources": [
+    "src/d/actor/d_a_npc_ls1.cpp:1792-1922",
+    "src/d/actor/d_a_npc_ls1.cpp:1966-1990",
+    "src/d/actor/d_a_npc_ls1.cpp:217-231",
+    "include/d/actor/d_a_npc_bm1.h:61-65",
+    "res/Stage/sea/Room44.arc room.dzr ACT0 Bm1 params=0x00FFFF00"
+   ],
    "notes": "Not an event_list entry at all - a scoped-message state machine driven by m833. m833=0: arm mDoAud_bgmStreamPrepare(JA_STRM_DEMO_TETRA_FLY) and call Bm1::setTelescopeDemo(). m833=1: hint msgs 0xBC1 / 0xBCA / 0xBCB until the player centres Quill (the Bm1 Rito at (-203698, 497, 316431)) and zooms past mPrm.m24. m833=2: SubjectLockOn(Quill), zoom past mPrm.m28 -> Bm1::setFocus(). m833=3: wait for Bm1::getOdoroki() (Quill is startled and looks up), show msg 0xBC2, then SET EVENT BIT 0x0310 and drop the subject lock. m833=4: aim about 2000 units ABOVE Quill (chkTelescope(pos, 60, -30), hint msg 0xBC3) and the next step is ordered. Setting 0x0310 is what makes daObjPirateship create its wake and the Helmaroc King (Dk) leave state 0."
   },
   {
@@ -260,14 +459,28 @@
    "stage": "sea",
    "room": 44,
    "layer": 0,
-   "trigger": {"kind": "look", "detail": "telescope_proc with m833 == 4: once fopMsgM_releaseScopeMode() succeeds while the scope is pointed above Quill, m850 = 3, so eventOrder orders mEventIDTbl[0] = \"zelda_fly\". CORRECTION 2026-08-22: not a TagEv. The same scope look sets m850 = 3, so mEventIndex = m850 - 3 = 0 = l_evn_tbl[0] = \"zelda_fly\" (d_a_npc_ls1.cpp:1198)."},
+   "trigger": {
+    "kind": "look",
+    "detail": "telescope_proc with m833 == 4: once fopMsgM_releaseScopeMode() succeeds while the scope is pointed above Quill, m850 = 3, so eventOrder orders mEventIDTbl[0] = \"zelda_fly\". CORRECTION 2026-08-22: not a TagEv. The same scope look sets m850 = 3, so mEventIndex = m850 - 3 = 0 = l_evn_tbl[0] = \"zelda_fly\" (d_a_npc_ls1.cpp:1198)."
+   },
    "event": "zelda_fly",
    "stb": "kaizoku_zelda_fly.stb",
-   "requires_bits": ["0x0310"],
-   "sets_bits": ["0x0001"],
+   "requires_bits": [
+    "0x0310"
+   ],
+   "sets_bits": [
+    "0x0001"
+   ],
    "gives_item": null,
    "confidence": "high",
-   "sources": ["src/d/actor/d_a_npc_ls1.cpp:1885-1895", "src/d/actor/d_a_npc_ls1.cpp:1204-1216", "src/d/actor/d_a_npc_ls1.cpp:1612-1633", "src/d/actor/d_a_dk.cpp:1-4", "src/d/actor/d_a_dk.cpp:253-266", "out/rip/GZLE01/stages/sea/sea_events.json:zelda_fly"],
+   "sources": [
+    "src/d/actor/d_a_npc_ls1.cpp:1885-1895",
+    "src/d/actor/d_a_npc_ls1.cpp:1204-1216",
+    "src/d/actor/d_a_npc_ls1.cpp:1612-1633",
+    "src/d/actor/d_a_dk.cpp:1-4",
+    "src/d/actor/d_a_dk.cpp:253-266",
+    "out/rip/GZLE01/stages/sea/sea_events.json:zelda_fly"
+   ],
    "notes": "The event script is one line: PACKAGE PLAY kaizoku_zelda_fly.stb, OffsetPos (-200000, 0, 320000), OffsetAngY 180. checkOrder case 0 stops camera 0 and starts the BGM stream. event_proc case 0 runs in two passes: pass 1 releases scope mode, restarts the camera, clears daPyFlg0_SCOPE_CANCEL, stops the stream and starts BGM 0x8000000E; pass 2 waits for the scope message to close, then sets EVENT BIT 0x0001, puts Aryll in state 3 and re-points her at event index 3 (\"eTalk\"). The bird is the Dk actor - d_a_dk.cpp's header names it 'Helmaroc King (Forsaken Fortress 1 tower, Outset Island)' - and it watches startCheck(\"zelda_fly\"), retiring once 0x0001 is set."
   },
   {
@@ -275,14 +488,23 @@
    "stage": "sea",
    "room": 44,
    "layer": 0,
-   "trigger": {"kind": "talk", "detail": "Forced immediately after zelda_fly: event_proc case 0 sets m850 = 1, mEventIndex = 3 and eventInfo.setEventId(mEventIDTbl[3])."},
+   "trigger": {
+    "kind": "talk",
+    "detail": "Forced immediately after zelda_fly: event_proc case 0 sets m850 = 1, mEventIndex = 3 and eventInfo.setEventId(mEventIDTbl[3])."
+   },
    "event": "eTalk",
    "stb": null,
-   "requires_bits": ["0x0001"],
+   "requires_bits": [
+    "0x0001"
+   ],
    "sets_bits": [],
    "gives_item": null,
    "confidence": "high",
-   "sources": ["src/d/actor/d_a_npc_ls1.cpp:1617-1626", "src/d/actor/d_a_npc_ls1.cpp:1132-1163", "out/rip/GZLE01/stages/sea/sea_events.json:eTalk"],
+   "sources": [
+    "src/d/actor/d_a_npc_ls1.cpp:1617-1626",
+    "src/d/actor/d_a_npc_ls1.cpp:1132-1163",
+    "out/rip/GZLE01/stages/sea/sea_events.json:eTalk"
+   ],
    "notes": "Generic talk event (TALKMAN TEN TALK / Link 008e_talk / CAMERA TALK Trim=VISTA). With 0x0001 set, getMsg_LS1_0 now serves 0xBC4 or 0xBC5 depending on whether Link already has a sword (collect[0]), and on later talks 0xBC7/0xBC8, or 0xBC9 once temp bit 0x0280 is up."
   },
   {
@@ -290,14 +512,25 @@
    "stage": "LinkRM",
    "room": 0,
    "layer": 0,
-   "trigger": {"kind": "talk", "detail": "Talk to Ba1 again. With 0x0001 set, init_BA1_0 refuses and init_BA1_1 builds the second-stage Grandma instead."},
+   "trigger": {
+    "kind": "talk",
+    "detail": "Talk to Ba1 again. With 0x0001 set, init_BA1_0 refuses and init_BA1_1 builds the second-stage Grandma instead."
+   },
    "event": null,
    "stb": null,
-   "requires_bits": ["0x0001"],
-   "sets_bits": ["0x0601"],
+   "requires_bits": [
+    "0x0001"
+   ],
+   "sets_bits": [
+    "0x0601"
+   ],
    "gives_item": null,
    "confidence": "high",
-   "sources": ["src/d/actor/d_a_npc_ba1.cpp:159-176", "src/d/actor/d_a_npc_ba1.cpp:718-733", "src/d/actor/d_a_npc_ba1.cpp:1497-1500"],
+   "sources": [
+    "src/d/actor/d_a_npc_ba1.cpp:159-176",
+    "src/d/actor/d_a_npc_ba1.cpp:718-733",
+    "src/d/actor/d_a_npc_ba1.cpp:1497-1500"
+   ],
    "notes": "getMsg_BA1_1 falls through to msg 0x7E8 (first time) or 0x7E9 (repeat); the bit is set when 0x7E8 is destroyed. The decomp's own comment on 0x0601 reads 'Grandma dialogue after Helmaroc cutscene (prologue)', which independently corroborates that the telescope scene precedes this talk."
   },
   {
@@ -305,14 +538,25 @@
    "stage": "Ojhous",
    "room": 0,
    "layer": 0,
-   "trigger": {"kind": "room_enter", "detail": "Enter Orca's house from sea/Room44 (two SCLS exits at (-190420.8, 675, 318175) and (-189997.5, 425, 317825) -> Ojhous spawn 0). Ojhous PLYR spawn 0 has params 0x00FFB000 -> EVNT[0] = \"StartCamera\", an establishing shot that runs on every entry. Then talk to Ji1 at (0, 0, -299)."},
+   "trigger": {
+    "kind": "room_enter",
+    "detail": "Enter Orca's house from sea/Room44 (two SCLS exits at (-190420.8, 675, 318175) and (-189997.5, 425, 317825) -> Ojhous spawn 0). Ojhous PLYR spawn 0 has params 0x00FFB000 -> EVNT[0] = \"StartCamera\", an establishing shot that runs on every entry. Then talk to Ji1 at (0, 0, -299)."
+   },
    "event": "StartCamera",
    "stb": null,
    "requires_bits": [],
-   "sets_bits": ["0x0640 (pre-prologue, msg 0x961)", "0x0108 (post-prologue, msg 0x965)"],
+   "sets_bits": [
+    "0x0640 (pre-prologue, msg 0x961)",
+    "0x0108 (post-prologue, msg 0x965)"
+   ],
    "gives_item": null,
    "confidence": "high",
-   "sources": ["src/d/actor/d_a_npc_ji1.cpp:796-834", "src/d/actor/d_a_npc_ji1.cpp:4662-4679", "out/rip/GZLE01/stages/Ojhous/Ojhous_events.json:StartCamera", "res/Stage/Ojhous/Room0.arc room.dzr PLYR id=0"],
+   "sources": [
+    "src/d/actor/d_a_npc_ji1.cpp:796-834",
+    "src/d/actor/d_a_npc_ji1.cpp:4662-4679",
+    "out/rip/GZLE01/stages/Ojhous/Ojhous_events.json:StartCamera",
+    "res/Stage/Ojhous/Room0.arc room.dzr PLYR id=0"
+   ],
    "notes": "StartCamera walks Link to (-8.7, 0, 280.5), holds a fixed eye at (-7.6, 149, 529) fovy 60 for 40 frames, BG-checks, then pauses for any key. Orca's 18-entry event table is Ji1_StartSpeak, Ji1_Speak, Ji1_EndSpeak, Ji1_BadSpeak, Ji1_linkmove, Ji1_kaiten, Ji1_kaiten_exp, Ji1_ItemGetEnd, Ji1_ItemGetTalkEnd, Ji1_pl_backroom, Ji1_TeachSpRollCut, Ji1_SpRollFail, Ji1_NormAng, Ji1_NormAng2, Ji1_NormAngFin, Ji1_SwordGetTalkEnd, Ji1_KmonTalk, Ji1_EquipTalk. Ojhous2 is the same building's upper floor (Sturgeon) and carries an identical Ji1 event list."
   },
   {
@@ -320,14 +564,21 @@
    "stage": "Ojhous",
    "room": 0,
    "layer": 0,
-   "trigger": {"kind": "talk", "detail": "Accept Orca's lesson. daNpc_Ji1_c::plmoveAction orders mEventIdx[4] = \"Ji1_linkmove\"; when its cut action 1 ends the actor calls initPos(0) and dComIfGp_startMiniGame(2) to begin the bout (mini-game 6 on the 0x0520 re-match). Ji1_Speak / Ji1_BadSpeak / Ji1_EndSpeak punctuate the hits."},
+   "trigger": {
+    "kind": "talk",
+    "detail": "Accept Orca's lesson. daNpc_Ji1_c::plmoveAction orders mEventIdx[4] = \"Ji1_linkmove\"; when its cut action 1 ends the actor calls initPos(0) and dComIfGp_startMiniGame(2) to begin the bout (mini-game 6 on the 0x0520 re-match). Ji1_Speak / Ji1_BadSpeak / Ji1_EndSpeak punctuate the hits."
+   },
    "event": "Ji1_linkmove",
    "stb": null,
    "requires_bits": [],
    "sets_bits": [],
    "gives_item": null,
    "confidence": "high",
-   "sources": ["src/d/actor/d_a_npc_ji1.cpp:2376-2444", "src/d/actor/d_a_npc_ji1.cpp:2811-2846", "out/rip/GZLE01/stages/Ojhous/Ojhous_events.json:Ji1_linkmove"],
+   "sources": [
+    "src/d/actor/d_a_npc_ji1.cpp:2376-2444",
+    "src/d/actor/d_a_npc_ji1.cpp:2811-2846",
+    "out/rip/GZLE01/stages/Ojhous/Ojhous_events.json:Ji1_linkmove"
+   ],
    "notes": "Hit counter is field_0xD70. The lesson counts as passed at >= 5 hits, or >= 2 hits if the prologue bit 0x0001 is not yet set."
   },
   {
@@ -335,14 +586,27 @@
    "stage": "Ojhous",
    "room": 0,
    "layer": 0,
-   "trigger": {"kind": "talk", "detail": "Finish the bout with field_0xD70 >= 5 while 0x0001 is set and 0x2F10 is still clear. The actor sets 0x2F10, raises field_0xD7C and orders mEventIdx[0xF] = \"Ji1_SwordGetTalkEnd\"; that event's CREATEITEM action calls createItem(), which picks dItemNo_SWORD_e because field_0xD7C is set."},
+   "trigger": {
+    "kind": "talk",
+    "detail": "Finish the bout with field_0xD70 >= 5 while 0x0001 is set and 0x2F10 is still clear. The actor sets 0x2F10, raises field_0xD7C and orders mEventIdx[0xF] = \"Ji1_SwordGetTalkEnd\"; that event's CREATEITEM action calls createItem(), which picks dItemNo_SWORD_e because field_0xD7C is set."
+   },
    "event": "Ji1_SwordGetTalkEnd",
    "stb": null,
-   "requires_bits": ["0x0001"],
-   "sets_bits": ["0x2F10"],
+   "requires_bits": [
+    "0x0001"
+   ],
+   "sets_bits": [
+    "0x2F10"
+   ],
    "gives_item": "0x38 (dItemNo_SWORD_e, Hero's Sword)",
    "confidence": "high",
-   "sources": ["src/d/actor/d_a_npc_ji1.cpp:2830-2840", "src/d/actor/d_a_npc_ji1.cpp:2899-2910", "src/d/actor/d_a_npc_ji1.cpp:1409-1436", "src/d/actor/d_a_npc_ji1.cpp:1990-1996", "include/d/d_item_data.h:63"],
+   "sources": [
+    "src/d/actor/d_a_npc_ji1.cpp:2830-2840",
+    "src/d/actor/d_a_npc_ji1.cpp:2899-2910",
+    "src/d/actor/d_a_npc_ji1.cpp:1409-1436",
+    "src/d/actor/d_a_npc_ji1.cpp:1990-1996",
+    "include/d/d_item_data.h:63"
+   ],
    "notes": "The same createItem() later hands out HURRICANE_SPIN, a purple/orange/silver rupee or a heart piece for the repeat bouts, keyed on field_0xD7B, event register 0xD003 and bit 0x0F10. Receiving the sword raises collect[0] bit 0 (d_item.cpp:849), which is what Aryll and Grandma test."
   },
   {
@@ -350,14 +614,22 @@
    "stage": "Ojhous",
    "room": 0,
    "layer": 0,
-   "trigger": {"kind": "talk", "detail": "Optional side branch. kaitenwaitAction / kaitenAction order mEventIdx[5] = \"Ji1_kaiten\" (and mEventIdx[6] = \"Ji1_kaiten_exp\" for the explanation); the bit is set when the event's message box closes and evmng_endCheck(mEventIdx[5]) passes."},
+   "trigger": {
+    "kind": "talk",
+    "detail": "Optional side branch. kaitenwaitAction / kaitenAction order mEventIdx[5] = \"Ji1_kaiten\" (and mEventIdx[6] = \"Ji1_kaiten_exp\" for the explanation); the bit is set when the event's message box closes and evmng_endCheck(mEventIdx[5]) passes."
+   },
    "event": "Ji1_kaiten",
    "stb": null,
    "requires_bits": [],
-   "sets_bits": ["0x0501"],
+   "sets_bits": [
+    "0x0501"
+   ],
    "gives_item": null,
    "confidence": "medium",
-   "sources": ["src/d/actor/d_a_npc_ji1.cpp:616-700", "src/d/actor/d_a_npc_ji1.cpp:757-762"],
+   "sources": [
+    "src/d/actor/d_a_npc_ji1.cpp:616-700",
+    "src/d/actor/d_a_npc_ji1.cpp:757-762"
+   ],
    "notes": "Not required to leave Outset. 0x0501 gates several of Orca's guard / roll behaviours afterwards."
   },
   {
@@ -365,14 +637,24 @@
    "stage": "LinkRM",
    "room": 0,
    "layer": 0,
-   "trigger": {"kind": "talk", "detail": "Talk to Ba1 once collect[0] (sword) is set: getMsg_BA1_1 returns 0x7EB the first time and 0x7EA on repeats."},
+   "trigger": {
+    "kind": "talk",
+    "detail": "Talk to Ba1 once collect[0] (sword) is set: getMsg_BA1_1 returns 0x7EB the first time and 0x7EA on repeats."
+   },
    "event": null,
    "stb": null,
-   "requires_bits": ["collect[0] bit0"],
-   "sets_bits": ["0x0602"],
+   "requires_bits": [
+    "collect[0] bit0"
+   ],
+   "sets_bits": [
+    "0x0602"
+   ],
    "gives_item": null,
    "confidence": "high",
-   "sources": ["src/d/actor/d_a_npc_ba1.cpp:729-731", "src/d/actor/d_a_npc_ba1.cpp:1501-1504"],
+   "sources": [
+    "src/d/actor/d_a_npc_ba1.cpp:729-731",
+    "src/d/actor/d_a_npc_ba1.cpp:1501-1504"
+   ],
    "notes": "0x0602 is set when msg 0x7EC is destroyed (the tail of the 0x7EB chain). The decomp comment on 0x0602 is 'Grandma dialogue after sword obtained'."
   },
   {
@@ -380,14 +662,25 @@
    "stage": "A_mori",
    "room": 0,
    "layer": 0,
-   "trigger": {"kind": "tag", "detail": "Three TagEv volumes with params 0x01FF0001 (type 1, EVNT index 1 = AMORI_DEMO_1, switch 0x00, switch2 0xFF, rot.z 0xFFFF so no bit gate) at (5000, 3800, -3281), (4961, 3800, -2667) and (5046, 3800, -2080), each scale 5 -> a 500-unit XZ radius and 500-unit half-height box. actionHunt fires when Link enters; the shared switch 0x00 makes the trio one-shot."},
+   "trigger": {
+    "kind": "tag",
+    "detail": "Three TagEv volumes with params 0x01FF0001 (type 1, EVNT index 1 = AMORI_DEMO_1, switch 0x00, switch2 0xFF, rot.z 0xFFFF so no bit gate) at (5000, 3800, -3281), (4961, 3800, -2667) and (5046, 3800, -2080), each scale 5 -> a 500-unit XZ radius and 500-unit half-height box. actionHunt fires when Link enters; the shared switch 0x00 makes the trio one-shot."
+   },
    "event": "AMORI_DEMO_1",
    "stb": null,
    "requires_bits": [],
-   "sets_bits": ["0x0004"],
+   "sets_bits": [
+    "0x0004"
+   ],
    "gives_item": null,
    "confidence": "high",
-   "sources": ["src/d/actor/d_a_tag_event.cpp:76-92", "src/d/actor/d_a_tag_event.cpp:206-262", "src/d/actor/d_a_bk.cpp:1-4", "res/Stage/A_mori/Room0.arc room.dzr SCOB TagEv params=0x01FF0001", "res/Stage/A_mori/Stage.arc event_list.dat:AMORI_DEMO_1"],
+   "sources": [
+    "src/d/actor/d_a_tag_event.cpp:76-92",
+    "src/d/actor/d_a_tag_event.cpp:206-262",
+    "src/d/actor/d_a_bk.cpp:1-4",
+    "res/Stage/A_mori/Room0.arc room.dzr SCOB TagEv params=0x01FF0001",
+    "res/Stage/A_mori/Stage.arc event_list.dat:AMORI_DEMO_1"
+   ],
    "notes": "demoInitProc takes the Bk (Bokoblin, d_a_bk.cpp) of type 5 as item and talk partner, sets bit 0x0004 and starts JA_BGM_BK_FLY_DOWN; demoProc fires wing SFX at frame 53, the landing SFX at 173 and two rumble shocks at 222 and 233. The event script surprises Link (066swait -> 024surprised -> 023a_wait) and swings the camera onto the Bokoblin. A_mori's PLYR spawn 0 (params 0x02FF0000) separately auto-plays \"look_tetra\", the first sighting of Tetra caught in the tree."
   },
   {
@@ -395,14 +688,25 @@
    "stage": "A_mori",
    "room": 0,
    "layer": 0,
-   "trigger": {"kind": "tag", "detail": "TagEv with params 0x00FF0102 (type 2, EVNT index 0 = MEET_TETORA, switch 0x01, switch2 0xFF, rot.z 0xFFFF) at (9113, 3413, -2317), scale 4 -> a 400-unit box. actionArrival case 2 picks m297 = 7 when 0x0004 is set (else 5) and runs the HUNT2 approach."},
+   "trigger": {
+    "kind": "tag",
+    "detail": "TagEv with params 0x00FF0102 (type 2, EVNT index 0 = MEET_TETORA, switch 0x01, switch2 0xFF, rot.z 0xFFFF) at (9113, 3413, -2317), scale 4 -> a 400-unit box. actionArrival case 2 picks m297 = 7 when 0x0004 is set (else 5) and runs the HUNT2 approach."
+   },
    "event": "MEET_TETORA",
    "stb": "meet_tetra.stb",
    "requires_bits": [],
-   "sets_bits": ["0x0101"],
+   "sets_bits": [
+    "0x0101"
+   ],
    "gives_item": null,
    "confidence": "high",
-   "sources": ["src/d/actor/d_a_tag_event.cpp:93-97", "src/d/actor/d_a_tag_event.cpp:264-276", "src/d/actor/d_a_npc_zl1.cpp:301-310", "res/Stage/A_mori/Room0.arc room.dzr SCOB TagEv params=0x00FF0102", "res/Stage/A_mori/Stage.arc event_list.dat:MEET_TETORA"],
+   "sources": [
+    "src/d/actor/d_a_tag_event.cpp:93-97",
+    "src/d/actor/d_a_tag_event.cpp:264-276",
+    "src/d/actor/d_a_npc_zl1.cpp:301-310",
+    "res/Stage/A_mori/Room0.arc room.dzr SCOB TagEv params=0x00FF0102",
+    "res/Stage/A_mori/Stage.arc event_list.dat:MEET_TETORA"
+   ],
    "notes": "demoInitProc sets EVENT BIT 0x0101 and flips m121C on the Bk of type 4. The event is PACKAGE PLAY meet_tetra.stb plus a DIRECTOR track: BGM_START 1, wait 118, SE_START 0, BGM_START 2, then NEXT(Stage=sea, StartCode=203, RoomNo=44, Layer=9, Hour=12.0). That explicit Layer=9 and the freshly-set 0x0101 both land Link on Outset layer 9, and Hour=12 forces daytime. Tetra herself is the Zl1 with params 0x00000001 on the Branch at (3791, 4111, -2354); daNpc_Zl1_c::init_ZL1_1 only builds her while 0x0101 is clear."
   },
   {
@@ -410,14 +714,23 @@
    "stage": "sea",
    "room": 44,
    "layer": 9,
-   "trigger": {"kind": "spawn", "detail": "Arrive at Room44 spawn 203, (-200088, 3657, 321936), on the ridge above the village. The spawn's own params are 0xFFFF002C (event 0xFF = none); the layer comes from MEET_TETORA's NEXT(Layer=9) and, on any later reload, from getLayerNo's isEventBit(0x0101) rule."},
+   "trigger": {
+    "kind": "spawn",
+    "detail": "Arrive at Room44 spawn 203, (-200088, 3657, 321936), on the ridge above the village. The spawn's own params are 0xFFFF002C (event 0xFF = none); the layer comes from MEET_TETORA's NEXT(Layer=9) and, on any later reload, from getLayerNo's isEventBit(0x0101) rule."
+   },
    "event": null,
    "stb": null,
-   "requires_bits": ["0x0101"],
+   "requires_bits": [
+    "0x0101"
+   ],
    "sets_bits": [],
    "gives_item": null,
    "confidence": "high",
-   "sources": ["src/d/d_com_inf_game.cpp:198-199", "res/Stage/sea/Room44.arc room.dzr PLYR id=203", "res/Stage/sea/Room44.arc room.dzr ACT9 chunk"],
+   "sources": [
+    "src/d/d_com_inf_game.cpp:198-199",
+    "res/Stage/sea/Room44.arc room.dzr PLYR id=203",
+    "res/Stage/sea/Room44.arc room.dzr ACT9 chunk"
+   ],
    "notes": "Layer 9 places exactly five story actors: Ls1 params 0x00000002 (Aryll, type 2) at (-196262, 3178, 321891), Zl1 params 0x00000006 (Tetra) at (-200002, 3714, 321704), P1a params 0x000000FF (Gonzo) at (-199894, 3629, 321749), Dk params 0xFFFFFF02 (Helmaroc King) at (-199693, 4064, 321377), plus the two bridge halves and ikada_h. No villagers, no pirate ship."
   },
   {
@@ -425,14 +738,27 @@
    "stage": "sea",
    "room": 44,
    "layer": 9,
-   "trigger": {"kind": "tag", "detail": "The single TagEv in Room44: params 0x01FF0903 (type 3, EVNT index 1 = STOLENSISTER, switch 0x09, switch2 0xFF, rot.z 0xFFFF so no bit gate) at (-200243, 3700, 321929), scale 2 -> a 200-unit XZ radius / 200-unit half-height box, i.e. right on top of spawn 203. actionArrival case 3 only arms it when 0x0101 is set and 0x0E20 is not."},
+   "trigger": {
+    "kind": "tag",
+    "detail": "The single TagEv in Room44: params 0x01FF0903 (type 3, EVNT index 1 = STOLENSISTER, switch 0x09, switch2 0xFF, rot.z 0xFFFF so no bit gate) at (-200243, 3700, 321929), scale 2 -> a 200-unit XZ radius / 200-unit half-height box, i.e. right on top of spawn 203. actionArrival case 3 only arms it when 0x0101 is set and 0x0E20 is not."
+   },
    "event": "STOLENSISTER",
    "stb": "stolensister.stb",
-   "requires_bits": ["0x0101"],
-   "sets_bits": ["0x0E20"],
+   "requires_bits": [
+    "0x0101"
+   ],
+   "sets_bits": [
+    "0x0E20"
+   ],
    "gives_item": null,
    "confidence": "high",
-   "sources": ["src/d/actor/d_a_tag_event.cpp:98", "src/d/actor/d_a_tag_event.cpp:277-285", "src/d/actor/d_a_tag_event.cpp:218-238", "res/Stage/sea/Room44.arc room.dzr SCOB TagEv params=0x01FF0903", "out/rip/GZLE01/stages/sea/sea_events.json:STOLENSISTER"],
+   "sources": [
+    "src/d/actor/d_a_tag_event.cpp:98",
+    "src/d/actor/d_a_tag_event.cpp:277-285",
+    "src/d/actor/d_a_tag_event.cpp:218-238",
+    "res/Stage/sea/Room44.arc room.dzr SCOB TagEv params=0x01FF0903",
+    "out/rip/GZLE01/stages/sea/sea_events.json:STOLENSISTER"
+   ],
    "notes": "The Helmaroc King snatches Aryll. demoInitProc sets EVENT BIT 0x0E20 immediately; actionReady then also raises room switch 9 so it never replays. The event is PACKAGE PLAY stolensister.stb (OffsetPos (0, 0, 20000)) followed by DIRECTOR NEXT(Stage=sea, StartCode=204, RoomNo=44, Layer=-1). Layer -1 means 'recompute', and because 0x0E20 is now set getLayerNo returns base|2 -> layer 2 by day. Spawn 204 is (-201086, 83, 315016), down in the village."
   },
   {
@@ -440,14 +766,22 @@
    "stage": "sea",
    "room": 44,
    "layer": 2,
-   "trigger": {"kind": "spawn", "detail": "Room44 spawn 204, with the layer recomputed to base|2 because 0x0E20 is now set."},
+   "trigger": {
+    "kind": "spawn",
+    "detail": "Room44 spawn 204, with the layer recomputed to base|2 because 0x0E20 is now set."
+   },
    "event": null,
    "stb": null,
-   "requires_bits": ["0x0E20"],
+   "requires_bits": [
+    "0x0E20"
+   ],
    "sets_bits": [],
    "gives_item": null,
    "confidence": "high",
-   "sources": ["src/d/d_com_inf_game.cpp:196-197", "res/Stage/sea/Room44.arc room.dzr ACT2 chunk"],
+   "sources": [
+    "src/d/d_com_inf_game.cpp:196-197",
+    "res/Stage/sea/Room44.arc room.dzr ACT2 chunk"
+   ],
    "notes": "Layer 2 (day) / 3 (night) is the post-kidnapping village: Zl1 params 0x00000002 (Tetra) at (-201118, 53, 314826), P1a 0x00000001 (Gonzo), P2b 0x0003FFFD (Niko), Bm1 0x00FFFF01 (Quill) at (-201342, 87, 314956), Pirates 0x04FF0000 moored at (-200600, 0, 311500), Aj1 (Sturgeon), Ob1/Ym1/Ym2/Ko1/Ko2/Yw1 villagers, both bridge halves and TagMsg2. Aryll (Ls1) is absent from this layer entirely."
   },
   {
@@ -455,14 +789,28 @@
    "stage": "LinkRM",
    "room": 0,
    "layer": 0,
-   "trigger": {"kind": "tag", "detail": "TagEv with params 0x02FF110A (type 0xA, EVNT index 2 = LOOK_SHIELD, switch 0x11, switch2 0xFF, rot.z 0xFFFF) at (-414, 375, 315), scale (1.0, 0.4, 1.0) -> a 100-unit XZ radius / 40-unit half-height box on the upper landing. actionArrival case 0xA only arms it while 0x0E20 is set. A second type-0xA TagEv with params 0xFF11120A (switch 0x12, switch2 0x11) sits at (-396, 0, -34) and waits on switch 0x11."},
+   "trigger": {
+    "kind": "tag",
+    "detail": "TagEv with params 0x02FF110A (type 0xA, EVNT index 2 = LOOK_SHIELD, switch 0x11, switch2 0xFF, rot.z 0xFFFF) at (-414, 375, 315), scale (1.0, 0.4, 1.0) -> a 100-unit XZ radius / 40-unit half-height box on the upper landing. actionArrival case 0xA only arms it while 0x0E20 is set. A second type-0xA TagEv with params 0xFF11120A (switch 0x12, switch2 0x11) sits at (-396, 0, -34) and waits on switch 0x11."
+   },
    "event": "LOOK_SHIELD",
    "stb": null,
-   "requires_bits": ["0x0E20"],
-   "sets_bits": ["0x3202"],
+   "requires_bits": [
+    "0x0E20"
+   ],
+   "sets_bits": [
+    "0x3202"
+   ],
    "gives_item": null,
    "confidence": "high",
-   "sources": ["src/d/actor/d_a_tag_event.cpp:145-151", "src/d/actor/d_a_tag_event.cpp:301-308", "src/d/actor/d_a_tag_event.cpp:194-202", "src/d/actor/d_a_spc_item01.cpp:78-82", "res/Stage/LinkRM/Room0.arc room.dzr SCOB TagEv params=0x02FF110A and 0xFF11120A", "out/rip/GZLE01/stages/LinkRM/LinkRM_events.json:LOOK_SHIELD"],
+   "sources": [
+    "src/d/actor/d_a_tag_event.cpp:145-151",
+    "src/d/actor/d_a_tag_event.cpp:301-308",
+    "src/d/actor/d_a_tag_event.cpp:194-202",
+    "src/d/actor/d_a_spc_item01.cpp:78-82",
+    "res/Stage/LinkRM/Room0.arc room.dzr SCOB TagEv params=0x02FF110A and 0xFF11120A",
+    "out/rip/GZLE01/stages/LinkRM/LinkRM_events.json:LOOK_SHIELD"
+   ],
    "notes": "Camera-only event: hold center (-200, 555, -97) from eye (-200, 555, 410), pause 40, zoom to fovy 20 over 7 frames, pause 40 - Link stares at where the Hero's Shield hangs, with JA_SE_GAAN at frame 47. demoEndProc sets 0x3202. The wall pickup itself is the SPitem with params 0x0000003B at (-200, 551, -103); daSpcItem01_c::_create refuses to build it once 0x0E20 is set, so the shield visibly leaves the wall the moment Aryll is taken."
   },
   {
@@ -470,14 +818,24 @@
    "stage": "LinkRM",
    "room": 0,
    "layer": 9,
-   "trigger": {"kind": "talk", "detail": "With 0x3202 set and collect[1] (shield) still clear, daNpc_Ba1_c::wait_2 moves Grandma to (-290, 0, 110) facing -0x8000 and, once Link is level with her, calls dComIfGp_setNextStage(\"LinkRM\", 201, 0, 9, ...). LinkRM PLYR spawn 201 has params 0x03FF0000 -> EVNT[3] = \"get_shield\", which auto-plays on the reload."},
+   "trigger": {
+    "kind": "talk",
+    "detail": "With 0x3202 set and collect[1] (shield) still clear, daNpc_Ba1_c::wait_2 moves Grandma to (-290, 0, 110) facing -0x8000 and, once Link is level with her, calls dComIfGp_setNextStage(\"LinkRM\", 201, 0, 9, ...). LinkRM PLYR spawn 201 has params 0x03FF0000 -> EVNT[3] = \"get_shield\", which auto-plays on the reload."
+   },
    "event": "get_shield",
    "stb": "get_shield.stb",
-   "requires_bits": ["0x0E20", "0x3202"],
+   "requires_bits": [
+    "0x0E20",
+    "0x3202"
+   ],
    "sets_bits": [],
    "gives_item": "0x3B (dItemNo_SHIELD_e, Hero's Shield)",
    "confidence": "high",
-   "sources": ["src/d/actor/d_a_npc_ba1.cpp:1546-1575", "res/Stage/LinkRM/Room0.arc room.dzr PLYR id=201", "out/rip/GZLE01/stages/LinkRM/LinkRM_events.json:get_shield"],
+   "sources": [
+    "src/d/actor/d_a_npc_ba1.cpp:1546-1575",
+    "res/Stage/LinkRM/Room0.arc room.dzr PLYR id=201",
+    "out/rip/GZLE01/stages/LinkRM/LinkRM_events.json:get_shield"
+   ],
    "notes": "get_shield is PACKAGE PLAY get_shield.stb re-entering LinkRM at StartCode 201 / layer 9, with a SOUND track that fades the BGM out over 90 frames. Receiving the shield raises collect[1] bit 0 (d_item.cpp:867), which both Grandma (msg 0x80B) and Tetra (getMsg_ZL1_2) then test."
   },
   {
@@ -485,14 +843,24 @@
    "stage": "LinkRM",
    "room": 0,
    "layer": 0,
-   "trigger": {"kind": "talk", "detail": "Talk to Ba1 with 0x0E20 set: getMsg_BA1_1 returns 0x7EF the first time, 0x7EE on repeats, and 0x80B once collect[1] is set."},
+   "trigger": {
+    "kind": "talk",
+    "detail": "Talk to Ba1 with 0x0E20 set: getMsg_BA1_1 returns 0x7EF the first time, 0x7EE on repeats, and 0x80B once collect[1] is set."
+   },
    "event": null,
    "stb": null,
-   "requires_bits": ["0x0E20"],
-   "sets_bits": ["0x0740"],
+   "requires_bits": [
+    "0x0E20"
+   ],
+   "sets_bits": [
+    "0x0740"
+   ],
    "gives_item": null,
    "confidence": "high",
-   "sources": ["src/d/actor/d_a_npc_ba1.cpp:718-726", "src/d/actor/d_a_npc_ba1.cpp:1505-1508"],
+   "sources": [
+    "src/d/actor/d_a_npc_ba1.cpp:718-726",
+    "src/d/actor/d_a_npc_ba1.cpp:1505-1508"
+   ],
    "notes": "0x0740 is set when msg 0x7F0 is destroyed. The decomp comment on 0x0740 is 'Grandma dialogue after Aryll kidnapped'."
   },
   {
@@ -500,14 +868,25 @@
    "stage": "sea",
    "room": 44,
    "layer": 2,
-   "trigger": {"kind": "npc", "detail": "Approach the pirates at the dock. daNpc_Zl1_c sets field_0x84A = 3 in a proximity helper, and eventOrder turns any value >= 3 into fopAcM_orderOtherEventId(mEventIdx[field_0x84A - 3]) = mEventIdx[0] = \"yuukaigo\". Tetra here is the Zl1 built by init_ZL1_2, which requires 0x0E20 && !0x2401. CORRECTION 2026-08-22: not a TagEv. daNpc_Zl1_c::demo_4 sets field_0x84A = 3 with no distance test at all, so the Tetra placed for this story state orders l_evn_tbl[0] = \"yuukaigo\" as she spawns (d_a_npc_zl1.cpp:2259)."},
+   "trigger": {
+    "kind": "npc",
+    "detail": "Approach the pirates at the dock. daNpc_Zl1_c sets field_0x84A = 3 in a proximity helper, and eventOrder turns any value >= 3 into fopAcM_orderOtherEventId(mEventIdx[field_0x84A - 3]) = mEventIdx[0] = \"yuukaigo\". Tetra here is the Zl1 built by init_ZL1_2, which requires 0x0E20 && !0x2401. CORRECTION 2026-08-22: not a TagEv. daNpc_Zl1_c::demo_4 sets field_0x84A = 3 with no distance test at all, so the Tetra placed for this story state orders l_evn_tbl[0] = \"yuukaigo\" as she spawns (d_a_npc_zl1.cpp:2259)."
+   },
    "event": "yuukaigo",
    "stb": null,
-   "requires_bits": ["0x0E20"],
+   "requires_bits": [
+    "0x0E20"
+   ],
    "sets_bits": [],
    "gives_item": null,
    "confidence": "medium",
-   "sources": ["src/d/actor/d_a_npc_zl1.cpp:126-131", "src/d/actor/d_a_npc_zl1.cpp:311-318", "src/d/actor/d_a_npc_zl1.cpp:1052-1096", "src/d/actor/d_a_npc_zl1.cpp:2261-2265", "out/rip/GZLE01/stages/sea/sea_events.json:yuukaigo"],
+   "sources": [
+    "src/d/actor/d_a_npc_zl1.cpp:126-131",
+    "src/d/actor/d_a_npc_zl1.cpp:311-318",
+    "src/d/actor/d_a_npc_zl1.cpp:1052-1096",
+    "src/d/actor/d_a_npc_zl1.cpp:2261-2265",
+    "out/rip/GZLE01/stages/sea/sea_events.json:yuukaigo"
+   ],
    "notes": "Long in-engine dialogue between Tetra (msgs 3201, 3202, 3206, 3208, 3210, 3212, 3214, 3215), Quill/Bm1 (3203, 3205, 3207, 3209, 3211, 3213) and Gonzo/P1a (3204), with Niko/P2b idling. Quill explains the Forsaken Fortress and Tetra agrees to take Link along. Tetra's event table is {yuukaigo, ooi, majyuu_shinnyuu, nakaniwa}. Medium confidence applies only to the exact approach condition (field_0x84A = 3 is set in an unnamed helper); the event identity and its cast are certain."
   },
   {
@@ -515,14 +894,23 @@
    "stage": "sea",
    "room": 44,
    "layer": 2,
-   "trigger": {"kind": "talk", "detail": "Talk to Tetra again. getMsg_ZL1_2 serves 0xCA1 without a shield, 0xCA2/0xCA3 with one; the chain ends on msg 0xC90, and when that box is destroyed talk_1 calls dComIfGp_setNextStage(\"sea\", 0xCD, dIsleRoom_OutsetIsland_e, 10, 0.0f, 0, 1, 0). 0xCD = 205."},
+   "trigger": {
+    "kind": "talk",
+    "detail": "Talk to Tetra again. getMsg_ZL1_2 serves 0xCA1 without a shield, 0xCA2/0xCA3 with one; the chain ends on msg 0xC90, and when that box is destroyed talk_1 calls dComIfGp_setNextStage(\"sea\", 0xCD, dIsleRoom_OutsetIsland_e, 10, 0.0f, 0, 1, 0). 0xCD = 205."
+   },
    "event": null,
    "stb": null,
-   "requires_bits": ["0x0E20", "collect[1] bit0"],
+   "requires_bits": [
+    "0x0E20",
+    "collect[1] bit0"
+   ],
    "sets_bits": [],
    "gives_item": null,
    "confidence": "high",
-   "sources": ["src/d/actor/d_a_npc_zl1.cpp:1009-1018", "src/d/actor/d_a_npc_zl1.cpp:2183-2215"],
+   "sources": [
+    "src/d/actor/d_a_npc_zl1.cpp:1009-1018",
+    "src/d/actor/d_a_npc_zl1.cpp:2183-2215"
+   ],
    "notes": "This is the 'ready to leave?' confirmation. Layer 10 is passed explicitly to setNextStage, so it bypasses getLayerNo entirely - a remake must treat it as a forced layer, not a bit-derived one."
   },
   {
@@ -530,29 +918,51 @@
    "stage": "sea",
    "room": 44,
    "layer": 10,
-   "trigger": {"kind": "spawn", "detail": "Room44 spawn 205 at (-201795, 183, 313490) with params 0x09FF002C -> getStartEvent() = 9 = EVNT[9] = \"departure_DEMO\", auto-played on arrival."},
+   "trigger": {
+    "kind": "spawn",
+    "detail": "Room44 spawn 205 at (-201795, 183, 313490) with params 0x09FF002C -> getStartEvent() = 9 = EVNT[9] = \"departure_DEMO\", auto-played on arrival."
+   },
    "event": "departure_DEMO",
    "stb": "departure.stb",
-   "requires_bits": ["0x0E20"],
-   "sets_bits": ["0x2401"],
+   "requires_bits": [
+    "0x0E20"
+   ],
+   "sets_bits": [
+    "0x2401",
+    "0x2401",
+    "0x2401"
+   ],
    "gives_item": null,
    "confidence": "high",
-   "sources": ["res/Stage/sea/Room44.arc room.dzr PLYR id=205", "out/rip/GZLE01/stages/sea/sea_events.json:departure_DEMO", "src/d/actor/d_a_npc_zl1.cpp:2206", "res/Stage/sea/Room44.arc room.dzr ACTa chunk", "out/rip/GZLE01/stages/LinkRM/LinkRM_events.json:Ganbaru"],
-   "notes": "PACKAGE PLAY departure.stb with EventFlag = 9217 = 0x2401 (the event manager raises that bit for the package), OffsetPos (-200000, 0, 320000), OffsetAngY 0, and a hand-off NEXT to Stage=A_umikz, StartCode=204, RoomNo=0, Layer=-1. Layer 10 stages the send-off cast: Pirates 0x03FF0001 at (-200635, 0, 310720), Ba1 params 0x00000002 (Grandma) at (-202086, 151, 314166), Zl1 0x00000006 (Tetra), P1a and P1b, Ym1, Ym2, Vdora and the bridge. Grandma's farewell lines are the \"Ganbaru\" event (msgs 2038 and 2040) carried in the LinkRM event list and replayed by the Ba1 actor."
+   "sources": [
+    "res/Stage/sea/Room44.arc room.dzr PLYR id=205",
+    "out/rip/GZLE01/stages/sea/sea_events.json:departure_DEMO",
+    "src/d/actor/d_a_npc_zl1.cpp:2206",
+    "res/Stage/sea/Room44.arc room.dzr ACTa chunk",
+    "out/rip/GZLE01/stages/LinkRM/LinkRM_events.json:Ganbaru"
+   ],
+   "notes": "PACKAGE PLAY departure.stb with EventFlag = 9217 = 0x2401 (the event manager raises that bit for the package), OffsetPos (-200000, 0, 320000), OffsetAngY 0, and a hand-off NEXT to Stage=A_umikz, StartCode=204, RoomNo=0, Layer=-1. Layer 10 stages the send-off cast: Pirates 0x03FF0001 at (-200635, 0, 310720), Ba1 params 0x00000002 (Grandma) at (-202086, 151, 314166), Zl1 0x00000006 (Tetra), P1a and P1b, Ym1, Ym2, Vdora and the bridge. Grandma's farewell lines are the \"Ganbaru\" event (msgs 2038 and 2040) carried in the LinkRM event list and replayed by the Ba1 actor. departure.stb raises 0x2401 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). departure.stb raises 0x2401 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
   },
   {
    "id": "aj_speak_ambient",
    "stage": "sea",
    "room": 44,
    "layer": 0,
-   "trigger": {"kind": "talk", "detail": "Sturgeon (Aj1, params 0x00000000 at (-202676, 745, 317655)) shouting from his window. The sea EVNT table reserves index 15 for AJ_SPEAK but no TagEv and no PLYR spawn references it, so the actor must order it itself."},
+   "trigger": {
+    "kind": "talk",
+    "detail": "Sturgeon (Aj1, params 0x00000000 at (-202676, 745, 317655)) shouting from his window. The sea EVNT table reserves index 15 for AJ_SPEAK but no TagEv and no PLYR spawn references it, so the actor must order it itself."
+   },
    "event": "AJ_SPEAK",
    "stb": null,
    "requires_bits": [],
    "sets_bits": [],
    "gives_item": null,
    "confidence": "low",
-   "sources": ["src/d/actor/d_a_npc_aj1.cpp:1-502", "out/rip/GZLE01/stages/sea/sea_events.json:AJ_SPEAK", "res/Stage/sea/Room44.arc room.dzr ACT0 and ACT2 Aj1"],
+   "sources": [
+    "src/d/actor/d_a_npc_aj1.cpp:1-502",
+    "out/rip/GZLE01/stages/sea/sea_events.json:AJ_SPEAK",
+    "res/Stage/sea/Room44.arc room.dzr ACT0 and ACT2 Aj1"
+   ],
    "notes": "LOW CONFIDENCE - src/d/actor/d_a_npc_aj1.cpp is entirely un-decompiled: every function body in the file is a /* Nonmatching */ stub, so the trigger condition, any bits it checks and any bits it sets are unrecoverable from this source. Only the event script is known (TALKMAN TEN TALK, Link 020l_around2, CAMERA PAUSE, Aj1 dummy). Aj1 is placed on both layer 0 and layer 2, so the shout survives the kidnapping."
   },
   {
@@ -560,14 +970,23 @@
    "stage": "sea",
    "room": 44,
    "layer": 4,
-   "trigger": {"kind": "spawn", "detail": "Out of scope for this graph. Once event bit 0x0520 is set - by a later cutscene, after the first Forsaken Fortress - it outranks every other Room44 rule and Outset permanently becomes layer 4 (day) / 5 (night)."},
+   "trigger": {
+    "kind": "spawn",
+    "detail": "Out of scope for this graph. Once event bit 0x0520 is set - by a later cutscene, after the first Forsaken Fortress - it outranks every other Room44 rule and Outset permanently becomes layer 4 (day) / 5 (night)."
+   },
    "event": null,
    "stb": null,
-   "requires_bits": ["0x0520"],
+   "requires_bits": [
+    "0x0520"
+   ],
    "sets_bits": [],
    "gives_item": null,
    "confidence": "high",
-   "sources": ["src/d/d_com_inf_game.cpp:194-195", "src/d/actor/d_a_npc_ba1.cpp:186-215", "src/d/actor/d_a_npc_ji1.cpp:891"],
+   "sources": [
+    "src/d/d_com_inf_game.cpp:194-195",
+    "src/d/actor/d_a_npc_ba1.cpp:186-215",
+    "src/d/actor/d_a_npc_ji1.cpp:891"
+   ],
    "notes": "Recorded only so a remake knows every prologue layer is dead after this point. Layer 4/5 holds Ah (Old Man Ho Ho), Ym2, Yw1, an AttTagB and, at night, Ajav/Auzu/Puti/c_green/c_red. Grandma switches to init_BA1_3 (ill, needs soup) or init_BA1_4 (healed), and Orca switches to getMsg2ndType."
   }
  ]

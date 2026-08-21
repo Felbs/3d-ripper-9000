@@ -1,0 +1,402 @@
+{
+ "_source": "Mined read-only from the zeldaret/tww decompilation at Z:/memRip/sources/tww and the ripped GZLE01 (Wind Waker USA) disc data at Z:/3d ripper/out/rip/GZLE01. Chapter 3: Link sails to Dragon Roost Island, meets the Rito, is sent up to the enraged sky spirit Valoo, is trapped in Dragon Roost Cavern with Medli, frees her, gets the Grappling Hook, kills Gohma, and is given Din's Pearl by Prince Komali. Same conventions as ww_story_fortress.json. Event names come from each stage's Stage.arc/event_list.dat and from the stage.dzs EVNT table (dumped by tools/ww_story_mine.py). Triggers come from stage.dzs / room.dzr placement chunks: PLYR spawn points (params>>24 = index into the stage's EVNT table -> auto-started event), TagEv volumes (params: >>24 EVNT index, >>16&0xFF switch2, >>8&0xFF switch, &0xFF daTag_Event_c::Action_e; rot.z = required event bit), TagIsl island-arrival volumes (src/d/actor/d_a_tag_island.cpp) and one TagMd volume (daTag_Etc_c, src/d/actor/d_a_tag_etc.cpp) that watches Medli instead of Link. ONE CORRECTION TO THE EARLIER CHAPTERS' METHOD: 'AttTag'/'AttTagB' placements are daTagAttention volumes (d_stage.cpp:628-629 -> fpcNm_Tag_Attention_e, src/d/actor/d_a_tag_attention.cpp), i.e. camera-attention boxes, NOT event volumes - their params are not an EVNT index, so tools/ww_story_mine.py's decoding of AttTag rows is meaningless and no AttTag row is used as a trigger in this file. Event-bit ids are authoritative numbers; the UNK_xxxx names are placeholders invented by the decomp team (include/d/d_save_event_flag.inc says so itself in its first line), so numeric ids are used here.",
+
+ "_checkpoints": {
+  "source": "src/d/d_com_inf_game.cpp:1294-1311 dComIfGs_setGameStartStage, l_checkData[] - walked in order, the FIRST bit that is set wins",
+  "note": "This chapter adds no entry to the continue table. It happens entirely after RODE_KORL (0x2A08), the last row with a bit, so every save inside Dragon Roost resumes wherever it was saved. The chapter's own progress is remembered by the per-actor bits in _bits, by room switches, and (for Gohma) by the per-dungeon boss field dComIfGs_onStageBossEnemy().",
+  "chapter_entry_requirement": {"bit": "0x2A08", "meaning": "RODE_KORL - Link has boarded the King of Red Lions; until then he cannot sail to Dragon Roost at all (src/d/actor/d_a_player_main.cpp:10872, src/d/d_com_inf_game.cpp:1305)"}
+ },
+
+ "_bits": {
+  "0x2A08": {
+   "dec": 10760,
+   "byte_mask": [42, 8],
+   "meaning": "RODE_KORL: Link has boarded the King of Red Lions. Prerequisite for the whole chapter - it is what makes the sea sailable. Set by the previous chapter (ww_story_fortress.json step 'ff_board_korl').",
+   "set_by": "src/d/actor/d_a_ship.cpp:1570",
+   "read_by": ["src/d/d_com_inf_game.cpp:1305", "src/d/actor/d_a_player_main.cpp:10872"],
+   "confidence": "high"
+  },
+  "0x0902": {
+   "dec": 2306,
+   "byte_mask": [9, 2],
+   "meaning": "Link has arrived at Dragon Roost Island. It is daTag_Island_c's arrival flag for type 1 (Dragon Roost); the volume refuses to fire again once it is set, and sets it the moment the arrival demo starts.",
+   "set_by": "src/d/actor/d_a_tag_island.cpp:133-136 (demoInitProc -> dComIfGs_onEventBit(getArrivalFlag()))",
+   "read_by": ["src/d/actor/d_a_tag_island.cpp:113 (arrivalTerms)", "src/d/actor/d_a_tag_island.cpp:82-92 (getArrivalFlag case 1)"],
+   "confidence": "high"
+  },
+  "0x0E02": {
+   "dec": 3586,
+   "byte_mask": [14, 2],
+   "meaning": "MEDLI_GAVE_FATHERS_LETTER - the decomp's own name. Medli has handed Link Komali's father's letter (item 0x98 dItemNo_FATHER_LETTER_e) in the Rito Aerie. Once set, her Aerie dialogue switches from 0x17D5 to the short repeat line 0x17DC.",
+   "set_by": "src/d/actor/d_a_npc_md.cpp:5097 (next_msgStatus case 0x17DB)",
+   "read_by": ["src/d/actor/d_a_npc_md.cpp:1766", "src/d/actor/d_a_npc_md.cpp:1965", "src/d/actor/d_a_npc_md.cpp:5329", "src/d/actor/d_a_npc_md.cpp:5328-5331 (getMsg, isTypeAtorizk)"],
+   "confidence": "high"
+  },
+  "0x1104": {
+   "dec": 4356,
+   "byte_mask": [17, 4],
+   "meaning": "Medli's cliff-side request at the Dragon Roost Cavern entrance (Adanmae) has been heard - the 'md_cliff' conversation ran to its end. Her Adanmae first-talk message flips from 0x17E6 to 0x17F7 afterwards.",
+   "set_by": "src/d/actor/d_a_npc_md.cpp:5172 (next_msgStatus case 0x17F4)",
+   "read_by": ["src/d/actor/d_a_npc_md.cpp:1757", "src/d/actor/d_a_npc_md.cpp:5350 (getMsg, isTypeAdanmae)"],
+   "confidence": "high"
+  },
+  "0x1102": {
+   "dec": 4354,
+   "byte_mask": [17, 2],
+   "meaning": "The MD_FLY event at Adanmae is over: Medli has glided up to the ledge and given Link the Empty Bottle. The Adanmae copy of Medli deletes herself outright once it is set.",
+   "set_by": "src/d/actor/d_a_npc_md.cpp:5200 (next_msgStatus case 0x1801, the last message of MD_FLY)",
+   "read_by": ["src/d/actor/d_a_npc_md.cpp:1550-1553 (isTypeAdanmae -> fopAcM_delete)", "src/d/actor/d_a_npc_bm1.cpp:577"],
+   "confidence": "high"
+  },
+  "0x1140": {
+   "dec": 4416,
+   "byte_mask": [17, 64],
+   "meaning": "The barred door (Mori1 / daMdoor_c type 1) in front of Medli in M_Dra09 has opened. That door is an ACT_GENOCIDE door - it opens when the room's enemies are dead. Until this is set Medli holds animation 0x22 (she is stuck) and cannot be talked to.",
+   "set_by": "src/d/actor/d_a_mdoor.cpp:344 (daMdoor_actionReady, getType() case 1)",
+   "read_by": ["src/d/actor/d_a_mdoor.cpp:141 (cleared again on create if 0x1101 is not set)", "src/d/actor/d_a_npc_md.cpp:1511", "src/d/actor/d_a_npc_md.cpp:1578", "src/d/actor/d_a_npc_md.cpp:1629"],
+   "confidence": "high"
+  },
+  "0x1101": {
+   "dec": 4353,
+   "byte_mask": [17, 1],
+   "meaning": "The Md_RopeGet conversation is finished - Medli has given Link the Grappling Hook. This is the chapter's real mid-point flag: it makes the M_Dra09 bars start already-open, arms the Kargaroc's and Moblin's death switches, and switches off one class of TagEv volume.",
+   "set_by": "src/d/actor/d_a_npc_md.cpp:5120 (next_msgStatus case 0x17E4, the last message of Md_RopeGet)",
+   "read_by": ["src/d/actor/d_a_mdoor.cpp:127", "src/d/actor/d_a_mdoor.cpp:137", "src/d/actor/d_a_bb.cpp:2701", "src/d/actor/d_a_mo2.cpp:4103", "src/d/actor/d_a_tag_event.cpp:289", "src/d/actor/d_a_npc_md.cpp:1607", "src/d/actor/d_a_npc_md.cpp:4940", "src/d/actor/d_a_npc_md.cpp:5356"],
+   "confidence": "high"
+  },
+  "0x1280": {
+   "dec": 4736,
+   "byte_mask": [18, 128],
+   "meaning": "Link has picked Medli up at least once inside Dragon Roost Cavern. Set the frame she is carried (player status daPyStts0_UNK800000_e) while 0x1101 is set, and also by her repeat line 0x17E5. After it she offers the plain talk mode instead of the reminder.",
+   "set_by": "src/d/actor/d_a_npc_md.cpp:1582 (carry check) and src/d/actor/d_a_npc_md.cpp:5124 (next_msgStatus case 0x17E5)",
+   "read_by": ["src/d/actor/d_a_npc_md.cpp:1584"],
+   "confidence": "high"
+  },
+  "0x3908": {
+   "dec": 14600,
+   "byte_mask": [57, 8],
+   "meaning": "The storm clouds around Valoo's peak have lifted. daObjRcloud_c (the cloud ring, arg 0) refuses to load itself once it is set, and sets it itself the frame its lift animation finishes - which happens inside the 'howling' cutscene ordered by demo41 at Adanmae. In other words: Valoo has been calmed.",
+   "set_by": "src/d/actor/d_a_obj_rcloud.cpp:172 (clouds_lift_act_proc)",
+   "read_by": ["src/d/actor/d_a_obj_rcloud.cpp:94 (_create, mDemoNameIndex 0)"],
+   "confidence": "high"
+  },
+  "0x3240": {
+   "dec": 12864,
+   "byte_mask": [50, 64],
+   "meaning": "GOHMA_TRIALS_CLEAR - the decomp's own name. IMPORTANT: this is NOT the flag for beating Gohma in this chapter. d_a_btd.cpp only raises it when dComIfGp_getStartStageName()[0] == 'X', i.e. during the Ganon's Tower boss re-fight, and it is read by the Ganon's Tower door array. The normal Dragon Roost kill is recorded by dComIfGs_onStageBossEnemy() (a per-dungeon save field, not an event bit).",
+   "set_by": "src/d/actor/d_a_btd.cpp:911 (only under the 'X...' stage-name test at :908)",
+   "read_by": ["src/d/actor/d_a_obj_vgnfd.cpp:37"],
+   "confidence": "high"
+  }
+ },
+
+ "_actors": {
+  "Md1": {
+   "name": "Medli",
+   "file": "src/d/actor/d_a_npc_md.cpp",
+   "event_table": ["Md_ItemGet", "Md_RopeGet", "MD_FLY", "md_cliff", "Md_Fly2", "Md_Tact", "Md_TactTrue", "Md_HarpTalk", "OPTION_CHAR_END", "DEFAULT_TALK_XY"],
+   "table_source": "src/d/actor/d_a_npc_md.cpp:214-225 (event_name_tbl)",
+   "index_rule": "mCurEventMode is a state byte; when it is >= 4 the event index is mCurEventMode - 4 and the actor calls fopAcM_orderOtherEventId(this, mEventIdxTable[mCurEvent]) (src/d/actor/d_a_npc_md.cpp:4985-5024). Same shape as Aryll's m850 and Tetra's field_0x84A, only offset by 4 instead of 3. mCurEventMode 6 (MD_FLY) is the exception: it is ordered with dComIfGp_event_order directly (src/d/actor/d_a_npc_md.cpp:5012-5015).",
+   "placement_params": "mType = (params >> 8) & 0xFF (src/d/actor/d_a_npc_md.cpp:561 setTalkType); 0 = Atorizk, 1 = Adanmae, 2 = M_Dra09, 3 = sea (include/d/actor/d_a_npc_md.h:101-108). m3100 = (params >> 16) & 0xFF is a room switch (src/d/actor/d_a_npc_md.cpp:5629). The three copies in this chapter are Atorizk 0x00FF0001, Adanmae 0x00FF0101, M_Dra09 0x002E0200 (switch 46).",
+   "items_she_hands_over": "src/d/actor/d_a_npc_md.cpp:3528-3545 initialLetterEvent: mCurEvent 0 (Md_ItemGet) -> 0x98 dItemNo_FATHER_LETTER_e, mCurEvent 1 (Md_RopeGet) -> 0x25 dItemNo_GRAPPLING_HOOK_e, mCurEvent 2 (MD_FLY) -> 0x50 dItemNo_EMPTY_BOTTLE_e. Item names from include/d/d_item_data.h:44, :87, :159.",
+   "message_chain": "src/d/actor/d_a_npc_md.cpp:5069-5210 next_msgStatus. Atorizk 0x17D5 -> 0x17D6 -> 0x17D7 -> 0x17D8 (mode 4). M_Dra09 0x17DD -> 0x17DE (mode 5). Adanmae 0x17E6 -> ... -> 0x17EE (choice) -> 0x17F0 -> 0x17F1 (mode 7)."
+  },
+  "Co1": {
+   "name": "Prince Komali",
+   "file": "src/d/actor/d_a_npc_co1.cpp",
+   "event_table": null,
+   "table_source": null,
+   "index_rule": null,
+   "note": "Every function body in src/d/actor/d_a_npc_co1.cpp is a /* Nonmatching */ stub (every function body from :11 to :320 in the 392-line file is the marker and nothing else), so nothing about Komali's state machine, his event table or the bits he sets can be read out of the decomp. Everything attributed to him in this file comes from placement data and event data only."
+  },
+  "Zk1": {
+   "name": "Rito Chieftain (Komali's father)",
+   "file": "src/d/actor/d_a_npc_zk1.cpp",
+   "event_table": null,
+   "table_source": null,
+   "index_rule": null,
+   "note": "Also entirely /* Nonmatching */ stubs (src/d/actor/d_a_npc_zk1.cpp:11-317). He is placed once in Atorizk at (779, 707, -968) with params 0xFFFF01FF. The dragontale cutscene in his hall is ordered by a TagEv volume, not by him, so the step for it does not depend on his code."
+  },
+  "Mori1": {
+   "name": "Barred door / portcullis (daMdoor_c)",
+   "file": "src/d/actor/d_a_mdoor.cpp",
+   "objname": "src/d/d_stage.cpp:459 OBJNAME(\"Mori1\", fpcNm_MDOOR_e, 255, 0)",
+   "params": "swbit = params & 0xFF, type = (params >> 8) & 0xFF, toolId = (params >> 16) & 0xFF, shape = (params >> 24) & 0xFF (src/d/actor/d_a_mdoor.cpp:15-32)",
+   "types_used_here": "type 0 orders the stage event MORI1_EVENT unless 0x1101 is already set (src/d/actor/d_a_mdoor.cpp:126-133); type 1 clears 0x1140 and goes to ACT_GENOCIDE (open when the room is cleared) unless 0x1101 is set, and raises 0x1140 when its opening demo is accepted (src/d/actor/d_a_mdoor.cpp:135-146, :338-348)",
+   "note": "M_Dra09 room 9 holds two of them. The rip could not resolve their model, so they appear under unresolved_names as {\"Mori1\": 2} in M_Dra09_report.json and their individual params are not in the report's actor list - which of the two is type 0 and which is type 1 is therefore inferred from the code, not read from the data."
+  }
+ },
+
+ "steps": [
+  {
+   "id": "dr_arrive_island",
+   "stage": "sea",
+   "room": 13,
+   "layer": -1,
+   "trigger": {"kind": "tag", "detail": "A TagIsl volume at (212640, 0, -205000) with params 0x03FF0B01 and scale 3.2 (radius 32000 XZ, 32000 in Y - daTag_Island_c::checkArea, src/d/actor/d_a_tag_island.cpp:47-56). getType() = params & 0xFF = 1 = Dragon Roost; getEventNo() = params >> 24 = 3 = sea EVNT entry 3 = ARRIVAL_DRG; switch = (params >> 8) & 0xFF = 11. If Link is NOT riding the boat the event is swapped for ARRIVAL_DRG2 (src/d/actor/d_a_tag_island.cpp:66). It only fires while its arrival flag 0x0902 is clear, and raises that flag as the demo starts."},
+   "event": "ARRIVAL_DRG",
+   "stb": null,
+   "requires_bits": ["0x2A08"],
+   "sets_bits": ["0x0902"],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": ["src/d/actor/d_a_tag_island.cpp:32-34", "src/d/actor/d_a_tag_island.cpp:57-78", "src/d/actor/d_a_tag_island.cpp:81-92", "src/d/actor/d_a_tag_island.cpp:112-130", "src/d/actor/d_a_tag_island.cpp:133-136", "out/rip/GZLE01/stages/sea/sea_report.json:tags (room 13 TagIsl)"],
+   "notes": "sea EVNT table entry 3 is ARRIVAL_DRG and entry 5 is ARRIVAL_BRK etc; the same actor class serves all six islands. ARRIVAL_DRG2 is present in sea's event_list but is not in the EVNT table, which is why the actor looks it up by name."
+  },
+  {
+   "id": "dr_chieftain_dragontale",
+   "stage": "Atorizk",
+   "room": 0,
+   "layer": -1,
+   "trigger": {"kind": "tag", "detail": "The only TagEv in the Rito Aerie: at (-476, -53, 856), params give EVNT index 0 = \"demo10\", switch 9, action 0x08 SPE_READY, no gating event bit in rot.z. Switch 9 is what stops it repeating."},
+   "event": "demo10",
+   "stb": "dragontale.stb",
+   "requires_bits": ["0x0902"],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": ["out/rip/GZLE01/stages/Atorizk/Atorizk_report.json:tags", "out/rip/GZLE01/godot/events/Atorizk.json (demo10 -> PACKAGE PLAY FileName \"dragontale.stb\")", "out/rip/GZLE01/godot/cutscenes/dragontale.json"],
+   "notes": "demo10 is nothing but a PACKAGE PLAY of dragontale.stb plus a CAMERA PAUSE - the whole beat is the baked cutscene (1700 frames, 56.7s, 7 demo actors, 40+ message lines from 0x641 upward). This is the Rito chieftain's account of Valoo and the scale. The requires_bits entry is the chapter order, not a gate present in the data - the volume itself is ungated."
+  },
+  {
+   "id": "dr_medli_gives_letter",
+   "stage": "Atorizk",
+   "room": 0,
+   "layer": -1,
+   "trigger": {"kind": "talk", "detail": "Talk to Md1 (Medli), placed once in Atorizk at (776, 700, -961) with params 0x00FF0001, so mType = (params>>8)&0xFF = 0 = isTypeAtorizk. Her Aerie opening message is 0x17D5 (0x1805 after the game has been cleared once); the chain 0x17D5 -> 0x17D6 -> 0x17D7 -> 0x17D8 ends by setting mCurEventMode = 4, which orders event index 0 = Md_ItemGet."},
+   "event": "Md_ItemGet",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": ["0x0E02"],
+   "gives_item": "dItemNo_FATHER_LETTER_e (0x98)",
+   "confidence": "high",
+   "sources": ["src/d/actor/d_a_npc_md.cpp:214-225", "src/d/actor/d_a_npc_md.cpp:561", "src/d/actor/d_a_npc_md.cpp:4985-5024", "src/d/actor/d_a_npc_md.cpp:5084", "src/d/actor/d_a_npc_md.cpp:5097", "src/d/actor/d_a_npc_md.cpp:5328-5334", "src/d/actor/d_a_npc_md.cpp:3528-3545", "include/d/d_item_data.h:159", "out/rip/GZLE01/godot/events/Atorizk.json (Md_ItemGet: Md1 CREATEITEM, MSG_SET 6105 = 0x17D9, CAMERA GETITEM)"],
+   "notes": "The event script confirms the shape: Medli CREATEITEMs the letter, Link plays 011get_item, then MSG_SET 0x17D9, whose chain 0x17D9 -> 0x1802 -> 0x17DA -> 0x17DB raises MEDLI_GAVE_FATHERS_LETTER. Atorizk also hosts the mail-sorting minigame (Bmsw, events SHIWAKEGAME / SHIWAKEGAME2 / GETMOTHERLETTER) - that is a side quest and is deliberately not in this graph."
+  },
+  {
+   "id": "dr_komali_refuses",
+   "stage": "Comori",
+   "room": 0,
+   "layer": -1,
+   "trigger": {"kind": "talk", "detail": "Komali's room holds exactly two placements: the door KNOB00 and Co1 (Prince Komali) at (-282, 61, -163). The stage's only spawn, spawn 0 at (286, 0, -3), carries EVNT index 0 = KNOB_S_BR, which is the boilerplate door-opening camera every Knob door has, not a story event. So the beat can only be a talk with Co1."},
+   "event": null,
+   "stb": null,
+   "requires_bits": ["0x0E02"],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "low",
+   "sources": ["out/rip/GZLE01/stages/Comori/Comori_report.json:actors", "out/rip/GZLE01/stages/Comori/Comori_report.json:spawns", "out/rip/GZLE01/stages/Comori/Comori_report.json:event_table", "out/rip/GZLE01/godot/events/Comori.json", "src/d/actor/d_a_npc_co1.cpp:11-320"],
+   "notes": "LOW because src/d/actor/d_a_npc_co1.cpp is /* Nonmatching */ from end to end - no event table, no bits, no dialogue chain can be read. What IS certain from the event data: Comori carries three non-boilerplate event scripts, all of them Co1's - \"Contact\" (Co1 WAIT, camera UNITRANS: the room-entry look at him), \"Prl_Flw\" (Co1 TALK_MSG + three CONTINUE_TALK + ACTION: the long conversation, the name reads as pearl-something), and \"Red_Ltr\" (Co1 ACTION + TALK_MSG with Link 006n_talk: reading the letter, presumably the father's letter from the previous step). Which of the three plays when, and which bit each sets, could not be determined. requires_bits is chapter order, not a gate found in data."
+  },
+  {
+   "id": "dr_medli_cliff_request",
+   "stage": "Adanmae",
+   "room": 0,
+   "layer": -1,
+   "trigger": {"kind": "talk", "detail": "Talk to the Adanmae copy of Medli, placed at (-1010, 0, 3633) with params 0x00FF0101 -> mType 1 = isTypeAdanmae. Her first Adanmae message is 0x17E6 (0x17F7 once 0x1104 is set); the chain 0x17E6..0x17EE offers a yes/no choice, 0x17F0 -> 0x17F1 sets mCurEventMode = 7, ordering event index 3 = md_cliff."},
+   "event": "md_cliff",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": ["0x1104"],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": ["src/d/actor/d_a_npc_md.cpp:5127-5167", "src/d/actor/d_a_npc_md.cpp:5168-5176", "src/d/actor/d_a_npc_md.cpp:5336-5354", "out/rip/GZLE01/stages/Adanmae/Adanmae_report.json:actors", "out/rip/GZLE01/godot/events/Adanmae.json (md_cliff: Md1 MSG_SET 6130 = 0x17F2 and 6131 = 0x17F3, Link 006n_talk)"],
+   "notes": "md_cliff is talk-only - two messages and a camera move, no item, no movement. Its closing message 0x17F3 -> 0x17F4 raises 0x1104 and calls setBitStatus(daMdStts_UNK40), which is what makes her carryable afterwards. This is Medli asking to be thrown up to the ledge."
+  },
+  {
+   "id": "dr_throw_medli_to_ledge",
+   "stage": "Adanmae",
+   "room": 0,
+   "layer": -1,
+   "trigger": {"kind": "npc_tag", "detail": "NEW KIND. A TagMd volume (daTag_Etc_c, d_stage.cpp:580 OBJNAME(\"TagMd\", fpcNm_TAG_ETC_e, 0, 0)) at (-882, 600, 2314) with scale 8 and params 0x00000001 watches MEDLI, not Link: getEventNo() = params>>24 = 0 = Adanmae EVNT entry 0 = MD_FLY, getType2() = (params>>8)&0xF = 0 = 'only while she is gliding'. Its hunt action calls actor->onBitCamTagIn() whenever she is inside (delta.y >= 0, absXZ < scale.x*100 = 800, delta.y <= scale.y*100 = 800). Medli then orders the event herself: daNpc_Md_c::chkAdanmaeDemoOrder sets mCurEventMode = 6 when checkStatusCamTagIn() is true AND her ground height is between 600 and 700 - so Link has to carry her and throw her onto that ledge."},
+   "event": "MD_FLY",
+   "stb": null,
+   "requires_bits": ["0x1104"],
+   "sets_bits": ["0x1102"],
+   "gives_item": "dItemNo_EMPTY_BOTTLE_e (0x50)",
+   "confidence": "high",
+   "sources": ["src/d/d_stage.cpp:580", "src/d/actor/d_a_tag_etc.cpp:19-27", "src/d/actor/d_a_tag_etc.cpp:29-59", "src/d/actor/d_a_tag_etc.cpp:107-120", "src/d/actor/d_a_tag_etc.cpp:184-200", "src/d/actor/d_a_npc_md.cpp:1479-1493", "src/d/actor/d_a_npc_md.cpp:5014", "src/d/actor/d_a_npc_md.cpp:3528-3545", "src/d/actor/d_a_npc_md.cpp:5196-5202", "include/d/actor/d_a_npc_md.h:44", "include/d/actor/d_a_npc_md.h:72-74", "include/d/d_item_data.h:87", "out/rip/GZLE01/stages/Adanmae/Adanmae_report.json:tags", "out/rip/GZLE01/godot/events/Adanmae.json (MD_FLY: Md1 GLIDING/LANDING/DASH, CREATEITEM, MSG_SET 6137/6138/6144, actor TAG_ETC_D)"],
+   "notes": "The MD_FLY script's third demo actor is literally named TAG_ETC_D, i.e. the TagMd volume. Its closing message is 0x1800 (6144) -> 0x1801, which raises 0x1102; from then on the Adanmae Medli deletes herself on spawn (d_a_npc_md.cpp:1550-1553). The item she creates is the Empty Bottle - mCurEvent 2 -> itemNo 0x50."
+  },
+  {
+   "id": "dr_bomb_the_spring",
+   "stage": "Adanmae",
+   "room": 0,
+   "layer": -1,
+   "trigger": {"kind": "npc", "detail": "The Eskban object at (-269, -50, 3923), params 0x0000FF08, orders its own event. daObjEskban's ST_WAIT state watches its own camera cylinder and, the moment the thing touching it is a Bomb2 (a picked-up bomb plant - Adanmae holds three BFlower placements), calls fopAcM_orderOtherEvent(this, \"Eskban\") and goes to ST_DESTROYED. No distance radius, no switch, no event bit - it is a collision test."},
+   "event": "Eskban",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": ["src/d/actor/d_a_obj_eskban.cpp:14-15", "src/d/actor/d_a_obj_eskban.cpp:287-311", "src/d/actor/d_a_obj_eskban.cpp:320", "src/d/actor/d_a_obj_eskban.cpp:341", "src/d/d_stage.cpp:994", "out/rip/GZLE01/stages/Adanmae/Adanmae_report.json:actors", "out/rip/GZLE01/godot/events/Adanmae.json (Eskban: Eskban TEN BEFORE_EXPLOTION/AFTER_EXPLOTION, Bomb2, Ygush00, Gryw00, Link 024surprised)"],
+   "notes": "The event's cast names the mechanism: the rock explodes (BEFORE/AFTER_EXPLOTION) and a Ygush00 water spout is in the scene, so this is the blocked water spring at the cavern entrance being opened. Eskban is not in Adanmae's EVNT table - the actor looks the event up by name, which is why tools/ww_story_mine.py does not list it as a trigger. Nothing in src ties the spout to the Empty Bottle, so the water-carrying puzzle itself is not represented as a step here."
+  },
+  {
+   "id": "dr_enter_cavern",
+   "stage": "M_NewD2",
+   "room": null,
+   "layer": -1,
+   "trigger": {"kind": "tag", "detail": "Three stage-level TagEv volumes side by side at (-722, 150, 8772), (-989, 150, 8727) and (-1304, 150, 8758), all with switch 70 and EVNT index 5 = TELOP_DORAGON, all ungated. They span the cavern's mouth so Link cannot walk in without crossing one."},
+   "event": "TELOP_DORAGON",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": ["out/rip/GZLE01/stages/M_NewD2/M_NewD2_report.json:tags", "out/rip/GZLE01/godot/events/M_NewD2.json (TELOP_DORAGON: CAMERA SAVE/FIXEDFRM/UNIBRAKE/LOAD + MESSAGE TELOP_ON tlpNo 13)"],
+   "notes": "The dungeon-name title card: MESSAGE TELOP_ON with tlpNo 13, held 180 frames, over a slow camera push at (-975, 700, 7588..8018). The volumes are stage-level (no room number in the placement), which is why the miner prints room None."
+  },
+  {
+   "id": "dr_cavern_set_pieces",
+   "stage": "M_NewD2",
+   "room": 2,
+   "layer": -1,
+   "trigger": {"kind": "tag", "detail": "The cavern's other TagEv volumes, all ungated, each remembered by its own switch: room 2 (1152, 3653, -749) switch 20 -> EVNT 3 \"moro_cut\"; room 2 (-700, 357, 2150) and (-950, 357, 2200) switch 51 -> EVNT 4 \"moro_R02\"; stage-level (-2521, 2520, -2317) switch 13 -> EVNT 6 \"moro_saku\"."},
+   "event": "moro_cut",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": ["out/rip/GZLE01/stages/M_NewD2/M_NewD2_report.json:tags", "out/rip/GZLE01/godot/events/M_NewD2.json (moro_cut, moro_R02, moro_saku)"],
+   "notes": "Grouped as one step because all three are the same beat: camera-only 'look at the room' events with a CAMERA actor and an ALL/dummy actor and nothing else. None sets a bit or gives an item. The 'moro_' prefix is the level team's naming for this dungeon (moro_bomb, moro_R0e, moro_R02, moro_R09, moro_cut, moro_saku, moro_M1) - it is NOT the Moblin, whose actor is Mo2 and which is not placed in M_NewD2. moro_saku sits with the Ksaku (fence) family. Two more entries of the EVNT table, moro_bomb (0) and moro_R0e (1), and the script Bridge00 (EVNT 2), have no placement or code that orders them that I could find; the AttTag rows the miner prints against moro_bomb are daTagAttention camera boxes and mean nothing here. MEDIUM for that reason."
+  },
+  {
+   "id": "dr_trapped_with_bokoblins",
+   "stage": "M_Dra09",
+   "room": 9,
+   "layer": -1,
+   "trigger": {"kind": "tag", "detail": "A TagEv at (-2519, 13600, 625), switch 227, action 0x05 EVENT, EVNT index 0 = MORI1_EVENT, ungated. A second TagEv at (-2321, 13600, 416), switch 255, action 0x06 SPE_ARRIVAL, EVNT index 1 = MORI1_EVENT2. The daMdoor_c type 0 in the room also holds MORI1_EVENT's index and orders it from its ACT_DEMO_WAIT state - but only if 0x1101 is NOT already set; with 0x1101 set it starts in ACT_WAIT3 and the trap never plays again."},
+   "event": "MORI1_EVENT",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": ["src/d/actor/d_a_mdoor.cpp:124-134", "src/d/actor/d_a_mdoor.cpp:325-332", "src/d/d_stage.cpp:459", "out/rip/GZLE01/stages/M_Dra09/M_Dra09_report.json:tags", "out/rip/GZLE01/stages/M_Dra09/M_Dra09_report.json:unresolved_names", "out/rip/GZLE01/godot/events/M_Dra09.json (MORI1_EVENT: Link 003n_dash/025tback, Mori1 WAIT/CLOSE/WAIT, Bk ALL dummy; MORI1_EVENT2: Link 024surprised)"],
+   "notes": "The event cast says it exactly: Link dashes in, the Mori1 door CLOSEs behind him and the Bk (Bokoblin, src/d/actor/d_a_bk.cpp header) cast is brought on. MORI1_EVENT2 is the follow-up beat, Link 024surprised - he has seen Medli behind the second set of bars. Two Bk are placed in room 9 at (-1635, 13600, 109) and (-1588, 13600, 267), one Bb (Kargaroc, src/d/actor/d_a_bb.cpp header) at (-5374, 13280, 1040)."
+  },
+  {
+   "id": "dr_clear_room_bars_open",
+   "stage": "M_Dra09",
+   "room": 9,
+   "layer": -1,
+   "trigger": {"kind": "defeat", "detail": "NEW KIND. The second Mori1 door (daMdoor_c type 1) is created into ACT_GENOCIDE - the state that opens the door once the room's enemies are dead - and clears 0x1140 as it does so. When its opening demo (DEFAULT_STOP_OPEN) is accepted, daMdoor_actionReady raises 0x1140. If 0x1101 is already set it skips all of this and starts open in ACT_WAIT7."},
+   "event": "DEFAULT_STOP_OPEN",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": ["0x1140"],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": ["src/d/actor/d_a_mdoor.cpp:135-146", "src/d/actor/d_a_mdoor.cpp:336-350", "src/d/actor/d_a_npc_md.cpp:1511", "src/d/actor/d_a_npc_md.cpp:1626-1633"],
+   "notes": "Until 0x1140 is set, the M_Dra09 Medli is pinned to animation 0x22 and lookBack(1,0,1) - she cannot be talked to (d_a_npc_md.cpp:1578, :1629). DEFAULT_STOP_OPEN is engine boilerplate, not a story cutscene, so no stb. Which of M_Dra09's two Mori1 placements is type 1 is inferred from the code, because the rip could not resolve either of them (unresolved_names {\"Mori1\": 2}) and their params are therefore not in the report."
+  },
+  {
+   "id": "dr_grappling_hook",
+   "stage": "M_Dra09",
+   "room": 9,
+   "layer": -1,
+   "trigger": {"kind": "talk", "detail": "Talk to Medli, placed at (-1496, 13600, 158) with params 0x002E0200 -> mType 2 = isTypeM_Dra09, m3100 (her fly-away switch) = 0x2E = 46. She only offers talk once 0x1140 is set. Her first message there is 0x17DD; 0x17DD -> 0x17DE sets mCurEventMode = 5, ordering event index 1 = Md_RopeGet."},
+   "event": "Md_RopeGet",
+   "stb": null,
+   "requires_bits": ["0x1140"],
+   "sets_bits": ["0x1101"],
+   "gives_item": "dItemNo_GRAPPLING_HOOK_e (0x25)",
+   "confidence": "high",
+   "sources": ["src/d/actor/d_a_npc_md.cpp:561", "src/d/actor/d_a_npc_md.cpp:5629", "src/d/actor/d_a_npc_md.cpp:5100-5106", "src/d/actor/d_a_npc_md.cpp:5119-5122", "src/d/actor/d_a_npc_md.cpp:5355-5360", "src/d/actor/d_a_npc_md.cpp:3528-3545", "include/d/d_item_data.h:44", "out/rip/GZLE01/stages/M_Dra09/M_Dra09_report.json:actors", "out/rip/GZLE01/godot/events/M_Dra09.json (Md_RopeGet: Md1 QUAKE/POS_MOV/MSG_SET 6111/CREATEITEM/MSG_SET 6116/TAKEOFF/FLY, Link 011get_item, CAMERA GETITEM)"],
+   "notes": "'Rope' is the Grappling Hook - mCurEvent 1 -> itemNo 0x25 = dItemNo_GRAPPLING_HOOK_e. The event's closing message is 6116 = 0x17E4, which raises 0x1101, and she TAKEOFF/FLYs at the end. 0x1101 is what re-arms the room: d_a_bb.cpp:2701 and d_a_mo2.cpp:4103 only honour their death switches once it is set."
+  },
+  {
+   "id": "dr_carry_medli",
+   "stage": "M_Dra09",
+   "room": 9,
+   "layer": -1,
+   "trigger": {"kind": "npc", "detail": "Medli orders this herself, no volume involved. With 0x1101 set, her execute path calls chkAttention with the widened radius l_HIO.m0B8; if Link is holding her (dComIfGp_checkPlayerStatus0(0, daPyStts0_UNK800000_e)) she raises 0x1280 on the spot. Separately, once 0x1101 is set AND her placement switch m3100 = 46 is on for the room, she switches to demoFlyNpcAction, which is the Md_Fly2 departure (event index 4)."},
+   "event": "Md_Fly2",
+   "stb": null,
+   "requires_bits": ["0x1101"],
+   "sets_bits": ["0x1280"],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": ["src/d/actor/d_a_npc_md.cpp:1576-1594", "src/d/actor/d_a_npc_md.cpp:1607-1609", "src/d/actor/d_a_npc_md.cpp:4938-4942", "src/d/actor/d_a_npc_md.cpp:5124", "out/rip/GZLE01/godot/events/M_Dra09.json (Md_Fly2: Md1 TAKEOFF/FLY/END, CAMERA PAUSE)"],
+   "notes": "This is the carry-and-throw section of Dragon Roost Cavern: Link picks Medli up and throws her so she can glide to a switch. Md_Fly2 itself is a three-action departure, no message and no item. The room's third camera event moro_R09 (TagEv at (228, 12200, 3330), switch 9, action SPE_HUNT) belongs to the same room and is camera-only."
+  },
+  {
+   "id": "dr_gohma",
+   "stage": "M_DragB",
+   "room": 0,
+   "layer": -1,
+   "trigger": {"kind": "defeat", "detail": "The boss room has an EMPTY EVNT table and no trigger volumes at all - nothing in the placement data starts anything. The fight is pure actor code: Btd (Gohma, src/d/actor/d_a_btd.cpp header 'Boss - Gohma / ボスゴーマ') and Dr2 ('NPC - Gohma fight - Valoo (body & tail) + lava pit & ceiling rock'), with seven Bita wooden platforms and one Bitem. On death Gohma calls dComIfGs_onStageBossEnemy(), a per-dungeon save field - NOT an event bit."},
+   "event": null,
+   "stb": null,
+   "requires_bits": ["0x1101"],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": ["src/d/actor/d_a_btd.cpp:1-4", "src/d/actor/d_a_btd.cpp:2192", "src/d/actor/d_a_btd.cpp:903-916", "src/d/actor/d_a_dr2.cpp:1-4", "src/d/actor/d_a_bita.cpp:1-4", "out/rip/GZLE01/stages/M_DragB/M_DragB_report.json:actors", "out/rip/GZLE01/stages/M_DragB/M_DragB_report.json:event_table"],
+   "notes": "requires_bits 0x1101 is the Grappling Hook, which is what Gohma's fight needs (you grapple Valoo's tail) - it is chapter logic, not a gate present in M_DragB's data, so treat it as design intent. Do NOT use 0x3240 GOHMA_TRIALS_CLEAR here: d_a_btd.cpp:908 only raises it when the start stage name begins with 'X' (the Ganon's Tower re-fight). The heart container is a separate actor: Bitem/daBossItem spawns the boss item only when dComIfGs_isStageBossEnemy(stageNo) is true and the stage's life flag is not (src/d/actor/d_a_boss_item.cpp:29-36)."
+  },
+  {
+   "id": "dr_boss_warp_out",
+   "stage": "M_DragB",
+   "room": 0,
+   "layer": -1,
+   "trigger": {"kind": "npc", "detail": "The Warpf actor (the blue boss-warp column) orders the event itself. daWarpf_c::CreateInit refuses to exist unless dComIfGs_isStageBossEnemy() is true, then picks WARP_WIND the first time and WARP_WIND_AFTER on later visits, the difference being daWarpf_c::checkEndDemo, which for STAGE_DRC is simply checkItemGet(dItemNo_PEARL_DIN_e, TRUE) - i.e. 'has Link already got Din's Pearl'."},
+   "event": "WARP_WIND",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": ["src/d/actor/d_a_warpf.cpp:208-224", "src/d/actor/d_a_warpf.cpp:262-278", "out/rip/GZLE01/godot/events/M_DragB.json (WARP_WIND: DIRECTOR NEXT Stage \"Adanmae\", RoomNo 0, StartCode 100, Layer 8, Wipe 7; WARP_WIND_AFTER: NEXT Stage \"sea\", RoomNo 13, StartCode 211, Layer -1)"],
+   "notes": "This is the hinge of the ending: the FIRST warp out of Gohma's room does not go to the sea, it goes to Adanmae spawn 100 on layer 8, which is the spawn that auto-plays demo41. Every later warp out goes straight to sea room 13 spawn 211 (BOSS_WARPOUT) instead. M_DragB's only other story script is AHEAHE, the shared boss-defeat event every boss stage carries; here it is a bare TIMEKEEPER WAIT."
+  },
+  {
+   "id": "dr_valoo_calms",
+   "stage": "Adanmae",
+   "room": 0,
+   "layer": 8,
+   "trigger": {"kind": "spawn", "detail": "Adanmae spawn 100 at (-521, 750, 5619), params 0x01FF0100, EVNT index 1 = demo41. It is the destination of WARP_WIND's DIRECTOR NEXT (Adanmae, room 0, StartCode 100, Layer 8), so beating Gohma lands Link on this spawn and the spawn plays the event."},
+   "event": "demo41",
+   "stb": "howling.stb",
+   "requires_bits": [],
+   "sets_bits": ["0x3908"],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": ["out/rip/GZLE01/stages/Adanmae/Adanmae_report.json:spawns", "out/rip/GZLE01/godot/events/Adanmae.json (demo41: PACKAGE PLAY FileName \"howling.stb\", DIRECTOR NEXT Stage \"sea\" RoomNo 13 StartCode 210 Layer 9)", "out/rip/GZLE01/godot/cutscenes/howling.json", "src/d/actor/d_a_obj_rcloud.cpp:14-15", "src/d/actor/d_a_obj_rcloud.cpp:92-98", "src/d/actor/d_a_obj_rcloud.cpp:146-175", "src/d/actor/d_a_kytag05.cpp:51-62"],
+   "notes": "demo41 is a PACKAGE PLAY of howling.stb (792 frames, 26.4s, 7 demo actors, no messages) and then a DIRECTOR NEXT straight into sea room 13 spawn 210, layer 9. Two actors hang off it by name: daObjRcloud_c holds l_demo41_name and lifts its cloud ring while the demo runs, raising 0x3908 the frame the lift finishes and deleting itself; and the Dragon Roost weather tag daKytag05 watches dComIfGp_evmng_startCheck(\"demo41\") and fades its snow/ash out between demo frames 390 and 490, stopping the ash effect at frame 391. Valoo stops howling and the sky clears."
+  },
+  {
+   "id": "dr_dins_pearl",
+   "stage": "sea",
+   "room": 13,
+   "layer": 9,
+   "trigger": {"kind": "spawn", "detail": "sea room 13 spawn 210 at (208507, 134, -201355) carries EVNT index 14 = getperl_komori, and demo41's DIRECTOR NEXT sends Link to exactly that spawn on layer 9. Spawn 211, at the same position, carries EVNT index 39 = BOSS_WARPOUT and is where every later warp out of the cavern lands instead."},
+   "event": "getperl_komori",
+   "stb": "getperl_komori.stb",
+   "requires_bits": ["0x3908"],
+   "sets_bits": [],
+   "gives_item": "dItemNo_PEARL_DIN_e",
+   "confidence": "high",
+   "sources": ["out/rip/GZLE01/stages/sea/sea_report.json:spawns (room 13 spawns 210, 211)", "out/rip/GZLE01/godot/events/sea.json (getperl_komori: PACKAGE PLAY FileName \"getperl_komori.stb\", OffsetPos [200000, 0, -200000])", "out/rip/GZLE01/godot/cutscenes/getperl_komori.json", "src/d/actor/d_a_demo00.cpp:715-732", "src/d/actor/d_a_warpf.cpp:217-222"],
+   "notes": "'komori' is Komali's Japanese name (コモリ), the same word as the stage name Comori - so getperl_komori is 'get the pearl from Komali'. 1790 frames, 59.7s, five demo actors (d_act1, d_act2, d_act3, Link, d_act5) and 20+ message lines from 0x701 up. The pearl itself is handed over from inside the cutscene: dDemo_actor field_0x29c == 5 maps a one-byte STB argument through l_itemNo[], whose entry 3 is dItemNo_PEARL_DIN_e, and calls execItemGet - so no event bit records it. What records it is the item flag, which is exactly what daWarpf_c::checkEndDemo tests for STAGE_DRC. gives_item is therefore stated without a numeric id, because the id lives in the STB argument and was not read out of the .stb."
+  },
+  {
+   "id": "dr_secret_cave",
+   "stage": "TF_06",
+   "room": 0,
+   "layer": -1,
+   "trigger": {"kind": "room_enter", "detail": "The Dragon Roost Island secret cave. Its EVNT table has four entries and all four are MapToolCamera; none of its 70 event scripts is story-looking; none of its 25 spawns carries an event index; it has no TagEv or AttTag volumes at all."},
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": ["out/rip/GZLE01/stages/TF_06/TF_06_report.json:event_table", "out/rip/GZLE01/stages/TF_06/TF_06_report.json:actors", "out/rip/GZLE01/stages/TF_06/TF_06_report.json:spawns", "tools/ww_story_mine.py TF_06"],
+   "notes": "Kept as a step only to record, with certainty, that this stage carries NO story wiring - it is 32 door10 doors, 19 kotubo pots, four keeth, three Bk, two gmos, three c_red and one takara2 chest, i.e. a combat-and-treasure cave. Nothing in the chapter gates on it and it gates nothing."
+  }
+ ]
+}

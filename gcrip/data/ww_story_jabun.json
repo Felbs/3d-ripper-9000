@@ -1,0 +1,840 @@
+{
+ "_source": "Mined read-only from the zeldaret/tww decompilation at Z:/memRip/sources/tww and the ripped GZLE01 (Wind Waker USA) disc data at Z:/3d ripper/out/rip/GZLE01. Chapter: Greatfish and Jabun - Link sails to Greatfish Isle with Din's and Farore's Pearls, finds it destroyed and the sea locked into an endless night, returns to Windfall where Tetra's crew is raiding the bomb shop, talks his way onto the pirate ship with their password, wins Niko's rope course a second time, takes the Bomb Bag out of their hold, sails back to Outset, blows open the rock wall at the whirlpool behind the island and receives Nayru's Pearl from Jabun - which breaks the curse and lets morning come. Same conventions as ww_story_outset.json and ww_story_fortress.json. Event names come from each stage's Stage.arc/event_list.dat (out/rip/GZLE01/godot/events/<stage>.json) and from the stage.dzs EVNT table. Triggers come from stage.dzs / room.dzr placement chunks: PLYR spawn points (params>>24 = index into the stage's EVNT table -> auto-started event) and TagEv / AttTag / TagIsl volumes. Two new pieces of decoding were used for this chapter and are worth reusing elsewhere: (1) an event's PACKAGE staff PLAY action carries an EventFlag integer, and dEvDtStaff_c::specialProcPackage calls dComIfGs_onEventBit on it the moment the .stb starts (src/d/d_event_data.cpp:797-800) - that is how bombshop.stb raises 0x2110 and getperl_jab.stb raises 0x3920; (2) daTag_Island_c is a per-island arrival volume whose type byte (params & 0xFF) selects both the arrival cutscene and the event bit it raises (src/d/actor/d_a_tag_island.cpp:60-136) - type 3 is Greatfish, type 4 is Windfall, type 7 is the return to Outset. Event-bit ids are authoritative numbers; the UNK_xxxx names are placeholders invented by the decomp team (include/d/d_save_event_flag.inc says so itself), so numeric ids are used here.",
+ "_checkpoints": {
+  "source": "src/d/d_com_inf_game.cpp:1294-1311 dComIfGs_setGameStartStage, l_checkData[] - walked in order, the FIRST bit that is set wins",
+  "order": [
+   {
+    "bit": "RODE_KORL (0x2A08)",
+    "stage": "(none - resume wherever the file was saved)",
+    "meaning": "Link has boarded the King of Red Lions at least once: the game is open. This chapter is entirely inside that open state, so it adds no entry of its own to the continue table."
+   }
+  ],
+  "landing_gate": {
+   "source": "src/d/d_com_inf_game.cpp:1265-1281 dComIfGs_checkSeaLandingEvent, l_landingEvent[]",
+   "entry": {
+    "room": "dIsleRoom_GreatfishIsle_e (23)",
+    "bit": "ENDLESS_NIGHT (0x0A02)"
+   },
+   "meaning": "Landing at Greatfish Isle is refused until ENDLESS_NIGHT is set - and ENDLESS_NIGHT is set by the arrival cutscene itself, so the arrival demo is the only way onto the island."
+  }
+ },
+ "_bits": {
+  "0x2A08": {
+   "dec": 10760,
+   "byte_mask": [
+    42,
+    8
+   ],
+   "meaning": "RODE_KORL: Link has boarded the King of Red Lions. The prerequisite for this whole chapter - the game is open and Link can sail.",
+   "set_by": "src/d/actor/d_a_ship.cpp:1570",
+   "read_by": [
+    "src/d/d_com_inf_game.cpp:1305",
+    "src/d/actor/d_a_ship.cpp:599"
+   ],
+   "confidence": "high"
+  },
+  "0x0520": {
+   "dec": 1312,
+   "byte_mask": [
+    5,
+    32
+   ],
+   "meaning": "The main game has opened after the first Forsaken Fortress. Chosen here because it is what re-dresses two of this chapter's stages: Outset becomes layer|4 (4 day / 5 night) and the pirate ship interior Asoko becomes layer|2 (2 day / 3 night), which is the bomb-getting version of the hold.",
+   "set_by": "(event data - no onEventBit for it exists in src/; see ww_story_outset.json)",
+   "read_by": [
+    "src/d/d_com_inf_game.cpp:194",
+    "src/d/d_com_inf_game.cpp:215",
+    "src/d/d_stage.cpp:2325",
+    "src/d/actor/d_a_obj_pirateship.cpp:244"
+   ],
+   "confidence": "high"
+  },
+  "0x0808": {
+   "dec": 2056,
+   "byte_mask": [
+    8,
+    8
+   ],
+   "meaning": "Link has been launched at the Forsaken Fortress (set in the previous chapter). Read here because it is half of the rule that decides where the Asoko exit leads: with 0x0808 and 0x0520 both set, leaving the pirate ship puts Link back on sea room 11 at spawn 5 instead of restarting the fortress run.",
+   "set_by": "(event data - see ww_story_fortress.json)",
+   "read_by": [
+    "src/d/d_stage.cpp:2324"
+   ],
+   "confidence": "high"
+  },
+  "0x0A08": {
+   "dec": 2568,
+   "byte_mask": [
+    10,
+    8
+   ],
+   "meaning": "The King of Red Lions has given his Forest Haven briefing ('you must get the remaining pearl! It lies in a place northwest of here', message 0x5F7) - i.e. Link holds Din's and Farore's Pearls and has been pointed at Greatfish Isle. This is the chapter's entry condition.",
+   "set_by": "src/d/actor/d_a_ship.cpp:642 (when the message Link has just been shown is 0x5F7)",
+   "read_by": [
+    "src/d/actor/d_a_ship.cpp:350",
+    "src/d/actor/d_a_ship.cpp:545"
+   ],
+   "confidence": "high"
+  },
+  "0x0A02": {
+   "dec": 2562,
+   "byte_mask": [
+    10,
+    2
+   ],
+   "meaning": "ENDLESS_NIGHT. Raised the instant the Greatfish arrival cutscene begins. dKy_checkEventNightStop() returns true while ENDLESS_NIGHT is set and Nayru's Pearl is not yet held, which freezes the whole world at night, forces every island onto its night layer, swaps the sea BGM to the storm theme, spawns the whirlpool behind Outset and makes the Ajav rock wall breakable. It is the single bit that defines this chapter.",
+   "set_by": "src/d/actor/d_a_tag_island.cpp:135 (daTag_Island_c::demoInitProc -> onEventBit(getArrivalFlag()), type 3)",
+   "read_by": [
+    "src/d/d_kankyo.cpp:3161",
+    "src/d/d_com_inf_game.cpp:1276",
+    "src/d/actor/d_a_obj_auzu.cpp:116",
+    "include/d/actor/d_a_obj_ajav.h:74",
+    "src/d/actor/d_a_obj_pbco.cpp:36",
+    "src/d/actor/d_a_tag_event.cpp:297",
+    "src/d/actor/d_a_npc_bm1.cpp:3395",
+    "src/d/actor/d_a_knob00.cpp:305",
+    "src/d/actor/d_a_ship.cpp:353",
+    "src/d/actor/d_a_ship.cpp:532",
+    "src/d/actor/d_a_ship.cpp:1580",
+    "src/JAZelAudio/JAIZelBasic.cpp:1361",
+    "src/JAZelAudio/JAIZelBasic.cpp:1771"
+   ],
+   "confidence": "high"
+  },
+  "0x0A01": {
+   "dec": 2561,
+   "byte_mask": [
+    10,
+    1
+   ],
+   "meaning": "Link has heard the King of Red Lions' post-Greatfish briefing (message 0x607: 'So, Jabun has survived! ... the pirates know something about the cave where Jabun hides. Why don't we go first to Windfall'). Until it is set that message is forced on Link every time he talks to the boat.",
+   "set_by": "src/d/actor/d_a_ship.cpp:648 (message 0x607)",
+   "read_by": [
+    "src/d/actor/d_a_ship.cpp:353",
+    "src/d/actor/d_a_ship.cpp:537"
+   ],
+   "confidence": "high"
+  },
+  "0x1F04": {
+   "dec": 7940,
+   "byte_mask": [
+    31,
+    4
+   ],
+   "meaning": "Link has arrived at Windfall Island during the endless night (the daTag_Island_c type-4 arrival, whose terms include dKy_checkEventNightStop, so it can only fire in this chapter). Once set, the boat's advice switches to the Windfall/pirates branch.",
+   "set_by": "src/d/actor/d_a_tag_island.cpp:135 (type 4)",
+   "read_by": [
+    "src/d/actor/d_a_ship.cpp:519"
+   ],
+   "confidence": "high"
+  },
+  "0x2110": {
+   "dec": 8464,
+   "byte_mask": [
+    33,
+    16
+   ],
+   "meaning": "The bomb-shop raid cutscene (bombshop.stb) has played - Link has seen Tetra's crew robbing the Windfall bomb shop and has heard their password. It gates the pirate ship's password door, changes the boat's advice, changes which bomb-shop door exists, and switches the Windfall BGM off the pirate theme.",
+   "set_by": "src/d/d_event_data.cpp:797-800 (the PACKAGE staff of the Obombh event 'bombshop' plays bombshop.stb with EventFlag 8464)",
+   "read_by": [
+    "src/d/actor/d_a_knob00.cpp:170",
+    "src/d/actor/d_a_knob00.cpp:292",
+    "src/d/actor/d_a_knob00.cpp:305",
+    "src/d/actor/d_a_ship.cpp:389",
+    "src/d/actor/d_a_ship.cpp:520",
+    "src/JAZelAudio/JAIZelBasic.cpp:1361"
+   ],
+   "confidence": "high"
+  },
+  "0x3B20": {
+   "dec": 15136,
+   "byte_mask": [
+    59,
+    32
+   ],
+   "meaning": "The pirates' password has been chosen for this save file. When it is first needed the game rolls cM_rndF(6.0f) and stores 0..5 in the event REGISTER 0xBA0F; the password string is then message 0x1B37 + that index. Both the bomb-shop trigger volume and the ship's door do this, whichever runs first.",
+   "set_by": "src/d/actor/d_a_tag_event.cpp:112 (TagEv type 9 demoStartProc) and src/d/actor/d_a_knob00.cpp:610 (the password door)",
+   "read_by": [
+    "src/d/actor/d_a_tag_event.cpp:110",
+    "src/d/actor/d_a_knob00.cpp:609"
+   ],
+   "confidence": "high"
+  },
+  "0x1910": {
+   "dec": 6416,
+   "byte_mask": [
+    25,
+    16
+   ],
+   "meaning": "The pirate ship's password door has been opened with the correct password. Raised the moment the typed string matches message 0x1B37 + register 0xBA0F.",
+   "set_by": "src/d/actor/d_a_knob00.cpp:633",
+   "read_by": [
+    "src/d/actor/d_a_knob00.cpp:711"
+   ],
+   "confidence": "high"
+  },
+  "0x1F02": {
+   "dec": 7938,
+   "byte_mask": [
+    31,
+    2
+   ],
+   "meaning": "Link has heard the King of Red Lions' briefing after getting the bombs (message 0x624: 'Well done! Our preparations are complete... the pirates won't be leaving until morning. You must meet with Jabun and get the pearl from him before they arrive'). Until it is set, holding the Bomb Bag forces that message.",
+   "set_by": "src/d/actor/d_a_ship.cpp:654 (message 0x624)",
+   "read_by": [
+    "src/d/actor/d_a_ship.cpp:356",
+    "src/d/actor/d_a_ship.cpp:516"
+   ],
+   "confidence": "high"
+  },
+  "0x3E10": {
+   "dec": 15888,
+   "byte_mask": [
+    62,
+    16
+   ],
+   "meaning": "Link has returned to Outset Island during the endless night carrying the Bomb Bag - the daTag_Island_c type-7 arrival ('PUROLO_RETURN'; Purolo is Outset's Japanese name). Its terms are dKy_checkEventNightStop AND dComIfGs_checkGetItem(dItemNo_BOMB_BAG_e), so it is unique to this chapter.",
+   "set_by": "src/d/actor/d_a_tag_island.cpp:135 (type 7)",
+   "read_by": [
+    "src/d/actor/d_a_ship.cpp:503"
+   ],
+   "confidence": "high"
+  },
+  "0x3920": {
+   "dec": 14624,
+   "byte_mask": [
+    57,
+    32
+   ],
+   "meaning": "The Jabun cutscene (getperl_jab.stb) has played - i.e. Link holds all three pearls. The sea BGM drops back from the storm theme to the normal sea theme once it is set, and it is what turns on the Tingle Tuner's three pearl-placement markers.",
+   "set_by": "src/d/d_event_data.cpp:797-800 (the PACKAGE staff of the Pjavdou event 'getperl_jab' plays getperl_jab.stb with EventFlag 14624)",
+   "read_by": [
+    "src/JAZelAudio/JAIZelBasic.cpp:1771",
+    "src/d/actor/d_a_agb.cpp:1184",
+    "src/d/actor/d_a_npc_photo.cpp:2202"
+   ],
+   "confidence": "high"
+  },
+  "0x2F20": {
+   "dec": 12064,
+   "byte_mask": [
+    47,
+    32
+   ],
+   "meaning": "Link has heard the King of Red Lions' all-three-pearls briefing (message 0xD5B, following the forced 0xD5A: 'Ganon's curse has been broken by the power of the pearl that Jabun gave us, so morning should come soon... I have marked the places where you must set the pearls on your Sea Chart'). This is the handoff to the Tower of the Gods chapter.",
+   "set_by": "src/d/actor/d_a_ship.cpp:657 (message 0xD5B)",
+   "read_by": [
+    "src/d/actor/d_a_ship.cpp:359",
+    "src/d/actor/d_a_ship.cpp:518"
+   ],
+   "confidence": "high"
+  },
+  "0x2A01": {
+   "dec": 10753,
+   "byte_mask": [
+    42,
+    1
+   ],
+   "meaning": "Link has boarded the King of Red Lions at least once while ENDLESS_NIGHT was set. Only used to shorten the boat's nagging message (0xD5F 'We must get to Windfall quickly' instead of the full briefing).",
+   "set_by": "src/d/actor/d_a_ship.cpp:1581",
+   "read_by": [
+    "src/d/actor/d_a_ship.cpp:533"
+   ],
+   "confidence": "high"
+  }
+ },
+ "_actors": {
+  "TagIsl": {
+   "name": "island arrival volume",
+   "file": "src/d/actor/d_a_tag_island.cpp",
+   "type_rule": "params & 0xFF selects the island. getArrivalFlag() (line 82-92): 1 -> 0x0902 Dragon Roost, 2 -> 0x0A20 Forest Haven, 3 -> ENDLESS_NIGHT (Greatfish), 4 -> 0x1F04 (Windfall), 5 -> 0x2E04 Headstone, 6 -> 0x2E02 Gale, 7 -> 0x3E10 (return to Outset). makeEvId() (line 60-79) plays the plain event name when Link is aboard the King of Red Lions and the '2' variant when he is not: type 3 -> ARRIVAL_BRK / ARRIVAL_BRK2, type 4 -> ARRIVAL_TWN / ARRIVAL_TWN2, type 7 -> PUROLO_RETURN / PUROLO_RETURN2. arrivalTerms() (line 110-130) refuses if the arrival flag is already set; type 4 also needs dKy_checkEventNightStop(), type 7 needs that plus dComIfGs_checkGetItem(dItemNo_BOMB_BAG_e). demoInitProc() (line 133-136) raises the flag.",
+   "placements_this_chapter": [
+    {
+     "stage": "sea",
+     "room": 23,
+     "layer": -1,
+     "params": "0x05FF1903 (type 3)",
+     "pos": [
+      -187760.4,
+      0.0,
+      1600.0
+     ]
+    },
+    {
+     "stage": "sea",
+     "room": 11,
+     "layer": "2 and 3",
+     "params": "0x1CFF5B04 (type 4)",
+     "pos": [
+      11905.0,
+      0.0,
+      -200869.2
+     ]
+    },
+    {
+     "stage": "sea",
+     "room": 44,
+     "layer": -1,
+     "params": "0x35FF7407 (type 7)",
+     "pos": [
+      -187107.6,
+      -4990.0,
+      319789.7
+     ]
+    }
+   ],
+   "table_source": "out/rip/GZLE01/stages/sea/sea_report.json:tags"
+  },
+  "Ajav": {
+   "name": "the rock wall sealing Jabun's cave",
+   "file": "src/d/actor/d_a_obj_ajav.cpp",
+   "event_table": [
+    "ajav_destroy0",
+    "ajav_destroy1",
+    "ajav_uzu"
+   ],
+   "table_source": "src/d/actor/d_a_obj_ajav.cpp:153-157 (l_daObjAjav_ev_name)",
+   "index_rule": "M_status counts 0..3. Act_c::damage_part() (line 626-634) fires while M_status < 3 and the actor's damage sphere reports a hit; it calls to_broken() (line 616-624), which orders l_daObjAjav_ev_name[M_status] by id. So three bomb hits play ajav_destroy0, ajav_destroy1 and ajav_uzu in turn. Act_c::_create() (line 462-472) only builds the wall at all when check_ev() (ENDLESS_NIGHT, include/d/actor/d_a_obj_ajav.h:74) is true and the switch params & 0xFF is not yet set; the finished collapse calls on_sw(mSwNo) at line 823 so it stays broken.",
+   "note": "The Ajav actor is NOT in the ripped sea placement report (the exporter skipped it), so its exact room, position, layer and switch number could not be read out of the disc data. Everything above is from the decompiled C++ plus the fact that ajav_destroy0/1 and ajav_uzu live in the sea stage's event list and name Ajav, Auzu and Bomb as their staff."
+  },
+  "Auzu": {
+   "name": "the whirlpool at Jabun's cave mouth",
+   "file": "src/d/actor/d_a_obj_auzu.cpp",
+   "index_rule": "prm_get_type() = (params >> 0x14) & 0xF. Type 0 is the Jabun/Big-Octo cave whirlpool and Act_c::is_exist() (line 113-119) returns dComIfGs_isEventBit(ENDLESS_NIGHT) for it; type 1 is a Big Octo (prm_make_squid).",
+   "placement": "sea room 44 layers 5 and 7, params 0x0000971C -> type 0, linkID 0x97, switch-save 0x1C (28), at (-193022.8, ~0, 329245.2)",
+   "table_source": "out/rip/GZLE01/stages/sea/sea_report.json:actors"
+  },
+  "P2b": {
+   "name": "Niko",
+   "file": "src/d/actor/d_a_npc_p2.cpp",
+   "event_table": [
+    "P2B_ARRIVE_MAJYU",
+    "P2B_INTRO",
+    "P2B_TO_GOAL",
+    "P2B_GOAL",
+    "P2B_GOAL_WAIT_TALK",
+    "P2B_TEST_SWITCH",
+    "P2B_INTRO_2",
+    "P2B_GOAL_2",
+    "P2B_BOMB_GET"
+   ],
+   "table_source": "out/rip/GZLE01/godot/events/Asoko.json (event_list.dat) - these nine names all list P2b as their leading staff",
+   "index_rule": "UNKNOWN. Every function body in src/d/actor/d_a_npc_p2.cpp is a /* Nonmatching */ stub (518 lines, no real code at all), so how Niko chooses among them cannot be read from the decomp. None of the nine names is in Asoko's EVNT table either (that table holds only Hlift_up and RopeGame2Shut), so no PLYR spawn and no TagEv orders them - the actor must order them by name.",
+   "which_visit": "P2B_ARRIVE_MAJYU, P2B_INTRO, P2B_TO_GOAL, P2B_GOAL, P2B_GOAL_WAIT_TALK and P2B_TEST_SWITCH belong to the first rope course (Asoko layers 0/1, before the Forsaken Fortress); P2B_INTRO_2, P2B_GOAL_2 and P2B_BOMB_GET are this chapter (layers 2/3). The split is read off the message ids the actions carry: the 41xx block is the first course, the 69xx block is the second."
+  },
+  "Jb1": {
+   "name": "Jabun",
+   "file": "src/d/actor/d_a_npc_jb1.cpp",
+   "placement": "Pjavdou room 0, layer 8 - the only layer-8 actor in the stage",
+   "note": "d_a_npc_jb1.cpp contains no event table, no fopAcM_orderOtherEvent call and no event-bit access; the whole Jabun scene is driven by getperl_jab.stb, in which Jb1 is one of eight animated actors."
+  }
+ },
+ "steps": [
+  {
+   "id": "jab_korl_points_to_greatfish",
+   "stage": "sea",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "Talk to the King of Red Lions anywhere on the sea after taking Farore's Pearl. daShip_c::checkForceMessage (src/d/actor/d_a_ship.cpp:350) forces message 0x5F6 while dComIfGs_isSymbol(dSymbol_FARORE_e) is true and 0x0A08 is not set; its continuation 0x5F7 - 'you must get the remaining pearl! It lies in a place northwest of here. We must set sail immediately!' - raises 0x0A08 (line 642)."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x2A08"
+   ],
+   "sets_bits": [
+    "0x0A08"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_ship.cpp:343-372",
+    "src/d/actor/d_a_ship.cpp:615-660",
+    "out/rip/GZLE01/godot/messages.json:1526",
+    "out/rip/GZLE01/godot/messages.json:1527"
+   ],
+   "notes": "The room is left null on purpose: the boat is wherever Link left it, so there is no placement to point at. The real precondition is holding two pearls, which the game tracks as dSymbol_DIN_e / dSymbol_FARORE_e inventory symbols rather than as event bits."
+  },
+  {
+   "id": "jab_arrive_greatfish_ruined",
+   "stage": "sea",
+   "room": 23,
+   "layer": -1,
+   "trigger": {
+    "kind": "tag",
+    "detail": "The TagIsl arrival volume in sea room 23 at (-187760.4, 0, 1600), params 0x05FF1903 -> type 3, scale 3x1x3. daTag_Island_c::makeEvId picks ARRIVAL_BRK when Link is aboard the King of Red Lions and ARRIVAL_BRK2 when he is not (src/d/actor/d_a_tag_island.cpp:60-79). 'BRK' is broken - Greatfish is the wrecked island. arrivalTerms only refuses if ENDLESS_NIGHT is already set, so it fires exactly once."
+   },
+   "event": "ARRIVAL_BRK",
+   "stb": null,
+   "requires_bits": [
+    "0x0A08"
+   ],
+   "sets_bits": [
+    "0x0A02"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/sea/sea_report.json:tags",
+    "src/d/actor/d_a_tag_island.cpp:60-92",
+    "src/d/actor/d_a_tag_island.cpp:110-136",
+    "out/rip/GZLE01/godot/events/sea.json:ARRIVAL_BRK",
+    "src/d/d_com_inf_game.cpp:1265-1281"
+   ],
+   "notes": "The event is not a baked .stb - it is a scripted camera plus three messages: 1530 'Look, {name}! Do you see it? ...What has happened to this place?', 1531 'Wh-What is the meaning of this? The island... It is...', 1532 '...We are too late... A great water spirit named Jabun once lived here, but no sign of him remains'. It also runs a LIGHT CHANGE and a TELOP_ON (title card 4), which is the moment the world goes dark: demoInitProc raises ENDLESS_NIGHT as the demo starts, and dKy_checkEventNightStop (src/d/d_kankyo.cpp:3160-3166) then returns true until Nayru's Pearl is held. Room 23's base layer is the wreck itself - drifting lwood planks, Ktarur barrels and a lone FTree; there is no intact-Greatfish layer anywhere on the disc."
+  },
+  {
+   "id": "jab_korl_briefing_after_greatfish",
+   "stage": "sea",
+   "room": 23,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "Talk to the King of Red Lions. With ENDLESS_NIGHT set and 0x0A01 clear, daShip_c::checkForceMessage forces message 0x607 (src/d/actor/d_a_ship.cpp:353); showing it raises 0x0A01 (line 648). Afterwards the boat says 0x608 ('Have you forgotten where Windfall Island lies?') instead."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x0A02"
+   ],
+   "sets_bits": [
+    "0x0A01"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_ship.cpp:353-355",
+    "src/d/actor/d_a_ship.cpp:532-543",
+    "src/d/actor/d_a_ship.cpp:648",
+    "out/rip/GZLE01/godot/messages.json:1543"
+   ],
+   "notes": "Message 0x607 is the chapter's whole plan in one box: 'So, Jabun has survived! ... If we are to believe the words of the Rito postman, then the pirates know something about the cave where Jabun hides. Why don't we go first to Windfall and search for them there?'. Boarding the boat while ENDLESS_NIGHT is set also raises 0x2A01 (src/d/actor/d_a_ship.cpp:1580-1582), which only shortens later nagging."
+  },
+  {
+   "id": "jab_quill_at_greatfish",
+   "stage": "sea",
+   "room": 23,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "Bm1 (Quill, the Rito postman) is placed in sea room 23 on the base layer with params 0x0001FF04. daNpc_Bm1_c::wait_2 sets his state byte m8FD to 6 when ENDLESS_NIGHT is set (src/d/actor/d_a_npc_bm1.cpp:3391-3398), which is a state he has in no other condition."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x0A02"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "out/rip/GZLE01/stages/sea/sea_report.json:actors",
+    "src/d/actor/d_a_npc_bm1.cpp:3391-3398",
+    "src/d/actor/d_a_npc_bm1.cpp:503-508"
+   ],
+   "notes": "He is the 'Rito postman' the boat cites, and he is the only NPC standing on the ruins. Quill's own event table (l_evn_tbl at src/d/actor/d_a_npc_bm1.cpp:503-508) is Get_Mo3_Ltr / Met_Ryu_Islnd / Get_Rupee / Skn_Islnd - none of them is this beat - so his Greatfish scene is plain dialogue with no event and no bit, and which message ids he uses in state 6 could not be traced (the message selection is in a part of the actor this pass did not resolve). Marked medium because the placement and the ENDLESS_NIGHT-only state are certain but the content is not."
+  },
+  {
+   "id": "jab_arrive_windfall_night",
+   "stage": "sea",
+   "room": 11,
+   "layer": 3,
+   "trigger": {
+    "kind": "tag",
+    "detail": "The TagIsl arrival volume in sea room 11 at (11905, 0, -200869), params 0x1CFF5B04 -> type 4. It is placed only on layers 2 and 3 - the endless-night dressing of Windfall (src/d/d_com_inf_game.cpp:200-206: room 11 takes layer|2 whenever dKy_checkEventNightStop() is true). arrivalTerms for type 4 additionally demands dKy_checkEventNightStop(), so this cutscene exists solely inside this chapter. ARRIVAL_TWN plays if Link is aboard the boat, ARRIVAL_TWN2 if he swam."
+   },
+   "event": "ARRIVAL_TWN",
+   "stb": null,
+   "requires_bits": [
+    "0x0A02"
+   ],
+   "sets_bits": [
+    "0x1F04"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/sea/sea_report.json:tags",
+    "src/d/actor/d_a_tag_island.cpp:60-92",
+    "src/d/actor/d_a_tag_island.cpp:110-136",
+    "src/d/d_com_inf_game.cpp:200-206",
+    "out/rip/GZLE01/godot/events/sea.json:ARRIVAL_TWN"
+   ],
+   "notes": "Layer 3 is the night twin of layer 2; night is forced here, so 3 is what actually loads. The pirate ship (actor 'Pirates', params 0xFFFF0100) is moored at (9843.7, 0, -204592.6) on those same two layers - it is only there during this chapter. Five TagEv volumes on room 11's base layer, all switch 63, order TELOP_TAURA (EVNT index 17), the 'Windfall Island' title card; Taura is Windfall's Japanese name, exactly as Purolo is Outset's. Room 11 spawn 4 at (15414.6, 1419.9, -202039.3) carries EVNT index 51 = KNOB_S_FL, a door-opening camera, and is not chapter-specific."
+  },
+  {
+   "id": "jab_bombshop_raid",
+   "stage": "Obombh",
+   "room": 0,
+   "layer": 1,
+   "trigger": {
+    "kind": "tag",
+    "detail": "The single TagEv in the Windfall Bomb Shop, at (4.6, 498.2, -176.6), params 0x00FF1009 -> EVNT index 0 ('bombshop'), switch2 0xFF (none), switch 0x10 (16), type 0x09 = SPE_EVENT, rot.z 0xFFFF (no event-bit gate). daTag_Event_c::actionCheck case 0x9 only goes hunting while ENDLESS_NIGHT is set (src/d/actor/d_a_tag_event.cpp:296-303), so the volume is inert outside this chapter. Obombh spawn 200 at (12.7, 498.2, -165.2) carries the same EVNT index 0, which is where the cutscene puts Link back."
+   },
+   "event": "bombshop",
+   "stb": "bombshop.stb",
+   "requires_bits": [
+    "0x0A02"
+   ],
+   "sets_bits": [
+    "0x2110",
+    "0x3B20",
+    "0x2110",
+    "0x2110"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Obombh/Obombh_report.json:tags",
+    "out/rip/GZLE01/stages/Obombh/Obombh_report.json:spawns",
+    "out/rip/GZLE01/godot/events/Obombh.json:bombshop",
+    "src/d/actor/d_a_tag_event.cpp:296-303",
+    "src/d/actor/d_a_tag_event.cpp:108-121",
+    "src/d/d_event_data.cpp:779-802",
+    "out/rip/GZLE01/godot/cutscenes/bombshop.json"
+   ],
+   "notes": "The event is one PACKAGE staff: PLAY FileName bombshop.stb, EventFlag 8464 (= 0x2110), then return to Obombh room 0 spawn 200 layer 0. dEvDtStaff_c::specialProcPackage calls dComIfGs_onEventBit(EventFlag) as the .stb starts, so 0x2110 is raised at the beginning of the cutscene, not the end. The baked cutscene is 2045 frames / 68.2s and its actors are Link, Zl1 (Tetra), P1a, P1b, P1c and Bms2 - the crew looting the shop while the owner watches. The same TagEv type 9 also rolls the password: if 0x3B20 is clear it sets 0x3B20 and stores cM_rndF(6.0f) in event register 0xBA0F; the password string is then message 0x1B37 + that value. Layer 1 is the night dressing (Obombh has no special getLayerNo rule, so it is simply day 0 / night 1, and night is forced); Bms1, Bms2, Zl1, P1a, P1b and P1c are placed on both 0 and 1. bombshop.stb raises 0x2110 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). bombshop.stb raises 0x2110 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+  },
+  {
+   "id": "jab_bombshop_owner",
+   "stage": "Obombh",
+   "room": 0,
+   "layer": 1,
+   "trigger": {
+    "kind": "npc",
+    "detail": "Bms1, the bomb-shop owner, ordering his own events. BMS_LAND_DEMO is his 'How'd you sneak in here? You little rat! Shoo! Beat it! Scram, vermin!' (message 10129) with a VIBLATE and a HEADSWING; BMS_GET_DEMO is the plain item handover (Link plays 011get_item). Neither name is in Obombh's EVNT table, so nothing in the placement data orders them - the actor must."
+   },
+   "event": "BMS_LAND_DEMO",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "low",
+   "sources": [
+    "out/rip/GZLE01/godot/events/Obombh.json:BMS_LAND_DEMO",
+    "out/rip/GZLE01/godot/events/Obombh.json:BMS_GET_DEMO",
+    "out/rip/GZLE01/stages/Obombh/Obombh_report.json:event_table",
+    "out/rip/GZLE01/godot/messages.json:10129"
+   ],
+   "notes": "Low confidence: the radius, the state byte and the ordering call for Bms1 were not found - no src/d/actor file for the Bms actor was located in this pass. The step is here because it is the shop's only other story content and because the same shop is also where bombs are bought later in the game; it may not belong to this chapter at all. The chapter does NOT need the shop's bombs: the Bomb Bag comes from the pirates."
+  },
+  {
+   "id": "jab_password_door",
+   "stage": "sea",
+   "room": 11,
+   "layer": 3,
+   "trigger": {
+    "kind": "talk",
+    "detail": "Open the door on the moored pirate ship. It is not a placed actor: daObjPirateship::Act_c creates a KNOB00 child at 475 units in front of the hull with home.angle.z set to 0x1B18 when 0x0520 is set (src/d/actor/d_a_obj_pirateship.cpp:243-253). Interacting with it puts up message 0x1B1A + register 0xBA0F, opens the on-screen keyboard (dComIfGp_InputPasswordOpenOn), and daKnob00_c::chkPassward compares the typed string, case-folded, against message 0x1B37 + 0xBA0F. chkPassward returns -1 outright if 0x2110 is not set, so the door cannot be opened before the raid cutscene has been seen."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x2110"
+   ],
+   "sets_bits": [
+    "0x1910",
+    "0x3B20"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_knob00.cpp:161-189",
+    "src/d/actor/d_a_knob00.cpp:605-645",
+    "src/d/actor/d_a_obj_pirateship.cpp:243-253",
+    "out/rip/GZLE01/stages/sea/sea_report.json:actors"
+   ],
+   "notes": "'talk' is used because the door actor drives a message window and a text-entry prompt exactly the way an NPC would; there is no separate placement volume. If the player reaches the door before the bomb shop, the door itself rolls the password (line 609-612) - but chkPassward still refuses until 0x2110, so the raid is a hard prerequisite either way. A wrong answer shows message 0x1B19; a right one shows 0x1B18 and raises 0x1910."
+  },
+  {
+   "id": "jab_board_pirate_ship",
+   "stage": "Asoko",
+   "room": 0,
+   "layer": 3,
+   "trigger": {
+    "kind": "room_enter",
+    "detail": "Through the door: collision exit id 0x3C. dStage_changeSceneExitId (src/d/d_stage.cpp:2323-2335) sends Link to stage 'Asoko' spawn 0 when the current stage is anything but Asoko. Asoko then picks its layer from src/d/d_com_inf_game.cpp:212-216 - layer|2 whenever 0x0520 is set - and night is forced, so layer 3 loads: the bomb-getting dressing of the hold (Ashut, Kbota_A, KbotaC, P2b, six RopeR ropes, 37 Ktaru barrels and 35 Ospbox crates), with no P1c on the stairs and no Hlift platforms."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x1910",
+    "0x0520"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/d_stage.cpp:2306-2337",
+    "src/d/d_com_inf_game.cpp:212-216",
+    "out/rip/GZLE01/stages/Asoko/Asoko_report.json:actors",
+    "out/rip/GZLE01/stages/Asoko/Asoko_report.json:spawns"
+   ],
+   "notes": "Layers 0/1 of the same stage are the first visit (before the Forsaken Fortress) and carry P1c, four Hlift platforms and a chest holding item 0x24; layers 2/3 are this chapter. The exit back out is the same id 0x3C read from inside Asoko: with 0x0808 and 0x0520 both set it lands on sea room 11 spawn 5 at (10100.2, 400, -204438.7), the ship's deck."
+  },
+  {
+   "id": "jab_niko_second_course_intro",
+   "stage": "Asoko",
+   "room": 0,
+   "layer": 3,
+   "trigger": {
+    "kind": "npc",
+    "detail": "Niko (P2b, placed at (113, -550, 484) on layers 2/3 with params 0x00030005) orders P2B_INTRO_2 himself. The event opens with him turning to Link and saying message 6944 - 'Oh! {name}! My old swabbie, {name}!' - then 6949, then jumping across to the Ashut shutter and setting the course up."
+   },
+   "event": "P2B_INTRO_2",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "low",
+   "sources": [
+    "out/rip/GZLE01/godot/events/Asoko.json:P2B_INTRO_2",
+    "out/rip/GZLE01/stages/Asoko/Asoko_report.json:actors",
+    "src/d/actor/d_a_npc_p2.cpp:1-518",
+    "out/rip/GZLE01/godot/messages.json:6944"
+   ],
+   "notes": "Low confidence on the trigger only: d_a_npc_p2.cpp is a 518-line file in which every single function body is a /* Nonmatching */ stub, so Niko's state byte, his event table and his proximity radius cannot be read from the decomp, and none of the P2B_* names appears in Asoko's EVNT table (which holds only Hlift_up and RopeGame2Shut), so no spawn and no trigger volume orders them either. That the event exists, which actor leads it and what it says are certain; how it starts is inferred."
+  },
+  {
+   "id": "jab_rope_course_2",
+   "stage": "Asoko",
+   "room": 0,
+   "layer": 3,
+   "trigger": {
+    "kind": "npc",
+    "detail": "The course itself. P2B_TO_GOAL walks Niko through the demonstration (message 4123 'After the platforms rise up from the floor, you gotta jump on them!', JUMP_TO_LIFT onto Hliftb) and P2B_GOAL_WAIT_TALK is his taunt when Link falls (message 4130 'Falling isn't part of the program, swabbie!'). One AttTag volume does sit in the placement data: Asoko room 0, base layer, at (373.4, 68.1, 3144.2), params 0x000003FF -> EVNT index 0 = Hlift_up, switch2 0, switch 3, type 0xFF - the camera that shows the platforms rising."
+   },
+   "event": "Hlift_up",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "out/rip/GZLE01/stages/Asoko/Asoko_report.json:tags",
+    "out/rip/GZLE01/stages/Asoko/Asoko_report.json:event_table",
+    "out/rip/GZLE01/godot/events/Asoko.json:P2B_TO_GOAL",
+    "out/rip/GZLE01/godot/events/Asoko.json:P2B_GOAL_WAIT_TALK",
+    "out/rip/GZLE01/godot/events/Asoko.json:Hlift_up"
+   ],
+   "notes": "The AttTag is real placement data and is high confidence; the P2B_* half shares the stub problem of the previous step, hence medium overall. The messages Niko uses here (4123, 4130) are in the same 41xx block as the first course, so the two visits share these two events; only P2B_INTRO_2, P2B_GOAL_2 and P2B_BOMB_GET (69xx messages) are unique to this chapter. Asoko's EVNT table is exactly two entries: Hlift_up and RopeGame2Shut."
+  },
+  {
+   "id": "jab_rope_course_2_cleared",
+   "stage": "Asoko",
+   "room": 0,
+   "layer": 3,
+   "trigger": {
+    "kind": "npc",
+    "detail": "Reaching the far platform. P2B_GOAL_2 has Niko run to (145, -550, -3515), play SURPRISE and say message 6952 - 'What?! You've gotta be... You did it already?!' - then walk to (0, -550, -3190) and turn to face the Ashut shutter. RopeGame2Shut (EVNT index 1) is the shutter's own camera: a FIXEDFRM held for 80 frames on (0, -390, -3165) then RESTOREPOS."
+   },
+   "event": "P2B_GOAL_2",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "out/rip/GZLE01/godot/events/Asoko.json:P2B_GOAL_2",
+    "out/rip/GZLE01/godot/events/Asoko.json:RopeGame2Shut",
+    "out/rip/GZLE01/stages/Asoko/Asoko_report.json:actors"
+   ],
+   "notes": "Ashut - the shutter that seals the hold - is placed only on layers 2 and 3, at (0, -550, -2516) with params 0x0000FFC0, and it is the actor Niko turns to at the end of both P2B_INTRO_2 and P2B_GOAL_2. Nothing in the placement data orders RopeGame2Shut, so the shutter actor orders it as it opens."
+  },
+  {
+   "id": "jab_get_bomb_bag",
+   "stage": "Asoko",
+   "room": 0,
+   "layer": 3,
+   "trigger": {
+    "kind": "chest",
+    "detail": "Open the treasure chest behind the shutter. takara3 is placed at (0, -550, -3216) on all of layers 0, 2 and 3, but with different contents: on layer 0 (the first visit) rot.z is 0x24FF, on layers 2/3 it is 0x31FF. daTbox_c::getItemNo() is home.angle.z >> 8 & 0xFF (include/d/actor/d_a_tbox.h:37), so this chapter's chest holds item 0x31 = dItemNo_BOMB_BAG_e (include/d/d_item_data.h:56)."
+   },
+   "event": "P2B_BOMB_GET",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "dItemNo_BOMB_BAG_e (0x31) - the Bomb Bag",
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Asoko/Asoko_report.json:actors",
+    "include/d/actor/d_a_tbox.h:37",
+    "include/d/d_item_data.h:56",
+    "out/rip/GZLE01/godot/events/Asoko.json:P2B_BOMB_GET",
+    "out/rip/GZLE01/godot/messages.json:6959"
+   ],
+   "notes": "'chest' is a trigger kind this file introduces - see the report. The chest identification is high confidence (the item byte is right there in the placement data and it is exactly the item every later check uses: dComIfGs_checkGetItem(dItemNo_BOMB_BAG_e) at src/d/actor/d_a_ship.cpp:356 and src/d/actor/d_a_tag_island.cpp:126). P2B_BOMB_GET is the scene around it: Link plays 021t_pickup, Niko plays SURPRISE and then Tetra's voice runs messages 6959-6964 - 'That's mighty courageous of you...trying to steal treasure from pirates', 'we'll be leaving for Outset first thing in the morning. If you manage to find Jabun tonight, then I guess you win... And believe me, you didn't get ALL of our bombs. You'd better be quick, kid!'. That last line is the chapter's clock. How P2B_BOMB_GET is ordered shares the d_a_npc_p2.cpp stub problem."
+  },
+  {
+   "id": "jab_korl_briefing_after_bombs",
+   "stage": "sea",
+   "room": 11,
+   "layer": 3,
+   "trigger": {
+    "kind": "talk",
+    "detail": "Talk to the King of Red Lions after leaving the ship (the Asoko exit drops Link on sea room 11 spawn 5). daShip_c::checkForceMessage forces message 0x624 while dComIfGs_checkGetItem(dItemNo_BOMB_BAG_e) is true and 0x1F02 is clear (src/d/actor/d_a_ship.cpp:356); showing it raises 0x1F02 (line 654)."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x1F04"
+   ],
+   "sets_bits": [
+    "0x1F02"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_ship.cpp:356-358",
+    "src/d/actor/d_a_ship.cpp:516-530",
+    "src/d/actor/d_a_ship.cpp:654",
+    "src/d/d_stage.cpp:2323-2330",
+    "out/rip/GZLE01/godot/messages.json:1572"
+   ],
+   "notes": "Message 0x624: 'Well done! Our preparations are complete. If what the girl says is true, the pirates won't be leaving until morning. You must meet with Jabun and get the pearl from him before they arrive.' Before the bombs, the same branch says 0x621 ('Go see what the pirates are doing') if 0x2110 is clear and 0x623 (the password reminder, which prints the actual password from register 0xBA0F) if it is set."
+  },
+  {
+   "id": "jab_return_to_outset",
+   "stage": "sea",
+   "room": 44,
+   "layer": 5,
+   "trigger": {
+    "kind": "tag",
+    "detail": "The TagIsl arrival volume in sea room 44 at (-187107.6, -4990, 319789.7), params 0x35FF7407 -> type 7. arrivalTerms for type 7 requires dKy_checkEventNightStop() AND dComIfGs_checkGetItem(dItemNo_BOMB_BAG_e) (src/d/actor/d_a_tag_island.cpp:122-128), so this arrival exists only in this chapter and only once Link has the bombs. PUROLO_RETURN plays if Link is aboard the boat, PUROLO_RETURN2 if not; Purolo is Outset Island's Japanese name (the sea stage also carries TELOP_PULOLO, the 'Outset Island' title card, as EVNT index 16)."
+   },
+   "event": "PUROLO_RETURN",
+   "stb": null,
+   "requires_bits": [
+    "0x0A02",
+    "0x0520"
+   ],
+   "sets_bits": [
+    "0x3E10"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/sea/sea_report.json:tags",
+    "src/d/actor/d_a_tag_island.cpp:60-92",
+    "src/d/actor/d_a_tag_island.cpp:110-136",
+    "out/rip/GZLE01/godot/events/sea.json:PUROLO_RETURN",
+    "out/rip/GZLE01/godot/messages.json:5766",
+    "src/d/d_com_inf_game.cpp:191-200"
+   ],
+   "notes": "Its one message is 5766: 'Have you noticed, {name}? Morning has not broken since we arrived at Greatfish Isle - the land that was so ravaged by monsters. It is as if time itself is frozen. Perhaps this is the curse that Valoo spoke of?'. Layer 5 is Outset's night dressing once 0x0520 is set (layer|4, night forced), and it is the layer that carries the Auzu whirlpool at (-193022.8, 1, 329245.2), params 0x0000971C -> type 0, which daObjAuzu::Act_c::is_exist only creates while ENDLESS_NIGHT is set."
+  },
+  {
+   "id": "jab_blow_open_the_cave",
+   "stage": "sea",
+   "room": 44,
+   "layer": 5,
+   "trigger": {
+    "kind": "hit",
+    "detail": "Throw bombs at the Ajav rock wall by the whirlpool. daObjAjav::Act_c::_create only builds the wall when check_ev() (ENDLESS_NIGHT) is true and its own switch, params & 0xFF, is not yet set. damage_part() fires while M_status < 3 and the damage sphere reports a hit, calling to_broken(), which orders l_daObjAjav_ev_name[M_status] by event id. Three hits therefore play ajav_destroy0, ajav_destroy1 and ajav_uzu in order; when the last rocks settle the actor calls on_sw(mSwNo) so the wall stays open."
+   },
+   "event": "ajav_uzu",
+   "stb": null,
+   "requires_bits": [
+    "0x0A02",
+    "0x3E10"
+   ],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "src/d/actor/d_a_obj_ajav.cpp:153-157",
+    "src/d/actor/d_a_obj_ajav.cpp:462-472",
+    "src/d/actor/d_a_obj_ajav.cpp:616-634",
+    "src/d/actor/d_a_obj_ajav.cpp:802-825",
+    "include/d/actor/d_a_obj_ajav.h:74",
+    "out/rip/GZLE01/godot/events/sea.json:ajav_uzu"
+   ],
+   "notes": "'hit' is a trigger kind this file introduces - see the report. Medium, not high, for one reason: the Ajav actor is not in the ripped sea placement report (the exporter skipped it), so its exact position, room, layer and switch number could not be confirmed from the disc data. Everything else is straight out of the C++, and the three events are in the sea stage's event list naming Ajav, Auzu and Bomb as their staff, which places it at the whirlpool. ajav_destroy0 and ajav_destroy1 are pure camera plus splash; ajav_uzu is the one that matters - it carries a DIRECTOR NEXT to stage 'Pjavdou', room 0, StartCode 200, Layer 8, Mode 1, which is the transition into Jabun's cave. requires_bits lists 0x3E10 as the story order, not as an engine gate: the wall only needs ENDLESS_NIGHT and a bomb."
+  },
+  {
+   "id": "jab_receive_nayrus_pearl",
+   "stage": "Pjavdou",
+   "room": 0,
+   "layer": 8,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "Pjavdou spawn 200 at (4885.9, 1000, -458.7) carries params 0x00FF0000, i.e. EVNT index 0, and Pjavdou's EVNT table has exactly one entry: getperl_jab. Arriving at that spawn - which is where ajav_uzu's DIRECTOR NEXT sends Link - auto-plays the whole Jabun scene. Jb1 (Jabun) is the only actor on layer 8, which is the layer the NEXT action names."
+   },
+   "event": "getperl_jab",
+   "stb": "getperl_jab.stb",
+   "requires_bits": [
+    "0x0A02"
+   ],
+   "sets_bits": [
+    "0x3920",
+    "0x3920",
+    "0x3920"
+   ],
+   "gives_item": "dItemNo_PEARL_NAYRU_e (0x69) - Nayru's Pearl",
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Pjavdou/Pjavdou_report.json:spawns",
+    "out/rip/GZLE01/stages/Pjavdou/Pjavdou_report.json:event_table",
+    "out/rip/GZLE01/godot/events/Pjavdou.json:getperl_jab",
+    "src/d/d_event_data.cpp:779-802",
+    "src/d/actor/d_a_demo00.cpp:714-737",
+    "out/rip/GZLE01/godot/cutscenes/getperl_jab.json",
+    "include/d/d_item_data.h:112"
+   ],
+   "notes": "The event is a PACKAGE staff - PLAY FileName getperl_jab.stb, EventFlag 14624 (= 0x3920) - plus a DIRECTOR NEXT to stage 'sea', room 44, StartCode 9, Layer -1, Mode 1. Sea room 44 spawn 9 is at (-193011.2, -101.5, 324657.5), a few thousand units in front of the whirlpool, so Link is dropped back outside the cave. The baked cutscene is 2245 frames / 74.8s with Link, Jb1 and six demo actors. The pearl itself comes from the .stb: a demo item staff carries an index into daDemo00_c's l_itemNo table and index 5 is dItemNo_PEARL_NAYRU_e (src/d/actor/d_a_demo00.cpp:714-737); which index this particular .stb passes was not decoded, so the mechanism is high confidence and the exact byte is not. Pjavdou's event list also contains APPEAR (Jb1 doing GRUGRU then APPEAR with two fixed cameras), which is not in the EVNT table and which nothing in the placement data orders - most likely a sub-scene of the same beat. getperl_jab.stb raises 0x3920 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800). getperl_jab.stb raises 0x3920 when it starts - event data PACKAGE PLAY EventFlag, raised on cutscene start by dEvDtStaff_c::specialProcPackage (src/d/d_event_data.cpp:797-800)."
+  },
+  {
+   "id": "jab_curse_broken",
+   "stage": "sea",
+   "room": 44,
+   "layer": 4,
+   "trigger": {
+    "kind": "talk",
+    "detail": "Talk to the King of Red Lions with the pearl in hand. daShip_c::checkForceMessage forces message 0xD5A while dComIfGs_isSymbol(dSymbol_NAYRU_e) is true and 0x2F20 is clear (src/d/actor/d_a_ship.cpp:359); the continuation 0xD5B raises 0x2F20 (line 657). Holding the pearl also makes dKy_checkEventNightStop() return false (src/d/d_kankyo.cpp:3160-3166), so the endless night ends here and Outset falls back to its day layer 4."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [
+    "0x3920"
+   ],
+   "sets_bits": [
+    "0x2F20"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_ship.cpp:359-361",
+    "src/d/actor/d_a_ship.cpp:494-499",
+    "src/d/actor/d_a_ship.cpp:657",
+    "src/d/d_kankyo.cpp:3160-3166",
+    "out/rip/GZLE01/godot/messages.json:3418",
+    "out/rip/GZLE01/godot/messages.json:3419"
+   ],
+   "notes": "Message 0xD5A: 'Ganon's curse has been broken by the power of the pearl that Jabun gave us, so morning should come soon. It is well that we have gathered all of the pearls... I have marked the places where you must set the pearls on your Sea Chart.' 0xD5B adds 'You should finish any business you have here on Outset right now'. This is the chapter's exit: the next chapter is placing the three pearls on the Doguu statues (src/d/actor/d_a_obj_doguu.cpp:497-518, which raises PLACED_DINS_PEARL 0x1480, PLACED_FARORES_PEARL 0x1440 and PLACED_NAYRUS_PEARL 0x1410) and the Tower of the Gods rising. requires_bits uses 0x3920 (the cutscene played) as the proxy for holding the pearl, because the real condition is an inventory symbol rather than an event bit."
+  },
+  {
+   "id": "jab_abship_not_in_this_chapter",
+   "stage": "Abship",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "room_enter",
+    "detail": "Abship - the shared Submarine interior - is entered from an Ikada raft platform on the sea by collision exit id 0x3B (src/d/d_stage.cpp:2306-2312), and leaving by exit 0x3D returns to sea at the room the raft was in. Its eight rooms are eight interchangeable submarine layouts, one per spawn."
+   },
+   "event": "hasigo_down",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "out/rip/GZLE01/stages/Abship/Abship_report.json",
+    "src/d/d_stage.cpp:2306-2318",
+    "out/rip/GZLE01/godot/events/Abship.json"
+   ],
+   "notes": "Recorded as a negative result. Abship was searched for this chapter and carries nothing that belongs to it: its EVNT table is hasigo_down ('ladder down') followed by twelve MapToolCamera entries, its only non-camera event script is hasigo_down, none of its eight spawns auto-plays an event, and its two trigger volumes both order hasigo_down (a room-0 layer-11 TagEv at (0, -1000, 325) with params 0x00E0E5FF -> EVNT index 0, switch2 224, switch 229, type 0xFF, and a room-4 layer-11 AttTagB at (151.3, -93.7, 1160.5) with params 0x000000FF). Its contents are combat and treasure - mo2 Moblins, Bk Bokoblins, wiz_r Wizzrobes, takara chests. No bomb, no pearl and no Jabun material is in it."
+  }
+ ]
+}

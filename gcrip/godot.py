@@ -4486,6 +4486,27 @@ func scripted() -> bool:
     return selftest or story_test or newgame_test or dialogue_test or door_test         or talk_test != "" or event_test != "" or shot_actor != "" or scope_test or near_test or opening_test or sweep_test or doors_test \
         or models_test or cuts_test
 
+func story_chest_opened(item_id: int) -> void:
+    # a chest story step records the dItemNo it holds; the chest decodes the same number out of
+    # its rot.z, so the two match without having to name the chest itself
+    var here := current_stage_key()
+    for step in story.get("steps", []):
+        var trig = step.get("trigger", {})
+        if not (trig is Dictionary) or str(trig.get("kind", "")) != "chest":
+            continue
+        if int(step.get("item_no", -1)) != item_id:
+            continue
+        var id := sfield(step, "id")
+        if story_done(id):
+            continue
+        var st := sfield(step, "stage")
+        if st != "" and st != here:
+            continue
+        _mark_story_done(id)
+        print("gcrip story: chest -> ", id, " (item 0x%02X)" % item_id)
+        story_event_done(id)
+        return
+
 func story_bits_tick() -> void:
     # a step whose trigger is a pure bit test: it fires the moment every bit it requires is set.
     # Ganon's Tower uses one - daObjVgnfd_c opens the last door once all four trials are clear.
@@ -5294,6 +5315,7 @@ func interact(link: Node3D) -> void:
     elif item_id == 0:
         link.call("heal", 4)
     Game.show_message(101 + item_id)
+    Game.story_chest_opened(item_id)
 """
 
 _ACTOR_PIG_GD = """extends CharacterBody3D
@@ -6698,6 +6720,9 @@ def _story_with_actors(path: Path) -> dict:
         item = _STORY_ITEMS.get(str(step.get("id", "")))
         if item:
             step["item_key"] = item
+        m_item = re.search(r"\((0x[0-9A-Fa-f]{1,2})\)", str(step.get("gives_item") or ""))
+        if m_item and (step.get("trigger") or {}).get("kind") == "chest":
+            step["item_no"] = int(m_item.group(1), 16)
         look = _STORY_LOOK.get(str(step.get("id", "")))
         if look:
             step["look"] = look
