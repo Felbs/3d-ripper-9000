@@ -1755,6 +1755,11 @@ func _selftest_tick() -> void:
         print("selftest done")
         get_tree().quit()
         return
+    if _st_frame == 12:
+        Game.save_game("selftest")
+    if _st_frame == 14:
+        var ok := Game.load_game()
+        print("selftest: save file exists=", FileAccess.file_exists(Game.SAVE_PATH), " reload=", ok, " keys=", Game.save.keys().size())
     if _ST_SCRIPT.has(_st_frame):
         var a: Array = _ST_SCRIPT[_st_frame]
         if a[0] == "board":
@@ -2783,6 +2788,9 @@ var bgm_song := ""
 var selftest: bool = "--selftest" in OS.get_cmdline_user_args()   # scripted input run
 var events: Dictionary = {}        # this stage's event_list.dat: name -> event
 var enemies: Dictionary = {}       # enemies.json: actor -> constants (data/ww_enemies_*.json)
+const SAVE_PATH := "user://gcrip_save.json"
+var autosave_frames := 0
+var continued := false
 var event_running := false
 var event_runner: Node = null
 var event_cam: Dictionary = {}     # {eye, center, fov} while an event drives the camera
@@ -2828,6 +2836,10 @@ func _ready() -> void:
         var parsed_b = JSON.parse_string(bg.get_as_text())
         if parsed_b is Dictionary:
             bgm = parsed_b
+    if load_game():
+        print("gcrip: save file loaded (", str(save.get("saved_at", "?")), ")")
+        if not selftest:
+            _continue_saved.call_deferred()
     bgm_player = AudioStreamPlayer.new()
     bgm_player.bus = "Master"
     bgm_player.volume_db = -6.0
@@ -2842,6 +2854,71 @@ func _ready() -> void:
     fade_layer.add_child(fade_rect)
 
 # ---- events (event_list.dat -> events/<stage>.json; event_runner.gd plays one)
+
+# ---- save file (the game's quest status: hearts, items, event bits, switches, place)
+
+func save_game(reason := "") -> void:
+    var link := player()
+    var cs := get_tree().current_scene
+    if link and cs:
+        save["last_stage"] = String(cs.name)
+        var pos: Vector3 = link.global_position
+        save["last_pos"] = [pos.x, pos.y, pos.z]
+        save["last_facing"] = float(link.get("facing"))
+    save["saved_at"] = Time.get_datetime_string_from_system()
+    var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+    if f:
+        f.store_string(JSON.stringify(save, " "))
+        if reason != "":
+            print("gcrip: saved (", reason, ")")
+
+func load_game() -> bool:
+    var f := FileAccess.open(SAVE_PATH, FileAccess.READ)
+    if f == null:
+        return false
+    var parsed = JSON.parse_string(f.get_as_text())
+    if not (parsed is Dictionary):
+        return false
+    for k in parsed:
+        save[k] = parsed[k]
+    return true
+
+func new_game() -> void:
+    save = {"hearts": 12, "hearts_max": 12, "magic": 16, "rupees": 0, "heavy": false}
+    if FileAccess.file_exists(SAVE_PATH):
+        DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+    get_tree().paused = false
+    go_to_stage("sea_r44" if stage_data.has("sea_r44") else stage_data.keys()[0])
+    show_text("New game.")
+
+func _continue_saved() -> void:
+    # boot: pick up where the file left off (stage + position)
+    var st := str(save.get("last_stage", ""))
+    if st == "" or not stage_data.has(st):
+        return
+    continued = true
+    var cs := get_tree().current_scene
+    if cs and String(cs.name) == st:
+        _restore_position.call_deferred()
+        return
+    last_warp_ms = -100000
+    pending = {"stage": st, "room": 0, "spawn": 0, "restore": true}
+    get_tree().change_scene_to_file.call_deferred("res://scenes/%s.tscn" % st)
+    _place_player.call_deferred()
+
+func _restore_position() -> void:
+    var link := player()
+    var pos: Array = save.get("last_pos", [])
+    if link and pos.size() == 3:
+        link.global_position = Vector3(float(pos[0]), float(pos[1]) + 10.0, float(pos[2]))
+        link.set("facing", float(save.get("last_facing", 0.0)))
+        link.set("start_pos", link.global_position)
+
+func _process(delta: float) -> void:
+    autosave_frames += 1
+    if autosave_frames >= 30 * 60 and not dialog_open and not event_running:
+        autosave_frames = 0
+        save_game("autosave")
 
 func event_bit(n: int) -> bool:
     var bits: Dictionary = save.get("event_bits", {})
@@ -3242,6 +3319,7 @@ func warp(dest_stage: String, dest_room: int, dest_spawn: int) -> void:
               "  (gcrip godot <ripdir> ", dest_stage, ")")
         return
     last_warp_ms = Time.get_ticks_msec()
+    save_game("warp")
     pending = {"stage": dest_stage, "room": dest_room, "spawn": dest_spawn}
     get_tree().change_scene_to_file.call_deferred(path)
     _place_player.call_deferred()
@@ -3271,6 +3349,8 @@ func _place_player() -> void:
             best["pos"][0], best["pos"][1] + 30.0, best["pos"][2])
         player.velocity = Vector3.ZERO
         player.start_pos = player.global_position
+    if bool(pending.get("restore", false)):
+        _restore_position()
     pending = {}
 """
 
@@ -4133,7 +4213,7 @@ func _fill() -> void:
             var n: String = str(names.get(k, ""))
             list.add_item((n + "   (" + k + ")") if n != "" else k)
         title.text = "Where to?   %d stages   -   Enter / A: go   Tab: events   Esc / Start: back" % keys.size()
-    else:
+    elif mode == "events":
         keys = Game.events.keys()
         for k in keys:
             var ev: Dictionary = Game.events[k]
@@ -4141,7 +4221,14 @@ func _fill() -> void:
             for sf in ev.get("actors", []):
                 cast.append(str(sf.get("name", "")))
             list.add_item("%s   [%s]" % [k, ", ".join(cast)])
-        title.text = "Cutscenes here   %d events   -   Enter / A: play   Tab: stages   Esc / Start: back" % keys.size()
+        title.text = "Cutscenes here   %d events   -   Enter / A: play   Tab: game   Esc / Start: back" % keys.size()
+    else:
+        keys = ["save", "new"]
+        list.add_item("Save game now   (autosaves on every door and every 30 s)")
+        list.add_item("New game   (erases the save file)")
+        var when := str(Game.save.get("saved_at", "never"))
+        title.text = "Game   -   last save: %s   -   hearts %d/%d   rupees %d   -   Tab: stages" % [
+            when, int(Game.save.get("hearts", 0)), int(Game.save.get("hearts_max", 0)), int(Game.save.get("rupees", 0))]
     if list.item_count > 0:
         list.select(0)
         list.grab_focus()
@@ -4151,7 +4238,7 @@ func _unhandled_input(event: InputEvent) -> void:
         Game.close_menu()
         get_viewport().set_input_as_handled()
     elif event.is_action_pressed("item_next"):
-        mode = "events" if mode == "stages" else "stages"
+        mode = {"stages": "events", "events": "game", "game": "stages"}[mode]
         _fill()
         get_viewport().set_input_as_handled()
     elif event.is_action_pressed("action_a") or event.is_action_pressed("ui_accept"):
@@ -4161,8 +4248,13 @@ func _unhandled_input(event: InputEvent) -> void:
             Game.close_menu()
             if mode == "stages":
                 Game.go_to_stage(key)
-            else:
+            elif mode == "events":
                 Game.run_event(key)
+            elif key == "save":
+                Game.save_game("menu")
+                Game.show_text("Game saved.")
+            else:
+                Game.new_game()
         get_viewport().set_input_as_handled()
     elif event.is_action_pressed("move_back") or event.is_action_pressed("ui_down"):
         _move(1)
