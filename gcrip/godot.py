@@ -193,10 +193,19 @@ const CLIMB_FRAMES := 32               # VJMPCL: 24 frames at rate 0.75
 const CLIMB_CANCEL := 23.0 / 0.75      # wallCatch.hang_climb_cancel_frame
 const CATCH_FRAMES := 6                # VJMPCHB: 5 frames at 0.8
 const VJUMP_FRAMES := 13               # wallCatch.vertical_jump_anm_end_frame
+# --- ladders / vine walls (dzb wall code 4-5 / 1; setFrontWallType, procLadder*, procClimb*) ---
+const LADDER_OFFSET := 25.0            # Link stands 25 units off the ladder face
+const LADDER_RUNG := 37.5              # one rung per ladderltor/rtol cycle (procLadderMove)
+const LADDER_RATE_MIN := 0.5           # anim rate at the stick's edge of the dead zone
+const LADDER_RATE_MAX := 1.2           # anim rate with the stick fully pushed
+const CLIMBWALL_OFFSET := 20.5         # procClimb: held 20.5 units off the vine wall
+const CLIMBWALL_SPEED := 1.5           # units/frame at rate 1 (animation-driven in the game)
+const CLIMBWALL_SIDE_SPEED := 1.2
+const CLIMB_OVER_FRAMES := 24          # ladderupedl / wallholdup climb-over
 
 const S16_TO_RAD := PI / 32768.0
 
-enum State { GROUND, AIR, ROLL, SWIM, LAND, ATTACK, JUMPCUT, JUMPCUT_LAND, DAMAGE, GLIDE, CARRY, GRAB, VJUMP, HANG, CLIMB }
+enum State { GROUND, AIR, ROLL, SWIM, LAND, ATTACK, JUMPCUT, JUMPCUT_LAND, DAMAGE, GLIDE, CARRY, GRAB, VJUMP, HANG, CLIMB, LADDER, CLIMBWALL }
 
 @export var water_level := -1.0e9   # stage sets this (sea stages: 0)
 
@@ -292,6 +301,11 @@ var grab_frames := 0
 var wall_hold := 0
 var ledge_top := Vector3.ZERO
 var ledge_dir := Vector3.FORWARD   # horizontal direction into the wall
+var wall_hit_pos := Vector3.ZERO      # last tagged-wall probe (ladder / vine / no-hang)
+var wall_hit_n := Vector3.ZERO
+var ladder_n := Vector3.ZERO          # ladder / vine wall normal (points toward Link)
+var climb_over := 0                   # frames left in the climb-over at the top
+var climb_over_to := Vector3.ZERO
 var climb_frame := 0
 var climb_from := Vector3.ZERO
 var hang_frames := 0
@@ -653,6 +667,8 @@ func _physics_process(_delta: float) -> void:
         State.VJUMP: _vjump()
         State.HANG: _hang()
         State.CLIMB: _climb()
+        State.LADDER: _ladder()
+        State.CLIMBWALL: _climbwall()
         State.GROUND: _ground()
         State.AIR: _air()
         State.ROLL: _roll()
@@ -735,14 +751,23 @@ func _ground() -> void:
         var n := get_wall_normal()
         n.y = 0.0
         if dist > 0.3 and n.length() > 0.1 and forward().dot(-n.normalized()) > 0.7:
+            var into := -n.normalized()
+            var tag := _front_wall(into)
+            if tag == "ladder" and _enter_ladder(false):
+                return
+            if tag == "climb" and _enter_climbwall():
+                return
             wall_hold += 1
-            if wall_hold >= WALL_HOLD_FRAMES and _try_ledge(-n.normalized()):
+            # wall code 2 (roofs, hole_kabe): no hang / catch / climb at all
+            if tag != "nohang" and wall_hold >= WALL_HOLD_FRAMES and _try_ledge(into):
                 return
         else:
             wall_hold = 0
     else:
         wall_hold = 0
     if was_on_floor and not is_on_floor():
+        if speed < AUTOJUMP_MIN_SPEED and _try_ladder_down():
+            return
         if speed >= AUTOJUMP_MIN_SPEED:
             _enter_air_autojump()
         else:
@@ -848,7 +873,7 @@ func _air() -> void:
     if vy < 0.0 and is_on_wall() and s.length() > 0.3:
         var n := get_wall_normal()
         n.y = 0.0
-        if n.length() > 0.1 and stick_world_dir(s).dot(-n.normalized()) > 0.6:
+        if n.length() > 0.1 and stick_world_dir(s).dot(-n.normalized()) > 0.6 and _front_wall(-n.normalized()) != "nohang":
             var h := _ledge_height(-n.normalized())
             if h > LEDGE_SMALL_JUMP_MAX and h < LEDGE_CATCH_MAX:
                 ledge_dir = -n.normalized()
@@ -1046,6 +1071,204 @@ func _jumpcut_land() -> void:
         return
     if cut_frame >= JATTACK_LAND["end"]:
         _enter_ground()
+
+# ---------------------------------------------------------------- ladders / vines
+
+func _front_wall(into: Vector3) -> String:
+    # wall code of the tagged collider (layer 32) 25 + radius ahead of Link's waist, "" if none
+    var space := get_world_3d().direct_space_state
+    var from := global_position + Vector3(0, 60.0, 0)
+    var q := PhysicsRayQueryParameters3D.create(from, from + into * 70.0, 32)
+    var hit := space.intersect_ray(q)
+    wall_hit_n = Vector3.ZERO
+    if not hit:
+        return ""
+    var c = hit.collider
+    if c == null or not c.has_meta("wall"):
+        return ""
+    wall_hit_pos = hit.position
+    wall_hit_n = hit.normal
+    return str(c.get_meta("wall"))
+
+func _try_ladder_down() -> bool:
+    # walking off an edge with a ladder (wall code 4/5) just below it: climb down (ANM_LADDER_DW_ST)
+    var s := stick()
+    if s.length() < 0.3:
+        return false
+    var d := stick_world_dir(s)
+    var space := get_world_3d().direct_space_state
+    var over := global_position + d * 40.0 + Vector3(0, 10.0, 0)
+    var q := PhysicsRayQueryParameters3D.create(over, over - Vector3(0, 60.0, 0), 1)
+    if space.intersect_ray(q):
+        return false  # floor continues
+    var probe := global_position + d * 60.0 - Vector3(0, 50.0, 0)
+    var q2 := PhysicsRayQueryParameters3D.create(probe, probe - d * 70.0, 32)
+    var hit := space.intersect_ray(q2)
+    if not hit:
+        return false
+    var c = hit.collider
+    if c == null or not c.has_meta("wall"):
+        return false
+    var tag := str(c.get_meta("wall"))
+    if tag != "ladder" and tag != "ladder_top":
+        return false
+    wall_hit_pos = hit.position
+    wall_hit_n = hit.normal
+    return _enter_ladder(true)
+
+func _enter_ladder(descend: bool) -> bool:
+    var n := wall_hit_n
+    n.y = 0.0
+    if n.length() < 0.5:
+        return false
+    n = n.normalized()
+    state = State.LADDER
+    velocity = Vector3.ZERO
+    speed = 0.0
+    wall_hold = 0
+    climb_over = 0
+    ladder_n = n
+    facing = heading_of(-n)
+    var p := wall_hit_pos + n * LADDER_OFFSET
+    global_position = Vector3(p.x, global_position.y, p.z)
+    play_clip("ladderdwst" if descend else "ladderupst", 3.0 / 30.0, 1.0)
+    return true
+
+func _enter_climbwall() -> bool:
+    var n := wall_hit_n
+    n.y = 0.0
+    if n.length() < 0.5:
+        return false
+    n = n.normalized()
+    state = State.CLIMBWALL
+    velocity = Vector3.ZERO
+    speed = 0.0
+    wall_hold = 0
+    climb_over = 0
+    ladder_n = n
+    facing = heading_of(-n)
+    var p := wall_hit_pos + n * CLIMBWALL_OFFSET
+    global_position = Vector3(p.x, global_position.y, p.z)
+    play_clip("wall", 3.0 / 30.0, 0.0)
+    return true
+
+func _climb_over_tick() -> void:
+    # root motion of ladderupedl / wallholdup approximated: ease up and over onto the floor
+    climb_over -= 1
+    var step := (climb_over_to - global_position) / float(climb_over + 1)
+    global_position += step
+    if climb_over <= 0:
+        global_position = climb_over_to
+        _enter_ground()
+
+func _try_climb_over(clip: String) -> bool:
+    # is there a floor in front above the top of the wall? then climb over it
+    var space := get_world_3d().direct_space_state
+    var over := global_position + Vector3(0, 150.0, 0) - ladder_n * 60.0
+    var q := PhysicsRayQueryParameters3D.create(over, over - Vector3(0, 170.0, 0), 1)
+    var hit := space.intersect_ray(q)
+    if not hit:
+        return false
+    climb_over_to = hit.position + Vector3(0, 1.0, 0)
+    climb_over = CLIMB_OVER_FRAMES
+    play_clip(clip, 2.0 / 30.0, 1.0)
+    return true
+
+func _let_go() -> void:
+    global_position += ladder_n * 10.0
+    _enter_air(ladder_n * 2.0, 0.0, GRAVITY)
+    play_clip("jmpeds", 6.0 / 30.0)
+
+func _wall_tag_at(pos: Vector3, reach: float) -> String:
+    var space := get_world_3d().direct_space_state
+    var q := PhysicsRayQueryParameters3D.create(pos, pos - ladder_n * reach, 32)
+    var hit := space.intersect_ray(q)
+    if not hit:
+        return ""
+    var c = hit.collider
+    if c == null or not c.has_meta("wall"):
+        return ""
+    return str(c.get_meta("wall"))
+
+func _floor_within(dy: float) -> bool:
+    var space := get_world_3d().direct_space_state
+    var q := PhysicsRayQueryParameters3D.create(global_position + Vector3(0, 10.0, 0), global_position - Vector3(0, dy + 2.0, 0), 1)
+    var hit := space.intersect_ray(q)
+    return not hit.is_empty()
+
+func _ladder() -> void:
+    velocity = Vector3.ZERO
+    if climb_over > 0:
+        _climb_over_tick()
+        return
+    if Input.is_action_just_pressed("action_a"):
+        _let_go()
+        return
+    var s := stick()
+    var up := 0.0
+    if s.length() > 0.2:
+        up = stick_world_dir(s).dot(-ladder_n)
+    if absf(up) < 0.3:
+        play_clip("ladderltor", 3.0 / 30.0, 0.0)
+        return
+    var rate := lerpf(LADDER_RATE_MIN, LADDER_RATE_MAX, minf(s.length(), 1.0))
+    var cycle := 20.0
+    if anim and anim.has_animation("ladderltor"):
+        cycle = maxf(anim.get_animation("ladderltor").length * 30.0, 1.0)
+    var dy := LADDER_RUNG / cycle * rate
+    if up > 0.0:
+        # the ladder has to continue above Link's head; otherwise climb over the top
+        if _wall_tag_at(global_position + Vector3(0, dy + 120.0, 0), 60.0) == "":
+            if _try_climb_over("ladderupedl"):
+                return
+        global_position.y += dy
+        play_clip("ladderltor", 2.0 / 30.0, rate)
+    else:
+        if _floor_within(dy):
+            _enter_ground()
+            return
+        global_position.y -= dy
+        play_clip("ladderrtol", 2.0 / 30.0, rate)
+
+func _climbwall() -> void:
+    velocity = Vector3.ZERO
+    if climb_over > 0:
+        _climb_over_tick()
+        return
+    if Input.is_action_just_pressed("action_a"):
+        _let_go()
+        return
+    var s := stick()
+    if s.length() < 0.2:
+        play_clip("wall", 3.0 / 30.0, 0.0)
+        return
+    var d := stick_world_dir(s)
+    var up := d.dot(-ladder_n)
+    var right := (-ladder_n).cross(Vector3.UP)
+    var side := d.dot(right)
+    var rate := lerpf(0.8, 1.0, minf(s.length(), 1.0))
+    var move := Vector3(0, up * CLIMBWALL_SPEED * rate, 0) + right * side * CLIMBWALL_SIDE_SPEED * rate
+    # procClimb continue check: still a code-1 wall 80 units ahead of the new spot, 30 up
+    var still: bool = _wall_tag_at(global_position + move + Vector3(0, 90.0, 0), 80.0) == "climb"
+    if not still:
+        if up > 0.3 and _try_climb_over("wallholdup"):
+            return
+        if up < -0.3:
+            if _floor_within(absf(move.y)):
+                _enter_ground()
+            else:
+                _let_go()
+            return
+        play_clip("wall", 3.0 / 30.0, 0.0)
+        return
+    if up < -0.3 and _floor_within(absf(move.y)):
+        _enter_ground()
+        return
+    global_position += move
+    if absf(up) >= absf(side):
+        play_clip("wallpl" if up > 0.0 else "walldw", 2.0 / 30.0, rate)
+    else:
+        play_clip("wallwr" if side > 0.0 else "wallwl", 2.0 / 30.0, rate)
 
 # ---------------------------------------------------------------- ledges
 
@@ -1575,6 +1798,8 @@ _PLAYER_CLIPS = (
     "damf", "damb", "daml", "damr", "dam", "damff", "damfb", "talka",
     "grabup", "grabwait", "grabthrow", "walkbarrel",
     "vjmp", "vjmpcha", "vjmpchb", "vjmpcl", "mstepover", "hangmovel", "hangmover", "jmpeds",
+    "ladderupst", "ladderltor", "ladderrtol", "ladderupedl", "ladderdwst",
+    "wall", "wallpl", "walldw", "wallwl", "wallwr", "wallholdup",
 )  # fmt: skip
 
 _GAME_GD = """extends Node
@@ -1742,9 +1967,22 @@ func burst(pos: Vector3, color: Color) -> void:
 
 func npc_messages(actor: String) -> Array:
     # first conversation per NPC from the decomp sweep (data/ww_npc_dialogue.json)
+    # "first" is a list of talk sessions (successive talks; the NPC remembers it was talked to)
     var info: Dictionary = npc_dialogue.get(actor, {})
-    var first: Array = info.get("first", [])
-    return first.filter(func(id): return messages.has(int(id)))
+    var sessions: Array = info.get("first", [])
+    if sessions.is_empty():
+        return []
+    var talks: Dictionary = save.get("talks", {})
+    var n: int = int(talks.get(actor, 0))
+    var session = sessions[mini(n, sessions.size() - 1)]
+    var ids: Array = session if session is Array else [session]
+    talks[actor] = n + 1
+    save["talks"] = talks
+    var out: Array = []
+    for id in ids:
+        if messages.has(int(id)):
+            out.append(int(id))
+    return out
 
 func _ensure_dialog() -> void:
     if dialog == null:
@@ -2962,6 +3200,16 @@ func _tag_liquids() -> void:
             body.collision_layer = 4
             body.collision_mask = 0
             body.set_meta("liquid", "lava" if n.begins_with("liquid_lava") else "poison")
+        elif n.begins_with("wall_"):
+            # wall_<tag>_... : ladder / ladder_top / climb / nohang (dzb wall codes 4 / 5 / 1 / 2)
+            var tag := n.substr(5)
+            for t in ["ladder_top", "ladder", "climb", "nohang"]:
+                if tag.begins_with(t):
+                    tag = t
+                    break
+            body.collision_layer = 32
+            body.collision_mask = 0
+            body.set_meta("wall", tag)
 """
 
 _WARP_GD = """extends Area3D
@@ -2970,12 +3218,23 @@ _WARP_GD = """extends Area3D
 @export var dest_stage := ""
 @export var dest_room := 0
 @export var dest_spawn := 0
+var armed := false   # arriving through this door puts Link inside the box: wait until he leaves
 
 func _ready() -> void:
     body_entered.connect(_on_body_entered)
+    body_exited.connect(_on_body_exited)
+    await get_tree().create_timer(0.5).timeout
+    armed = true
+    for b in get_overlapping_bodies():
+        if b is CharacterBody3D:
+            armed = false
+
+func _on_body_exited(body: Node3D) -> void:
+    if body is CharacterBody3D:
+        armed = true
 
 func _on_body_entered(body: Node3D) -> void:
-    if body is CharacterBody3D:
+    if armed and body is CharacterBody3D:
         Game.warp(dest_stage, dest_room, dest_spawn)
 """
 
@@ -3156,6 +3415,9 @@ def _godot_col_glb(col_gltf: Path, out_glb: Path) -> int:
         if surface == "solid" and "mesh" in node:
             node["name"] = node.get("name", "col").replace("/", "_") + "-colonly"
             n_solid += 1
+        elif surface in ("ladder", "ladder_top", "climb", "nohang") and "mesh" in node:
+            # wall codes Link reads (ladders / vines / no-hang); stage.gd puts them on layer 32
+            node["name"] = f"wall_{surface}_" + node.get("name", "col").replace("/", "_") + "-colonly"
         elif surface and "mesh" in node:
             # liquid surfaces become colliders too; stage.gd moves them to the water /
             # hazard physics layers at runtime (Godot's import suffixes can't set layers)

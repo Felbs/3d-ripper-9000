@@ -525,6 +525,23 @@ def _build_collision(disc, stage_name, room_nos, out_dir, offset) -> dict:
                 extras={"gcrip_surface": surface},
             )
             stats[surface] += len(tris)
+        # wall codes the player code reads: ladders (4/5), vine walls (1), no-hang (2)
+        for tag in ("ladder", "ladder_top", "climb", "nohang"):
+            try:
+                verts, tris = d.tagged(tag)
+            except (KeyError, ValueError, AttributeError):
+                continue
+            if not len(tris):
+                continue
+            col.add_mesh(
+                f"Room{room_no}_{tag}",
+                verts,
+                tris,
+                translation=shift,
+                group=f"Room{room_no}_col",
+                extras={"gcrip_surface": tag},
+            )
+            stats[tag] += len(tris)
     if col.stats.triangles:
         col.save()
     return dict(stats)

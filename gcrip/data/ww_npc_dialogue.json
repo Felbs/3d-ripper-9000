@@ -1,0 +1,469 @@
+{
+  "_meta": {
+    "game": "GZLE01 (Wind Waker USA)",
+    "source": "Z:/memRip/sources/tww decomp (d_a_npc_*.cpp) + PowerPC decode of the shipped .rel files for the actors that are still stubs in the decomp (Ko1, Ob1, Yw1, Ym1, Aj1, So)",
+    "text": "Z:/3d ripper/out/rip/GZLE01/text/messages.json (id field)",
+    "conventions": {
+      "first": "message ids in the order the FIRST conversation plays on a fresh file (before any story flag). Each inner list is one talk session; lists in order of successive talks where the NPC remembers it has been talked to.",
+      "alternatives": "condition -> message chain. Conditions use decomp event-bit names (dSv_event_flag_c::UNK_xxxx) or plain English when the meaning is known.",
+      "talk_dist": "attention_info.distances[TALK] index into dAttention_c::dist_table and the resolved XZ range in world units",
+      "anim_attr": "every message carries attrs.initial_animation; NPCs map that index through their own anm table (see ww_npc_dialogue md) - so the talk BCK is chosen per-message, not per-NPC.",
+      "confidence": "high = read from decompiled C++; medium = read from rel disassembly (flag semantics partly unknown); low = inferred"
+    },
+    "story_flags": {
+      "UNK_2A80": "Grandma gave Link the Hero's Clothes (set by demo00 birthday cutscene)",
+      "UNK_0001": "Aryll telescope scene done: Helmaroc dropped Tetra into the forest",
+      "UNK_0E20": "set by tag_event type 3 - Aryll kidnapped / Link leaving Outset with the pirates",
+      "UNK_0520": "Link has left Outset / returned later in the story (second-visit NPC variants, sick Grandma). Set by event data, not actor code",
+      "GRANDMA_HEALED": "0x2A20, Grandma cured with the fairy",
+      "UNK_0501": "Orca's rolling-attack lesson finished (Link owns the Hero's Sword)"
+    }
+  },
+
+  "Ba1": {
+    "name": "Grandma",
+    "file": "src/d/actor/d_a_npc_ba1.cpp",
+    "confidence": "high",
+    "archive": "Ba",
+    "model": "ba.bdl",
+    "extra_models": ["ba_cloth.bdl (held clothes, attached to footL joint)"],
+    "wait_anim": "wait01",
+    "talk_anim": "talk01",
+    "all_anims": ["wait01", "talk01", "talk02", "talk03", "hold", "wait02", "talk04", "sleep", "05_ba_cut8_wait", "getup"],
+    "head_joint": "head",
+    "backbone_joint": "backbone",
+    "look_limits_deg": {"head_y": 45, "head_x_up": 30, "head_x_down": -27, "backbone_y": 22.5},
+    "talk_dist": {"index": 171, "xz_max": 300.0, "xz_release": 300.0, "dy": 300.0},
+    "types": {
+      "0": "fresh file, inside house (LinkRM) before Link leaves the island",
+      "1": "after UNK_0001 (Helmaroc scene) until UNK_0520",
+      "3": "UNK_0520 && !GRANDMA_HEALED (sick in bed)",
+      "4": "UNK_0520 && GRANDMA_HEALED"
+    },
+    "first": [
+      [2020],
+      [2021]
+    ],
+    "first_notes": "Type 0. On the very first approach (within 300 units, tmp bit 0310 clear) the NPC orders the 'tale_1' cutscene instead of a talk (birthday / Hero's Clothes). Immediately after that cutscene (same session, tmp bit 0310 set) the first talk is 2008 'Go call Aryll for me!'. Otherwise 2020 'have you seen your sister' then 2021 forever.",
+    "alternatives": {
+      "right after tale_1 cutscene (same session)": [2008],
+      "type1 UNK_0001 first talk": [2024],
+      "type1 UNK_0001 repeat (UNK_0601 set by 2024)": [2025],
+      "type1 has sword, first": [2027, 2028],
+      "type1 has sword, repeat (UNK_0602)": [2026],
+      "type1 UNK_0780": [2029],
+      "type1 UNK_0E20 first": [2031, 2032],
+      "type1 UNK_0E20 repeat (UNK_0740)": [2030],
+      "type1 UNK_0E20 and checkCollect(1)": [2059],
+      "type3 sick": [2033],
+      "type3 fairy used (m7F0) not healed": [2038, 2039],
+      "type3/4 healed first talk": [2043],
+      "type3/4 healed repeat": [2042],
+      "type3/4 healed, eventReg A60F>=3 first": [2044],
+      "type3/4 healed, eventReg A60F>=3 repeat": [2045],
+      "soup flow from 2042/2043/2044/2045 when soup bottle known": "-> 2051 if no empty bottle, 2046 if bottle already has soup, else 2047 (choice) -> 2048 (fill) / 2050 (decline)",
+      "fairy cutscene chain": [2035, 2036, 2037, 2041]
+    },
+    "next_msgStatus": {"2027": 2028, "2031": 2032, "2035": 2036, "2036": "2037 if empty bottle else 2041", "2038": 2039, "2047": "2048 / 2050 by choice"}
+  },
+
+  "Ls1": {
+    "name": "Aryll",
+    "file": "src/d/actor/d_a_npc_ls1.cpp",
+    "confidence": "high",
+    "archive": "Ls",
+    "model": "ls.bdl",
+    "extra_models": ["lshand.bdl"],
+    "wait_anim": "ls_wait01",
+    "talk_anim": "ls_talk01",
+    "all_anims": ["ls_wait01", "ls_wait02", "ls_wait03", "ls_wait04", "ls_wait05", "ls_wait06", "ls_watasu", "ls_furimuki", "ls_nozoku", "ls_get", "ls_wait07", "ls_talk01", "ls_demowait", "ls_demolook"],
+    "head_joint": "head",
+    "backbone_joint": "backbone",
+    "look_limits_deg": {"head_y": 99, "head_x_up": 66, "backbone_y": 38.5, "backbone_x": 16.5},
+    "talk_dist": {"index": 169, "xz_max": 200.0, "xz_release": 200.0, "dy": 300.0},
+    "types": {
+      "0": "lookout, after Hero's Clothes (UNK_2A80)",
+      "3": "after UNK_0001 (telescope scene done)",
+      "4": "lookout before Hero's Clothes (fresh file)"
+    },
+    "first": [
+      [3033],
+      [3001, 3002, 3003, 3004, 3005, 3036],
+      [3006, 3007],
+      [3008]
+    ],
+    "first_notes": "Fresh file: 3033 'Hurry up, Grandma is waiting'. After Hero's Clothes the first talk runs the 'get_telescope' event whose text chain is 3001->3002->3003->3004->3005->3036 (driven by next_msgStatus; 3002 is replaced by 3034 on a New Game+ / clearCount>0). Right after the gift: 3006->3007. Then 3008 (or 3019/3020/3021 if the telescope is equipped on X/Y/Z).",
+    "alternatives": {
+      "telescope on X button": [3019],
+      "telescope on Y button": [3020],
+      "telescope on Z button": [3021],
+      "opening cutscene (event data, sequence in bmg order)": [3022, 3023, 3024, 3025, 3026, 3027, 3028, 3029, 3030, 3031, 3032],
+      "telescope scope prompts": [3009, 3010, 3011, 3018],
+      "UNK_0001 just set, no sword": [3013, 3014],
+      "UNK_0001 just set, has sword": [3012],
+      "UNK_0001 repeat, no sword": [3015],
+      "UNK_0001 repeat, has sword": [3016],
+      "UNK_0001 and UNK_0280": [3017]
+    },
+    "next_msgStatus": {"3001": "3002 (3034 if clearCount)", "3002": 3003, "3034": 3003, "3003": 3004, "3004": 3005, "3005": 3036, "3006": 3007, "3013": 3014}
+  },
+
+  "Ji1": {
+    "name": "Orca",
+    "file": "src/d/actor/d_a_npc_ji1.cpp",
+    "confidence": "high",
+    "archive": "Ji",
+    "model": "ji.bdl",
+    "extra_models": ["ji_yari.bdl (spear)", "yjitr00.bdl (tear)"],
+    "wait_anim": "ji_wait01",
+    "talk_anim": "ji_talk01",
+    "anim_index_map": {"0": "ji_wait01", "1": "ji_wait02", "2": "ji_talk01", "3": "ji_talk02", "4": "ji_akire", "5": "ji_kamae", "6": "ji_krot"},
+    "head_joint": "head",
+    "backbone_joint": "backbone1",
+    "talk_dist": {"index": 169, "xz_max": 200.0, "xz_release": 200.0, "dy": 300.0},
+    "first": [
+      [2401, 2402, 2403],
+      [2404]
+    ],
+    "first_notes": "Fresh file (no UNK_0001, no UNK_0501): 2401->2402->2403 (sets UNK_0640); 2403 closing starts event 6 (rolling-attack lesson, kaitenwaitAction). Repeat before the lesson: 2404. During the lesson Sturgeon stomps and Orca plays 2420 then 2421. Anim per message: 2401/2438 -> ji_talk02, 2402 -> ji_talk02, 2403/2404 -> ji_talk01, 2421 -> ji_akire.",
+    "alternatives": {
+      "lesson done (UNK_0501), first": [2424, 2425, 2426, 2407],
+      "lesson done, repeat": [2427, 2496, 2407],
+      "lesson done, Link rolled into him": [2423, 2407],
+      "lesson done, UNK_2F40": [2395, 2396, 2407],
+      "2407 choice": "Yes -> practice (plmoveAction); No -> 2408",
+      "UNK_0001 first (UNK_0108 clear)": [2405, 2406, 2382],
+      "UNK_0001 repeat": [2381, 2382],
+      "2382 choice": "Yes -> 2383 (sword-giving event, 2384-2394 via event data); No -> end",
+      "UNK_2F10": [2419, 2407],
+      "UNK_0520 first (UNK_0002 clear)": [2438, 2439, 2440, 2441, 2442],
+      "UNK_0520 repeat": [2474, 2475],
+      "UNK_0520 & UNK_0F20 (master)": [2476, 2477],
+      "Knight's Crest (UNK_0D80 clear)": [2478, 2479, "2480.. if >=10 crests else 2491"]
+    },
+    "next_msgStatus": "see md: ranges 0x951-0x9B9 mostly +1 chains; 2427->2496; 2396/2419/2422/2423/2426/2496 -> 2407; 2381/2406 -> 2382"
+  },
+
+  "Aj1": {
+    "name": "Sturgeon",
+    "file": "src/d/actor/d_a_npc_aj1.cpp (stub) + d_a_npc_aj1.rel decode",
+    "confidence": "medium",
+    "archive": "Aj",
+    "model": "aj.bdl",
+    "extra_models": ["aj_stick.bdl"],
+    "wait_anim": "wait01",
+    "talk_anim": "",
+    "all_anims": ["angry", "call", "jamp", "look", "nobi", "shock", "tire", "wait01", "wait02"],
+    "head_joint": "head",
+    "talk_dist": {"index": 173, "xz_max": 400.0, "xz_release": 400.0, "dy": 300.0},
+    "types": {
+      "0": "actor param 0: L-target tutorial variant (!UNK_0E20 && !UNK_0502)",
+      "1": "actor param 1: !UNK_0520 (sets UNK_0502 on spawn)",
+      "2": "actor param 2: UNK_0520 (second visit)"
+    },
+    "first": [
+      [2502, 2503, 2504],
+      [2505, 2506]
+    ],
+    "first_notes": "Type 0: UNK_0510 ? 2505 : 2502. 2502->2503->2504; 2505->2506. Type 1: UNK_0504 ? 2511 : (UNK_2A80 ? 2524 : 2507); 2507->2508, 2524->2508. Which placed Aj1 is active in Outset's house depends on the actor param in the stage file.",
+    "alternatives": {
+      "type1 before clothes": [2507, 2508],
+      "type1 after clothes": [2524, 2508],
+      "type1 UNK_0504 (talked)": [2511],
+      "type1 UNK_0504 and UNK_0001 and !UNK_3704": [2511, 2525],
+      "type0 2504 / 2506 and UNK_0001 and !UNK_3704": [2522],
+      "type1 UNK_0E20 first (sets UNK_3702)": [2523],
+      "type2 second visit first (!UNK_3708)": [2512, "2513 if !GRANDMA_HEALED else 2514 (day) / 2515 (night)"],
+      "type2 repeat": ["2516 if !GRANDMA_HEALED else 2517 (day) / 2518 (night)"],
+      "type2 showing Swordsman's Crest (item 0x48)": ["2519 if !UNK_3701 else (UNK_0B20 ? 2520 : 2521)"],
+      "stomping event text (Orca's house)": [2509, 2510]
+    },
+    "next_msgStatus": {"2502": 2503, "2503": 2504, "2504": "2522 if UNK_0001 && !UNK_3704", "2505": 2506, "2506": "2522 if UNK_0001 && !UNK_3704", "2507": 2508, "2509": 2510, "2511": "2525 if UNK_0001 && !UNK_3704", "2512": "2513 / 2514 / 2515", "2523": "2511 if UNK_0504 else (UNK_2A80 ? 2524 : 2507)", "2524": 2508}
+  },
+
+  "Ko1": {
+    "name": "Zill (runny nose)",
+    "file": "src/d/actor/d_a_npc_ko1.cpp (stub) + d_a_npc_ko1.rel decode",
+    "confidence": "medium",
+    "archive": "Ko",
+    "model": "ko.bdl",
+    "extra_models": ["kohead01.bdl (Zill head, hanamizu joints)", "ko_balloon.bdl (snot bubble)"],
+    "wait_anim": "ko_wait01",
+    "talk_anim": "ko_talk01",
+    "head_anims": ["kohead01_wait01", "kohead01_talk01", "kohead01_susuri", "kohead01_sleep03", "kohead01_sleep04", "kohead01_oisi", "kohead01_bang", "kohead01_butukari", "kohead01_run01", "kohead01_walk01"],
+    "head_joint": "head",
+    "talk_dist": {"index": 169, "xz_max": 200.0, "xz_release": 200.0, "dy": 300.0},
+    "types": {
+      "HNA_2": "fresh file (!UNK_2A80)",
+      "HNA_0": "UNK_2A80 && !UNK_0E20",
+      "HNA_1": "UNK_0E20",
+      "HNA_3": "UNK_0520 day",
+      "HNA_4": "UNK_0520 night"
+    },
+    "first": [
+      [2914],
+      [2915]
+    ],
+    "first_notes": "HNA_2: UNK_3101 ? 2915 : 2914 (2914 'Your grandma was calling for you'). After Hero's Clothes (HNA_0): UNK_0220 ? 2902 : 2901.",
+    "alternatives": {
+      "after clothes first": [2901],
+      "after clothes repeat": [2902],
+      "UNK_0E20 first": [2804, 2903],
+      "UNK_0E20 repeat (UNK_0240)": [2805, 2904],
+      "UNK_0520 day first (!UNK_2C04)": [2905, 2906, 2907, 2908, 2909, 2916, 2917],
+      "UNK_0520 day repeat": [2906, 2907, 2908, 2909, 2916, 2917],
+      "UNK_0520 day repeat alt (m86D)": [2910, 2911, 2912, 2913, 2917]
+    },
+    "next_msgStatus": {"2804": 2903, "2805": 2904, "2905": 2906, "2906": 2907, "2907": 2908, "2908": 2909, "2909": 2916, "2910": 2911, "2911": 2912, "2912": 2913, "2913": 2917}
+  },
+
+  "Ko2": {
+    "name": "Joel (stick)",
+    "file": "src/d/actor/d_a_npc_ko1.cpp (stub, BOU_* branch) + d_a_npc_ko1.rel decode",
+    "confidence": "medium",
+    "archive": "Ko",
+    "model": "ko.bdl",
+    "extra_models": ["kohead02.bdl", "koeda.bdl (stick)", "ko02.bmt (material variant)"],
+    "wait_anim": "ko_wait01",
+    "talk_anim": "ko_talk01",
+    "head_joint": "head",
+    "talk_dist": {"index": 167, "xz_max": 100.0, "xz_release": 100.0, "dy": 300.0},
+    "types": {
+      "BOU_0": "!UNK_0E20 (fresh file and after clothes)",
+      "BOU_1": "UNK_0E20",
+      "BOU_2": "UNK_0520 day",
+      "BOU_3": "UNK_0520 night"
+    },
+    "first": [
+      [2801],
+      [2802]
+    ],
+    "first_notes": "BOU_0: UNK_0104 ? 2803 : (UNK_0210 ? 2802 : 2801). 2801 asks whether you can jump with courage; UNK_0104 is presumably set once Link jumps for him (2803 'I hope I'll be able to jump like you').",
+    "alternatives": {
+      "UNK_0104 (Link jumped)": [2803],
+      "UNK_0E20 first": [2804, 2903],
+      "UNK_0E20 repeat (UNK_0208)": [2805, 2904],
+      "UNK_0520 day first (!UNK_3801)": [2806, 2807, 2808, 2809, 2810, 2811, "2812 or 2813 by eventReg bitCount", 2814, 2815, 2816, 2817, 2818, 2819, 2820, 2821, 2822],
+      "UNK_0520 day repeat, UNK_3340": [2824, 2825, 2826, 2827, 2828, 2829],
+      "UNK_0520 day repeat, >=2 pigs delivered": [2823, 2817, 2818, 2819, 2820, 2821, 2822],
+      "UNK_0520 day repeat, <2 pigs": [2816, 2817, 2818, 2819, 2820, 2821, 2822]
+    },
+    "next_msgStatus": {"2806": 2807, "2807": 2808, "2808": 2809, "2809": 2810, "2810": 2811, "2811": "2812/2813", "2812": 2814, "2813": 2814, "2814": 2815, "2816": 2817, "2817": 2818, "2818": 2819, "2819": 2820, "2820": 2821, "2821": 2822, "2823": 2817, "2824": 2825, "2825": 2826, "2826": 2827, "2827": 2828, "2828": 2829}
+  },
+
+  "Ob1": {
+    "name": "Rose",
+    "file": "src/d/actor/d_a_npc_ob1.cpp (stub) + d_a_npc_ob1.rel decode",
+    "confidence": "medium",
+    "archive": "Ob",
+    "model": "ob.bdl",
+    "extra_models": ["oba_head.bdl"],
+    "wait_anim": "wait",
+    "talk_anim": "talk",
+    "all_anims": ["talk", "thank", "thank02", "wait", "walk", "laugh", "shutup01", "shutup02"],
+    "head_joint": "head",
+    "talk_dist": {"index": 172, "xz_max": 350.0, "xz_release": 350.0, "dy": 300.0},
+    "types": {"0": "!UNK_0520", "1": "UNK_0520 day", "2": "UNK_0520 night"},
+    "first": [
+      [2734],
+      [2701, 2702],
+      [2701, 2702]
+    ],
+    "first_notes": "Type 0 with no pigs delivered: !UNK_2A80 -> (!UNK_2C80 ? set it, 2734 'Today is your birthday' : (UNK_0304 ? 2703 : 2701)). With clothes: !UNK_2C40 -> set, 2733 'cute as a bug in that outfit'; then !UNK_2C80 -> 2734; then UNK_0304 ? 2703 : 2701. 2701 -> 2702.",
+    "alternatives": {
+      "after clothes first": [2733],
+      "after clothes second": [2734],
+      "UNK_0304": [2703],
+      "pig delivered (various counts, fields m7E7-m7EA)": [2704, 2705, 2706, 2707, 2708, 2709, 2710, 2711, 2712, 2713, 2714, 2715, 2716, 2717, 2718, 2719, 2720, 2721, 2722, 2723, 2724, 2725, 2726],
+      "UNK_0E20 and !UNK_0308 (after pig thanks)": [2727],
+      "UNK_0520 day first (!UNK_2C20)": [2728, "2729 (day) / 2730 (night)"],
+      "UNK_0520 repeat": ["2732 - eventReg bitCount (2731/2732)"]
+    },
+    "next_msgStatus": {"2701": 2702, "2704": 2705, "2707": 2708, "2711": 2712, "2706/2710/2715/2717/2720/2722-2726": "2727 if UNK_0E20 && !UNK_0308", "2728": "2729 day / 2730 night", "2733": "2703 if UNK_0304 else 2701", "2734": "2703 if UNK_0304 else 2701"}
+  },
+
+  "Yw1": {
+    "name": "Sue-Belle",
+    "file": "src/d/actor/d_a_npc_yw1.cpp (stub) + d_a_npc_yw1.rel decode",
+    "confidence": "medium",
+    "archive": "Yw",
+    "model": "yw.bdl",
+    "extra_models": ["ywhead01.bdl"],
+    "wait_anim": "wait01",
+    "talk_anim": "yw_talk01",
+    "all_anims": ["wait01", "yw_talk01", "yw_ttalk", "yw_twait", "yw_twalk", "yw_wait02", "yw_talk02"],
+    "head_joint": "head",
+    "talk_dist": {"index": 171, "xz_max": 300.0, "xz_release": 300.0, "dy": 300.0},
+    "types": {"0": "!UNK_0520 && !UNK_0001 (spawns a carried jar, fopAcM_create 0x1CB)", "1": "!UNK_0520 && UNK_0001", "2": "UNK_0520 night / healed", "3": "UNK_0520 day"},
+    "first": [
+      [2201],
+      [2202]
+    ],
+    "first_notes": "Type 0: UNK_0180 ? 2202 : (UNK_2A80 ? 2218 : 2201). 2201 'Happy birthday, did Aryll find you?'; 2218 after the clothes; 2202 jar-lifting tip once UNK_0180 is set (first talk done).",
+    "alternatives": {
+      "after clothes, first": [2218],
+      "UNK_0180 (talked)": [2202],
+      "jar broken (m774)": [2208],
+      "jar broken (m775)": [2207],
+      "UNK_0001 first": [2203],
+      "UNK_0001 repeat (UNK_0140)": [2204],
+      "UNK_0E20 first": [2205],
+      "UNK_0E20 repeat (UNK_0120)": [2206],
+      "UNK_0520 first (!UNK_3A40)": [2211, "2212 if !GRANDMA_HEALED else 2214 (day) / 2213 (night)"],
+      "UNK_0520 repeat !GRANDMA_HEALED": [2215],
+      "UNK_0520 repeat healed": ["2217 (day) / 2216 (night)"]
+    },
+    "next_msgStatus": {"2211": "2212 if !GRANDMA_HEALED else 2214 (day) / 2213 (night)"}
+  },
+
+  "Ym1": {
+    "name": "Mesa (grass cutter)",
+    "file": "src/d/actor/d_a_npc_ym1.cpp (stub, YM1_* branch) + d_a_npc_ym1.rel decode",
+    "confidence": "medium",
+    "archive": "Ym",
+    "model": "ym.bdl",
+    "extra_models": ["ymhead01.bdl", "ymkama.bdl (sickle)"],
+    "wait_anim": "wait01",
+    "talk_anim": "ym_talk01",
+    "all_anims": ["wait01", "ym_kari01", "ym_kari2wait", "ym_ktalk", "ym_ktalk02", "ym_kwait", "ym_nbtlook", "ym_nbttalk", "ym_nbtwait", "ym_sit", "ym_sittalk", "ym_talk01", "ym_wait02"],
+    "head_joint": "head",
+    "talk_dist": {"index": "per-type table (lbzx) - not resolved", "xz_max": null},
+    "types": {"0": "procname Ym1, !UNK_0520", "1": "procname Ym1, UNK_0520"},
+    "first": [
+      [2314, 2315],
+      [2314, 2315]
+    ],
+    "first_notes": "Type 0: UNK_0020 ? 2303 : (UNK_2A80 ? 2301 : 2314). 2314 'Hoy, today is your birthday?' -> 2315; after the clothes 2301 -> 2302. UNK_0020 presumably set by the grass-cutting event (2303 -> 2304).",
+    "alternatives": {
+      "after clothes": [2301, 2302],
+      "UNK_0020": [2303, 2304],
+      "HIO debug byte set": ["UNK_0010 ? 2307 : 2305 -> 2306"],
+      "UNK_0520 first": [2308, 2309, 2310],
+      "UNK_0520 repeat (UNK_2904)": [2311, 2312, "2313 if !UNK_3004"]
+    },
+    "next_msgStatus": {"2301": 2302, "2303": 2304, "2305": 2306, "2308": 2309, "2309": 2310, "2311": 2312, "2312": "2313 if !UNK_3004", "2314": 2315}
+  },
+
+  "Ym2": {
+    "name": "Abe (pig man, Rose's husband)",
+    "file": "src/d/actor/d_a_npc_ym1.cpp (stub, YM2_* branch) + d_a_npc_ym1.rel decode",
+    "confidence": "medium",
+    "archive": "Ym",
+    "model": "ym.bdl",
+    "extra_models": ["ymhead02.bdl", "ym2.bmt (material variant)"],
+    "wait_anim": "wait01",
+    "talk_anim": "ym_talk01",
+    "head_joint": "head",
+    "talk_dist": {"index": "per-type table (lbzx) - not resolved", "xz_max": null},
+    "types": {"2": "procname Ym2, !UNK_0520 && !UNK_0E20", "3": "UNK_0E20", "4": "UNK_0520 day", "5": "UNK_0520 night"},
+    "first": [
+      [2601],
+      [2602]
+    ],
+    "first_notes": "Type 2: chk_BlackPig() ? (UNK_0008 ? 2604 : 2603) : (UNK_0080 ? 2602 : 2601). 2601 'I just saw a wild pig!', then 2602 (hold R to crouch) once UNK_0080 is set.",
+    "alternatives": {
+      "UNK_0080 (talked)": [2602],
+      "holding/near black pig": ["UNK_0008 ? 2604 : 2603"],
+      "UNK_0E20": ["UNK_0B01 ? 2606 : 2605"],
+      "UNK_0520 first (!UNK_3140)": [2607, "night: 2608 ; day: eventReg? (UNK_3402 ? 2609->2610 : 2611->2612) else (UNK_3402 ? 2615->2616 : 2613->2614)"],
+      "UNK_0520 night repeat": ["UNK_3402 ? 2618 : 2617"],
+      "UNK_0520 day repeat, !UNK_3580": [2619, "UNK_3402 ? 2620 : 2621"],
+      "UNK_0520 day repeat, UNK_3580, !UNK_3540": [2622, "UNK_3402 ? 2624 : 2623"],
+      "UNK_0520 day repeat, UNK_3540": [2625, 2626]
+    }
+  },
+
+  "NpcSo": {
+    "name": "Fishman (Outset)",
+    "file": "src/d/actor/d_a_npc_so.cpp (stub) + d_a_npc_so.rel decode; island text id comes from the placed actor's rot.x",
+    "confidence": "medium",
+    "archive": "So",
+    "model": "so.bdl",
+    "extra_models": ["so_fude.bdl (brush)"],
+    "wait_anim": "so_wait01",
+    "talk_anim": "so_talk01",
+    "all_anims": ["so_jump", "so_swim01", "so_talk01", "so_talk02", "so_wait01"],
+    "head_joint": "head",
+    "talk_dist": {"index": 34, "xz_max": 500.0, "xz_release": 600.0, "dy": 2000.0},
+    "island_msg": 13070,
+    "first": [
+      [13008, 13009],
+      [13070, 13010, 13011]
+    ],
+    "first_notes": "Generic fishman (not the Dragon Roost one in sea room 13): appears after bait is thrown; 13008 'Hoy small fry' -> 13009 'want a chart and info?' -> modeProc(9) draws the island on the Sea Chart. Once the chart is drawn (m_BD8) getMsg returns the island text from the actor's rot.x: Outset = 13070 (big-head boulder), then 13010 -> 13011. Bait-again 13012 if the grid was already saved/visited.",
+    "alternatives": {
+      "already drawn, repeat with bait": [13070, 13010, 13011],
+      "same bait again (isSaveArriveGrid)": [13012],
+      "has bow, not yet played (UNK_3A10 clear)": [13016, "13018 -> 13019 or 13017"],
+      "has bow, UNK_3A10": [13020],
+      "bait minigame results": [13021, 13022, 13023, 13024, 13025, 13026],
+      "Dragon Roost first fishman (room 13, !UNK_0901)": [13002, 13003, 13004, 13005, 13006]
+    },
+    "next_msgStatus": {"13002": 13003, "13003": 13004, "13004": 13005, "13005": "end, modeProc 7", "13008": "13012 if isSaveArriveGrid else 13009", "13009": "end, modeProc 9 (draw chart)", "island_msg": "13006 (DRI) / 13010 / 13014", "13010": 13011, "13016": "13018 / 13020 / 13015", "13018": "13019 or 13017", "13021": 13022, "13023": 13026, "13025": 13026}
+  },
+
+  "Bm1": {
+    "name": "(not Outset) generic Rito",
+    "file": "src/d/actor/d_a_npc_bm1.cpp",
+    "confidence": "n/a",
+    "archive": "Bm",
+    "model": "bm.bdl",
+    "wait_anim": "",
+    "talk_anim": "",
+    "first": [],
+    "alternatives": {},
+    "notes": "Bm1 is the generic Rito NPC (Dragon Roost), not an Outset resident. Not extracted."
+  },
+
+  "Kg1": {
+    "name": "(not Outset) Salvatore, Sploosh Kaboom",
+    "file": "src/d/actor/d_a_npc_kg1.cpp (stub)",
+    "confidence": "n/a",
+    "archive": "Kg",
+    "model": "kg.bdl",
+    "wait_anim": "",
+    "talk_anim": "",
+    "first": [],
+    "alternatives": {},
+    "notes": "Windfall minigame host. Not an Outset NPC; not extracted."
+  },
+
+  "Kg2": {
+    "name": "(not Outset) Salvatore, Cannon minigame",
+    "file": "src/d/actor/d_a_npc_kg2.cpp (stub)",
+    "confidence": "n/a",
+    "archive": "Kg",
+    "model": "kg.bdl",
+    "wait_anim": "",
+    "talk_anim": "",
+    "first": [],
+    "alternatives": {},
+    "notes": "Not an Outset NPC; not extracted."
+  },
+
+  "Dk": {
+    "name": "Helmaroc King (Forsaken Fortress tower / Outset prologue)",
+    "file": "src/d/actor/d_a_dk.cpp",
+    "confidence": "n/a",
+    "archive": "Dk",
+    "model": "",
+    "wait_anim": "",
+    "talk_anim": "",
+    "first": [],
+    "alternatives": {},
+    "notes": "Boss/cutscene actor, no dialogue."
+  },
+
+  "Pirates": {
+    "name": "Tetra's pirates (P1a/P1b = Gonzo/Senza/Nudge, P2a/P2b/P2c = Zuko/Niko/Mako, Zl1 = Tetra)",
+    "file": "src/d/actor/d_a_npc_p1.cpp, d_a_npc_p2.cpp (stub), d_a_npc_zl1.cpp",
+    "confidence": "n/a",
+    "archive": "P1 / P2 / Zl",
+    "model": "",
+    "wait_anim": "",
+    "talk_anim": "",
+    "first": [],
+    "alternatives": {},
+    "notes": "Present on Outset only inside the prologue cutscenes (event data). Not extracted in this pass."
+  }
+}
