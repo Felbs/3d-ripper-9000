@@ -1,0 +1,1112 @@
+{
+ "_source": "zeldaret/tww JAIZelScene.cpp m_scene_info / m_isle_info + JaiInit.aaf sound table",
+ "stages": {
+  "M_NewD2": {
+   "bgm": "JA_BGM_D_RYU_MT",
+   "song": "d_ryumt.bms",
+   "bank_set": 1,
+   "sub": 5
+  },
+  "M_DragB": {
+   "bgm": null,
+   "song": null,
+   "bank_set": 1,
+   "sub": 1
+  },
+  "kindan": {
+   "bgm": "JA_BGM_D_FOREST",
+   "song": "d_forest.bms",
+   "bank_set": 3,
+   "sub": 5
+  },
+  "ma3room": {
+   "bgm": "JA_BGM_I_MAJU_2ND",
+   "song": "i_maju.bms",
+   "bank_set": 2,
+   "sub": 5
+  },
+  "GanonF": {
+   "bgm": "JA_BGM_D_GANON_1",
+   "song": "d_ganon1.bms",
+   "bank_set": 23,
+   "sub": 0
+  },
+  "GanonG": {
+   "bgm": "JA_BGM_D_GANON_1",
+   "song": "d_ganon1.bms",
+   "bank_set": 23,
+   "sub": 0
+  },
+  "kinBOSS": {
+   "bgm": null,
+   "song": null,
+   "bank_set": 3,
+   "sub": 2
+  },
+  "majroom": {
+   "bgm": "JA_BGM_I_MAJU",
+   "song": "i_maju.bms",
+   "bank_set": 2,
+   "sub": 5
+  },
+  "Mjtower": {
+   "bgm": null,
+   "song": null,
+   "bank_set": 7,
+   "sub": 4
+  },
+  "Siren": {
+   "bgm": "JA_BGM_KAMI_TOWER",
+   "song": "kaminoto.bms",
+   "bank_set": 6,
+   "sub": 5
+  },
+  "LinkRM": {
+   "bgm": "JA_BGM_HOUSE",
+   "song": "house.bms",
+   "bank_set": 27,
+   "sub": 0
+  },
+  "Asoko": {
+   "bgm": "JA_BGM_PIRATE_C",
+   "song": "pirate_c.bms",
+   "bank_set": 4,
+   "sub": 0
+  },
+  "Ojhous": {
+   "bgm": "JA_BGM_HOUSE_G",
+   "song": "house_g.bms",
+   "bank_set": 9,
+   "sub": 0
+  },
+  "Obshop": {
+   "bgm": "JA_BGM_BOAT_SHOP",
+   "song": "store.bms",
+   "bank_set": 16,
+   "sub": 0
+  },
+  "M_Dai": {
+   "bgm": "JA_BGM_D_EARTH",
+   "song": "d_earth.bms",
+   "bank_set": 18,
+   "sub": 5
+  },
+  "A_mori": {
+   "bgm": "JA_BGM_I_LINK_FOREST",
+   "song": "i_linkf.bms",
+   "bank_set": 5,
+   "sub": 3
+  },
+  "A_umikz": {
+   "bgm": "JA_BGM_PIRATE",
+   "song": "pirate.bms",
+   "bank_set": 14,
+   "sub": 0
+  },
+  "sea": {
+   "bgm": null,
+   "song": null,
+   "bank_set": 0,
+   "sub": 0
+  },
+  "MajyuE": {
+   "bgm": "JA_BGM_I_MAJU",
+   "song": "i_maju.bms",
+   "bank_set": 2,
+   "sub": 0
+  },
+  "GanonH": {
+   "bgm": "JA_BGM_D_GANON_1",
+   "song": "d_ganon1.bms",
+   "bank_set": 23,
+   "sub": 0
+  },
+  "GanonI": {
+   "bgm": "JA_BGM_D_GANON_1",
+   "song": "d_ganon1.bms",
+   "bank_set": 23,
+   "sub": 0
+  },
+  "Ekaze": {
+   "bgm": "JA_BGM_JABOO_CAVE",
+   "song": "jaboo.bms",
+   "bank_set": 40,
+   "sub": 0
+  },
+  "kaze": {
+   "bgm": "JA_BGM_D_WIND",
+   "song": "d_wind.bms",
+   "bank_set": 8,
+   "sub": 5
+  },
+  "kazeB": {
+   "bgm": null,
+   "song": null,
+   "bank_set": 8,
+   "sub": 9
+  },
+  "GanonL": {
+   "bgm": "JA_BGM_D_GANON_1",
+   "song": "d_ganon1.bms",
+   "bank_set": 23,
+   "sub": 0
+  },
+  "Opub": {
+   "bgm": "JA_BGM_HOUSE",
+   "song": "house.bms",
+   "bank_set": 9,
+   "sub": 0
+  },
+  "Pdrgsh": {
+   "bgm": "JA_BGM_DRUG_STORE",
+   "song": "drug.bms",
+   "bank_set": 22,
+   "sub": 0
+  },
+  "Pnezumi": {
+   "bgm": "JA_BGM_HOUSE",
+   "song": "house.bms",
+   "bank_set": 12,
+   "sub": 0
+  },
+  "Kaisen": {
+   "bgm": "JA_BGM_HOUSE",
+   "song": "house.bms",
+   "bank_set": 26,
+   "sub": 0
+  },
+  "Orichh": {
+   "bgm": "JA_BGM_HOUSE",
+   "song": "house.bms",
+   "bank_set": 13,
+   "sub": 0
+  },
+  "Ocmera": {
+   "bgm": "JA_BGM_HOUSE",
+   "song": "house.bms",
+   "bank_set": 27,
+   "sub": 0
+  },
+  "Obombh": {
+   "bgm": "JA_BGM_HOUSE",
+   "song": "house.bms",
+   "bank_set": 27,
+   "sub": 0
+  },
+  "Adanmae": {
+   "bgm": null,
+   "song": null,
+   "bank_set": 25,
+   "sub": 0
+  },
+  "Atorizk": {
+   "bgm": "JA_BGM_HOUSE",
+   "song": "house.bms",
+   "bank_set": 25,
+   "sub": 0
+  },
+  "M_Dra09": {
+   "bgm": null,
+   "song": null,
+   "bank_set": 1,
+   "sub": 5
+  },
+  "GanonJ": {
+   "bgm": "JA_BGM_D_GANON_2",
+   "song": "d_ganon2.bms",
+   "bank_set": 24,
+   "sub": 10
+  },
+  "SirenB": {
+   "bgm": null,
+   "song": null,
+   "bank_set": 6,
+   "sub": 7
+  },
+  "Ocrogh": {
+   "bgm": "JA_BGM_DRUG_STORE",
+   "song": "drug.bms",
+   "bank_set": 22,
+   "sub": 0
+  },
+  "Omori": {
+   "bgm": "JA_BGM_I_WOOD_INNER",
+   "song": "i_moridk.bms",
+   "bank_set": 15,
+   "sub": 12
+  },
+  "Xboss0": {
+   "bgm": null,
+   "song": null,
+   "bank_set": 28,
+   "sub": 0
+  },
+  "Pjavdou": {
+   "bgm": "JA_BGM_JABOO_CAVE",
+   "song": "jaboo.bms",
+   "bank_set": 34,
+   "sub": 0
+  },
+  "Omasao": {
+   "bgm": "JA_BGM_HOUSE",
+   "song": "house.bms",
+   "bank_set": 9,
+   "sub": 0
+  },
+  "Onobuta": {
+   "bgm": "JA_BGM_HOUSE",
+   "song": "house.bms",
+   "bank_set": 9,
+   "sub": 0
+  },
+  "Edaichi": {
+   "bgm": "JA_BGM_JABOO_CAVE",
+   "song": "jaboo.bms",
+   "bank_set": 39,
+   "sub": 0
+  },
+  "M_DaiB": {
+   "bgm": null,
+   "song": null,
+   "bank_set": 18,
+   "sub": 11
+  },
+  "GanonA": {
+   "bgm": "JA_BGM_D_GANON_1",
+   "song": "d_ganon1.bms",
+   "bank_set": 23,
+   "sub": 0
+  },
+  "GanonB": {
+   "bgm": "JA_BGM_UNK_130",
+   "song": null,
+   "bank_set": 23,
+   "sub": 0
+  },
+  "GanonC": {
+   "bgm": "JA_BGM_UNK_131",
+   "song": null,
+   "bank_set": 23,
+   "sub": 0
+  },
+  "GanonD": {
+   "bgm": "JA_BGM_UNK_132",
+   "song": null,
+   "bank_set": 23,
+   "sub": 0
+  },
+  "GanonE": {
+   "bgm": "JA_BGM_UNK_133",
+   "song": null,
+   "bank_set": 23,
+   "sub": 0
+  },
+  "Hyrule": {
+   "bgm": "JA_BGM_DEATH_VALLEY",
+   "song": "death_vl.bms",
+   "bank_set": 37,
+   "sub": 0
+  },
+  "Hyroom": {
+   "bgm": "JA_BGM_HYRULE_ON",
+   "song": "hyrul_on.bms",
+   "bank_set": 20,
+   "sub": 0
+  },
+  "Xboss1": {
+   "bgm": null,
+   "song": null,
+   "bank_set": 29,
+   "sub": 0
+  },
+  "SirenMB": {
+   "bgm": "JA_BGM_KAMI_TOWER",
+   "song": "kaminoto.bms",
+   "bank_set": 6,
+   "sub": 5
+  },
+  "Otkura": {
+   "bgm": null,
+   "song": null,
+   "bank_set": 15,
+   "sub": 12
+  },
+  "Xboss2": {
+   "bgm": null,
+   "song": null,
+   "bank_set": 30,
+   "sub": 0
+  },
+  "Xboss3": {
+   "bgm": null,
+   "song": null,
+   "bank_set": 31,
+   "sub": 0
+  },
+  "M_DaiMB": {
+   "bgm": "JA_BGM_D_EARTH",
+   "song": "d_earth.bms",
+   "bank_set": 18,
+   "sub": 5
+  },
+  "Comori": {
+   "bgm": "JA_BGM_HOUSE",
+   "song": "house.bms",
+   "bank_set": 25,
+   "sub": 0
+  },
+  "kinMB": {
+   "bgm": "JA_BGM_D_FOREST",
+   "song": "d_forest.bms",
+   "bank_set": 3,
+   "sub": 5
+  },
+  "ma2room": {
+   "bgm": "JA_BGM_I_MAJU_2ND",
+   "song": "i_maju.bms",
+   "bank_set": 2,
+   "sub": 5
+  },
+  "M2tower": {
+   "bgm": null,
+   "song": null,
+   "bank_set": 7,
+   "sub": 4
+  },
+  "kazeMB": {
+   "bgm": "JA_BGM_D_WIND",
+   "song": "d_wind.bms",
+   "bank_set": 8,
+   "sub": 5
+  },
+  "MiniKaz": {
+   "bgm": "JA_BGM_SUB_DUNGEON",
+   "song": "subdun.bms",
+   "bank_set": 38,
+   "sub": 0
+  },
+  "MiniHyo": {
+   "bgm": "JA_BGM_SUB_DUNGEON",
+   "song": "subdun.bms",
+   "bank_set": 38,
+   "sub": 0
+  },
+  "TyuTyu": {
+   "bgm": "JA_BGM_SUB_DUNGEON",
+   "song": "subdun.bms",
+   "bank_set": 38,
+   "sub": 0
+  },
+  "WarpD": {
+   "bgm": "JA_BGM_SUB_DUNGEON",
+   "song": "subdun.bms",
+   "bank_set": 38,
+   "sub": 0
+  },
+  "ShipD": {
+   "bgm": "JA_BGM_SUB_DUNGEON",
+   "song": "subdun.bms",
+   "bank_set": 38,
+   "sub": 0
+  },
+  "Cave01": {
+   "bgm": "JA_BGM_SUB_DUNGEON",
+   "song": "subdun.bms",
+   "bank_set": 38,
+   "sub": 0
+  },
+  "Cave02": {
+   "bgm": "JA_BGM_SUB_DUNGEON",
+   "song": "subdun.bms",
+   "bank_set": 38,
+   "sub": 0
+  },
+  "Cave03": {
+   "bgm": "JA_BGM_SUB_DUNGEON",
+   "song": "subdun.bms",
+   "bank_set": 38,
+   "sub": 0
+  },
+  "Cave04": {
+   "bgm": "JA_BGM_SUB_DUNGEON",
+   "song": "subdun.bms",
+   "bank_set": 38,
+   "sub": 0
+  },
+  "TF_01": {
+   "bgm": "JA_BGM_SUB_DUNGEON",
+   "song": "subdun.bms",
+   "bank_set": 38,
+   "sub": 0
+  },
+  "TF_02": {
+   "bgm": "JA_BGM_SUB_DUNGEON",
+   "song": "subdun.bms",
+   "bank_set": 38,
+   "sub": 0
+  },
+  "TF_03": {
+   "bgm": "JA_BGM_SUB_DUNGEON",
+   "song": "subdun.bms",
+   "bank_set": 38,
+   "sub": 0
+  },
+  "Fairy01": {
+   "bgm": "JA_BGM_ELF",
+   "song": "elf.bms",
+   "bank_set": 36,
+   "sub": 0
+  },
+  "Fairy02": {
+   "bgm": "JA_BGM_ELF",
+   "song": "elf.bms",
+   "bank_set": 36,
+   "sub": 0
+  },
+  "Fairy03": {
+   "bgm": "JA_BGM_ELF",
+   "song": "elf.bms",
+   "bank_set": 36,
+   "sub": 0
+  },
+  "Fairy04": {
+   "bgm": "JA_BGM_ELF",
+   "song": "elf.bms",
+   "bank_set": 36,
+   "sub": 0
+  },
+  "Fairy05": {
+   "bgm": "JA_BGM_ELF",
+   "song": "elf.bms",
+   "bank_set": 36,
+   "sub": 0
+  },
+  "TF_04": {
+   "bgm": "JA_BGM_SUB_DUNGEON",
+   "song": "subdun.bms",
+   "bank_set": 38,
+   "sub": 0
+  },
+  "PShip": {
+   "bgm": "JA_BGM_SUB_DUNGEON",
+   "song": "subdun.bms",
+   "bank_set": 35,
+   "sub": 13
+  },
+  "ADMumi": {
+   "bgm": null,
+   "song": null,
+   "bank_set": 6,
+   "sub": 5
+  },
+  "Nitiyou": {
+   "bgm": "JA_BGM_HOUSE",
+   "song": "house.bms",
+   "bank_set": 27,
+   "sub": 0
+  },
+  "Abesso": {
+   "bgm": "JA_BGM_HOUSE",
+   "song": "house.bms",
+   "bank_set": 12,
+   "sub": 0
+  },
+  "Abship": {
+   "bgm": "JA_BGM_SUB_DUNGEON",
+   "song": "subdun.bms",
+   "bank_set": 41,
+   "sub": 0
+  },
+  "kenroom": {
+   "bgm": "JA_BGM_HYRULE_ON",
+   "song": "hyrul_on.bms",
+   "bank_set": 20,
+   "sub": 5
+  },
+  "M2ganon": {
+   "bgm": null,
+   "song": null,
+   "bank_set": 44,
+   "sub": 0
+  },
+  "GanonK": {
+   "bgm": null,
+   "song": null,
+   "bank_set": 42,
+   "sub": 0
+  },
+  "GTower": {
+   "bgm": null,
+   "song": null,
+   "bank_set": 32,
+   "sub": 0
+  },
+  "Fairy06": {
+   "bgm": "JA_BGM_ELF",
+   "song": "elf.bms",
+   "bank_set": 36,
+   "sub": 0
+  },
+  "Cave05": {
+   "bgm": "JA_BGM_SUB_DUNGEON",
+   "song": "subdun.bms",
+   "bank_set": 38,
+   "sub": 0
+  },
+  "Cave06": {
+   "bgm": "JA_BGM_SUB_DUNGEON",
+   "song": "subdun.bms",
+   "bank_set": 38,
+   "sub": 0
+  },
+  "Pfigure": {
+   "bgm": "JA_BGM_HOUSE",
+   "song": "house.bms",
+   "bank_set": 9,
+   "sub": 0
+  },
+  "figureA": {
+   "bgm": "JA_BGM_HOUSE",
+   "song": "house.bms",
+   "bank_set": 9,
+   "sub": 0
+  },
+  "figureB": {
+   "bgm": "JA_BGM_HOUSE",
+   "song": "house.bms",
+   "bank_set": 9,
+   "sub": 0
+  },
+  "figureC": {
+   "bgm": "JA_BGM_HOUSE",
+   "song": "house.bms",
+   "bank_set": 9,
+   "sub": 0
+  },
+  "figureD": {
+   "bgm": "JA_BGM_HOUSE",
+   "song": "house.bms",
+   "bank_set": 9,
+   "sub": 0
+  },
+  "figureE": {
+   "bgm": "JA_BGM_HOUSE",
+   "song": "house.bms",
+   "bank_set": 9,
+   "sub": 0
+  },
+  "figureF": {
+   "bgm": "JA_BGM_HOUSE",
+   "song": "house.bms",
+   "bank_set": 9,
+   "sub": 0
+  },
+  "figureG": {
+   "bgm": "JA_BGM_HOUSE",
+   "song": "house.bms",
+   "bank_set": 9,
+   "sub": 0
+  },
+  "Ojhous2": {
+   "bgm": "JA_BGM_HOUSE_G",
+   "song": "house_g.bms",
+   "bank_set": 9,
+   "sub": 0
+  },
+  "GanonM": {
+   "bgm": "JA_BGM_D_GANON_2",
+   "song": "d_ganon2.bms",
+   "bank_set": 24,
+   "sub": 10
+  },
+  "GanonN": {
+   "bgm": "JA_BGM_D_GANON_1",
+   "song": "d_ganon1.bms",
+   "bank_set": 23,
+   "sub": 0
+  },
+  "Cave09": {
+   "bgm": "JA_BGM_SUB_DUNGEON",
+   "song": "subdun.bms",
+   "bank_set": 38,
+   "sub": 0
+  },
+  "Cave10": {
+   "bgm": "JA_BGM_SUB_DUNGEON",
+   "song": "subdun.bms",
+   "bank_set": 38,
+   "sub": 0
+  },
+  "Cave11": {
+   "bgm": "JA_BGM_SUB_DUNGEON",
+   "song": "subdun.bms",
+   "bank_set": 38,
+   "sub": 0
+  },
+  "Cave07": {
+   "bgm": "JA_BGM_SUB_DUNGEON",
+   "song": "subdun.bms",
+   "bank_set": 38,
+   "sub": 0
+  },
+  "TF_06": {
+   "bgm": "JA_BGM_SUB_DUNGEON",
+   "song": "subdun.bms",
+   "bank_set": 38,
+   "sub": 0
+  },
+  "ITest62": {
+   "bgm": "JA_BGM_SUB_DUNGEON",
+   "song": "subdun.bms",
+   "bank_set": 38,
+   "sub": 0
+  },
+  "ITest63": {
+   "bgm": "JA_BGM_SUB_DUNGEON",
+   "song": "subdun.bms",
+   "bank_set": 38,
+   "sub": 0
+  },
+  "SubD71": {
+   "bgm": "JA_BGM_SUB_DUNGEON",
+   "song": "subdun.bms",
+   "bank_set": 38,
+   "sub": 0
+  },
+  "SubD43": {
+   "bgm": "JA_BGM_SUB_DUNGEON",
+   "song": "subdun.bms",
+   "bank_set": 38,
+   "sub": 0
+  },
+  "SubD42": {
+   "bgm": "JA_BGM_SUB_DUNGEON",
+   "song": "subdun.bms",
+   "bank_set": 38,
+   "sub": 0
+  },
+  "sea_T": {
+   "bgm": null,
+   "song": null,
+   "bank_set": 0,
+   "sub": 0
+  },
+  "dummy": {
+   "bgm": null,
+   "song": null,
+   "bank_set": 0,
+   "sub": 0
+  },
+  "": {
+   "bgm": null,
+   "song": null,
+   "bank_set": 0,
+   "sub": 0
+  }
+ },
+ "sea_rooms": {
+  "0": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 0,
+   "sub": 0
+  },
+  "1": {
+   "bgm": "JA_BGM_I_MAJU",
+   "song": "i_maju.bms",
+   "bank_set": 2,
+   "sub": 10
+  },
+  "2": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "3": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "4": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "5": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "6": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "7": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "8": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "9": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 43,
+   "sub": 6
+  },
+  "10": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 26,
+   "sub": 6
+  },
+  "11": {
+   "bgm": "JA_BGM_ISLAND_TAURA",
+   "song": "i_taura.bms",
+   "bank_set": 11,
+   "sub": 0
+  },
+  "12": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "13": {
+   "bgm": "JA_BGM_ISLAND_DRAGON",
+   "song": "i_ryu.bms",
+   "bank_set": 25,
+   "sub": 6
+  },
+  "14": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 21,
+   "sub": 6
+  },
+  "15": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "16": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "17": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 17,
+   "sub": 6
+  },
+  "18": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 33,
+   "sub": 6
+  },
+  "19": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "20": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "21": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "22": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "23": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "24": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "25": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "26": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 16,
+   "sub": 6
+  },
+  "27": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "28": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "29": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "30": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "31": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "32": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "33": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 19,
+   "sub": 6
+  },
+  "34": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "35": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "36": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 19,
+   "sub": 6
+  },
+  "37": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "38": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 33,
+   "sub": 6
+  },
+  "39": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "40": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "41": {
+   "bgm": "JA_BGM_ISLAND_WOOD",
+   "song": "i_mori.bms",
+   "bank_set": 15,
+   "sub": 0
+  },
+  "42": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "43": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "44": {
+   "bgm": "JA_BGM_ISLAND_LINK",
+   "song": "i_link.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "45": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "46": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 36,
+   "sub": 6
+  },
+  "47": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  },
+  "48": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 21,
+   "sub": 6
+  },
+  "49": {
+   "bgm": "JA_BGM_SEA",
+   "song": "sea.bms",
+   "bank_set": 10,
+   "sub": 6
+  }
+ },
+ "bgm_songs": {
+  "JA_BGM_SE_SEQUENCE": "defaultse.bms",
+  "JA_BGM_ISLAND_LINK": "i_link.bms",
+  "JA_BGM_ITEM_GET": "get.bms",
+  "JA_BGM_GOMA": "goma_a.bms",
+  "JA_BGM_BATTLE_NORM": "enemy2.bms",
+  "JA_BGM_KINDAN_BOSS": "boco.bms",
+  "JA_BGM_D_RYU_MT": "d_ryumt.bms",
+  "JA_BGM_I_MAJU": "i_maju.bms",
+  "JA_BGM_HOUSE": "house.bms",
+  "JA_BGM_OPEN_BOX": "open_box.bms",
+  "JA_BGM_DIE_LINK": "die_link.bms",
+  "JA_BGM_SEA_GAME": "sea_game.bms",
+  "JA_BGM_SEA_GOAL": "sea_goal.bms",
+  "JA_BGM_SEA_FAIL": "sea_fail.bms",
+  "JA_BGM_ISLAND_LINK_2": "i_link2.bms",
+  "JA_BGM_I_MAJU_JAIL": "i_maju_j.bms",
+  "JA_BGM_GOMA_2": "goma_b.bms",
+  "JA_BGM_JI_TRAINING": "house_t.bms",
+  "JA_BGM_TETRA_MEET": "tetra_meet.bms",
+  "JA_BGM_BK_FLY_DOWN": "enemy_comes.bms",
+  "JA_BGM_DK_BATTLE": "bird.bms",
+  "JA_BGM_MJ_TOWER_BATTLE": "tower.bms",
+  "JA_BGM_FIND_TETRA": "find_ttr.bms",
+  "JA_BGM_I_LINK_FOREST": "i_linkf.bms",
+  "JA_BGM_HOUSE_G": "house_g.bms",
+  "JA_BGM_MBOSS": "mboss.bms",
+  "JA_BGM_MBOSS_S": "mboss_s.bms",
+  "JA_BGM_BOAT_SHOP": "store.bms",
+  "JA_BGM_SEA_ENEMY": "sea_enemy.bms",
+  "JA_BGM_MORNING": "sea_dawn.bms",
+  "JA_BGM_SELECT": "select.bms",
+  "JA_BGM_MEDRI_AWAKE": "okmedori.bms",
+  "JA_BGM_MAKORE_AWAKE": "okmacole.bms",
+  "JA_BGM_TAKT_MAKORE": "takt_mcl.bms",
+  "JA_BGM_TAKT_MEDRI": "takt_mdr.bms",
+  "JA_BGM_BST_BATTLE": "d_amosu.bms",
+  "JA_BGM_GET_HEART": "get_h.bms",
+  "JA_BGM_ITEM_GET_S": "get_s.bms",
+  "JA_BGM_D_FOREST": "d_forest.bms",
+  "JA_BGM_GET_SONG": "get_song.bms",
+  "JA_BGM_KAMI_TOWER": "kaminoto.bms",
+  "JA_BGM_RANE_BATTLE": "rane.bms",
+  "JA_BGM_PIRATE": "pirate.bms",
+  "JA_BGM_DIOCTA_BATTLE": "e_diocta.bms",
+  "JA_BGM_PIRATE_C": "pirate_c.bms",
+  "JA_BGM_D_EARTH": "d_earth.bms",
+  "JA_BGM_SEA": "sea.bms",
+  "JA_BGM_D_WIND": "d_wind.bms",
+  "JA_BGM_TAKT_CHUYA": "takt_dn.bms",
+  "JA_BGM_TAKT_KAZE": "takt_wnd.bms",
+  "JA_BGM_TAKT_SHIPPU": "takt_wrp.bms",
+  "JA_BGM_TETRA_MEET_B": "tetra_meet_b.bms",
+  "JA_BGM_HYRULE_OFF": "hyrul_of.bms",
+  "JA_BGM_HYRULE_ON": "hyrul_on.bms",
+  "JA_BGM_CB_NEXTYEAR": "next_dry.bms",
+  "JA_BGM_CB_NEXTYEAR_W": "next_wet.bms",
+  "JA_BGM_ISLAND_LINK_0": "i_linkin.bms",
+  "JA_BGM_ISLAND_WOOD": "i_mori.bms",
+  "JA_BGM_ISLAND_DRAGON": "i_ryu.bms",
+  "JA_BGM_ISLAND_TAURA": "i_taura.bms",
+  "JA_BGM_SEA_STORM": "sea_strm.bms",
+  "JA_BGM_PIRATE_DEMO5": "pirate_5.bms",
+  "JA_BGM_JI_TRAINING_2": "house_t2.bms",
+  "JA_BGM_I_WOOD_INNER": "i_moridk.bms",
+  "JA_BGM_DRUG_STORE": "drug.bms",
+  "JA_BGM_P_GANON_1": "p_ganon1.bms",
+  "JA_BGM_D_GANON_1": "d_ganon1.bms",
+  "JA_BGM_D_GANON_2": "d_ganon2.bms",
+  "JA_BGM_BAACHAN": "baachan.bms",
+  "JA_BGM_DEKU_PINCH": "dekpinch.bms",
+  "JA_BGM_DIOCTA_2": "e_dioct2.bms",
+  "JA_BGM_P_GANON_2": "p_ganon2.bms",
+  "JA_BGM_BIG_POW": "bigpow.bms",
+  "JA_BGM_PAST_BIG_POW": "p_bigpow.bms",
+  "JA_BGM_PAST_BKM": "p_boco.bms",
+  "JA_BGM_PAST_GOMA": "p_goma_a.bms",
+  "JA_BGM_PAST_RANE": "p_rane.bms",
+  "JA_BGM_GANON_BATTLE": "e_ganon.bms",
+  "JA_BGM_MASTER_SWORD": "mastersword.bms",
+  "JA_BGM_GET_PEARL": "get_perl.bms",
+  "JA_BGM_BIRDMAN": "sea_game.bms",
+  "JA_BGM_BIRDMAN_GOAL": "sea_goal.bms",
+  "JA_BGM_BIRDMAN_FAIL": "sea_fail.bms",
+  "JA_BGM_ELF": "elf.bms",
+  "JA_BGM_PAST_GOMA_2": "p_goma_b.bms",
+  "JA_BGM_ISLAND_LINK_3": "i_link3.bms",
+  "JA_BGM_DEATH_VALLEY": "death_vl.bms",
+  "JA_BGM_JABOO_CAVE": "jaboo.bms",
+  "JA_BGM_SUB_DUNGEON": "subdun.bms",
+  "JA_BGM_BGN_KUGUTSU": "kugutu1.bms",
+  "JA_BGM_BGN_TARABA": "kugutu2.bms",
+  "JA_BGM_BGN_HAYAMUSHI": "kugutu3.bms",
+  "JA_BGM_BGN_TARABA_IN": "taraba_intro.bms",
+  "JA_BGM_BGN_GET_BOX": "get_box.bms",
+  "JA_BGM_I_MAJU_2ND": "i_maju.bms",
+  "JA_BGM_MAKORE_TAKT_8": "tak8_mcl.bms",
+  "JA_BGM_MEDORI_TAKT_8": "tak8_mdr.bms"
+ },
+ "notes": {
+  "sea/Room44 (Outset)": "JA_BGM_ISLAND_LINK_0 before the pirate ship arrives (event bit), ISLAND_LINK_2 after Aryll is taken, ISLAND_LINK_3 later; ISLAND_LINK is the table default",
+  "sea night": "JA_BGM_SEA is silent at night except the storm variant (checkSeaBgmID)"
+ }
+}
