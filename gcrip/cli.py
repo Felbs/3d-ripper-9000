@@ -292,6 +292,7 @@ def cmd_stage(args: argparse.Namespace) -> int:
             spawns=args.spawns,
             rigs=args.rigs,
             world=args.world,
+            layer=args.layer,
         )
         return 0
     if args.list or not args.stage:
@@ -308,6 +309,7 @@ def cmd_stage(args: argparse.Namespace) -> int:
             spawns=args.spawns,
             rigs=args.rigs,
             world=args.world,
+            layer=args.layer,
             out_dir=Path(args.out) if args.out else None,
             quiet=args.quiet,
         )
@@ -465,7 +467,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--all", action="store_true", help="build every stage + stages/stage_matrix.md")
     p.add_argument("--iso", default=None, help="disc image (default: found via disc_manifest)")
     p.add_argument("--rooms", default=None, help="only these room numbers, e.g. 0,1,2")
-    p.add_argument("--layers", action="store_true", help="also place conditional-layer actors")
+    p.add_argument("--layers", action="store_true", help="place EVERY conditional layer (debug)")
+    p.add_argument(
+        "--layer", type=int, default=0,
+        help="also place this story layer (default 0 = the game's opening state, where the "
+        "villagers are; -1 = none)",
+    )
     p.add_argument("--spawns", action="store_true", help="place a Link model at every spawn point")
     p.add_argument(
         "--world",

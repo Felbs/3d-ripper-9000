@@ -208,22 +208,27 @@ def build_stage(
     spawns: bool = False,
     rigs: bool = False,
     world: bool = False,
+    layer: int | None = None,
     out_dir: Path | None = None,
     quiet: bool = False,
 ) -> dict:
+    """layer: also place this one conditional layer (0 = the game's opening state, where
+    the villagers live); layers=True places every layer at once (debug)."""
     t0 = time.monotonic()
     rip_dir = Path(rip_dir)
     disc = _Disc(_find_iso(rip_dir, iso))
     try:
         return _build(
-            disc, rip_dir, stage_name, rooms, layers, spawns, rigs, world, out_dir, quiet, t0
+            disc, rip_dir, stage_name, rooms, layers, spawns, rigs, world, out_dir, quiet, t0,
+            layer=layer,
         )
     finally:
         disc.close()
 
 
 def _build(
-    disc, rip_dir, stage_name, rooms, layers, spawns, rigs, world, out_dir, quiet, t0
+    disc, rip_dir, stage_name, rooms, layers, spawns, rigs, world, out_dir, quiet, t0,
+    layer: int | None = None,
 ) -> dict:
     stages = disc.stages()
     if stage_name not in stages:
@@ -300,7 +305,7 @@ def _build(
             # salvage points...) live all over the map
             counts["stage_wide_skipped"] += 1
             continue
-        if p.layer >= 0 and not layers:
+        if p.layer >= 0 and not layers and p.layer != layer:
             counts["layered_skipped"] += 1
             continue
         if p.chunk in ("DOOR", "TGDR") or p.name.upper().startswith("KNOB"):
@@ -370,6 +375,7 @@ def _build(
                     "pos": list(p.pos),
                     "rot_y_deg": round(p.rot_y_deg, 2),
                     "scale": list(p.scale),
+                    "model": str(target.relative_to(rip_dir).as_posix()),
                 }
             )
 
@@ -532,6 +538,7 @@ def build_all(
     spawns: bool = False,
     rigs: bool = False,
     world: bool = False,
+    layer: int | None = None,
     quiet: bool = True,
 ) -> list[dict]:
     """Build every stage on the disc; write <ripdir>/stages/stage_matrix.md."""
@@ -544,7 +551,7 @@ def build_all(
             try:
                 r = _build(
                     disc, rip_dir, name, None, layers, spawns, rigs, world, None, quiet,
-                    time.monotonic(),
+                    time.monotonic(), layer=layer,
                 )
             except Exception as e:  # noqa: BLE001
                 r = {"stage": name, "error": f"{type(e).__name__}: {e}"}

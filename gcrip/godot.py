@@ -1583,6 +1583,8 @@ var last_warp_ms := -100000
 var banner: Label = null
 var calib: Node = null
 var messages: Dictionary = {}   # BMG message id -> text (gcrip msg)
+var actor_models: Dictionary = {}  # model rel path -> {glb, clips} (animated actors)
+var npc_dialogue: Dictionary = {}  # actor name -> {first: [ids], alternatives: {...}}
 var dialog: Node = null
 var dialog_open := false
 
@@ -1598,6 +1600,16 @@ func _ready() -> void:
         if parsed_m is Array:
             for e in parsed_m:
                 messages[int(e["id"])] = str(e["text"])
+    var am := FileAccess.open("res://actor_models.json", FileAccess.READ)
+    if am:
+        var parsed_a = JSON.parse_string(am.get_as_text())
+        if parsed_a is Dictionary:
+            actor_models = parsed_a
+    var nd := FileAccess.open("res://npc_dialogue.json", FileAccess.READ)
+    if nd:
+        var parsed_n = JSON.parse_string(nd.get_as_text())
+        if parsed_n is Dictionary:
+            npc_dialogue = parsed_n
     _apply_saved_pad_mappings()
     Input.joy_connection_changed.connect(func(_id, _c): _apply_saved_pad_mappings())
 
@@ -1676,11 +1688,10 @@ func burst(pos: Vector3, color: Color) -> void:
 # ---- dialogue
 
 func npc_messages(actor: String) -> Array:
-    # first lines of a few known conversations; the full graphs live in the decomp
-    match actor:
-        "NpcSo":
-            return [1303, 1304] if messages.has(1303) else []
-    return []
+    # first conversation per NPC from the decomp sweep (data/ww_npc_dialogue.json)
+    var info: Dictionary = npc_dialogue.get(actor, {})
+    var first: Array = info.get("first", [])
+    return first.filter(func(id): return messages.has(int(id)))
 
 func _ensure_dialog() -> void:
     if dialog == null:
@@ -2205,6 +2216,7 @@ var speed := 0.0
 var mesh: Node3D = null
 var carrier: Node3D = null
 var anim: AnimationPlayer = null
+var pig_clips := {}
 
 func setup(_p: int, mesh_node: Node3D, rot_y_deg: float) -> void:
     mesh = mesh_node
@@ -2316,6 +2328,25 @@ func _physics_process(_delta: float) -> void:
         mesh.rotation.y = facing
     if anim == null and mesh:
         anim = mesh.find_child("AnimationPlayer", true, false)
+        if anim:
+            for n in anim.get_animation_list():
+                var l := n.to_lower()
+                for key in ["wait", "walk", "run", "naku", "jita"]:
+                    if key in l and not pig_clips.has(key):
+                        pig_clips[key] = n
+            for key in ["wait", "walk", "run"]:
+                if pig_clips.has(key):
+                    anim.get_animation(pig_clips[key]).loop_mode = Animation.LOOP_LINEAR
+    if anim:
+        var key := "wait"
+        if sub == Sub.FLEE or sub == Sub.THROWN:
+            key = "run"
+        elif sub == Sub.WALK:
+            key = "walk"
+        elif sub == Sub.CARRY:
+            key = "jita" if pig_clips.has("jita") else "wait"
+        if pig_clips.has(key) and anim.current_animation != pig_clips[key]:
+            anim.play(pig_clips[key], 0.17)
 """
 
 _ACTOR_GULL_GD = """extends Node3D
@@ -2338,6 +2369,15 @@ func setup(_p: int, mesh_node: Node3D, rot_y_deg: float) -> void:
     home = global_position
     yaw = deg_to_rad(rot_y_deg)
     _pick()
+    var anim: AnimationPlayer = mesh.find_child("AnimationPlayer", true, false) if mesh else null
+    if anim:
+        var glide := ""
+        for n in anim.get_animation_list():
+            if "wait1" in n.to_lower() or glide == "":
+                glide = n
+        if glide != "":
+            anim.get_animation(glide).loop_mode = Animation.LOOP_LINEAR
+            anim.play(glide)
 
 func _pick() -> void:
     var a := randf() * TAU
@@ -2372,13 +2412,35 @@ var home := Vector3.ZERO
 var t := 0.0
 var swimmer := false
 var facing := 0.0
+var home_facing := 0.0
+var anim: AnimationPlayer = null
+var wait_clip := ""
+var talk_clip := ""
+var talking := false
 
 func setup(actor: String, _p: int, mesh_node: Node3D, rot_y_deg: float) -> void:
     mesh = mesh_node
     home = global_position
     facing = deg_to_rad(rot_y_deg)
+    home_facing = facing
     swimmer = actor == "NpcSo"
     messages = Game.npc_messages(actor)
+    anim = mesh.find_child("AnimationPlayer", true, false) if mesh else null
+    if anim:
+        var names := anim.get_animation_list()
+        for n in names:
+            var l := n.to_lower()
+            if wait_clip == "" and "wait" in l:
+                wait_clip = n
+            if talk_clip == "" and "talk" in l:
+                talk_clip = n
+        if wait_clip == "" and names.size() > 0:
+            wait_clip = names[0]
+        if wait_clip != "":
+            anim.get_animation(wait_clip).loop_mode = Animation.LOOP_LINEAR
+            anim.play(wait_clip)
+        if talk_clip != "":
+            anim.get_animation(talk_clip).loop_mode = Animation.LOOP_LINEAR
     var body := StaticBody3D.new()
     body.collision_layer = 1
     var shape := CollisionShape3D.new()
@@ -2397,6 +2459,9 @@ func interact_prompt(link: Node3D) -> String:
 func interact(link: Node3D) -> void:
     var to_link := link.global_position - global_position
     facing = atan2(to_link.x, to_link.z)
+    talking = true
+    if anim and talk_clip != "":
+        anim.play(talk_clip, 0.2)
     if messages.is_empty():
         Game.show_text("...")
     else:
@@ -2408,6 +2473,21 @@ func _physics_process(_delta: float) -> void:
         var a := t * 0.01
         global_position = home + Vector3(cos(a) * 120.0, sin(t * 0.08) * 6.0, sin(a) * 120.0)
         facing = a + PI / 2.0
+    else:
+        # look toward Link when he is close (the game turns the head; we turn the body slowly)
+        var link := Game.player()
+        var want := home_facing
+        if link:
+            var to_link := link.global_position - global_position
+            to_link.y = 0.0
+            if to_link.length() < 300.0:
+                want = atan2(to_link.x, to_link.z)
+        var rem := wrapf(want - facing, -PI, PI)
+        facing += clampf(rem, -0.05, 0.05)
+    if talking and not Game.dialog_open:
+        talking = false
+        if anim and wait_clip != "":
+            anim.play(wait_clip, 0.3)
     if mesh:
         mesh.rotation.y = facing
 """
@@ -2439,6 +2519,8 @@ var anim: AnimationPlayer = null
 var home := Vector3.ZERO
 var hit_done := false
 
+var clips := {}
+
 func setup(_p: int, mesh_node: Node3D, rot_y_deg: float) -> void:
     mesh = mesh_node
     home = global_position
@@ -2453,6 +2535,21 @@ func setup(_p: int, mesh_node: Node3D, rot_y_deg: float) -> void:
     shape.position.y = 50.0
     add_child(shape)
     add_to_group("enemy")
+    anim = mesh.find_child("AnimationPlayer", true, false) if mesh else null
+    if anim:
+        for n in anim.get_animation_list():
+            var l := n.to_lower()
+            for key in ["wait", "walk", "run", "attack", "damage", "dead", "otisou", "hakken"]:
+                if key in l and not clips.has(key):
+                    clips[key] = n
+        for key in ["wait", "walk", "run"]:
+            if clips.has(key):
+                anim.get_animation(clips[key]).loop_mode = Animation.LOOP_LINEAR
+        _play("wait")
+
+func _play(key: String, blend := 0.2) -> void:
+    if anim and clips.has(key) and anim.current_animation != clips[key]:
+        anim.play(clips[key], blend)
 
 func take_hit(damage: int, from: Vector3) -> void:
     if act == Act.DEAD:
@@ -2464,11 +2561,13 @@ func take_hit(damage: int, from: Vector3) -> void:
     if hp <= 0:
         act = Act.DEAD
         timer = 40
+        _play("dead" if clips.has("dead") else "otisou", 0.1)
         Game.burst(global_position + Vector3(0, 50, 0), Color(0.5, 0.2, 0.6))
         return
     act = Act.DAMAGE
     timer = 12
     speed = -8.0
+    _play("damage", 0.05)
 
 func _turn_to(t: float) -> void:
     var rem := wrapf(t - facing, -PI, PI)
@@ -2485,20 +2584,28 @@ func _physics_process(_delta: float) -> void:
     match act:
         Act.STAND:
             speed = 0.0
+            _play("wait")
             if link and dist < NOTICE and Game.line_of_sight(global_position + Vector3(0, 80, 0), link.global_position + Vector3(0, 80, 0)):
                 act = Act.FIGHT_RUN
+                _play("hakken" if clips.has("hakken") else "run", 0.1)
         Act.FIGHT_RUN:
             _turn_to(atan2(to_link.x, to_link.z))
             speed = RUN
+            _play("run")
             if dist < ATTACK_RANGE:
                 act = Act.ATTACK
                 timer = 30
                 hit_done = false
                 speed = 0.0
+                _play("attack", 0.1)
+                if anim and clips.has("attack"):
+                    anim.speed_scale = 1.2
             elif dist > NOTICE * 1.5:
                 act = Act.STAND
         Act.ATTACK:
             timer -= 1
+            if timer == 1 and anim:
+                anim.speed_scale = 1.0
             if timer == 14 and not hit_done and link and dist < ATTACK_RANGE + 20.0:
                 hit_done = true
                 link.call("take_damage", DAMAGE_TO_LINK, global_position)
@@ -2609,6 +2716,22 @@ const SCRIPTS := {
     "item": "res://actors/item.gd", "Kanban": "res://actors/sign.gd",
     "Pig": "res://actors/pig.gd", "Kamome": "res://actors/gull.gd",
     "NpcSo": "res://actors/npc.gd", "Bk": "res://actors/bokoblin.gd",
+    # villagers and friends: generic talkable NPC with their own rig + wait/talk clips
+    "Aj1": "res://actors/npc.gd", "Ls1": "res://actors/npc.gd", "Ob1": "res://actors/npc.gd",
+    "Ko1": "res://actors/npc.gd", "Ko2": "res://actors/npc.gd", "Yw1": "res://actors/npc.gd",
+    "Ym1": "res://actors/npc.gd", "Ym2": "res://actors/npc.gd", "Bm1": "res://actors/npc.gd",
+    "Ji1": "res://actors/npc.gd", "Ba1": "res://actors/npc.gd", "Kg1": "res://actors/npc.gd",
+    "Kg2": "res://actors/npc.gd", "Dk": "res://actors/npc.gd", "Zl1": "res://actors/npc.gd",
+    "Ac1": "res://actors/npc.gd", "Cb1": "res://actors/npc.gd", "Hi1": "res://actors/npc.gd",
+    "Md1": "res://actors/npc.gd", "De1": "res://actors/npc.gd", "Co1": "res://actors/npc.gd",
+    "Zk1": "res://actors/npc.gd", "Tc": "res://actors/npc.gd", "Bs1": "res://actors/npc.gd",
+    "Bs2": "res://actors/npc.gd", "Kp1": "res://actors/npc.gd", "Mt": "res://actors/npc.gd",
+    "Ds1": "res://actors/npc.gd", "Sa1": "res://actors/npc.gd", "Gk1": "res://actors/npc.gd",
+    "Um1": "res://actors/npc.gd", "Uo1": "res://actors/npc.gd", "Uo2": "res://actors/npc.gd",
+    "Uo3": "res://actors/npc.gd", "Ub1": "res://actors/npc.gd", "Ub2": "res://actors/npc.gd",
+    "Ub3": "res://actors/npc.gd", "Ub4": "res://actors/npc.gd", "Bj1": "res://actors/npc.gd",
+    "Jb1": "res://actors/npc.gd", "Mk": "res://actors/npc.gd", "Hr": "res://actors/npc.gd",
+    "Aj2": "res://actors/npc.gd", "Bmcon1": "res://actors/npc.gd", "Bms1": "res://actors/npc.gd",
 }
 const CHEST_PREFIXES := ["takara", "tkr", "Tkr"]
 
@@ -2648,6 +2771,16 @@ func _wrap_actors() -> void:
         parent.remove_child(mesh)
         node.add_child(mesh)
         mesh.global_transform = xf
+        # animated actors: swap the baked mesh for the rigged model with its clips
+        var am: Dictionary = Game.actor_models.get(str(rec.get("model", "")), {})
+        if not am.is_empty() and ResourceLoader.exists(str(am["glb"])):
+            var scene: PackedScene = load(str(am["glb"]))
+            var rig: Node3D = scene.instantiate()
+            node.add_child(rig)
+            rig.global_transform = xf
+            mesh.visible = false
+            mesh = rig
+            node.set_meta("clips", am.get("clips", []))
         var params: int = int(rec["params"])
         var rot_y: float = float(rec.get("rot_y_deg", 0.0))
         var rot: Array = rec.get("rot", [0, 0, 0])
@@ -2954,6 +3087,27 @@ def _trim_animations(doc: dict, blob: bytes, keep: tuple[str, ...]) -> tuple[dic
     return doc, bytes(new_bin)
 
 
+def _animated_glb(src: Path, out_glb: Path, clips: tuple[str, ...]) -> list[str]:
+    """Rigged model + the named clips as a small self-contained glb. Returns the clip
+    names that were kept (in file order)."""
+    doc = json.loads(src.read_text(encoding="utf-8"))
+    blob = (src.parent / doc["buffers"][0]["uri"]).read_bytes()
+    trimmed, new_bin = _trim_animations(doc, blob, clips)
+    kept = [a.get("name", "") for a in trimmed.get("animations", [])]
+    tmp_bin = src.parent / f"_gcrip_{out_glb.stem}.bin"
+    tmp_gltf = src.parent / f"_gcrip_{out_glb.stem}.gltf"
+    trimmed["buffers"] = [{"uri": tmp_bin.name, "byteLength": len(new_bin)}]
+    try:
+        tmp_bin.write_bytes(new_bin)
+        tmp_gltf.write_text(json.dumps(trimmed), encoding="utf-8")
+        out_glb.parent.mkdir(parents=True, exist_ok=True)
+        out_glb.write_bytes(glbmod.pack(tmp_gltf))
+    finally:
+        tmp_gltf.unlink(missing_ok=True)
+        tmp_bin.unlink(missing_ok=True)
+    return kept
+
+
 def _player_model_glb(rip_dir: Path, out_glb: Path) -> bool:
     """Rigged Link with his movement clips as a small self-contained glb."""
     results = rip_dir / "rip_results.json"
@@ -2967,21 +3121,57 @@ def _player_model_glb(rip_dir: Path, out_glb: Path) -> bool:
     )  # fmt: skip
     if rel is None:
         return False
-    src = rip_dir / rel
-    doc = json.loads(src.read_text(encoding="utf-8"))
-    blob = (src.parent / doc["buffers"][0]["uri"]).read_bytes()
-    trimmed, new_bin = _trim_animations(doc, blob, _PLAYER_CLIPS)
-    tmp_bin = src.parent / "_gcrip_player.bin"
-    tmp_gltf = src.parent / "_gcrip_player.gltf"
-    trimmed["buffers"] = [{"uri": tmp_bin.name, "byteLength": len(new_bin)}]
-    try:
-        tmp_bin.write_bytes(new_bin)
-        tmp_gltf.write_text(json.dumps(trimmed), encoding="utf-8")
-        out_glb.write_bytes(glbmod.pack(tmp_gltf))
-    finally:
-        tmp_gltf.unlink(missing_ok=True)
-        tmp_bin.unlink(missing_ok=True)
+    _animated_glb(rip_dir / rel, out_glb, _PLAYER_CLIPS)
     return True
+
+
+# Actors that come alive with their own rig + clips (everything else stays a baked mesh).
+# Clip choice: anything whose name contains one of these words, capped, so an NPC archive
+# with 60 cutscene clips still exports small.
+_ANIMATED_ACTORS = {
+    "Aj1", "Ls1", "Ob1", "Ko1", "Ko2", "Yw1", "Ym1", "Ym2", "Bm1", "Ji1", "Ba1", "Kg1", "Kg2",
+    "Dk", "Zl1", "NpcSo", "Bk", "Pig", "Kamome", "kani", "Ac1", "Cb1", "Hi1", "Md1", "De1",
+    "Co1", "Zk1", "Tc", "Bs1", "Bs2", "Kp1", "Mt", "Ds1", "Sa1", "Gk1", "Um1", "Uo1", "Uo2",
+    "Uo3", "Ub1", "Ub2", "Ub3", "Ub4", "Bj1", "Jb1", "Mk", "Hr", "Aj2", "Bmcon1", "Bms1",
+    "Ah", "Auzu", "Puti", "c_green", "c_red", "c_blue", "c_black", "c_kiiro", "keeth", "Fkeeth",
+}
+_ANIM_WORDS = ("wait", "talk", "walk", "run", "attack", "damage", "dead", "fly", "swim", "idle")
+_ANIM_CAP = 12
+
+
+def _actor_models(rip_dir: Path, out_dir: Path, stage_data: dict) -> dict:
+    """Export one animated glb per distinct model used by animated actors.
+    Returns {model rel path: {"glb": res path, "clips": [...]}} (also written to
+    actor_models.json)."""
+    table_path = out_dir / "actor_models.json"
+    table: dict = {}
+    if table_path.exists():
+        with contextlib.suppress(OSError, ValueError):
+            table = json.loads(table_path.read_text(encoding="utf-8"))
+    for info in stage_data.values():
+        for rec in info.get("actors", []):
+            if rec.get("actor") not in _ANIMATED_ACTORS:
+                continue
+            rel = rec.get("model")
+            if not rel or rel in table:
+                continue
+            src = rip_dir / rel
+            if not src.exists():
+                continue
+            try:
+                doc = json.loads(src.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            names = [a.get("name", "") for a in doc.get("animations", [])]
+            if not names or not doc.get("skins"):
+                continue
+            picked = [n for n in names if any(w in n.lower() for w in _ANIM_WORDS)]
+            picked = (picked or names)[:_ANIM_CAP]
+            glb_name = f"{Path(rel).parent.parent.parent.name}_{Path(rel).stem}.glb".replace(".arc", "")
+            kept = _animated_glb(src, out_dir / "actors" / "models" / glb_name, tuple(picked))
+            table[rel] = {"glb": f"res://actors/models/{glb_name}", "clips": kept}
+    table_path.write_text(json.dumps(table, indent=1), encoding="utf-8")
+    return table
 
 
 def export_godot(
@@ -3055,6 +3245,12 @@ def export_godot(
                   f"spawn {tuple(round(v) for v in spawn)}")  # fmt: skip
 
     has_model = _player_model_glb(rip_dir, out_dir / "link.glb")
+    n_models = len(_actor_models(rip_dir, out_dir, stage_data))
+    if not quiet:
+        print(f"  {n_models} animated actor models in actors/models/")
+    dlg = Path(__file__).parent / "data" / "ww_npc_dialogue.json"
+    if dlg.exists():
+        shutil.copyfile(dlg, out_dir / "npc_dialogue.json")
     (out_dir / "player.gd").write_text(_PLAYER_GD, encoding="utf-8")
     (out_dir / "player.tscn").write_text(_player_tscn(has_model), encoding="utf-8")
     (out_dir / "game.gd").write_text(_GAME_GD, encoding="utf-8")
