@@ -20,6 +20,8 @@ AAF_PATH = "Audiores/JaiInit.aaf"
 SEQS_PATH = "Audiores/Seqs/JaiSeqs.arc"
 BANKS_DIR = "Audiores/Banks/"
 DEFAULT_SECONDS = 90.0
+# synth.render reports these alongside the unresolved-voice counts; they are not failures
+STATS = ("voices", "vibrato_voices")
 BGM_TABLE = Path(__file__).with_name("data") / "ww_bgm.json"
 
 
@@ -190,12 +192,13 @@ def dump_music(
             "notes": len(seq.notes),
             "tracks": seq.tracks,
             "voices": missing.get("voices", 0),
-            "unresolved": {k: v for k, v in missing.items() if k != "voices" and v},
+            "vibrato_voices": missing.get("vibrato_voices", 0),
+            "unresolved": {k: v for k, v in missing.items() if k not in STATS and v},
             "bgm": by_song.get(name, []),
             "stages": stages_by_song.get(name, []),
         }
         if not quiet:
-            unres = sum(v for k, v in missing.items() if k != "voices")
+            unres = sum(v for k, v in missing.items() if k not in STATS)
             print(
                 f"[{i + 1}/{len(wanted)}] {stem:14s} {len(seq.notes):5d} notes "
                 f"{len(pcm) / 32000.0:6.1f}s  unresolved {unres:4d}  {time.time() - t0:5.1f}s"

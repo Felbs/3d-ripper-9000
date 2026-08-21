@@ -3133,6 +3133,11 @@ var doors_report: Array = []
 # --models: load every animated actor model and report the ones with no mesh, no clips, or a
 # head model that does not resolve.  --cutscenes: play every baked .stb through to its end.
 var models_test: bool = "--models" in OS.get_cmdline_user_args()
+# --clock: step the clock through a whole in-game day headlessly, reporting the hour,
+# `night` and the placement layer a handful of stages pick; then nightStop and a rollover.
+var clock_test: bool = "--clock" in OS.get_cmdline_user_args()
+var clock_frames := 0
+var clock_step := 0
 # --defeat=<actor>[:boss] or --defeat=room:<n> : report which story step a death would advance
 var defeat_test := ""
 # --control[=<port>]: open the debug command channel (control.gd) on 127.0.0.1
@@ -3176,7 +3181,30 @@ var enemies: Dictionary = {}       # enemies.json: actor -> constants (data/ww_e
 var layers: Dictionary = {}        # layers.json: story-state -> which placement layer is live
 var story: Dictionary = {}         # story.json: the mined opening graph (steps -> bits)
 const STORY_OBJ_NOWHERE := Vector3(-1.0e9, -1.0e9, -1.0e9)   # no such object placed in this stage
-var night := false                 # no day/night clock yet: the game's layers differ by it
+# ---- day / night clock (src/d/d_kankyo.cpp).  The save keeps the time of day as a float
+# in [0, 360): dKy_getdaytime_hour() is (int)(time / 15.0f) (d_kankyo.cpp:613-616), so 15
+# units are one in-game hour and 360 units a whole day.  setDaytime() adds mTimeAdv (0.02f,
+# envcolor_init at d_kankyo.cpp:476) once per frame and the game runs at 30 fps, so 0.6
+# units pass per real second: a full in-game day is 600 s (10 real minutes) and one in-game
+# hour is 25 real seconds.  Crossing 360 bumps the date and runs dKankyo_DayProc()
+# (d_kankyo.cpp:524-530).
+const DAY_UNITS := 360.0            # mCurTime wraps here
+const UNITS_PER_HOUR := 15.0        # dKy_getdaytime_hour: (int)(time / 15.0f)
+const TIME_ADV := 0.02              # g_env_light.mTimeAdv, added once per frame
+const GAME_FPS := 30.0              # TWW's frame rate (d_a_ib.cpp:109 setItemTimerForIball(3*30, 2*30))
+const DAY_START_HOUR := 6           # dKy_daynight_check: 6 <= hour < 18 is day
+const NIGHT_START_HOUR := 18
+const NIGHT_STOP_BIT := 0x0A02      # ENDLESS_NIGHT; dKy_checkEventNightStop, d_kankyo.cpp:3160
+const FRESH_DAY_TIME := 165.0       # dSv_player_status_b_c::init (d_save.cpp:51-60): a new
+                                    # file opens at mTime = 165.0f, i.e. 11:00 on day 0
+# Derived from the clock, never assigned: getLayerNo picks the day or the night variant of a
+# placement layer with exactly this test (d_com_inf_game.cpp:189-190).
+var night: bool:
+    get:
+        return is_night()
+var _night_live := -1              # what the layers on screen assume; -1 until the first tick
+var clock_reload_on_flip := true   # rebuild the stage at dusk / dawn so its layer swaps
+signal day_passed(day: int)        # midnight rolled over: dKankyo_DayProc's hook
 const SAVE_PATH := "user://gcrip_save.json"
 var autosave_frames := 0
 var continued := false
@@ -3187,7 +3215,8 @@ var world_offset := Vector3.ZERO   # stage recentring offset (event positions ar
 var fade_rect: ColorRect = null
 # persistent player state (survives stage warps; the Player node is rebuilt per stage)
 var save := {"hearts": 12, "hearts_max": 12, "magic": 16, "rupees": 0, "heavy": false,
-             "items": {}}
+             "items": {},
+             "day": 0, "day_time": FRESH_DAY_TIME}
 
 func _ready() -> void:
     var f := FileAccess.open("res://stage_data.json", FileAccess.READ)
@@ -3290,7 +3319,7 @@ func _ready() -> void:
     Input.joy_connection_changed.connect(func(_id, _c): _apply_saved_pad_mappings())
     if load_game():
         print("gcrip: save file loaded (", str(save.get("saved_at", "?")), ")")
-        if start_stage == "" and not selftest and shot_actor == "" and not door_test and not story_test and menu_test == "" and event_test == "" and not newgame_test and talk_test == "" and not dialogue_test:
+        if start_stage == "" and not selftest and shot_actor == "" and not door_test and not story_test and menu_test == "" and event_test == "" and not newgame_test and talk_test == "" and not dialogue_test and not clock_test:
             _continue_saved.call_deferred()
     bgm_player = AudioStreamPlayer.new()
     bgm_player.bus = "Master"
@@ -3323,8 +3352,8 @@ func _ready() -> void:
 # ---- save file (the game's quest status: hearts, items, event bits, switches, place)
 
 func save_game(reason := "") -> void:
-    if dialogue_test:
-        return      # --dialogue rewrites `save` to walk the story: never let that hit the disk
+    if dialogue_test or clock_test:
+        return      # --dialogue / --clock rewrite `save` to walk state: never let that hit the disk
     var link := player()
     var cs := get_tree().current_scene
     if link and cs:
@@ -3352,7 +3381,8 @@ func load_game() -> bool:
 
 func new_game() -> void:
     save = {"hearts": 12, "hearts_max": 12, "magic": 16, "rupees": 0, "heavy": false,
-            "items": {}}
+            "items": {},
+            "day": 0, "day_time": FRESH_DAY_TIME}
     if FileAccess.file_exists(SAVE_PATH):
         DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
     get_tree().paused = false
@@ -3880,6 +3910,10 @@ func _dialogue_report() -> void:
 
 func _process(delta: float) -> void:
     _arrival_guard()
+    clock_tick(delta)
+    if clock_test:
+        _clock_tick()
+        return
     if control_stick_frames > 0:
         control_stick_frames -= 1
         if control_stick_frames == 0:
@@ -4163,16 +4197,192 @@ func _shot_tick() -> void:
 
 # ---- story layers (dzr ACT0..ACTb): which set of actors this room shows right now
 
+# ---- the clock (src/d/d_kankyo.cpp)
+
+func day_time() -> float:
+    # dComIfGs_getTime(): the save's mTime, 0.0 .. 360.0
+    return float(save.get("day_time", 0.0))
+
+func set_day_time(t: float) -> void:
+    save["day_time"] = fposmod(t, DAY_UNITS)
+    _clock_after()
+
+func day_number() -> int:
+    # dComIfGs_getDate(); dKy_get_dayofweek() is this % 7 (d_kankyo.cpp:3570-3572)
+    return int(save.get("day", 0))
+
+func hour() -> int:
+    # dKy_getdaytime_hour (d_kankyo.cpp:613-616)
+    return int(day_time() / UNITS_PER_HOUR)
+
+func minute() -> int:
+    # dKy_getdaytime_minute (d_kankyo.cpp:618-623): the fraction of the hour, times 60
+    return int(fposmod(day_time(), UNITS_PER_HOUR) * (60.0 / UNITS_PER_HOUR))
+
+func clock_string() -> String:
+    return "%02d:%02d" % [hour(), minute()]
+
+func night_stop() -> bool:
+    # dKy_checkEventNightStop (d_kankyo.cpp:3160-3167): during the endless-night chapter the
+    # clock is pinned to night - envcolor_init even forces the time to 0.0 (d_kankyo.cpp:477).
+    if not event_bit(NIGHT_STOP_BIT):
+        return false
+    # ... && !dComIfGs_isSymbol(dSymbol_NAYRU_e).  The three pearls are not modelled yet, so
+    # the second half of the test reads a save flag nothing sets so far.
+    return not bool((save.get("symbols", {}) as Dictionary).get("nayru", false))
+
+func is_night() -> bool:
+    # dKy_daynight_check (d_kankyo.cpp:625-632) plus the nightStop override getLayerNo
+    # applies before it (d_com_inf_game.cpp:189-190)
+    if night_stop():
+        return true
+    var h := hour()
+    return h < DAY_START_HOUR or h >= NIGHT_START_HOUR
+
+func clock_running() -> bool:
+    # setDaytime only advances the clock outside events (d_kankyo.cpp:519-524), and the
+    # endless night freezes it entirely
+    if night_stop():
+        return false
+    if event_running or dialog_open or cutscene_running():
+        return false
+    return not get_tree().paused
+
+func clock_tick(delta: float) -> void:
+    # --clock steps the clock by hand; otherwise it follows real time at the game's rate
+    # (mTimeAdv per frame at 30 fps = 0.6 units of game time per real second)
+    if clock_test or not clock_running():
+        return
+    clock_advance(delta * TIME_ADV * GAME_FPS)
+
+func clock_advance(units: float) -> void:
+    # setDaytime (d_kankyo.cpp:524-530): add, and each time the total passes 360 the date
+    # goes up by one and dKankyo_DayProc() runs.  (The game snaps mCurTime to 0.0 on the
+    # rollover; keeping the remainder only matters when something jumps the clock by hours.)
+    var t := day_time() + units
+    while t >= DAY_UNITS:
+        t -= DAY_UNITS
+        save["day"] = day_number() + 1
+        day_proc(day_number())
+    save["day_time"] = t
+    _clock_after()
+
+# dKankyo_DayProc (src/d/d_kankyo_dayproc.inc) is a long list of "another day has passed"
+# save edits - letters arriving, shop stock resetting, counters ticking up.  Only the rules
+# whose state this remake actually models live here; each is {requires: bits that must all
+# be set, sets: bits to raise, why: what it means}.  Hang new ones off day_passed instead
+# if they need more than a bit test.
+const DAY_RULES := [
+    # d_kankyo_dayproc.inc:101-102 -- if (isEventBit(UNK_2F01)) onEventBit(UNK_3080).
+    # 0x2F01 is raised when a figurine is ordered from Carlov; a day later 0x3080 says the
+    # sculpture is finished and waiting in the Nintendo Gallery.
+    {"requires": [0x2F01], "sets": [0x3080],
+     "why": "the Nintendo Gallery figurine (0x2F01) is carved -> 0x3080"},
+]
+
+func day_proc(day: int) -> void:
+    for rule in DAY_RULES:
+        var ok := true
+        for b in rule.get("requires", []):
+            if not event_bit(int(b)):
+                ok = false
+                break
+        if not ok:
+            continue
+        for b in rule.get("sets", []):
+            set_event_bit(int(b))
+        print("gcrip clock: day ", day, " - ", str(rule.get("why", "")))
+    day_passed.emit(day)
+
+func _clock_after() -> void:
+    # getLayerNo runs from layerLoader when a room is decoded (d_stage.cpp:2148-2150), so a
+    # dusk / dawn crossing only shows on screen once the stage is rebuilt.
+    var now: int = 1 if night else 0
+    if now == _night_live:
+        return
+    if _night_live < 0:
+        _night_live = now       # first look: whatever is loading already matches
+        return
+    if not clock_reload_on_flip or scripted():
+        _night_live = now
+        return
+    if event_running or dialog_open or cutscene_running() or get_tree().paused:
+        return                  # busy: try again on the next tick
+    if get_tree().current_scene == null:
+        return
+    _night_live = now
+    var word: String = "night" if now == 1 else "day"
+    print("gcrip clock: ", clock_string(), " - ", word, " now; reloading the stage for its layer")
+    reload_stage()
+
+# ---- --clock: a whole day, headless
+
+# stages whose layer the report follows: Outset and Forest Haven have day/night placements,
+# Windfall carries the nightStop rule, Forsaken Fortress is time-independent, the Cafe Bar
+# is a plain default-layer interior with a different night cast.
+const CLOCK_STAGES := [["sea_r44", 44], ["sea_r11", 11], ["sea_r1", 1], ["Opub", -1],
+                       ["A_mori", -1]]
+
+func _clock_report(tag: String) -> void:
+    var line := "gcrip clock: " + tag + " " + clock_string() + " night=" + str(night)
+    for st in CLOCK_STAGES:
+        line += "  " + str(st[0]) + "=" + str(story_layer(str(st[0]), int(st[1])))
+    print(line)
+
+func _clock_tick() -> void:
+    clock_frames += 1
+    if clock_frames == 1:
+        print("gcrip clock: %.0f units per day, %.0f per hour, %.2f per frame at %.0f fps" % [
+            DAY_UNITS, UNITS_PER_HOUR, TIME_ADV, GAME_FPS])
+        print("gcrip clock: -> %.0f s of real play per in-game day, %.0f s per in-game hour" % [
+            DAY_UNITS / (TIME_ADV * GAME_FPS), UNITS_PER_HOUR / (TIME_ADV * GAME_FPS)])
+        save["day"] = 0
+        save["day_time"] = 0.0
+        save["event_flags"] = []      # a clean file: no story bit set anywhere
+        _night_live = -1
+        _clock_report("start")
+        return
+    if clock_step < 24:
+        clock_step += 1
+        clock_advance(UNITS_PER_HOUR)
+        _clock_report("+%dh" % clock_step)
+        return
+    if clock_step == 24:
+        clock_step += 1
+        print("gcrip clock: a whole day rolled over: day = ", day_number())
+        print("gcrip clock: 0x3080 before a figurine is ordered = ", event_bit(0x3080))
+        set_event_bit(0x2F01)
+        clock_advance(DAY_UNITS)
+        print("gcrip clock: 0x2F01 set, one more day passed -> day = ", day_number(),
+              ", 0x3080 = ", event_bit(0x3080))
+        return
+    if clock_step == 25:
+        clock_step += 1
+        set_event_bit(NIGHT_STOP_BIT)
+        set_day_time(12.0 * UNITS_PER_HOUR)
+        print("gcrip clock: ENDLESS_NIGHT 0x0A02 set, clock at noon - night_stop=",
+              night_stop(), " clock_running=", clock_running())
+        _clock_report("noon+EN")
+        clear_event_bit(NIGHT_STOP_BIT)
+        _clock_report("noon")
+        return
+    print("gcrip clock: done")
+    get_tree().quit()
+
 func story_layer(stage: String, room: int) -> int:
     # normalised rules from the decomp (layers.json): the first rule for this stage / room
-    # whose event-bit tests all hold wins; day / night pick the variant (we are always day
-    # until a clock exists)
+    # whose event-bit tests all hold wins; `night` - the clock, above - picks the variant
     var base := stage.split("_r")[0]
     for rule in layers.get("rules", []):
         if str(rule.get("stage", "")) != base:
             continue
         var r = rule.get("room")
         if r != null and int(r) != room:
+            continue
+        # a rule whose condition also calls nightStop() (Windfall, d_com_inf_game.cpp:204-205)
+        # belongs to the endless night alone - its bit tests on their own would fire it every
+        # single day and pin the island to layer 3
+        if str(rule.get("extra", "")).find("nightStop") >= 0 and not night_stop():
             continue
         var ok := true
         for t in rule.get("tests", []):
@@ -4764,7 +4974,7 @@ func burst(pos: Vector3, color: Color) -> void:
 func scripted() -> bool:
     # any headless harness run: nobody is holding the pad, so "press any key" waits must pass
     return conduct_test or selftest or story_test or newgame_test or dialogue_test or door_test         or talk_test != "" or event_test != "" or shot_actor != "" or scope_test or near_test or defeat_test != "" or opening_test or sweep_test or doors_test \
-        or models_test or cuts_test or object_test
+        or models_test or cuts_test or object_test or clock_test
 
 func stage_boss_dead(stage := "") -> bool:
     # A dungeon boss's death is NOT an event bit: dComIfGs_onStageBossEnemy writes its own save

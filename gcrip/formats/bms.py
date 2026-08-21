@@ -14,7 +14,8 @@ that the Wind Waker songs actually exercise.  The byte code, per the decomp:
                low nibble (``cmdSetParam``)
     Ax         register write with arithmetic (``TTrack::writeRegParam``)
     Bx         command with per-argument register indirection (``RegCmd_Process``)
-    C0-FF      ``sCmdPList`` commands with argument sizes from ``Arglist``
+    C0-FF      ``sCmdPList`` commands with argument sizes from ``Arglist``; E5/E6/F4 set
+               the track's pitch LFO (``TVibrate``) and raise a ``vibrato`` event
 
 Timing: ``TTrack::updateTempo`` gives ``ticks per DSP frame = timebase * tempo /
 dacRate * 4/3``, i.e. seconds per tick = 60 / (tempo * timebase) - tempo is BPM
@@ -65,6 +66,9 @@ CMD_TIME_RELATE = 0xD5
 CMD_SIMPLE_ADSR = 0xD8
 CMD_TRANSPOSE = 0xD9
 CMD_CLOSE_TRACK = 0xDA
+CMD_VIB_DEPTH = 0xE5
+CMD_VIB_DEPTH_MIDI = 0xE6
+CMD_VIB_PITCH = 0xF4
 CMD_SYNC_CPU = 0xE7
 CMD_WAIT_24 = 0xEA
 CMD_CHECK_WAVE = 0xFA
@@ -85,6 +89,12 @@ REG_PITCH_RANGE = 7  # TRegisterParam::field_0xe, default 12 semitones
 
 DEFAULT_TEMPO = 120
 DEFAULT_TIMEBASE = 48
+
+# TVibrate: the track's pitch LFO.  depth divisor JASSeqParser.cpp:558 / :566, rate divisor
+# JASSeqParser.cpp:574, default rate 1/18 counter steps per driver update JASTrack.cpp:1527.
+VIB_DEPTH_DIV = 393204.0
+VIB_RATE_DIV = 294903.0
+VIB_DEFAULT_RATE = 1.0 / 18.0
 
 
 class BmsError(ValueError):
@@ -167,6 +177,8 @@ class _Track:
         self.pitch = 0.0
         self.pan = 0.5
         self.volume_mode = 0
+        self.vib_depth = 0.0  # TVibrate::mDepth, 0 = no vibrato (JASTrack.cpp:1543)
+        self.vib_rate = VIB_DEFAULT_RATE  # TVibrate::mPitch
         self.call_stack: list[int] = []
         self.loop_stack: list[tuple[int, int]] = []  # (position, remaining)
         self.voices: dict[int, Note] = {}
@@ -654,6 +666,17 @@ class _Player:
                 self.close_track(c)
         elif op == 0xF3:  # volumeMode
             t.volume_mode = args[0]
+        elif op in (CMD_VIB_DEPTH, CMD_VIB_DEPTH_MIDI, CMD_VIB_PITCH):
+            # the depth byte forms are (b << 8 | b << 1) so that 0x7F maps to ~0x7FFF
+            if op == CMD_VIB_DEPTH_MIDI:
+                t.vib_depth = args[0] / VIB_DEPTH_DIV
+            elif op == CMD_VIB_DEPTH:
+                b = args[0] & 0xFF
+                t.vib_depth = ((b << 8) | (b << 1)) / VIB_DEPTH_DIV
+            else:
+                b = args[0] & 0xFF
+                t.vib_rate = ((b << 8) | (b << 1)) / VIB_RATE_DIV
+            self.event(t, "vibrato", (t.vib_depth, t.vib_rate))
         elif op == CMD_TEMPO:
             self.tempo = max(1, args[0])
             if self.tempo_map and self.tempo_map[-1][0] == self.tick:

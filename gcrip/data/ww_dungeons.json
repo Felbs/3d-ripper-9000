@@ -1,0 +1,5266 @@
+{
+ "_source": "Wind Waker DUNGEON PROGRESSION - small keys, locked doors, the Big Key, dungeon map and compass, and the per-dungeon save state. Mined 2026-08-21 for the gcrip remake. TWO INDEPENDENT SOURCES, both cited on every claim. (a) DECOMP: zeldaret/tww at Z:/memRip/sources/tww, read-only. Every 'src' string is a real file:line that was opened and read; paths are relative to that root. (b) DISC: the placement numbers were re-parsed straight out of the retail GZLE01 ISO's DZS/DZR chunks - STAG for the save slot, TGDR for doors, TRES for chests. The same numbers are already in the build's out/rip/GZLE01/godot/stage_data.json (actor / params / rot / chunk=='TGDR' / chunk=='TRES'), and the two agree entry for entry. SCHEMA (designed for this system, deliberately NOT the story-step schema): _storage = the save layout; _stage_save_slots = every stage on the disc -> its save slot; _switch_numbers = how a switch id routes to storage; _doors = each door actor and how it decides to open; _items = small key / big key / map / compass; _chests = the tbox param layout; _dungeons = one entry per dungeon with its real door and chest placements; _not_determined = the honest gaps. A 'confidence' key appears wherever a claim is inferred rather than read straight out of code or data.",
+ "_storage": {
+  "summary": "Dungeon state does NOT live in the event-bit array. It lives in a separate 16-entry table of per-stage save blocks. Each block is one dSv_memBit_c (0x24 bytes) holding chests-opened, persistent switches, item-drop bits, rooms-visited, the small-key COUNT, and a 6-bit dungeon-item mask (map / compass / big key / boss-dead / heart-container-taken / boss-cutscene-seen).",
+  "dSv_memBit_c": {
+   "src": "include/d/d_save.h:628-683",
+   "size": "0x24",
+   "fields": [
+    {
+     "name": "mTbox",
+     "offset": "0x00",
+     "type": "u32",
+     "meaning": "chest-opened bits, 32 chests per save slot",
+     "api": "onTbox(i) / isTbox(i), 0<=i<32, mTbox |= (1<<i)",
+     "src": "src/d/d_save.cpp:1072-1081"
+    },
+    {
+     "name": "mSwitch",
+     "offset": "0x04",
+     "type": "u32[4]",
+     "meaning": "128 persistent 'memory' switches per save slot - this is what a locked door sets when you unlock it, and what most dungeon puzzles latch",
+     "api": "onSwitch/offSwitch/isSwitch/revSwitch(i), 0<=i<128, mSwitch[i>>5] |= 1<<(i&0x1F)",
+     "src": "src/d/d_save.cpp:1084-1109"
+    },
+    {
+     "name": "mItem",
+     "offset": "0x14",
+     "type": "u32[1]",
+     "meaning": "item-drop bits (a dropped pickup that must not respawn)",
+     "api": "onItem(i)/isItem(i)",
+     "src": "src/d/d_save.cpp:1112-1121",
+     "note": "the JUT_ASSERT in the source says 0<=i<64 while the array is only ONE u32. That mismatch is verbatim in the decomp. Treat as 32 usable bits.",
+     "confidence": "high on the code, the 64-vs-32 discrepancy is real and unexplained"
+    },
+    {
+     "name": "mVisitedRoom",
+     "offset": "0x18",
+     "type": "u32[2]",
+     "meaning": "64 room-visited bits - this is what fills in the dungeon map as you walk",
+     "api": "onVisitedRoom(i)/isVisitedRoom(i), 0<=i<64",
+     "src": "src/d/d_save.cpp:1124-1133",
+     "set_by": "dMap_c::mapMoveAll() -> dComIfGs_onVisitedRoom(roomNo), skipped when the stage type is FF1 or SEA (src/d/d_map.cpp:1538-1541)"
+    },
+    {
+     "name": "mKeyNum",
+     "offset": "0x20",
+     "type": "u8",
+     "meaning": "SMALL KEY COUNT for this dungeon, clamped 0..99",
+     "api": "getKeyNum() / setKeyNum(n)",
+     "src": "include/d/d_save.h:654-655"
+    },
+    {
+     "name": "mDungeonItem",
+     "offset": "0x21",
+     "type": "u8",
+     "meaning": "6-bit mask, see dungeon_item_bits",
+     "api": "onDungeonItem/offDungeonItem/isDungeonItem(i), 0<=i<6, mDungeonItem |= (u8)(1<<i)",
+     "src": "src/d/d_save.cpp:1136-1150"
+    }
+   ],
+   "init": "dSv_memBit_c::init() zeroes all of it including mKeyNum and mDungeonItem (src/d/d_save.cpp:1054-1069)"
+  },
+  "dungeon_item_bits": {
+   "src": "include/d/d_save.h:630-637 (the enum) and include/d/d_save.h:656-673 (the named accessors)",
+   "bits": {
+    "0": {
+     "name": "MAP",
+     "accessor": "isDungeonItemMap()",
+     "set_by": "item_func_map() -> dComIfGs_onDungeonItemMap() (src/d/d_item.cpp:952-955)"
+    },
+    "1": {
+     "name": "COMPASS",
+     "accessor": "isDungeonItemCompass()",
+     "set_by": "item_func_compass() (src/d/d_item.cpp:957-960)"
+    },
+    "2": {
+     "name": "BOSS_KEY",
+     "accessor": "isDungeonItemBossKey()",
+     "note": "this IS the Big Key - there is no separate big-key variable anywhere",
+     "set_by": "item_func_boss_key() (src/d/d_item.cpp:962-965)"
+    },
+    "3": {
+     "name": "STAGE_BOSS_ENEMY",
+     "accessor": "isStageBossEnemy()",
+     "note": "the dungeon boss is dead. This is the bit dComIfGs_onStageBossEnemy() writes; it is a per-stage save field, not an event bit."
+    },
+    "4": {
+     "name": "STAGE_LIFE",
+     "accessor": "isStageLife()",
+     "note": "the boss-room Heart Container has been taken. d_a_boss_item.cpp:29-31 spawns the container only when isStageBossEnemy(stageNo) AND !isStageLife(stageNo)."
+    },
+    "5": {
+     "name": "STAGE_BOSS_DEMO",
+     "accessor": "isStageBossDemo()",
+     "note": "the boss intro cutscene has already played (checked by every boss: d_a_bmd.cpp:2016, d_a_btd.cpp:2995, d_a_bwd.cpp:2530, d_a_bpw.cpp:4618)"
+    }
+   }
+  },
+  "table_of_slots": {
+   "src": "include/d/d_save.h:864-914",
+   "layout": "dSv_save_c { dSv_player_c mPlayer @0x000 (0x380); dSv_memory_c mMemory[16] @0x380 (0x240); dSv_ocean_c mOcean @0x5C0; dSv_event_c mEvent @0x624; dSv_reserve_c mReserve @0x724 }  // sizeof 0x778",
+   "note": "dSv_memory_c is a 0x24-byte wrapper containing exactly one dSv_memBit_c (include/d/d_save.h:719-729)",
+   "enum_SaveStageTbl": {
+    "0": "STAGE_SEA",
+    "1": "STAGE_SEA2",
+    "2": "STAGE_FF",
+    "3": "STAGE_DRC",
+    "4": "STAGE_FW",
+    "5": "STAGE_TOTG",
+    "6": "STAGE_ET",
+    "7": "STAGE_WT",
+    "8": "STAGE_GT",
+    "9": "STAGE_HYRULE",
+    "10": "STAGE_SHIP",
+    "11": "STAGE_MISC",
+    "12": "STAGE_SUBDUNGEON",
+    "13": "STAGE_SUBDUNGEON_NEW",
+    "14": "STAGE_BLUE_CHU_JELLY",
+    "15": "STAGE_TEST"
+   },
+   "enum_src": "include/d/d_save.h:879-897",
+   "live_copy": "dSv_info_c also holds ONE live block, mMemory @0x778, plus mDan @0x79C and mZone[32] @0x7A8 (include/d/d_save.h:973-984). All the dComIfGs_ accessors without a stageNo argument hit the live block."
+  },
+  "current_slot_selection": {
+   "how": "The slot number is a field in the stage's STAG chunk (stage.dzs). It is not a lookup on the stage name.",
+   "decode": "dStage_stagInfo_GetSaveTbl(stag) = (stag->mProp >> 1) & 0x7F   // mProp is byte 0x09 of the 0x20-byte STAG record",
+   "decode_src": "include/d/d_stage.h:1023-1025 ; struct stage_stag_info_class at include/d/d_stage.h:66-77",
+   "sibling_field": "dStage_stagInfo_ChkKeyDisp(stag) = stag->mProp & 1  -> 'this stage displays the small-key counter'. See include/d/d_stage.h:1019-1021. It gates the whole key commit path (src/d/d_meter.cpp:5167).",
+   "stage_type_field": "dStage_stagInfo_GetSTType(stag) = (stag->mStageTypeAndSchbit >> 16) & 7, enum StageType at include/d/d_stage.h:16-26",
+   "load": "dStage_stagInfoInit(): stageNo = GetSaveTbl(stag); dComIfGs_getSave(stageNo); dComIfGs_initDan(stageNo)  (src/d/d_stage.cpp:1670-1678)",
+   "store": "dStage_Delete(): stageNo = GetSaveTbl(stag); dComIfGs_putSave(stageNo)  (src/d/d_stage.cpp:2255-2256). Also on a manual save: src/d/d_menu_save.cpp:935.",
+   "copy_semantics": "getSave/putSave are whole-struct copies between dSv_info_c::mMemory (live) and mSavedata.mMemory[slot] (stored) - src/d/d_save.cpp:1506-1515.",
+   "consequence": "Any two stages that share a slot share ALL of it: chest bits, memory switches, key count, big key, boss-dead. That is how a dungeon plus its miniboss room plus its boss room are one save state. See _stage_save_slots for the real, disc-derived assignment."
+  },
+  "not_the_event_array": {
+   "claim": "Nothing on the dungeon-progression path touches dSv_event_c::mFlags[0x100] (include/d/d_save.h:696-710).",
+   "evidence": "Every caller of onTbox/isTbox, on/off/isDungeonItem*, get/setKeyNum, on/isVisitedRoom and dComIfGs_on/off/isSwitch was grepped in src/; all of them route into dSv_memBit_c or dSv_danBit_c/dSv_zoneBit_c, never into mFlags.",
+   "one_exception": "daMdoor ('Mori1', the sliding wooden bars) is the only door-family actor that uses story EVENT bits instead of switches - see _doors.Mori1.",
+   "confidence": "high"
+  },
+  "per_stage_wrappers": {
+   "note": "For every accessor there is a dComIfGs_*(stageNo, ...) variant. It writes the live block when stageNo == GetSaveTbl(current stage), and otherwise writes the stored slot directly.",
+   "src": "src/d/d_com_inf_game.cpp:694-895 (dComIfGs_onStageBossEnemy at :806-813 is the canonical shape)",
+   "example_users": [
+    "src/d/actor/d_a_dr.cpp:160  isStageBossEnemy(dSv_save_c::STAGE_DRC)",
+    "src/d/actor/d_a_agb.cpp:1195-1196  isStageBossEnemy(STAGE_WT) / (STAGE_ET)",
+    "src/d/actor/d_a_warphr.cpp:395  isStageBossEnemy(STAGE_FF)",
+    "src/d/actor/d_a_npc_cb1.cpp:2886  isStageBossEnemy(STAGE_FW)"
+   ]
+  }
+ },
+ "_switch_numbers": {
+  "src": "src/d/d_save.cpp:1539-1626 ; constants at include/d/d_save.h:964-971",
+  "constants": {
+   "MEMORY_SWITCH": "0x80 (128)",
+   "DAN_SWITCH": "0x40 (64)",
+   "ZONE_SWITCH": "0x30 (48)"
+  },
+  "routing": [
+   {
+    "range": "-1 or 255",
+    "store": "none",
+    "meaning": "'no switch' - on/off do nothing, is() returns FALSE"
+   },
+   {
+    "range": "0x00..0x7F",
+    "store": "dSv_memBit_c::mSwitch (the per-dungeon save block)",
+    "persistence": "PERSISTENT - saved to the memory card with the dungeon"
+   },
+   {
+    "range": "0x80..0xBF",
+    "store": "dSv_danBit_c::mSwitch, index sw-0x80, 64 bits",
+    "persistence": "VOLATILE - dSv_danBit_c::init(stageNo) clears both words whenever the save slot changes (src/d/d_save.cpp:1225-1235). Never written to the card."
+   },
+   {
+    "range": "0xC0..0xEF",
+    "store": "dSv_zone_c[zoneOf(roomNo)].mZoneBit.mSwitch, index sw-0xC0, 48 bits",
+    "persistence": "VOLATILE and room-scoped; requires a valid roomNo 0..63 or the game asserts"
+   }
+  ],
+  "why_it_matters": "A locked door only stays unlocked if its switch number is < 0x80. dDoor_key2_c::keyInit guards on exactly that (src/d/d_door.cpp:436-437), and daDoor10_c::setKey short-circuits boss doors whose swbit >= 0x80 to 'locked' (src/d/actor/d_a_door10.cpp:44)."
+ },
+ "_stage_save_slots": {
+  "_how": "Parsed from every stage's Stage.arc/stage.dzs STAG chunk on the retail GZLE01 disc: slot = (mProp>>1)&0x7F, key_counter_shown = mProp&1, stage_type = (mStageTypeAndSchbit>>16)&7. 156 stages carry a STAG chunk.",
+  "_confidence": "high - this is read from the disc, and it agrees with the decomp's own slot names: the five stages that land in slots 3/4/5/6/7 are exactly M_NewD2 / kindan / Siren / M_Dai / kaze, matching STAGE_DRC / FW / TOTG / ET / WT.",
+  "_unused_slots": "Slots 1 (STAGE_SEA2) and 14 (STAGE_BLUE_CHU_JELLY) belong to no stage on the disc. They are virtual, reached only through the dComIfGs_*Stage*(stageNo,..) wrappers: daTbox 'extra save info' chests write slot 1 (src/d/actor/d_a_tbox.cpp:318-323, :855-858) and Blue Chu Jelly pickups write switches in slot 14 (include/f_op/f_op_actor_mng.h:409-435).",
+  "stages": {
+   "ADMumi": {
+    "slot": 0,
+    "slot_name": "STAGE_SEA",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": false
+   },
+   "A_R00": {
+    "slot": 15,
+    "slot_name": "STAGE_TEST",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "A_mori": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "A_nami": {
+    "slot": 0,
+    "slot_name": "STAGE_SEA",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "A_umikz": {
+    "slot": 10,
+    "slot_name": "STAGE_SHIP",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "Abesso": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "Abship": {
+    "slot": 10,
+    "slot_name": "STAGE_SHIP",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "Adanmae": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "Amos_T": {
+    "slot": 15,
+    "slot_name": "STAGE_TEST",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "Asoko": {
+    "slot": 13,
+    "slot_name": "STAGE_SUBDUNGEON_NEW",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "Atorizk": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "Cave01": {
+    "slot": 12,
+    "slot_name": "STAGE_SUBDUNGEON",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "Cave02": {
+    "slot": 12,
+    "slot_name": "STAGE_SUBDUNGEON",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "Cave03": {
+    "slot": 12,
+    "slot_name": "STAGE_SUBDUNGEON",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "Cave04": {
+    "slot": 12,
+    "slot_name": "STAGE_SUBDUNGEON",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "Cave05": {
+    "slot": 13,
+    "slot_name": "STAGE_SUBDUNGEON_NEW",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "Cave06": {
+    "slot": 12,
+    "slot_name": "STAGE_SUBDUNGEON",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "Cave07": {
+    "slot": 13,
+    "slot_name": "STAGE_SUBDUNGEON_NEW",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "Cave08": {
+    "slot": 7,
+    "slot_name": "STAGE_WT",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": true
+   },
+   "Cave09": {
+    "slot": 13,
+    "slot_name": "STAGE_SUBDUNGEON_NEW",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "Cave10": {
+    "slot": 13,
+    "slot_name": "STAGE_SUBDUNGEON_NEW",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "Cave11": {
+    "slot": 13,
+    "slot_name": "STAGE_SUBDUNGEON_NEW",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "Comori": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "DmSpot0": {
+    "slot": 0,
+    "slot_name": "STAGE_SEA",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "E3ROOP": {
+    "slot": 0,
+    "slot_name": "STAGE_SEA",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "ENDumi": {
+    "slot": 0,
+    "slot_name": "STAGE_SEA",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": false
+   },
+   "Ebesso": {
+    "slot": 15,
+    "slot_name": "STAGE_TEST",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "Edaichi": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "Ekaze": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "Fairy01": {
+    "slot": 12,
+    "slot_name": "STAGE_SUBDUNGEON",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "Fairy02": {
+    "slot": 12,
+    "slot_name": "STAGE_SUBDUNGEON",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "Fairy03": {
+    "slot": 12,
+    "slot_name": "STAGE_SUBDUNGEON",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "Fairy04": {
+    "slot": 12,
+    "slot_name": "STAGE_SUBDUNGEON",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "Fairy05": {
+    "slot": 12,
+    "slot_name": "STAGE_SUBDUNGEON",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "Fairy06": {
+    "slot": 12,
+    "slot_name": "STAGE_SUBDUNGEON",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "GTower": {
+    "slot": 8,
+    "slot_name": "STAGE_GT",
+    "stage_type": "BOSS",
+    "key_counter_shown": false
+   },
+   "GanonA": {
+    "slot": 8,
+    "slot_name": "STAGE_GT",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": false
+   },
+   "GanonB": {
+    "slot": 8,
+    "slot_name": "STAGE_GT",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": false
+   },
+   "GanonC": {
+    "slot": 8,
+    "slot_name": "STAGE_GT",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": false
+   },
+   "GanonD": {
+    "slot": 8,
+    "slot_name": "STAGE_GT",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": false
+   },
+   "GanonE": {
+    "slot": 8,
+    "slot_name": "STAGE_GT",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": false
+   },
+   "GanonJ": {
+    "slot": 8,
+    "slot_name": "STAGE_GT",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": false
+   },
+   "GanonK": {
+    "slot": 8,
+    "slot_name": "STAGE_GT",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": false
+   },
+   "GanonL": {
+    "slot": 8,
+    "slot_name": "STAGE_GT",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": false
+   },
+   "GanonM": {
+    "slot": 8,
+    "slot_name": "STAGE_GT",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": false
+   },
+   "GanonN": {
+    "slot": 8,
+    "slot_name": "STAGE_GT",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": false
+   },
+   "H_test": {
+    "slot": 15,
+    "slot_name": "STAGE_TEST",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": false
+   },
+   "Hyroom": {
+    "slot": 9,
+    "slot_name": "STAGE_HYRULE",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "Hyrule": {
+    "slot": 9,
+    "slot_name": "STAGE_HYRULE",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "ITest61": {
+    "slot": 13,
+    "slot_name": "STAGE_SUBDUNGEON_NEW",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "ITest62": {
+    "slot": 12,
+    "slot_name": "STAGE_SUBDUNGEON",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "ITest63": {
+    "slot": 13,
+    "slot_name": "STAGE_SUBDUNGEON_NEW",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "I_SubAN": {
+    "slot": 12,
+    "slot_name": "STAGE_SUBDUNGEON",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "I_TestM": {
+    "slot": 15,
+    "slot_name": "STAGE_TEST",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "I_TestR": {
+    "slot": 15,
+    "slot_name": "STAGE_TEST",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "KATA_HB": {
+    "slot": 15,
+    "slot_name": "STAGE_TEST",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "KATA_RM": {
+    "slot": 15,
+    "slot_name": "STAGE_TEST",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": false
+   },
+   "K_Test2": {
+    "slot": 15,
+    "slot_name": "STAGE_TEST",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "K_Test3": {
+    "slot": 15,
+    "slot_name": "STAGE_TEST",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "K_Test4": {
+    "slot": 15,
+    "slot_name": "STAGE_TEST",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "K_Test5": {
+    "slot": 15,
+    "slot_name": "STAGE_TEST",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "K_Test6": {
+    "slot": 15,
+    "slot_name": "STAGE_TEST",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "K_Test8": {
+    "slot": 15,
+    "slot_name": "STAGE_TEST",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "K_Test9": {
+    "slot": 15,
+    "slot_name": "STAGE_TEST",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "K_Testa": {
+    "slot": 15,
+    "slot_name": "STAGE_TEST",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "K_Testb": {
+    "slot": 15,
+    "slot_name": "STAGE_TEST",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "K_Testc": {
+    "slot": 15,
+    "slot_name": "STAGE_TEST",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "K_Testd": {
+    "slot": 15,
+    "slot_name": "STAGE_TEST",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "K_Teste": {
+    "slot": 15,
+    "slot_name": "STAGE_TEST",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "Kaisen": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "LinkRM": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "LinkUG": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "M2ganon": {
+    "slot": 2,
+    "slot_name": "STAGE_FF",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "M2tower": {
+    "slot": 2,
+    "slot_name": "STAGE_FF",
+    "stage_type": "BOSS",
+    "key_counter_shown": false
+   },
+   "M_Dai": {
+    "slot": 6,
+    "slot_name": "STAGE_ET",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": true
+   },
+   "M_DaiB": {
+    "slot": 6,
+    "slot_name": "STAGE_ET",
+    "stage_type": "BOSS",
+    "key_counter_shown": false
+   },
+   "M_DaiMB": {
+    "slot": 6,
+    "slot_name": "STAGE_ET",
+    "stage_type": "MINIBOSS",
+    "key_counter_shown": true
+   },
+   "M_Dra09": {
+    "slot": 3,
+    "slot_name": "STAGE_DRC",
+    "stage_type": "MINIBOSS",
+    "key_counter_shown": true
+   },
+   "M_DragB": {
+    "slot": 3,
+    "slot_name": "STAGE_DRC",
+    "stage_type": "BOSS",
+    "key_counter_shown": false
+   },
+   "M_NewD2": {
+    "slot": 3,
+    "slot_name": "STAGE_DRC",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": true
+   },
+   "MajyuE": {
+    "slot": 2,
+    "slot_name": "STAGE_FF",
+    "stage_type": "FF1",
+    "key_counter_shown": false
+   },
+   "MiniHyo": {
+    "slot": 12,
+    "slot_name": "STAGE_SUBDUNGEON",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "MiniKaz": {
+    "slot": 12,
+    "slot_name": "STAGE_SUBDUNGEON",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "Mjtower": {
+    "slot": 2,
+    "slot_name": "STAGE_FF",
+    "stage_type": "BOSS",
+    "key_counter_shown": false
+   },
+   "Msmoke": {
+    "slot": 15,
+    "slot_name": "STAGE_TEST",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": false
+   },
+   "Mukao": {
+    "slot": 15,
+    "slot_name": "STAGE_TEST",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "Nitiyou": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "Obombh": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "Obshop": {
+    "slot": 10,
+    "slot_name": "STAGE_SHIP",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "Ocean": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "Ocmera": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "Ocrogh": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "Ojhous": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "Ojhous2": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "Omasao": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "Omori": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "Onobuta": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "Opub": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "Orichh": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "Otkura": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "PShip": {
+    "slot": 10,
+    "slot_name": "STAGE_SHIP",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "PShip2": {
+    "slot": 12,
+    "slot_name": "STAGE_SUBDUNGEON",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "PShip3": {
+    "slot": 12,
+    "slot_name": "STAGE_SUBDUNGEON",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "Pdrgsh": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "Pfigure": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "Pjavdou": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "Pnezumi": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "ShipD": {
+    "slot": 12,
+    "slot_name": "STAGE_SUBDUNGEON",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "Siren": {
+    "slot": 5,
+    "slot_name": "STAGE_TOTG",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": true
+   },
+   "SirenB": {
+    "slot": 5,
+    "slot_name": "STAGE_TOTG",
+    "stage_type": "BOSS",
+    "key_counter_shown": false
+   },
+   "SirenMB": {
+    "slot": 5,
+    "slot_name": "STAGE_TOTG",
+    "stage_type": "MINIBOSS",
+    "key_counter_shown": true
+   },
+   "SubD42": {
+    "slot": 13,
+    "slot_name": "STAGE_SUBDUNGEON_NEW",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "SubD43": {
+    "slot": 13,
+    "slot_name": "STAGE_SUBDUNGEON_NEW",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "SubD44": {
+    "slot": 12,
+    "slot_name": "STAGE_SUBDUNGEON",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "SubD45": {
+    "slot": 10,
+    "slot_name": "STAGE_SHIP",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "SubD51": {
+    "slot": 13,
+    "slot_name": "STAGE_SUBDUNGEON_NEW",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "SubD71": {
+    "slot": 13,
+    "slot_name": "STAGE_SUBDUNGEON_NEW",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "TEST": {
+    "slot": 15,
+    "slot_name": "STAGE_TEST",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": false
+   },
+   "TF_01": {
+    "slot": 12,
+    "slot_name": "STAGE_SUBDUNGEON",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "TF_02": {
+    "slot": 12,
+    "slot_name": "STAGE_SUBDUNGEON",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "TF_03": {
+    "slot": 12,
+    "slot_name": "STAGE_SUBDUNGEON",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "TF_04": {
+    "slot": 12,
+    "slot_name": "STAGE_SUBDUNGEON",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "TF_05": {
+    "slot": 13,
+    "slot_name": "STAGE_SUBDUNGEON_NEW",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "TF_06": {
+    "slot": 13,
+    "slot_name": "STAGE_SUBDUNGEON_NEW",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "TF_07": {
+    "slot": 13,
+    "slot_name": "STAGE_SUBDUNGEON_NEW",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "TyuTyu": {
+    "slot": 12,
+    "slot_name": "STAGE_SUBDUNGEON",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "VrTest": {
+    "slot": 15,
+    "slot_name": "STAGE_TEST",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "WarpD": {
+    "slot": 12,
+    "slot_name": "STAGE_SUBDUNGEON",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "Xboss0": {
+    "slot": 8,
+    "slot_name": "STAGE_GT",
+    "stage_type": "BOSS",
+    "key_counter_shown": false
+   },
+   "Xboss1": {
+    "slot": 8,
+    "slot_name": "STAGE_GT",
+    "stage_type": "BOSS",
+    "key_counter_shown": false
+   },
+   "Xboss2": {
+    "slot": 8,
+    "slot_name": "STAGE_GT",
+    "stage_type": "BOSS",
+    "key_counter_shown": false
+   },
+   "Xboss3": {
+    "slot": 8,
+    "slot_name": "STAGE_GT",
+    "stage_type": "BOSS",
+    "key_counter_shown": false
+   },
+   "figureA": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "figureB": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "figureC": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "figureD": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "figureE": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "figureF": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "figureG": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   },
+   "kazan": {
+    "slot": 15,
+    "slot_name": "STAGE_TEST",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "kaze": {
+    "slot": 7,
+    "slot_name": "STAGE_WT",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": true
+   },
+   "kazeB": {
+    "slot": 7,
+    "slot_name": "STAGE_WT",
+    "stage_type": "BOSS",
+    "key_counter_shown": false
+   },
+   "kazeMB": {
+    "slot": 7,
+    "slot_name": "STAGE_WT",
+    "stage_type": "MINIBOSS",
+    "key_counter_shown": true
+   },
+   "kenroom": {
+    "slot": 9,
+    "slot_name": "STAGE_HYRULE",
+    "stage_type": "SUBDUNGEON",
+    "key_counter_shown": false
+   },
+   "kinBOSS": {
+    "slot": 4,
+    "slot_name": "STAGE_FW",
+    "stage_type": "BOSS",
+    "key_counter_shown": false
+   },
+   "kinMB": {
+    "slot": 4,
+    "slot_name": "STAGE_FW",
+    "stage_type": "MINIBOSS",
+    "key_counter_shown": true
+   },
+   "kindan": {
+    "slot": 4,
+    "slot_name": "STAGE_FW",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": true
+   },
+   "ma2room": {
+    "slot": 2,
+    "slot_name": "STAGE_FF",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": false
+   },
+   "ma3room": {
+    "slot": 2,
+    "slot_name": "STAGE_FF",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": false
+   },
+   "majroom": {
+    "slot": 2,
+    "slot_name": "STAGE_FF",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": false
+   },
+   "morocam": {
+    "slot": 15,
+    "slot_name": "STAGE_TEST",
+    "stage_type": "OUTDOORS",
+    "key_counter_shown": false
+   },
+   "sea": {
+    "slot": 0,
+    "slot_name": "STAGE_SEA",
+    "stage_type": "SEA",
+    "key_counter_shown": false
+   },
+   "sea_E": {
+    "slot": 0,
+    "slot_name": "STAGE_SEA",
+    "stage_type": "SEA",
+    "key_counter_shown": false
+   },
+   "sea_T": {
+    "slot": 0,
+    "slot_name": "STAGE_SEA",
+    "stage_type": "SEA",
+    "key_counter_shown": false
+   },
+   "tincle": {
+    "slot": 11,
+    "slot_name": "STAGE_MISC",
+    "stage_type": "MISC",
+    "key_counter_shown": false
+   }
+  }
+ },
+ "_doors": {
+  "_shared_param_layout": {
+   "applies_to": [
+    "DOOR10 family (door10/door11/door20/door21/Zenshut/keyshut/K_Zshut)",
+    "DOOR12 family (door12/door12M/door12B/door13/door13M/door13B/keyS12/ZenS12)",
+    "KDDOOR family (doorKD/ZenshKD/K_ZshKD/doorSH/doorSZ)"
+   ],
+   "reason": "all three derive from dDoor_info_c, and the actors themselves almost never read fopAcM_GetParam directly",
+   "src": "include/d/d_door.h:10-57 ; src/d/d_door.cpp:16-61",
+   "params_u32": {
+    "getSwbit": {
+     "bits": "0-7",
+     "expr": "params & 0xFF",
+     "meaning": "primary switch number, 0xFF = none",
+     "src": "src/d/d_door.cpp:16-18"
+    },
+    "getType": {
+     "bits": "8-11",
+     "expr": "(params >> 0x08) & 0xF",
+     "meaning": "DOOR TYPE - the lock kind. Meaning differs per actor, see below.",
+     "src": "src/d/d_door.cpp:26-28"
+    },
+    "getEventNo": {
+     "bits": "12-19",
+     "expr": "(params >> 0x0C) & 0xFF",
+     "src": "src/d/d_door.cpp:39-41"
+    },
+    "getSwbit2": {
+     "bits": "20-27",
+     "expr": "(params >> 0x14) & 0xFF",
+     "meaning": "second switch, for the bars on the BACK side, 0xFF = none",
+     "src": "src/d/d_door.cpp:21-23"
+    },
+    "bits_28_31": "unused (always 0x0 in the retail data)"
+   },
+   "rot_is_not_rotation": {
+    "note": "Only rot.y (home.angle.y) is a real rotation. rot.x and rot.z are packed data.",
+    "getFRoomNo": {
+     "expr": "home.angle.x & 0x3F",
+     "meaning": "front room number, 0x3F = none",
+     "src": "src/d/d_door.cpp:44-46"
+    },
+    "getBRoomNo": {
+     "expr": "(home.angle.x >> 6) & 0x3F",
+     "meaning": "back room number, 0x3F = none",
+     "src": "src/d/d_door.cpp:49-51"
+    },
+    "getShipId": {
+     "expr": "home.angle.z & 0x3F",
+     "meaning": "ship-spawn id, 0x3F = none (valShipId())",
+     "src": "src/d/d_door.cpp:54-56 ; used at src/d/d_door.cpp:284-285"
+    },
+    "getArg1": {
+     "expr": "(home.angle.z >> 8) & 0xFF",
+     "meaning": "model / behaviour variant, 0xFF = default. See each actor.",
+     "src": "src/d/d_door.cpp:59-61"
+    },
+    "cross_check": "verified against the disc: every dungeon door's rot.x decodes to two room numbers that exist in that stage, and every plain door has rot.z low 6 bits == 0x3F"
+   },
+   "the_lock_object": {
+    "class": "dDoor_key2_c",
+    "src": "include/d/d_door.h:71-95",
+    "archive": "\"Key\" (src/d/d_door.cpp:424-426)",
+    "small_key_lock_model": "dRes_INDEX_KEY_BDL_VLOCN_e + BCK_VLOCN (src/d/d_door.cpp:466-474)",
+    "big_key_lock_model": "dRes_INDEX_KEY_BDL_VLOCB_e + BCK_VLOCB (src/d/d_door.cpp:483-498)",
+    "unlock": "dDoor_key2_c::keyInit(door): if (swbit < 0x80) dComIfGs_onSwitch(swbit, -1); if (!mbIsBossDoor) dComIfGp_setItemKeyNumCount(-1); then plays the chain-open SFX (JA_SE_OBJ_BOSS_LOCK_OPEN for a boss door, JA_SE_OBJ_DOOR_CHAIN_OPEN otherwise). src/d/d_door.cpp:433-448",
+    "this_is_the_only_place_a_small_key_is_spent": true
+   },
+   "the_bars": {
+    "class": "dDoor_stop_c",
+    "src": "include/d/d_door.h:97-115",
+    "model": "dComIfG_getStageRes(\"Stage\", \"stop10.bmd\"), falling back to \"stop10.bdl\" (src/d/d_door.cpp:613-616)",
+    "motion": "slides 0 -> 300 units on Y"
+   }
+  },
+  "DOOR10": {
+   "profile": "fpcNm_DOOR10_e",
+   "file": "src/d/actor/d_a_door10.cpp",
+   "decomp_status": "FULLY DECOMPILED - 905 lines, zero /* Nonmatching */ bodies",
+   "placement_names": [
+    "door10",
+    "door11",
+    "door20",
+    "door21",
+    "Zenshut",
+    "keyshut",
+    "K_Zshut"
+   ],
+   "placement_names_src": "src/d/d_stage.cpp:451-457 (all seven map to fpcNm_DOOR10_e with argument 255)",
+   "important": "There is no d_a_door20.cpp and no second profile. 'door20' is a PLACEMENT ALIAS for the same actor; what makes it a boss door is params bits 8-11 == 1, not the name. The OBJNAME 'argument' column is never read by any door actor.",
+   "type_meanings": {
+    "src": "src/d/actor/d_a_door10.cpp:13-25 (chkMakeKey) and :29-51 (setKey)",
+    "0": "plain door, no lock (may still have switch bars if swbit/swbit2 != 0xFF)",
+    "1": "BOSS DOOR - needs the Big Key. chkMakeKey() returns 2.",
+    "2": "'clear the room' door: the bars lift when the front room has no enemies left, and it then sets its own switch (src/d/actor/d_a_door10.cpp:132-147)",
+    "3": "plain door with the door11 mesh",
+    "4": "SMALL-KEY DOOR - needs one small key. chkMakeKey() returns 1.",
+    "5": "small-key door, back-side variant of type 4 (chkMakeKey() also returns 1; the enemy-clear branch fires on mFrontCheck==1)"
+   },
+   "which_types_appear_in_retail_data": {
+    "0": "159 door10 + 2 doorKD-named entries",
+    "1": "13 (all named door20)",
+    "2": "27 (all named Zenshut)",
+    "4": "7 (all named keyshut)",
+    "_source": "full TGDR sweep of all 156 stages on the disc; types 3 and 5 are never used by a DOOR10-family placement"
+   },
+   "lock_state_test": {
+    "src": "src/d/actor/d_a_door10.cpp:29-51",
+    "small_key_door": "locked (lock model on) unless dComIfGs_isSwitch(swbit, -1) - i.e. the memory switch remembers you already opened it",
+    "boss_door": "swbit == 0xFF -> never locked; swbit >= 0x80 -> always locked (a dan/zone switch cannot persist); otherwise locked unless isSwitch(swbit, -1)"
+   },
+   "open_gate": {
+    "src": "src/d/actor/d_a_door10.cpp:359-379",
+    "code": "if (mKeyLock.mbEnabled) { case 1: if (!isDungeonItemBossKey()) return;  default: if (getKeyNum()==0) return; }  then checkArea(...) -> eventInfo.onCondition(dEvtCnd_CANDOOR_e)",
+    "meaning": "the 'open' prompt only appears when you actually hold the key; the key is spent later, in the unlock cutscene beat"
+   },
+   "models": {
+    "src": "src/d/actor/d_a_door10.cpp:223-237 (bdl/dzb names), :265 and :310 (loaded from the STAGE archive, not an object archive)",
+    "by_type": {
+     "1": "door20.bdl / door20.dzb",
+     "3": "door11.bdl / door11.dzb",
+     "default": "door10.bdl / door10.dzb"
+    },
+    "arg1_overrides": {
+     "13": "archive \"DoorBs\", model DOORBS_BDL_DOORDR, collision DOORBS_DZB_DOOR20_D (src/d/actor/d_a_door10.cpp:499-515)",
+     "14": "archive \"DoorBs\", model DOORBS_BDL_DOORKD, collision DOORBS_DZB_DOOR20_K",
+     "1..4": "additionally enables the dDoor_hkyo_c sealed-door glow overlay, mHkyo.onUse(arg1) (src/d/actor/d_a_door10.cpp:486-497)",
+     "15": "skips the delay before the enemy-clear check (:154, :163)",
+     "16": "marks the BACK side of a boss door - setEventPrm returns early / picks a different event slot (:340, :353)",
+     "17": "swaps the bar SFX to JA_SE_OBJ_CAGE_OPEN/CLOSE (src/d/d_door.cpp:563, :589)"
+    }
+   }
+  },
+  "DOOR12": {
+   "profile": "fpcNm_DOOR12_e",
+   "file": "src/d/actor/d_a_door12.cpp",
+   "decomp_status": "FULLY DECOMPILED - 922 lines, zero /* Nonmatching */ bodies",
+   "placement_names": [
+    "door12",
+    "door12M",
+    "door12B",
+    "door13",
+    "door13M",
+    "door13B",
+    "keyS12",
+    "ZenS12"
+   ],
+   "placement_names_src": "src/d/d_stage.cpp:473-480",
+   "shape": "double swinging doors (two leaves)",
+   "type_meanings": {
+    "src": "src/d/actor/d_a_door12.cpp:39-49 (chkMakeKey) and :52-73 (setKey)",
+    "0": "plain door",
+    "1": "SMALL-KEY DOOR (chkMakeKey() returns TRUE/1)",
+    "2": "'clear the room' door - bars lift when the front room is empty (:155)",
+    "3": "BOSS DOOR - needs the Big Key (chkMakeKey() returns 2)",
+    "WARNING": "the type numbers are NOT the same as DOOR10. door10: 4/5=small, 1=boss. door12: 1=small, 3=boss."
+   },
+   "forced_boss_type": {
+    "src": "src/d/actor/d_a_door12.cpp:576-578",
+    "code": "if (getArg1() == 9 || getArg1() == 0xC) { setType(3); }",
+    "why_it_matters": "This is how Earth Temple and Wind Temple get their Big-Key doors. Neither stage contains a single door20, and neither contains a door12 placed with type 3 in its params. Their boss doors are ordinary 'door12' placements whose rot.z high byte is 9 (M_Dai) or 12 (kaze), which the actor promotes to a boss door at runtime. Verified on the disc: M_Dai has exactly one such entry (params 0x0FFFF07F, rot.z 0x093F, swbit 0x7F) and kaze exactly one (params 0x0FFFF03F, rot.z 0x0C3F, swbit 0x3F).",
+    "confidence": "high - the code is fully decompiled and the disc has exactly one matching placement per temple"
+   },
+   "open_gate": {
+    "src": "src/d/actor/d_a_door12.cpp:407-423",
+    "code": "if (mKeyLock.mbEnabled) { case 3: if (!isDungeonItemBossKey()) return;  default: if (getKeyNum()==0) return; }"
+   },
+   "shape_from_arg1": {
+    "src": "src/d/actor/d_a_door12.cpp:289-304 (getShapeType), :307-311 (getArcName), :320-344 (models)",
+    "map": {
+     "8": 1,
+     "9": 2,
+     "10": 3,
+     "11": 4,
+     "12": 5,
+     "default": 0
+    },
+    "archives": "shapeType >= 3 -> archive \"door13\", else \"door12\"",
+    "note": "shape 2 (arg1 9) and shape 5 (arg1 12) are the boss-door meshes, which is exactly why those two arg1 values force type 3"
+   }
+  },
+  "KDDOOR": {
+   "profile": "fpcNm_KDDOOR_e",
+   "file": "src/d/actor/d_a_kddoor.cpp",
+   "decomp_status": "STUB-ONLY - 342 lines in which EVERY function body is /* Nonmatching */. The header include/d/actor/d_a_kddoor.h still says '/* Place member variables here */' for all three classes, so even the field layout is unknown.",
+   "confidence": "low - nothing about this actor's behaviour can be stated from the decomp",
+   "placement_names": [
+    "doorKD",
+    "ZenshKD",
+    "K_ZshKD",
+    "doorSH",
+    "doorSZ"
+   ],
+   "placement_names_src": "src/d/d_stage.cpp:460-464",
+   "what_is_known": [
+    "it derives from dDoor_info_c (include/d/actor/d_a_kddoor.h:38), so it inherits the params / rot layout above",
+    "the stubbed method names mirror door10 exactly (chkMakeKey, setKey, chkMakeStop, chkStopF/B, chkStopOpen/Close, setEventPrm) plus two extras, chkGenocideCase and chkFeelerCase",
+    "one real literal survives: a collision cylinder r=15.0 h=300.0, AT_TYPE_UNK2000, dCcG_SE_WOOD (src/d/actor/d_a_kddoor.cpp:118-146)",
+    "daKddoor_IsDelete returns TRUE (src/d/actor/d_a_kddoor.cpp:306)"
+   ],
+   "what_is_NOT_known": [
+    "which type values lock it, and whether it consumes keys at all",
+    "which model / archive it loads - getBmdName(), getBmdName2() and getDzbName() are all stubs (:190, :195, :200)",
+    "what chkGenocideCase / chkFeelerCase gate on"
+   ],
+   "retail_usage": "only 9 placements in the whole game: 7 doorSH (all in kindan, all with params type nibble 3) and 2 doorKD (both in kindan, type nibble 0). For the remake, kindan's doorSH entries are the vine-covered Forbidden Woods doors.",
+   "remake_advice": "treat doorSH/doorKD as plain doors (no key) unless play-testing says otherwise - none of the 9 placements carries a small-key or boss-key type nibble under either door10's or door12's mapping"
+  },
+  "ATdoor": {
+   "profile": "fpcNm_ATDOOR_e",
+   "file": "src/d/actor/d_a_atdoor.cpp",
+   "decomp_status": "FULLY DECOMPILED - 235 lines",
+   "placement_names": [
+    "ATdoor"
+   ],
+   "placement_names_src": "src/d/d_stage.cpp:458",
+   "derives_from": "fopAc_ac_c, NOT dDoor_info_c - it has its own tiny decode",
+   "params": "getSwbit() = params & 0xFF, and that is the entire param decode (src/d/actor/d_a_atdoor.cpp:22)",
+   "rot": "home.angle.y is a plain rotation; nothing is packed",
+   "opens_on": "a switch bit only, no key. isSwitch(swbit, roomNo) -> swings 0x400/frame to 0x4000; it RE-CLOSES if the switch goes off (src/d/actor/d_a_atdoor.cpp:75-80, :115, :137)",
+   "archive": "\"Atdoor\", model ATDOOR_BDL_SDOOR01, collision ATDOOR_DZB_SDOOR01",
+   "retail_usage": "13 placements: ma2room 2, ma3room 2, majroom 2, M2tower 3, Mjtower 3, Pnezumi 1 - the Forsaken Fortress jail/cell doors"
+  },
+  "Mori1": {
+   "profile": "fpcNm_MDOOR_e",
+   "file": "src/d/actor/d_a_mdoor.cpp",
+   "decomp_status": "FULLY DECOMPILED - 474 lines",
+   "placement_names": [
+    "Mori1"
+   ],
+   "placement_names_src": "src/d/d_stage.cpp:459",
+   "what_it_is": "the wooden/metal sliding BARS (Forbidden Woods, Cabana maze, DRC, Earth Temple)",
+   "params": {
+    "note": "its own 4-byte layout, DIFFERENT from dDoor_info_c",
+    "getSwbit": "params & 0xFF (src/d/actor/d_a_mdoor.cpp:16)",
+    "getType": "(params >> 8) & 0xFF (:21)",
+    "getToolId": "(params >> 16) & 0xFF (:26)",
+    "getShapeType": "(params >> 24) & 0xFF (:31)"
+   },
+   "opens_on": {
+    "type 0": "a STORY EVENT BIT - dSv_event_flag_c::UNK_1101 means already open, else it waits for the event 'MORI1_EVENT' (:127-133). This is the one door-family actor that uses the event array.",
+    "type 1": "enemy-clear ('genocide'): waits for fopAcM_myRoomSearchEnemy(room)==NULL, then sets event bit UNK_1140 (:276-291, :344)",
+    "type 2": "a switch bit: isSwitch(swbit, roomNo) (:322-329)"
+   },
+   "archive": "\"Mdoor\", shapeType==1 -> MORI2 else MORI1 (src/d/actor/d_a_mdoor.cpp:45-55)"
+  },
+  "SMBdor_KGBdor": {
+   "profile": "fpcNm_MBDOOR_e",
+   "file": "src/d/actor/d_a_mbdoor.cpp",
+   "decomp_status": "FULLY DECOMPILED - 612 lines",
+   "placement_names": [
+    "SMBdor",
+    "KGBdor"
+   ],
+   "placement_names_src": "src/d/d_stage.cpp:943-944",
+   "what_it_is": "the big double doors in the Forsaken Fortress tower and the Puppet Ganon boss rooms",
+   "params": {
+    "getSwbit": "params & 0xFF (src/d/actor/d_a_mbdoor.cpp:29)",
+    "getType": "home.angle.z & 0x3F  -- NOTE: in ROT.Z, not params (src/d/actor/d_a_mbdoor.cpp:34)",
+    "getShapeType": "(params & 0x00000F00) >> 8 (:39)"
+   },
+   "opens_on": {
+    "type 0": "isSwitch(swbit, roomNo)",
+    "type 1": "enemy-clear, then sets the switch itself (src/d/actor/d_a_mbdoor.cpp:430-441)",
+    "type 2": "never barred"
+   },
+   "no_keys": true,
+   "archives": "shapeType==1 -> \"Gbdoor\" (V_GBDFU/V_GBD_L/V_GBD_R/V_GBDTO), else \"Mbdoor\" (S_MBDFU/S_MBD_L/S_MBD_R/S_MBDTO) - four models per door (src/d/actor/d_a_mbdoor.cpp:44-101)",
+   "retail_usage": "21 placements: sea 6, MajyuE 4, ma2room 3, ma3room 3, majroom 3, M2tower 1, Mjtower 1"
+  },
+  "SWTdoor": {
+   "profile": "fpcNm_SWTDOOR_e",
+   "file": "src/d/actor/d_a_swtdoor.cpp",
+   "decomp_status": "FULLY DECOMPILED - 112 lines",
+   "placement_names": [
+    "SWTdoor"
+   ],
+   "placement_names_src": "src/d/d_stage.cpp:866",
+   "params": "switch number is in the TOP byte: mSwitchNo = (params >> 24) & 0xFF (src/d/actor/d_a_swtdoor.cpp:78)",
+   "rot": "all three axes are real Euler rotation here (:30-32)",
+   "opens_on": "isSwitch(mSwitchNo, roomNo) -> the door simply SINKS, home.pos.y -= 10 per frame down to -300. No cutscene, no collision object, irreversible. (src/d/actor/d_a_swtdoor.cpp:26-27)",
+   "retail_usage": "3 placements, all in M2tower (Helmaroc King arena)"
+  },
+  "MjDoor": {
+   "profile": "fpcNm_OBJ_MJDOOR_e",
+   "file": "src/d/actor/d_a_obj_majyuu_door.cpp",
+   "decomp_status": "FULLY DECOMPILED - 339 lines",
+   "placement_names": [
+    "MjDoor"
+   ],
+   "placement_names_src": "src/d/d_stage.cpp:829",
+   "what_it_is": "not a door in the progression sense - the destructible wooden barricade at the Forsaken Fortress entrance",
+   "opens_on": "BOMBS ONLY. health = 30, decremented only by fpcNm_BOMB_e hits; on death it sets its switch (params & 0xFF) so it never respawns (src/d/actor/d_a_obj_majyuu_door.cpp:64-66, :134, :146-148, :218)",
+   "archive": "\"S_MSPDo\""
+  }
+ },
+ "_items": {
+  "item_ids": {
+   "src": "include/d/d_item_data.h:28 and :83-85",
+   "SMALL_KEY": "0x15",
+   "MAP": "0x4C",
+   "COMPASS": "0x4D",
+   "BOSS_KEY": "0x4E"
+  },
+  "small_key": {
+   "stored_in": "dSv_memBit_c::mKeyNum, a u8 COUNT inside the current dungeon's save block - not a bit, not an event register",
+   "staging_counter": {
+    "field": "dComIfG_play_c::mItemKeyNumCount, s16 @0x48D4 (include/d/d_com_inf_game.h:786)",
+    "setter_is_an_accumulator": "void setItemKeyNumCount(s16 num) { mItemKeyNumCount += num; }  (include/d/d_com_inf_game.h:454)"
+   },
+   "pickup": "item_func_small_key() { dComIfGp_setItemKeyNumCount(1); }  (src/d/d_item.cpp:664-667)",
+   "spend": "dDoor_key2_c::keyInit(): if (!mbIsBossDoor) dComIfGp_setItemKeyNumCount(-1);  (src/d/d_door.cpp:438-439) - THE ONLY DECREMENT IN THE GAME",
+   "commit": {
+    "src": "src/d/d_meter.cpp:5162-5178 (dMeter_keyMove)",
+    "code": "if (ChkKeyDisp(stagInfo)) { if (pending != 0) { n = getKeyNum() + pending; clamp 0..99; setKeyNum(n); pending = 0; } ... }",
+    "note": "dComIfGs_setKeyNum has exactly ONE caller in the whole game: src/d/d_meter.cpp:5176. If the stage's STAG says keys are not displayed, the pending delta is never applied."
+   },
+   "readers": [
+    "src/d/actor/d_a_door10.cpp:368",
+    "src/d/actor/d_a_door12.cpp:416",
+    "src/d/actor/d_a_agbsw0.cpp:1949 (Tingle Tuner hint)",
+    "src/d/d_meter.cpp:5151"
+   ],
+   "reset": "dSv_memBit_c::init() sets mKeyNum = 0 (src/d/d_save.cpp:1067); the staging counter is zeroed at src/d/d_com_inf_game.cpp:80",
+   "remake_model": [
+    "pickup: pendingKeys += 1",
+    "door prompt appears only if savedKeys > 0 (small) or hasBigKey (boss) AND the door's memory switch is not already set",
+    "unlock beat: if swbit < 0x80 set memory switch swbit (permanent); pendingKeys -= 1 for small keys only",
+    "each frame: savedKeys = clamp(savedKeys + pendingKeys, 0, 99); pendingKeys = 0",
+    "savedKeys, hasBigKey and memory switches 0x00-0x7F all live in the same per-dungeon block, so they all reset together when you enter a different dungeon"
+   ]
+  },
+  "big_key": {
+   "what_it_is": "dSv_memBit_c::mDungeonItem bit 2 (BOSS_KEY) - a single flag in the dungeon's save block. There is no separate variable and no count.",
+   "set": "item_func_boss_key() -> dComIfGs_onDungeonItemBossKey() (src/d/d_item.cpp:962-965)",
+   "read": [
+    "src/d/actor/d_a_door10.cpp:362",
+    "src/d/actor/d_a_door12.cpp:410",
+    "src/d/actor/d_a_agbsw0.cpp:1955",
+    "src/d/d_item.cpp:2346 (item_getcheck_func_boss_key)"
+   ],
+   "never_consumed": {
+    "claim": "The Big Key is checked but never spent.",
+    "evidence": "dDoor_key2_c::keyInit skips the decrement for boss doors (src/d/d_door.cpp:438). dComIfGs_offDungeonItemBossKey() exists (src/d/d_com_inf_game.cpp:785-792) but has NO caller anywhere in src/. It only clears when the whole block is re-initialised.",
+    "confidence": "high"
+   }
+  },
+  "map": {
+   "what_it_is": "dSv_memBit_c::mDungeonItem bit 0 (MAP)",
+   "set": "item_func_map() -> dComIfGs_onDungeonItemMap() (src/d/d_item.cpp:952-955)",
+   "read": "the only reader in the whole decompiled tree is item_getcheck_func_map() (src/d/d_item.cpp:2334-2337), which just answers 'do you already own it'",
+   "what_it_actually_changes": {
+    "answer": "NOT DETERMINABLE FROM THE DECOMP",
+    "why": "the dungeon map screen, src/d/d_menu_dmap.cpp, is 188 lines in which every one of the ~35 function bodies is /* Nonmatching */ - including screenSet(), initialize(), treasureSet(), treasureDraw() and dMap_isBossDoor(). Nothing in it is readable.",
+    "confidence": "low on behaviour, high on the storage bit",
+    "what_can_be_said": [
+     "the rooms you have walked through are tracked independently, in mVisitedRoom (see _storage), and dMap_c::mapMoveAll sets those bits whether or not you hold the map",
+     "so the standard Zelda reading - the map reveals unvisited rooms - is CONSISTENT with the data model, but is not proved by any line of code that could be read",
+     "each dungeon ships pre-rendered floor images in its Stage.arc as stage/dat/dmapNNN.png, one per FLOR entry; see _dungeons[].dungeon_map"
+    ]
+   }
+  },
+  "compass": {
+   "what_it_is": "dSv_memBit_c::mDungeonItem bit 1 (COMPASS)",
+   "set": "item_func_compass() -> dComIfGs_onDungeonItemCompass() (src/d/d_item.cpp:957-960)",
+   "read": "src/d/d_meter.cpp:4427, :4510-4519, :5859 - the HUD stores isDungeonItemCompass() in a pane's mUserArea and, when the value CHANGES, forces the minimap display to refresh (dMeter_menuLRMove, src/d/d_meter.cpp:4510-4519)",
+   "what_it_actually_changes": {
+    "answer": "the compass toggles extra minimap content; the exact content is drawn by d_menu_dmap.cpp, which is fully stubbed",
+    "confidence": "low on the visual result, high on the storage bit and on the fact that acquiring it triggers a map refresh",
+    "note": "item_getcheck_func_compass() returns a hardcoded -1 (src/d/d_item.cpp:2339-2342), i.e. the game never says 'you already have the compass'"
+   }
+  },
+  "how_a_chest_hands_over_the_item": {
+   "note": "a chest's item id is the HIGH byte of its placement rot.z, not its params",
+   "src": "include/d/actor/d_a_tbox.h:37  u8 getItemNo() { return home.angle.z >> 8 & 0xFF; }"
+  }
+ },
+ "_chests": {
+  "actor": "fpcNm_TBOX_e (daTbox_c), src/d/actor/d_a_tbox.cpp",
+  "chunk": "TRES / TRE0..TRE7 in the DZS/DZR (stage_tresure_data_class, 0x20 bytes: char name[8] + fopAcM_prmBase_class) - include/d/d_stage.h:54-63",
+  "placement_names": [
+   "takara",
+   "takara2",
+   "takara3",
+   "takara4",
+   "takara5",
+   "takara6",
+   "takara7",
+   "takara8",
+   "takaraK",
+   "takaraI",
+   "takaraM",
+   "tkrASw",
+   "tkrAKd",
+   "tkrAGc",
+   "tkrAIk",
+   "tkrAOs",
+   "tkrAOc",
+   "tkrBMs",
+   "tkrCTf"
+  ],
+  "placement_names_src": "src/d/d_stage.cpp:483-495+ (all map to fpcNm_TBOX_e, argument 255, gbaName 62)",
+  "param_layout": {
+   "getTboxNo": {
+    "expr": "(params >> 0x07) & 0x1F",
+    "meaning": "index into dSv_memBit_c::mTbox - 0..31, unique within a save slot",
+    "src": "include/d/actor/d_a_tbox.h:35"
+   },
+   "getFuncType": {
+    "expr": "params & 0x7F",
+    "src": "src/d/actor/d_a_tbox.cpp:396-399"
+   },
+   "getShapeType": {
+    "expr": "(params >> 0x14) & 0x0F, clamped to 0 if >= 4",
+    "src": "src/d/actor/d_a_tbox.cpp:390-393"
+   },
+   "getItemNo": {
+    "expr": "(home.angle.z >> 8) & 0xFF",
+    "src": "include/d/actor/d_a_tbox.h:37"
+   },
+   "open_switch": {
+    "expr": "home.angle.z & 0xFF",
+    "meaning": "switch turned on when the chest opens; 0xFF = none",
+    "src": "src/d/actor/d_a_tbox.cpp:863-866"
+   },
+   "room": {
+    "expr": "home.angle.x",
+    "meaning": "for stage-level TRES entries (room field is null in the rip) the room number is in rot.x",
+    "confidence": "medium - inferred from the ripped data, every value lands inside the stage's real room set; not traced to a decomp accessor"
+   }
+  },
+  "opened_flag": {
+   "read": "daTbox_c::... -> dComIfGs_isTbox(tboxNo) (src/d/actor/d_a_tbox.cpp:326)",
+   "write": "daTbox_c::OpenInit_com() -> dComIfGs_onTbox(tboxNo) (src/d/actor/d_a_tbox.cpp:864)",
+   "special": "funcType EXTRA_SAVE_INFO / EXTRA_SAVE_INFO_SPAWN write slot 1 (STAGE_SEA2) instead of the current slot (src/d/actor/d_a_tbox.cpp:318-323, :855-858)"
+  }
+ },
+ "_dungeons": {
+  "_how": "doors are the TGDR chunk and chests the TRES chunk of each stage's Stage.arc/stage.dzs, re-parsed from the retail disc. Every dungeon's doors and chests live in the STAGE file, not the room files - all six stages have zero TGDR/TRE entries in any Room*.arc. 'lock' is derived by feeding each entry's real params through the decompiled getType()/chkMakeKey() of its actor, including door12's arg1 9/12 -> setType(3) promotion. 'eff_type' is the type after that promotion; 'type' is the raw nibble.",
+  "_field_notes": {
+   "params": "the raw u32 from the placement record",
+   "type": "(params>>8)&0xF, raw",
+   "eff_type": "type after daDoor12_c's arg1==9/12 -> setType(3) promotion",
+   "swbit": "params&0xFF, 255 = none",
+   "swbit2": "(params>>0x14)&0xFF, 255 = none, controls the BACK-side bars",
+   "front_room / back_room": "rot.x&0x3F and (rot.x>>6)&0x3F, 63 = none",
+   "arg1": "(rot.z>>8)&0xFF, model/behaviour variant, 255 = default",
+   "shipId": "rot.z&0x3F, 63 = none",
+   "angle_y": "the only real rotation, s16 binary angle (0x4000 = 90 deg)",
+   "tbox_no": "(params>>7)&0x1F, the bit index into mTbox",
+   "item_no": "(rot.z>>8)&0xFF",
+   "open_switch": "rot.z&0xFF, the switch the chest sets when opened, 255 = none"
+  },
+  "stages": {
+   "M_NewD2": {
+    "name": "Dragon Roost Cavern",
+    "save_slot": 3,
+    "save_slot_name": "STAGE_DRC",
+    "save_slot_evidence": "STAG mProp=7 on the disc -> (mProp>>1)&0x7F = 3",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": true,
+    "shares_save_slot_with": [
+     "Adanmae (entrance, slot 11)",
+     "M_Dra09 (miniboss, slot 3)",
+     "M_DragB (boss: Gohma, slot 3)"
+    ],
+    "counts": {
+     "tgdr_doors": 19,
+     "small_key_doors": 4,
+     "big_key_doors": 1,
+     "enemy_clear_doors": 2,
+     "chests": 14,
+     "small_keys_in_chests": 3,
+     "has_map_chest": true,
+     "has_compass_chest": true,
+     "has_big_key_chest": true
+    },
+    "small_key_supply_check": "4 small-key door(s) vs 3 small key(s) from chests + 1 free-standing 'item' actor with id 0x15 (from stage_data.json)",
+    "dungeon_map": {
+     "flor_entries": 4,
+     "floor_images": [
+      "res/Stage/M_NewD2/Stage.arc/stage/dat/dmap128.png",
+      "res/Stage/M_NewD2/Stage.arc/stage/dat/dmap129.png",
+      "res/Stage/M_NewD2/Stage.arc/stage/dat/dmap130.png",
+      "res/Stage/M_NewD2/Stage.arc/stage/dat/dmap131.png"
+     ],
+     "note": "pre-rendered floor plans already extracted in the rip; one per FLOR entry"
+    },
+    "doors": [
+     {
+      "name": "keyshut",
+      "params": "0x0FFFF43C",
+      "type": 4,
+      "eff_type": 4,
+      "swbit": 60,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 0,
+      "back_room": 2,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -800.0,
+       200.0,
+       3950.0
+      ],
+      "angle_y": 0,
+      "lock": "small_key"
+     },
+     {
+      "name": "keyshut",
+      "params": "0x0FFFF43D",
+      "type": 4,
+      "eff_type": 4,
+      "swbit": 61,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 2,
+      "back_room": 11,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -2500.0,
+       500.0,
+       2500.0
+      ],
+      "angle_y": 16384,
+      "lock": "small_key"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF002",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 2,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 2,
+      "back_room": 15,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -0.0,
+       400.0,
+       -3050.0
+      ],
+      "angle_y": 0,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 1,
+      "back_room": 2,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       1200.0,
+       300.0,
+       2450.0
+      ],
+      "angle_y": 0,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 2,
+      "back_room": 13,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       2550.0,
+       0.0,
+       200.0
+      ],
+      "angle_y": -16384,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x03BFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 59,
+      "eventNo": 255,
+      "front_room": 2,
+      "back_room": 4,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -0.0,
+       3500.9,
+       -2050.0
+      ],
+      "angle_y": 0,
+      "lock": "plain"
+     },
+     {
+      "name": "Zenshut",
+      "params": "0x0FFFF23F",
+      "type": 2,
+      "eff_type": 2,
+      "swbit": 63,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 6,
+      "back_room": 2,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       0.0,
+       3500.0,
+       2050.0
+      ],
+      "angle_y": 0,
+      "lock": "enemy_clear_bars"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF001",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 1,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 11,
+      "back_room": 3,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -4950.0,
+       500.0,
+       1600.0
+      ],
+      "angle_y": 16384,
+      "lock": "plain"
+     },
+     {
+      "name": "keyshut",
+      "params": "0x0FFFF436",
+      "type": 4,
+      "eff_type": 4,
+      "swbit": 54,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 14,
+      "back_room": 3,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -2500.0,
+       2850.0,
+       -3200.0
+      ],
+      "angle_y": 0,
+      "lock": "small_key"
+     },
+     {
+      "name": "keyshut",
+      "params": "0x0FFFF43E",
+      "type": 4,
+      "eff_type": 4,
+      "swbit": 62,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 3,
+      "back_room": 4,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -0.0,
+       3500.0,
+       -4250.0
+      ],
+      "angle_y": -32768,
+      "lock": "small_key"
+     },
+     {
+      "name": "Zenshut",
+      "params": "0x0FFFF23F",
+      "type": 2,
+      "eff_type": 2,
+      "swbit": 63,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 6,
+      "back_room": 8,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       0.0,
+       4100.0,
+       4150.0
+      ],
+      "angle_y": -32768,
+      "lock": "enemy_clear_bars"
+     },
+     {
+      "name": "door20",
+      "params": "0x0FFFF140",
+      "type": 1,
+      "eff_type": 1,
+      "swbit": 64,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 10,
+      "back_room": 10,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       400.0,
+       5950.0,
+       -450.0
+      ],
+      "angle_y": 0,
+      "lock": "big_key"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 8,
+      "back_room": 10,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       1450.0,
+       5600.0,
+       3400.0
+      ],
+      "angle_y": 16384,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 10,
+      "back_room": 10,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       0.0,
+       5500.0,
+       4450.0
+      ],
+      "angle_y": 0,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 3,
+      "back_room": 14,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -4064.6,
+       1950.0,
+       -2214.6
+      ],
+      "angle_y": -24576,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 1,
+      "back_room": 13,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       3400.0,
+       450.0,
+       2950.0
+      ],
+      "angle_y": 0,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 2,
+      "back_room": 7,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       2050.0,
+       4100.0,
+       100.0
+      ],
+      "angle_y": -16384,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 7,
+      "back_room": 7,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       5650.0,
+       5400.0,
+       100.0
+      ],
+      "angle_y": -16384,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 15,
+      "back_room": 12,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       4250.0,
+       -100.0,
+       -3450.0
+      ],
+      "angle_y": -16384,
+      "lock": "plain"
+     }
+    ],
+    "chests": [
+     {
+      "name": "takara4",
+      "params": "0xFF300600",
+      "tbox_no": 12,
+      "func_type": 0,
+      "shape_type": 3,
+      "item_no": "0x4E",
+      "open_switch": 128,
+      "room": 12,
+      "pos": [
+       6438.5,
+       -115.8,
+       -2036.0
+      ],
+      "angle_y": -23483
+     },
+     {
+      "name": "takara2",
+      "params": "0xFF000580",
+      "tbox_no": 11,
+      "func_type": 0,
+      "shape_type": 0,
+      "item_no": "0x48",
+      "open_switch": 255,
+      "room": 10,
+      "pos": [
+       845.3,
+       5700.0,
+       1289.5
+      ],
+      "angle_y": -16384
+     },
+     {
+      "name": "takara2",
+      "params": "0xFF000500",
+      "tbox_no": 10,
+      "func_type": 0,
+      "shape_type": 0,
+      "item_no": "0x03",
+      "open_switch": 255,
+      "room": 10,
+      "pos": [
+       -62.2,
+       5700.0,
+       1283.8
+      ],
+      "angle_y": 16384
+     },
+     {
+      "name": "takara5",
+      "params": "0xFF10E301",
+      "tbox_no": 6,
+      "func_type": 1,
+      "shape_type": 1,
+      "item_no": "0xEC",
+      "open_switch": 255,
+      "room": 6,
+      "pos": [
+       -763.7,
+       3590.0,
+       2866.1
+      ],
+      "angle_y": 12196
+     },
+     {
+      "name": "takara2",
+      "params": "0xFF000200",
+      "tbox_no": 4,
+      "func_type": 0,
+      "shape_type": 0,
+      "item_no": "0x1F",
+      "open_switch": 255,
+      "room": 4,
+      "pos": [
+       2096.2,
+       3463.6,
+       -2969.0
+      ],
+      "angle_y": -16384
+     },
+     {
+      "name": "tkrASw",
+      "params": "0xFF000001",
+      "tbox_no": 0,
+      "func_type": 1,
+      "shape_type": 0,
+      "item_no": "0x15",
+      "open_switch": 255,
+      "room": 0,
+      "pos": [
+       -1932.7,
+       325.0,
+       4561.0
+      ],
+      "angle_y": 8556
+     },
+     {
+      "name": "takara2",
+      "params": "0xFF000080",
+      "tbox_no": 1,
+      "func_type": 0,
+      "shape_type": 0,
+      "item_no": "0x15",
+      "open_switch": 255,
+      "room": 1,
+      "pos": [
+       1048.9,
+       625.0,
+       4654.7
+      ],
+      "angle_y": 24212
+     },
+     {
+      "name": "takara",
+      "params": "0xFF100700",
+      "tbox_no": 14,
+      "func_type": 0,
+      "shape_type": 1,
+      "item_no": "0x4D",
+      "open_switch": 255,
+      "room": 14,
+      "pos": [
+       -2017.8,
+       2875.0,
+       -2420.5
+      ],
+      "angle_y": -16384
+     },
+     {
+      "name": "takara",
+      "params": "0xFF100100",
+      "tbox_no": 2,
+      "func_type": 0,
+      "shape_type": 1,
+      "item_no": "0x4C",
+      "open_switch": 255,
+      "room": 13,
+      "pos": [
+       4717.1,
+       25.0,
+       1218.7
+      ],
+      "angle_y": -18750
+     },
+     {
+      "name": "tkrASw",
+      "params": "0xFF01D381",
+      "tbox_no": 7,
+      "func_type": 1,
+      "shape_type": 0,
+      "item_no": "0x1F",
+      "open_switch": 106,
+      "room": 7,
+      "pos": [
+       4816.0,
+       4100.0,
+       100.5
+      ],
+      "angle_y": -16384
+     },
+     {
+      "name": "takara",
+      "params": "0xFF100680",
+      "tbox_no": 13,
+      "func_type": 0,
+      "shape_type": 1,
+      "item_no": "0xF6",
+      "open_switch": 255,
+      "room": 11,
+      "pos": [
+       -3367.3,
+       350.0,
+       -290.2
+      ],
+      "angle_y": 0
+     },
+     {
+      "name": "takara2",
+      "params": "0xFF000180",
+      "tbox_no": 3,
+      "func_type": 0,
+      "shape_type": 0,
+      "item_no": "0x15",
+      "open_switch": 255,
+      "room": 14,
+      "pos": [
+       -2552.7,
+       2850.0,
+       -1317.6
+      ],
+      "angle_y": -32768
+     },
+     {
+      "name": "takara6",
+      "params": "0xFF26F781",
+      "tbox_no": 15,
+      "func_type": 1,
+      "shape_type": 2,
+      "item_no": "0xA3",
+      "open_switch": 255,
+      "room": 15,
+      "pos": [
+       -23.0,
+       300.0,
+       -4666.5
+      ],
+      "angle_y": 0
+     },
+     {
+      "name": "tkrASw",
+      "params": "0xFF07E801",
+      "tbox_no": 16,
+      "func_type": 1,
+      "shape_type": 0,
+      "item_no": "0x03",
+      "open_switch": 255,
+      "room": 2,
+      "pos": [
+       -17.6,
+       3500.0,
+       1559.2
+      ],
+      "angle_y": -32768
+     }
+    ]
+   },
+   "kindan": {
+    "name": "Forbidden Woods",
+    "save_slot": 4,
+    "save_slot_name": "STAGE_FW",
+    "save_slot_evidence": "STAG mProp=9 on the disc -> (mProp>>1)&0x7F = 4",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": true,
+    "shares_save_slot_with": [
+     "kinMB (miniboss, slot 4)",
+     "kinBOSS (boss: Kalle Demos, slot 4)"
+    ],
+    "counts": {
+     "tgdr_doors": 20,
+     "small_key_doors": 1,
+     "big_key_doors": 1,
+     "enemy_clear_doors": 1,
+     "chests": 15,
+     "small_keys_in_chests": 1,
+     "has_map_chest": true,
+     "has_compass_chest": true,
+     "has_big_key_chest": true
+    },
+    "small_key_supply_check": "1 small-key door(s) vs 1 small key(s) from chests",
+    "dungeon_map": {
+     "flor_entries": 5,
+     "floor_images": [
+      "res/Stage/kindan/Stage.arc/stage/dat/dmap127.png",
+      "res/Stage/kindan/Stage.arc/stage/dat/dmap128.png",
+      "res/Stage/kindan/Stage.arc/stage/dat/dmap129.png",
+      "res/Stage/kindan/Stage.arc/stage/dat/dmap130.png",
+      "res/Stage/kindan/Stage.arc/stage/dat/dmap131.png"
+     ],
+     "note": "pre-rendered floor plans already extracted in the rip; one per FLOR entry"
+    },
+    "doors": [
+     {
+      "name": "doorSH",
+      "params": "0x0FFFF303",
+      "type": 3,
+      "eff_type": 3,
+      "swbit": 3,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 1,
+      "back_room": 2,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -0.0,
+       3899.7,
+       8825.9
+      ],
+      "angle_y": 0,
+      "lock": "kddoor_UNKNOWN"
+     },
+     {
+      "name": "doorSH",
+      "params": "0x0FFFF304",
+      "type": 3,
+      "eff_type": 3,
+      "swbit": 4,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 0,
+      "back_room": 1,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       13.2,
+       2597.4,
+       13040.1
+      ],
+      "angle_y": 0,
+      "lock": "kddoor_UNKNOWN"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 3,
+      "back_room": 2,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       8.4,
+       4097.1,
+       6328.4
+      ],
+      "angle_y": -32768,
+      "lock": "plain"
+     },
+     {
+      "name": "doorSH",
+      "params": "0x0FFFF306",
+      "type": 3,
+      "eff_type": 3,
+      "swbit": 6,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 3,
+      "back_room": 4,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       2.8,
+       5454.2,
+       2990.3
+      ],
+      "angle_y": 0,
+      "lock": "kddoor_UNKNOWN"
+     },
+     {
+      "name": "doorSH",
+      "params": "0x0FFFF32A",
+      "type": 3,
+      "eff_type": 3,
+      "swbit": 42,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 4,
+      "back_room": 5,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -82.2,
+       5360.7,
+       70.0
+      ],
+      "angle_y": 0,
+      "lock": "kddoor_UNKNOWN"
+     },
+     {
+      "name": "keyshut",
+      "params": "0x0FFFF405",
+      "type": 4,
+      "eff_type": 4,
+      "swbit": 5,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 5,
+      "back_room": 8,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -308.0,
+       5851.7,
+       -4271.4
+      ],
+      "angle_y": 0,
+      "lock": "small_key"
+     },
+     {
+      "name": "doorSH",
+      "params": "0x020FF312",
+      "type": 3,
+      "eff_type": 3,
+      "swbit": 18,
+      "swbit2": 32,
+      "eventNo": 255,
+      "front_room": 5,
+      "back_room": 15,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       1962.4,
+       4006.0,
+       -1640.1
+      ],
+      "angle_y": -16384,
+      "lock": "kddoor_UNKNOWN"
+     },
+     {
+      "name": "doorSH",
+      "params": "0x0FFFF311",
+      "type": 3,
+      "eff_type": 3,
+      "swbit": 17,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 5,
+      "back_room": 6,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -2252.8,
+       5851.7,
+       -2094.2
+      ],
+      "angle_y": 16384,
+      "lock": "kddoor_UNKNOWN"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 9,
+      "back_room": 8,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -288.8,
+       6053.3,
+       -6673.3
+      ],
+      "angle_y": -32768,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 6,
+      "back_room": 7,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -5393.6,
+       6012.3,
+       -2467.5
+      ],
+      "angle_y": 16384,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 5,
+      "back_room": 11,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -1379.2,
+       1187.6,
+       -2121.7
+      ],
+      "angle_y": 16384,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 9,
+      "back_room": 9,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -289.1,
+       7448.3,
+       -9205.7
+      ],
+      "angle_y": 0,
+      "lock": "plain"
+     },
+     {
+      "name": "doorKD",
+      "params": "0x0FFFF020",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 32,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 15,
+      "back_room": 16,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       6152.5,
+       4203.6,
+       -1506.3
+      ],
+      "angle_y": -16384,
+      "lock": "kddoor_UNKNOWN"
+     },
+     {
+      "name": "door20",
+      "params": "0x0FFFF126",
+      "type": 1,
+      "eff_type": 1,
+      "swbit": 38,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 16,
+      "back_room": 16,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       8828.5,
+       4429.5,
+       -1490.0
+      ],
+      "angle_y": -16384,
+      "lock": "big_key"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 11,
+      "back_room": 12,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -4527.0,
+       1185.8,
+       -3261.4
+      ],
+      "angle_y": 16384,
+      "lock": "plain"
+     },
+     {
+      "name": "doorKD",
+      "params": "0x0FFFF000",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 0,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 13,
+      "back_room": 12,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -7822.5,
+       483.2,
+       -724.3
+      ],
+      "angle_y": 16384,
+      "lock": "kddoor_UNKNOWN"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 14,
+      "back_room": 12,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -5814.5,
+       486.3,
+       -4694.2
+      ],
+      "angle_y": -32768,
+      "lock": "plain"
+     },
+     {
+      "name": "doorSH",
+      "params": "0x0FFFF31D",
+      "type": 3,
+      "eff_type": 3,
+      "swbit": 29,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 9,
+      "back_room": 8,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -288.8,
+       7448.5,
+       -6673.3
+      ],
+      "angle_y": -32768,
+      "lock": "kddoor_UNKNOWN"
+     },
+     {
+      "name": "Zenshut",
+      "params": "0x0FFFF20D",
+      "type": 2,
+      "eff_type": 2,
+      "swbit": 13,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 13,
+      "back_room": 11,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -4619.1,
+       1598.7,
+       -1217.4
+      ],
+      "angle_y": -11832,
+      "lock": "enemy_clear_bars"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 8,
+      "back_room": 5,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -307.6,
+       7447.6,
+       -4277.9
+      ],
+      "angle_y": -32768,
+      "lock": "plain"
+     }
+    ],
+    "chests": [
+     {
+      "name": "takaraK",
+      "params": "0xFF102103",
+      "tbox_no": 2,
+      "func_type": 3,
+      "shape_type": 1,
+      "item_no": "0xE7",
+      "open_switch": 255,
+      "room": 1,
+      "pos": [
+       -1443.5,
+       4842.9,
+       12960.6
+      ],
+      "angle_y": 24576
+     },
+     {
+      "name": "tkrAKd",
+      "params": "0xFF001083",
+      "tbox_no": 1,
+      "func_type": 3,
+      "shape_type": 0,
+      "item_no": "0x48",
+      "open_switch": 255,
+      "room": 1,
+      "pos": [
+       185.0,
+       1100.1,
+       9916.0
+      ],
+      "angle_y": 0
+     },
+     {
+      "name": "takara",
+      "params": "0xFF100000",
+      "tbox_no": 0,
+      "func_type": 0,
+      "shape_type": 1,
+      "item_no": "0x4C",
+      "open_switch": 255,
+      "room": 0,
+      "pos": [
+       1854.3,
+       2738.1,
+       13560.9
+      ],
+      "angle_y": -12743
+     },
+     {
+      "name": "takara2",
+      "params": "0xFF000280",
+      "tbox_no": 5,
+      "func_type": 0,
+      "shape_type": 0,
+      "item_no": "0x15",
+      "open_switch": 37,
+      "room": 7,
+      "pos": [
+       -8138.7,
+       6129.5,
+       -1235.8
+      ],
+      "angle_y": 24576
+     },
+     {
+      "name": "takara2",
+      "params": "0xFF000300",
+      "tbox_no": 6,
+      "func_type": 0,
+      "shape_type": 0,
+      "item_no": "0x04",
+      "open_switch": 26,
+      "room": 3,
+      "pos": [
+       -9.4,
+       4783.0,
+       3382.6
+      ],
+      "angle_y": 0
+     },
+     {
+      "name": "takara3",
+      "params": "0xFF200500",
+      "tbox_no": 10,
+      "func_type": 0,
+      "shape_type": 2,
+      "item_no": "0xFF",
+      "open_switch": 255,
+      "room": 10,
+      "pos": [
+       -1100.0,
+       7475.4,
+       -11600.0
+      ],
+      "angle_y": 8192
+     },
+     {
+      "name": "takara",
+      "params": "0xFF100380",
+      "tbox_no": 7,
+      "func_type": 0,
+      "shape_type": 1,
+      "item_no": "0x4D",
+      "open_switch": 43,
+      "room": 7,
+      "pos": [
+       -6949.6,
+       6012.2,
+       -653.8
+      ],
+      "angle_y": -32768
+     },
+     {
+      "name": "takaraK",
+      "params": "0xFF116483",
+      "tbox_no": 9,
+      "func_type": 3,
+      "shape_type": 1,
+      "item_no": "0xF5",
+      "open_switch": 255,
+      "room": 14,
+      "pos": [
+       -5964.9,
+       673.8,
+       -6930.0
+      ],
+      "angle_y": 8192
+     },
+     {
+      "name": "takara4",
+      "params": "0xFF300200",
+      "tbox_no": 4,
+      "func_type": 0,
+      "shape_type": 3,
+      "item_no": "0x4E",
+      "open_switch": 36,
+      "room": 13,
+      "pos": [
+       -5680.7,
+       563.4,
+       -732.3
+      ],
+      "angle_y": -16384
+     },
+     {
+      "name": "takara2",
+      "params": "0xFF000600",
+      "tbox_no": 12,
+      "func_type": 0,
+      "shape_type": 0,
+      "item_no": "0x1F",
+      "open_switch": 45,
+      "room": 9,
+      "pos": [
+       1104.7,
+       9538.0,
+       -7971.2
+      ],
+      "angle_y": -16384
+     },
+     {
+      "name": "tkrASw",
+      "params": "0xFF020701",
+      "tbox_no": 14,
+      "func_type": 1,
+      "shape_type": 0,
+      "item_no": "0x1F",
+      "open_switch": 255,
+      "room": 15,
+      "pos": [
+       3670.5,
+       4092.2,
+       -1267.5
+      ],
+      "angle_y": -32768
+     },
+     {
+      "name": "takara2",
+      "params": "0xFF000180",
+      "tbox_no": 3,
+      "func_type": 0,
+      "shape_type": 0,
+      "item_no": "0x1F",
+      "open_switch": 44,
+      "room": 8,
+      "pos": [
+       200.5,
+       7448.9,
+       -4544.6
+      ],
+      "angle_y": -29128
+     },
+     {
+      "name": "takara2",
+      "params": "0xFF000400",
+      "tbox_no": 8,
+      "func_type": 0,
+      "shape_type": 0,
+      "item_no": "0x03",
+      "open_switch": 27,
+      "room": 6,
+      "pos": [
+       -4085.5,
+       5610.3,
+       -2433.9
+      ],
+      "angle_y": -32768
+     },
+     {
+      "name": "takara2",
+      "params": "0xFF000580",
+      "tbox_no": 11,
+      "func_type": 0,
+      "shape_type": 0,
+      "item_no": "0x03",
+      "open_switch": 255,
+      "room": 12,
+      "pos": [
+       -6787.3,
+       1227.1,
+       -3247.3
+      ],
+      "angle_y": 16384
+     },
+     {
+      "name": "takara6",
+      "params": "0xFF278781",
+      "tbox_no": 15,
+      "func_type": 1,
+      "shape_type": 2,
+      "item_no": "0xA4",
+      "open_switch": 255,
+      "room": 14,
+      "pos": [
+       -4545.9,
+       408.9,
+       -4933.4
+      ],
+      "angle_y": -32768
+     }
+    ]
+   },
+   "Siren": {
+    "name": "Tower of the Gods",
+    "save_slot": 5,
+    "save_slot_name": "STAGE_TOTG",
+    "save_slot_evidence": "STAG mProp=11 on the disc -> (mProp>>1)&0x7F = 5",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": true,
+    "shares_save_slot_with": [
+     "SirenMB (miniboss, slot 5)",
+     "SirenB (boss: Gohdan, slot 5)"
+    ],
+    "counts": {
+     "tgdr_doors": 19,
+     "small_key_doors": 2,
+     "big_key_doors": 1,
+     "enemy_clear_doors": 1,
+     "chests": 12,
+     "small_keys_in_chests": 2,
+     "has_map_chest": true,
+     "has_compass_chest": true,
+     "has_big_key_chest": true
+    },
+    "small_key_supply_check": "2 small-key door(s) vs 2 small key(s) from chests",
+    "dungeon_map": {
+     "flor_entries": 4,
+     "floor_images": [
+      "res/Stage/Siren/Stage.arc/stage/dat/dmap128.png",
+      "res/Stage/Siren/Stage.arc/stage/dat/dmap129.png",
+      "res/Stage/Siren/Stage.arc/stage/dat/dmap130.png",
+      "res/Stage/Siren/Stage.arc/stage/dat/dmap131.png"
+     ],
+     "note": "pre-rendered floor plans already extracted in the rip; one per FLOR entry"
+    },
+    "doors": [
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 1,
+      "back_room": 0,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -3908.0,
+       -1617.1,
+       -2358.0
+      ],
+      "angle_y": -16384,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF000",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 0,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 0,
+      "back_room": 4,
+      "arg1": 1,
+      "shipId": 4,
+      "pos": [
+       3903.6,
+       -1617.1,
+       -2575.3
+      ],
+      "angle_y": -16384,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF00C",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 12,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 0,
+      "back_room": 5,
+      "arg1": 255,
+      "shipId": 5,
+      "pos": [
+       6742.4,
+       -1617.1,
+       1408.8
+      ],
+      "angle_y": -32768,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 3,
+      "back_room": 0,
+      "arg1": 255,
+      "shipId": 3,
+      "pos": [
+       3901.5,
+       -2079.1,
+       920.0
+      ],
+      "angle_y": 16384,
+      "lock": "plain"
+     },
+     {
+      "name": "keyshut",
+      "params": "0x0FFFF41A",
+      "type": 4,
+      "eff_type": 4,
+      "swbit": 26,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 0,
+      "back_room": 2,
+      "arg1": 1,
+      "shipId": 63,
+      "pos": [
+       -3905.5,
+       -2079.1,
+       713.3
+      ],
+      "angle_y": 16384,
+      "lock": "small_key"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 6,
+      "back_room": 7,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       0.0,
+       229.4,
+       -7000.4
+      ],
+      "angle_y": 0,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF02A",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 42,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 7,
+      "back_room": 8,
+      "arg1": 2,
+      "shipId": 63,
+      "pos": [
+       0.0,
+       229.4,
+       -10894.1
+      ],
+      "angle_y": 0,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 11,
+      "back_room": 7,
+      "arg1": 4,
+      "shipId": 63,
+      "pos": [
+       1946.9,
+       229.4,
+       -8948.3
+      ],
+      "angle_y": 16384,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF029",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 41,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 7,
+      "back_room": 14,
+      "arg1": 3,
+      "shipId": 63,
+      "pos": [
+       -1946.9,
+       229.4,
+       -8948.3
+      ],
+      "angle_y": 16384,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 14,
+      "back_room": 16,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -5065.8,
+       229.4,
+       -8948.3
+      ],
+      "angle_y": 16384,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 13,
+      "back_room": 11,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       5065.9,
+       229.4,
+       -8948.3
+      ],
+      "angle_y": 16384,
+      "lock": "plain"
+     },
+     {
+      "name": "keyshut",
+      "params": "0x0FFFF40E",
+      "type": 4,
+      "eff_type": 4,
+      "swbit": 14,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 8,
+      "back_room": 10,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       0.0,
+       450.0,
+       -14563.0
+      ],
+      "angle_y": 0,
+      "lock": "small_key"
+     },
+     {
+      "name": "Zenshut",
+      "params": "0x0FFFF219",
+      "type": 2,
+      "eff_type": 2,
+      "swbit": 25,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 17,
+      "back_room": 18,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -0.1,
+       7615.0,
+       -11909.3
+      ],
+      "angle_y": 0,
+      "lock": "enemy_clear_bars"
+     },
+     {
+      "name": "door20",
+      "params": "0x0FFFF13C",
+      "type": 1,
+      "eff_type": 1,
+      "swbit": 60,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 18,
+      "back_room": 18,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -2190.8,
+       9244.7,
+       -9775.1
+      ],
+      "angle_y": -16384,
+      "lock": "big_key"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 9,
+      "back_room": 8,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       1735.0,
+       -326.5,
+       -12947.2
+      ],
+      "angle_y": 16384,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF01E",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 30,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 14,
+      "back_room": 14,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -3510.7,
+       229.4,
+       -6959.8
+      ],
+      "angle_y": -32768,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 22,
+      "back_room": 11,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       3501.7,
+       787.0,
+       -6959.8
+      ],
+      "angle_y": 0,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 21,
+      "back_room": 8,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -1857.1,
+       -326.5,
+       -12946.3
+      ],
+      "angle_y": -16384,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 0,
+      "back_room": 6,
+      "arg1": 255,
+      "shipId": 6,
+      "pos": [
+       0.0,
+       -1442.1,
+       -3183.9
+      ],
+      "angle_y": 0,
+      "lock": "plain"
+     }
+    ],
+    "chests": [
+     {
+      "name": "tkrASw",
+      "params": "0xFF015081",
+      "tbox_no": 1,
+      "func_type": 1,
+      "shape_type": 0,
+      "item_no": "0x15",
+      "open_switch": 31,
+      "room": 5,
+      "pos": [
+       6743.9,
+       -1542.2,
+       4353.2
+      ],
+      "angle_y": -32768
+     },
+     {
+      "name": "takara",
+      "params": "0xFF100100",
+      "tbox_no": 2,
+      "func_type": 0,
+      "shape_type": 1,
+      "item_no": "0x4C",
+      "open_switch": 1,
+      "room": 3,
+      "pos": [
+       5169.8,
+       -1553.7,
+       2010.0
+      ],
+      "angle_y": -32768
+     },
+     {
+      "name": "takara",
+      "params": "0xFF100180",
+      "tbox_no": 3,
+      "func_type": 0,
+      "shape_type": 1,
+      "item_no": "0x4D",
+      "open_switch": 255,
+      "room": 1,
+      "pos": [
+       -5054.3,
+       -1591.3,
+       -2369.8
+      ],
+      "angle_y": 16384
+     },
+     {
+      "name": "takara8",
+      "params": "0xFF216282",
+      "tbox_no": 5,
+      "func_type": 2,
+      "shape_type": 2,
+      "item_no": "0x27",
+      "open_switch": 11,
+      "room": 23,
+      "pos": [
+       -3508.0,
+       229.4,
+       -5864.6
+      ],
+      "angle_y": -32768
+     },
+     {
+      "name": "tkrAGc",
+      "params": "0xFF009302",
+      "tbox_no": 6,
+      "func_type": 2,
+      "shape_type": 0,
+      "item_no": "0x1F",
+      "open_switch": 17,
+      "room": 22,
+      "pos": [
+       3500.0,
+       785.3,
+       -5700.0
+      ],
+      "angle_y": -32768
+     },
+     {
+      "name": "tkrASw",
+      "params": "0xFF002501",
+      "tbox_no": 10,
+      "func_type": 1,
+      "shape_type": 0,
+      "item_no": "0x1F",
+      "open_switch": 255,
+      "room": 0,
+      "pos": [
+       -3651.9,
+       -1529.1,
+       -838.3
+      ],
+      "angle_y": -32768
+     },
+     {
+      "name": "takara",
+      "params": "0xFF100480",
+      "tbox_no": 9,
+      "func_type": 0,
+      "shape_type": 1,
+      "item_no": "0xEA",
+      "open_switch": 229,
+      "room": 1,
+      "pos": [
+       -5787.1,
+       -1542.1,
+       -2362.9
+      ],
+      "angle_y": 16384
+     },
+     {
+      "name": "tkrCTf",
+      "params": "0xFF237406",
+      "tbox_no": 8,
+      "func_type": 6,
+      "shape_type": 2,
+      "item_no": "0xF4",
+      "open_switch": 23,
+      "room": 21,
+      "pos": [
+       -3119.4,
+       -326.5,
+       -12938.3
+      ],
+      "angle_y": 16384
+     },
+     {
+      "name": "takara2",
+      "params": "0xFF000200",
+      "tbox_no": 4,
+      "func_type": 0,
+      "shape_type": 0,
+      "item_no": "0x15",
+      "open_switch": 255,
+      "room": 9,
+      "pos": [
+       3714.1,
+       -262.2,
+       -14212.0
+      ],
+      "angle_y": 0
+     },
+     {
+      "name": "tkrASw",
+      "params": "0xFF012581",
+      "tbox_no": 11,
+      "func_type": 1,
+      "shape_type": 0,
+      "item_no": "0x1F",
+      "open_switch": 255,
+      "room": 9,
+      "pos": [
+       3731.3,
+       293.7,
+       -11681.9
+      ],
+      "angle_y": -32768
+     },
+     {
+      "name": "takara6",
+      "params": "0xFF274781",
+      "tbox_no": 15,
+      "func_type": 1,
+      "shape_type": 2,
+      "item_no": "0xA5",
+      "open_switch": 255,
+      "room": 6,
+      "pos": [
+       2.3,
+       504.5,
+       -5556.1
+      ],
+      "angle_y": -32768
+     },
+     {
+      "name": "takara4",
+      "params": "0xFF300000",
+      "tbox_no": 0,
+      "func_type": 0,
+      "shape_type": 3,
+      "item_no": "0x4E",
+      "open_switch": 16,
+      "room": 17,
+      "pos": [
+       -3.7,
+       7650.0,
+       -8354.3
+      ],
+      "angle_y": -32768
+     }
+    ]
+   },
+   "M_Dai": {
+    "name": "Earth Temple",
+    "save_slot": 6,
+    "save_slot_name": "STAGE_ET",
+    "save_slot_evidence": "STAG mProp=13 on the disc -> (mProp>>1)&0x7F = 6",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": true,
+    "shares_save_slot_with": [
+     "Edaichi (entrance, slot 11)",
+     "M_DaiMB (miniboss, slot 6)",
+     "M_DaiB (boss: Jalhalla, slot 6)"
+    ],
+    "counts": {
+     "tgdr_doors": 22,
+     "small_key_doors": 3,
+     "big_key_doors": 1,
+     "enemy_clear_doors": 3,
+     "chests": 14,
+     "small_keys_in_chests": 2,
+     "has_map_chest": true,
+     "has_compass_chest": true,
+     "has_big_key_chest": true
+    },
+    "small_key_supply_check": "3 small-key door(s) vs 2 small key(s) from chests + 1 free-standing 'item' actor with id 0x15 (from stage_data.json)",
+    "dungeon_map": {
+     "flor_entries": 3,
+     "floor_images": [
+      "res/Stage/M_Dai/Stage.arc/stage/dat/dmap126.png",
+      "res/Stage/M_Dai/Stage.arc/stage/dat/dmap127.png",
+      "res/Stage/M_Dai/Stage.arc/stage/dat/dmap128.png"
+     ],
+     "note": "pre-rendered floor plans already extracted in the rip; one per FLOR entry"
+    },
+    "doors": [
+     {
+      "name": "door12",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 0,
+      "back_room": 1,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -7000.0,
+       -300.0,
+       3350.0
+      ],
+      "angle_y": 0,
+      "lock": "plain"
+     },
+     {
+      "name": "ZenS12",
+      "params": "0x000FF208",
+      "type": 2,
+      "eff_type": 2,
+      "swbit": 8,
+      "swbit2": 0,
+      "eventNo": 255,
+      "front_room": 2,
+      "back_room": 1,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -3750.0,
+       200.0,
+       0.0
+      ],
+      "angle_y": 16384,
+      "lock": "enemy_clear_bars"
+     },
+     {
+      "name": "ZenS12",
+      "params": "0x0FFFF208",
+      "type": 2,
+      "eff_type": 2,
+      "swbit": 8,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 2,
+      "back_room": 3,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -1350.0,
+       200.0,
+       0.0
+      ],
+      "angle_y": -16384,
+      "lock": "enemy_clear_bars"
+     },
+     {
+      "name": "door12",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 9,
+      "back_room": 3,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       3450.0,
+       -900.0,
+       0.0
+      ],
+      "angle_y": 16384,
+      "lock": "plain"
+     },
+     {
+      "name": "keyS12",
+      "params": "0x0FFFF10F",
+      "type": 1,
+      "eff_type": 1,
+      "swbit": 15,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 3,
+      "back_room": 5,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       400.0,
+       0.0,
+       -1850.0
+      ],
+      "angle_y": 0,
+      "lock": "small_key"
+     },
+     {
+      "name": "door12",
+      "params": "0x0FFFF00E",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 14,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 3,
+      "back_room": 4,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       400.0,
+       0.0,
+       1850.0
+      ],
+      "angle_y": -32768,
+      "lock": "plain"
+     },
+     {
+      "name": "door12",
+      "params": "0x01DFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 29,
+      "eventNo": 255,
+      "front_room": 6,
+      "back_room": 5,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       3050.0,
+       400.0,
+       -3300.0
+      ],
+      "angle_y": 16384,
+      "lock": "plain"
+     },
+     {
+      "name": "door12",
+      "params": "0x0FFFF028",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 40,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 6,
+      "back_room": 7,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       6150.0,
+       650.0,
+       -2600.0
+      ],
+      "angle_y": -32768,
+      "lock": "plain"
+     },
+     {
+      "name": "keyS12",
+      "params": "0x0FFFF12F",
+      "type": 1,
+      "eff_type": 1,
+      "swbit": 47,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 7,
+      "back_room": 7,
+      "arg1": 8,
+      "shipId": 63,
+      "pos": [
+       6150.0,
+       1400.0,
+       2650.0
+      ],
+      "angle_y": -32768,
+      "lock": "small_key"
+     },
+     {
+      "name": "door12",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 8,
+      "back_room": 7,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       7750.0,
+       1400.0,
+       1700.0
+      ],
+      "angle_y": 16384,
+      "lock": "plain"
+     },
+     {
+      "name": "door12",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 10,
+      "back_room": 9,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       5100.0,
+       -1300.0,
+       4550.0
+      ],
+      "angle_y": 0,
+      "lock": "plain"
+     },
+     {
+      "name": "keyS12",
+      "params": "0x0FFFF14B",
+      "type": 1,
+      "eff_type": 1,
+      "swbit": 75,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 10,
+      "back_room": 13,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       5100.0,
+       -1150.0,
+       8050.0
+      ],
+      "angle_y": -32768,
+      "lock": "small_key"
+     },
+     {
+      "name": "door12",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 10,
+      "back_room": 11,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       3650.0,
+       -1400.0,
+       6300.0
+      ],
+      "angle_y": 16384,
+      "lock": "plain"
+     },
+     {
+      "name": "door12",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 10,
+      "back_room": 13,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       6550.0,
+       -1400.0,
+       6300.0
+      ],
+      "angle_y": -16384,
+      "lock": "plain"
+     },
+     {
+      "name": "door12",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 13,
+      "back_room": 14,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       3550.0,
+       -1200.0,
+       9600.0
+      ],
+      "angle_y": 16384,
+      "lock": "plain"
+     },
+     {
+      "name": "door12",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 15,
+      "back_room": 14,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       950.0,
+       -1200.0,
+       7700.0
+      ],
+      "angle_y": -16384,
+      "lock": "plain"
+     },
+     {
+      "name": "door12",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 15,
+      "back_room": 16,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -3400.0,
+       -4900.0,
+       7650.0
+      ],
+      "angle_y": 0,
+      "lock": "plain"
+     },
+     {
+      "name": "door12",
+      "params": "0x0FFFF07F",
+      "type": 0,
+      "eff_type": 3,
+      "swbit": 127,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 15,
+      "back_room": 15,
+      "arg1": 9,
+      "shipId": 63,
+      "pos": [
+       -6000.0,
+       -2300.0,
+       9500.0
+      ],
+      "angle_y": 16384,
+      "lock": "big_key"
+     },
+     {
+      "name": "ZenS12",
+      "params": "0x0FFFF27E",
+      "type": 2,
+      "eff_type": 2,
+      "swbit": 126,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 17,
+      "back_room": 16,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -3400.0,
+       -5700.0,
+       1450.0
+      ],
+      "angle_y": -32768,
+      "lock": "enemy_clear_bars"
+     },
+     {
+      "name": "door12",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 7,
+      "back_room": 3,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       3150.0,
+       1000.0,
+       800.0
+      ],
+      "angle_y": 16384,
+      "lock": "plain"
+     },
+     {
+      "name": "door12",
+      "params": "0x0FFFF014",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 20,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 4,
+      "back_room": 18,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -1350.0,
+       0.0,
+       5000.0
+      ],
+      "angle_y": 16384,
+      "lock": "plain"
+     },
+     {
+      "name": "door12",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 16,
+      "back_room": 19,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -6750.0,
+       -5500.0,
+       5700.0
+      ],
+      "angle_y": 16384,
+      "lock": "plain"
+     }
+    ],
+    "chests": [
+     {
+      "name": "tkrBMs",
+      "params": "0xFF109004",
+      "tbox_no": 0,
+      "func_type": 4,
+      "shape_type": 1,
+      "item_no": "0x4C",
+      "open_switch": 255,
+      "room": 2,
+      "pos": [
+       -2550.0,
+       250.0,
+       -1050.0
+      ],
+      "angle_y": 0
+     },
+     {
+      "name": "takaraM",
+      "params": "0xFF016084",
+      "tbox_no": 1,
+      "func_type": 4,
+      "shape_type": 0,
+      "item_no": "0x15",
+      "open_switch": 23,
+      "room": 4,
+      "pos": [
+       400.0,
+       50.0,
+       6000.0
+      ],
+      "angle_y": -32768
+     },
+     {
+      "name": "takara5",
+      "params": "0xFF123101",
+      "tbox_no": 2,
+      "func_type": 1,
+      "shape_type": 1,
+      "item_no": "0x4D",
+      "open_switch": 32,
+      "room": 6,
+      "pos": [
+       6300.0,
+       650.0,
+       -3700.0
+      ],
+      "angle_y": 0
+     },
+     {
+      "name": "takara2",
+      "params": "0xFF000180",
+      "tbox_no": 3,
+      "func_type": 0,
+      "shape_type": 0,
+      "item_no": "0x1F",
+      "open_switch": 255,
+      "room": 7,
+      "pos": [
+       7600.0,
+       1375.0,
+       0.0
+      ],
+      "angle_y": -16384
+     },
+     {
+      "name": "takara2",
+      "params": "0xFF000200",
+      "tbox_no": 4,
+      "func_type": 0,
+      "shape_type": 0,
+      "item_no": "0x15",
+      "open_switch": 79,
+      "room": 11,
+      "pos": [
+       1900.0,
+       -1750.0,
+       1700.0
+      ],
+      "angle_y": 0
+     },
+     {
+      "name": "takara2",
+      "params": "0xFF000280",
+      "tbox_no": 5,
+      "func_type": 0,
+      "shape_type": 0,
+      "item_no": "0x04",
+      "open_switch": 255,
+      "room": 14,
+      "pos": [
+       650.0,
+       -1200.0,
+       8400.0
+      ],
+      "angle_y": 0
+     },
+     {
+      "name": "takara4",
+      "params": "0xFF300300",
+      "tbox_no": 6,
+      "func_type": 0,
+      "shape_type": 3,
+      "item_no": "0x4E",
+      "open_switch": 255,
+      "room": 17,
+      "pos": [
+       -3400.4,
+       -5650.0,
+       -1199.5
+      ],
+      "angle_y": 0
+     },
+     {
+      "name": "takaraM",
+      "params": "0xFF065484",
+      "tbox_no": 9,
+      "func_type": 4,
+      "shape_type": 0,
+      "item_no": "0x05",
+      "open_switch": 255,
+      "room": 16,
+      "pos": [
+       -1950.0,
+       -5450.0,
+       5750.0
+      ],
+      "angle_y": 16384
+     },
+     {
+      "name": "takaraM",
+      "params": "0xFF066504",
+      "tbox_no": 10,
+      "func_type": 4,
+      "shape_type": 0,
+      "item_no": "0x1F",
+      "open_switch": 255,
+      "room": 16,
+      "pos": [
+       -4900.0,
+       -5450.0,
+       5300.0
+      ],
+      "angle_y": -32768
+     },
+     {
+      "name": "takara7",
+      "params": "0xFF1FF582",
+      "tbox_no": 11,
+      "func_type": 2,
+      "shape_type": 1,
+      "item_no": "0xF3",
+      "open_switch": 255,
+      "room": 11,
+      "pos": [
+       1897.7,
+       -1800.0,
+       4994.3
+      ],
+      "angle_y": -32768
+     },
+     {
+      "name": "takara2",
+      "params": "0xFF000600",
+      "tbox_no": 12,
+      "func_type": 0,
+      "shape_type": 0,
+      "item_no": "0x1F",
+      "open_switch": 255,
+      "room": 18,
+      "pos": [
+       -2800.0,
+       0.0,
+       5000.0
+      ],
+      "angle_y": 16384
+     },
+     {
+      "name": "takara7",
+      "params": "0xFF1FF702",
+      "tbox_no": 14,
+      "func_type": 2,
+      "shape_type": 1,
+      "item_no": "0xE9",
+      "open_switch": 255,
+      "room": 19,
+      "pos": [
+       -7500.0,
+       -5500.0,
+       5700.0
+      ],
+      "angle_y": 16384
+     },
+     {
+      "name": "takara3",
+      "params": "0xFF200380",
+      "tbox_no": 7,
+      "func_type": 0,
+      "shape_type": 2,
+      "item_no": "0xFF",
+      "open_switch": 255,
+      "room": 12,
+      "pos": [
+       6150.0,
+       1850.0,
+       6400.2
+      ],
+      "angle_y": -32768
+     },
+     {
+      "name": "takara6",
+      "params": "0xFF27C781",
+      "tbox_no": 15,
+      "func_type": 1,
+      "shape_type": 2,
+      "item_no": "0xA6",
+      "open_switch": 255,
+      "room": 9,
+      "pos": [
+       7620.4,
+       -1400.0,
+       1939.2
+      ],
+      "angle_y": 0
+     }
+    ]
+   },
+   "kaze": {
+    "name": "Wind Temple",
+    "save_slot": 7,
+    "save_slot_name": "STAGE_WT",
+    "save_slot_evidence": "STAG mProp=15 on the disc -> (mProp>>1)&0x7F = 7",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": true,
+    "shares_save_slot_with": [
+     "Ekaze (entrance, slot 11)",
+     "kazeMB (miniboss, slot 7)",
+     "kazeB (boss: Molgera, slot 7)"
+    ],
+    "counts": {
+     "tgdr_doors": 17,
+     "small_key_doors": 2,
+     "big_key_doors": 1,
+     "enemy_clear_doors": 2,
+     "chests": 13,
+     "small_keys_in_chests": 2,
+     "has_map_chest": true,
+     "has_compass_chest": true,
+     "has_big_key_chest": true
+    },
+    "small_key_supply_check": "2 small-key door(s) vs 2 small key(s) from chests",
+    "dungeon_map": {
+     "flor_entries": 3,
+     "floor_images": [
+      "res/Stage/kaze/Stage.arc/stage/dat/dmap127.png",
+      "res/Stage/kaze/Stage.arc/stage/dat/dmap128.png",
+      "res/Stage/kaze/Stage.arc/stage/dat/dmap129.png"
+     ],
+     "note": "pre-rendered floor plans already extracted in the rip; one per FLOR entry"
+    },
+    "doors": [
+     {
+      "name": "ZenS12",
+      "params": "0x0FFFF285",
+      "type": 2,
+      "eff_type": 2,
+      "swbit": 133,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 8,
+      "back_room": 5,
+      "arg1": 10,
+      "shipId": 63,
+      "pos": [
+       9260.0,
+       1055.0,
+       3.1
+      ],
+      "angle_y": 16384,
+      "lock": "enemy_clear_bars"
+     },
+     {
+      "name": "door12",
+      "params": "0x0FFFF021",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 33,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 3,
+      "back_room": 2,
+      "arg1": 10,
+      "shipId": 63,
+      "pos": [
+       -2887.2,
+       1100.0,
+       0.0
+      ],
+      "angle_y": -16384,
+      "lock": "plain"
+     },
+     {
+      "name": "door12",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 2,
+      "back_room": 5,
+      "arg1": 10,
+      "shipId": 63,
+      "pos": [
+       2886.3,
+       1100.0,
+       0.0
+      ],
+      "angle_y": -16384,
+      "lock": "plain"
+     },
+     {
+      "name": "door12",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 7,
+      "back_room": 5,
+      "arg1": 10,
+      "shipId": 63,
+      "pos": [
+       8685.1,
+       952.5,
+       1369.9
+      ],
+      "angle_y": 0,
+      "lock": "plain"
+     },
+     {
+      "name": "door12",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 9,
+      "back_room": 2,
+      "arg1": 10,
+      "shipId": 63,
+      "pos": [
+       0.0,
+       -3600.0,
+       1968.9
+      ],
+      "angle_y": 0,
+      "lock": "plain"
+     },
+     {
+      "name": "door12",
+      "params": "0x0FFFF008",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 8,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 1,
+      "back_room": 3,
+      "arg1": 10,
+      "shipId": 63,
+      "pos": [
+       -3813.7,
+       1100.0,
+       559.5
+      ],
+      "angle_y": 0,
+      "lock": "plain"
+     },
+     {
+      "name": "door12",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 2,
+      "back_room": 16,
+      "arg1": 10,
+      "shipId": 63,
+      "pos": [
+       0.0,
+       3203.4,
+       -3060.2
+      ],
+      "angle_y": 0,
+      "lock": "plain"
+     },
+     {
+      "name": "keyS12",
+      "params": "0x0FFFF113",
+      "type": 1,
+      "eff_type": 1,
+      "swbit": 19,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 2,
+      "back_room": 10,
+      "arg1": 10,
+      "shipId": 63,
+      "pos": [
+       1553.3,
+       -4350.1,
+       0.0
+      ],
+      "angle_y": -16384,
+      "lock": "small_key"
+     },
+     {
+      "name": "door12",
+      "params": "0x0FFFF034",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 52,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 10,
+      "back_room": 11,
+      "arg1": 10,
+      "shipId": 63,
+      "pos": [
+       4499.8,
+       -4350.2,
+       0.8
+      ],
+      "angle_y": -16384,
+      "lock": "plain"
+     },
+     {
+      "name": "door12",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 12,
+      "back_room": 11,
+      "arg1": 10,
+      "shipId": 63,
+      "pos": [
+       13967.0,
+       -4540.0,
+       860.4
+      ],
+      "angle_y": 0,
+      "lock": "plain"
+     },
+     {
+      "name": "door12",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 7,
+      "back_room": 2,
+      "arg1": 10,
+      "shipId": 63,
+      "pos": [
+       0.0,
+       1550.0,
+       2881.9
+      ],
+      "angle_y": 0,
+      "lock": "plain"
+     },
+     {
+      "name": "ZenS12",
+      "params": "0x0FFFF282",
+      "type": 2,
+      "eff_type": 2,
+      "swbit": 130,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 4,
+      "back_room": 2,
+      "arg1": 10,
+      "shipId": 63,
+      "pos": [
+       9.5,
+       3715.0,
+       2895.8
+      ],
+      "angle_y": 0,
+      "lock": "enemy_clear_bars"
+     },
+     {
+      "name": "door12",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 0,
+      "back_room": 1,
+      "arg1": 10,
+      "shipId": 63,
+      "pos": [
+       -3813.5,
+       1144.8,
+       5571.4
+      ],
+      "angle_y": 0,
+      "lock": "plain"
+     },
+     {
+      "name": "door12",
+      "params": "0x0FFFF03F",
+      "type": 0,
+      "eff_type": 3,
+      "swbit": 63,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 12,
+      "back_room": 12,
+      "arg1": 12,
+      "shipId": 63,
+      "pos": [
+       13964.6,
+       -5062.5,
+       9913.8
+      ],
+      "angle_y": -32768,
+      "lock": "big_key"
+     },
+     {
+      "name": "door12",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 15,
+      "back_room": 0,
+      "arg1": 10,
+      "shipId": 63,
+      "pos": [
+       -3817.7,
+       1463.8,
+       11834.4
+      ],
+      "angle_y": 0,
+      "lock": "plain"
+     },
+     {
+      "name": "keyS12",
+      "params": "0x0FFFF11B",
+      "type": 1,
+      "eff_type": 1,
+      "swbit": 27,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 2,
+      "back_room": 2,
+      "arg1": 11,
+      "shipId": 63,
+      "pos": [
+       0.0,
+       -3600.0,
+       -1971.3
+      ],
+      "angle_y": 0,
+      "lock": "small_key"
+     },
+     {
+      "name": "door12",
+      "params": "0x0FFFF021",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 33,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 3,
+      "back_room": 16,
+      "arg1": 10,
+      "shipId": 63,
+      "pos": [
+       -3813.5,
+       2096.8,
+       -2897.1
+      ],
+      "angle_y": 0,
+      "lock": "plain"
+     }
+    ],
+    "chests": [
+     {
+      "name": "takara2",
+      "params": "0xFF000100",
+      "tbox_no": 2,
+      "func_type": 0,
+      "shape_type": 0,
+      "item_no": "0x1F",
+      "open_switch": 255,
+      "room": 2,
+      "pos": [
+       2150.0,
+       3226.0,
+       0.0
+      ],
+      "angle_y": -16384
+     },
+     {
+      "name": "takara2",
+      "params": "0xFF000200",
+      "tbox_no": 4,
+      "func_type": 0,
+      "shape_type": 0,
+      "item_no": "0x15",
+      "open_switch": 255,
+      "room": 4,
+      "pos": [
+       13.1,
+       3739.8,
+       5760.8
+      ],
+      "angle_y": -32768
+     },
+     {
+      "name": "takara4",
+      "params": "0xFF300400",
+      "tbox_no": 8,
+      "func_type": 0,
+      "shape_type": 3,
+      "item_no": "0x4E",
+      "open_switch": 255,
+      "room": 8,
+      "pos": [
+       12123.8,
+       1079.9,
+       -2.3
+      ],
+      "angle_y": -16384
+     },
+     {
+      "name": "takara2",
+      "params": "0xFF000480",
+      "tbox_no": 9,
+      "func_type": 0,
+      "shape_type": 0,
+      "item_no": "0x15",
+      "open_switch": 43,
+      "room": 9,
+      "pos": [
+       602.4,
+       -3400.0,
+       4285.9
+      ],
+      "angle_y": 0
+     },
+     {
+      "name": "takara2",
+      "params": "0xFF000380",
+      "tbox_no": 7,
+      "func_type": 0,
+      "shape_type": 0,
+      "item_no": "0x1F",
+      "open_switch": 255,
+      "room": 5,
+      "pos": [
+       6712.5,
+       952.1,
+       -1041.3
+      ],
+      "angle_y": 0
+     },
+     {
+      "name": "tkrASw",
+      "params": "0xFF000001",
+      "tbox_no": 0,
+      "func_type": 1,
+      "shape_type": 0,
+      "item_no": "0x06",
+      "open_switch": 255,
+      "room": 0,
+      "pos": [
+       -3800.0,
+       754.5,
+       8900.0
+      ],
+      "angle_y": 0
+     },
+     {
+      "name": "takara2",
+      "params": "0xFF000180",
+      "tbox_no": 3,
+      "func_type": 0,
+      "shape_type": 0,
+      "item_no": "0x1F",
+      "open_switch": 255,
+      "room": 2,
+      "pos": [
+       0.0,
+       1125.5,
+       -2890.0
+      ],
+      "angle_y": 0
+     },
+     {
+      "name": "takara5",
+      "params": "0xFF131501",
+      "tbox_no": 10,
+      "func_type": 1,
+      "shape_type": 1,
+      "item_no": "0xE8",
+      "open_switch": 255,
+      "room": 9,
+      "pos": [
+       -603.7,
+       -3400.0,
+       4284.1
+      ],
+      "angle_y": 0
+     },
+     {
+      "name": "takara",
+      "params": "0xFF100580",
+      "tbox_no": 11,
+      "func_type": 0,
+      "shape_type": 1,
+      "item_no": "0x4C",
+      "open_switch": 255,
+      "room": 7,
+      "pos": [
+       8726.5,
+       962.7,
+       9597.0
+      ],
+      "angle_y": -32768
+     },
+     {
+      "name": "takara7",
+      "params": "0xFF133602",
+      "tbox_no": 12,
+      "func_type": 2,
+      "shape_type": 1,
+      "item_no": "0xF2",
+      "open_switch": 255,
+      "room": 10,
+      "pos": [
+       3031.8,
+       -4350.0,
+       -0.9
+      ],
+      "angle_y": -16384
+     },
+     {
+      "name": "takara",
+      "params": "0xFF100680",
+      "tbox_no": 13,
+      "func_type": 0,
+      "shape_type": 1,
+      "item_no": "0x4D",
+      "open_switch": 255,
+      "room": 2,
+      "pos": [
+       -1600.0,
+       -1900.0,
+       0.0
+      ],
+      "angle_y": 16384
+     },
+     {
+      "name": "takara3",
+      "params": "0xFF200280",
+      "tbox_no": 5,
+      "func_type": 0,
+      "shape_type": 2,
+      "item_no": "0xFF",
+      "open_switch": 255,
+      "room": 6,
+      "pos": [
+       -0.9,
+       -3600.0,
+       -3537.6
+      ],
+      "angle_y": 0
+     },
+     {
+      "name": "takara6",
+      "params": "0xFF21F781",
+      "tbox_no": 15,
+      "func_type": 1,
+      "shape_type": 2,
+      "item_no": "0xA7",
+      "open_switch": 255,
+      "room": 3,
+      "pos": [
+       -3782.8,
+       57.9,
+       -1193.4
+      ],
+      "angle_y": 0
+     }
+    ]
+   },
+   "ma2room": {
+    "name": "Forsaken Fortress (second visit)",
+    "save_slot": 2,
+    "save_slot_name": "STAGE_FF",
+    "save_slot_evidence": "STAG mProp=4 on the disc -> (mProp>>1)&0x7F = 2",
+    "stage_type": "DUNGEON",
+    "key_counter_shown": false,
+    "shares_save_slot_with": [
+     "majroom / ma3room (other visits, slot 2)",
+     "MajyuE (exterior, slot 2)",
+     "M2tower / Mjtower (Helmaroc King, slot 2)",
+     "M2ganon (slot 2)"
+    ],
+    "counts": {
+     "tgdr_doors": 17,
+     "small_key_doors": 0,
+     "big_key_doors": 0,
+     "enemy_clear_doors": 0,
+     "chests": 4,
+     "small_keys_in_chests": 0,
+     "has_map_chest": true,
+     "has_compass_chest": true,
+     "has_big_key_chest": false
+    },
+    "small_key_supply_check": "0 small-key door(s) vs 0 small key(s) from chests",
+    "dungeon_map": {
+     "flor_entries": 2,
+     "floor_images": [
+      "res/Stage/ma2room/Stage.arc/stage/dat/dmap128.png",
+      "res/Stage/ma2room/Stage.arc/stage/dat/dmap129.png",
+      "res/Stage/ma2room/Stage.arc/stage/dat/dmap_back.png"
+     ],
+     "note": "pre-rendered floor plans already extracted in the rip; one per FLOR entry"
+    },
+    "doors": [
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 1,
+      "back_room": 0,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       5140.7,
+       730.5,
+       -773.3
+      ],
+      "angle_y": 28216,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 2,
+      "back_room": 1,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       2215.0,
+       729.0,
+       -6117.7
+      ],
+      "angle_y": -25657,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 3,
+      "back_room": 2,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -3838.8,
+       742.4,
+       -5438.0
+      ],
+      "angle_y": -12285,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 4,
+      "back_room": 3,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -3762.8,
+       729.6,
+       1881.5
+      ],
+      "angle_y": 4501,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 0,
+      "back_room": 0,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       3361.4,
+       3013.0,
+       2826.8
+      ],
+      "angle_y": 28216,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 0,
+      "back_room": 0,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       2029.8,
+       2995.3,
+       3640.4
+      ],
+      "angle_y": -15655,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 1,
+      "back_room": 1,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       5212.3,
+       3011.9,
+       -924.2
+      ],
+      "angle_y": -4551,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 1,
+      "back_room": 1,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       4745.8,
+       3010.1,
+       -2951.7
+      ],
+      "angle_y": -25486,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 2,
+      "back_room": 2,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       43.9,
+       2994.7,
+       -6945.0
+      ],
+      "angle_y": -13107,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 2,
+      "back_room": 2,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       2217.3,
+       3010.7,
+       -6159.7
+      ],
+      "angle_y": 6917,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 3,
+      "back_room": 3,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -3873.9,
+       2983.4,
+       -5520.1
+      ],
+      "angle_y": 20571,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 3,
+      "back_room": 3,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -5387.7,
+       2993.8,
+       -2198.7
+      ],
+      "angle_y": 3640,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 4,
+      "back_room": 4,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -2123.7,
+       3018.4,
+       3257.2
+      ],
+      "angle_y": 16748,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 4,
+      "back_room": 4,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -3795.7,
+       2998.2,
+       1917.1
+      ],
+      "angle_y": -28034,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 2,
+      "back_room": 2,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       1006.7,
+       230.5,
+       -5999.4
+      ],
+      "angle_y": 28216,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 3,
+      "back_room": 3,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -7375.2,
+       2889.6,
+       -4818.8
+      ],
+      "angle_y": 28216,
+      "lock": "plain"
+     },
+     {
+      "name": "door10",
+      "params": "0x0FFFF0FF",
+      "type": 0,
+      "eff_type": 0,
+      "swbit": 255,
+      "swbit2": 255,
+      "eventNo": 255,
+      "front_room": 4,
+      "back_room": 4,
+      "arg1": 255,
+      "shipId": 63,
+      "pos": [
+       -2784.0,
+       230.5,
+       2085.0
+      ],
+      "angle_y": -5097,
+      "lock": "plain"
+     }
+    ],
+    "chests": [
+     {
+      "name": "takara",
+      "params": "0xFF100000",
+      "tbox_no": 0,
+      "func_type": 0,
+      "shape_type": 1,
+      "item_no": "0x4C",
+      "open_switch": 255,
+      "room": 0,
+      "pos": [
+       3095.1,
+       1703.6,
+       4345.6
+      ],
+      "angle_y": 16201
+     },
+     {
+      "name": "takara2",
+      "params": "0xFF000080",
+      "tbox_no": 1,
+      "func_type": 0,
+      "shape_type": 0,
+      "item_no": "0x03",
+      "open_switch": 255,
+      "room": 4,
+      "pos": [
+       -3684.9,
+       820.6,
+       3350.6
+      ],
+      "angle_y": 28216
+     },
+     {
+      "name": "takara",
+      "params": "0xFF100100",
+      "tbox_no": 2,
+      "func_type": 0,
+      "shape_type": 1,
+      "item_no": "0x4D",
+      "open_switch": 255,
+      "room": 1,
+      "pos": [
+       6336.5,
+       1714.4,
+       -2013.2
+      ],
+      "angle_y": -11832
+     },
+     {
+      "name": "takara3",
+      "params": "0xFF200180",
+      "tbox_no": 3,
+      "func_type": 0,
+      "shape_type": 2,
+      "item_no": "0x07",
+      "open_switch": 255,
+      "room": 0,
+      "pos": [
+       1349.5,
+       728.5,
+       4211.6
+      ],
+      "angle_y": -31493
+     }
+    ]
+   }
+  }
+ },
+ "_cross_checks": [
+  "Small-key doors vs small keys, per dungeon: M_NewD2 4 doors / 3 chest keys + 1 free-standing key item = 4. kindan 1 / 1. Siren 2 / 2. M_Dai 3 / 2 chest keys + 1 free-standing = 3. kaze 2 / 2. Every dungeon balances exactly.",
+  "Big-key doors, per dungeon: M_NewD2 1 (door20 type 1), kindan 1, Siren 1, M_Dai 1 (door12 arg1=9 promoted to type 3), kaze 1 (door12 arg1=12 promoted). ma2room 0. Each of the five real dungeons has exactly one 0x4E chest and exactly one big-key door.",
+  "Map + compass: every one of the six stages has exactly one 0x4C chest and one 0x4D chest.",
+  "Chest indices: tboxNo is unique within every dungeon and always < 32, so one u32 mTbox per slot is sufficient - checked on all six.",
+  "Door room pairs: every dungeon door's rot.x decodes to two room numbers that exist in that stage (verified independently against stage_data.json room lists).",
+  "The disc TGDR/TRES entries match the build's out/rip/GZLE01/godot/stage_data.json entry for entry (same actor names, params and rot triples, chunk 'TGDR'/'TRES')."
+ ],
+ "_gotchas": [
+  "Cave08 is a leftover/partial COPY of Wind Temple data: it sits in save slot 7 (STAGE_WT) with keyDisp=1, has 14 door12 entries whose rot.x room pairs reference kaze's rooms (which Cave08 does not have), and carries its own 0x4C/0x4D/0x4E/2x0x15 chest set. Do not treat it as a real dungeon; do not let it write slot 7.",
+  "The model paths in stage_data.json for doors are unreliable - the resolver picks the first archive on the disc that happens to contain a matching BDL, so kindan's door10 entries point at res/Stage/Xboss1/... and M_NewD2's at res/Stage/Cave01/.... Per the decomp the mesh must come from the CURRENT stage's own Stage archive (dComIfG_getStageRes(\"Stage\", getBdlName()), src/d/actor/d_a_door10.cpp:265) except for the arg1 13/14 DoorBs overrides.",
+  "The OBJNAME 'argument' column (e.g. door12=0, door12M=1, keyS12=1, ZenS12=2) is never read by any door actor - grepped all 8 door .cpp files, zero hits. Shape comes from arg1 (rot.z high byte); lock comes from the type nibble in params. Do not key remake behaviour off the placement name alone.",
+  "door10 and door12 use DIFFERENT type numbers for the same concept: door10 small=4/5 boss=1, door12 small=1 boss=3.",
+  "Doors placed in a BOSS or MINIBOSS stage are excluded from the dungeon-map door list: dStage_KeepDoorInfoProc returns early for stage types BOSS and MINIBOSS, and caps at 0x40 doors (src/d/d_stage.cpp:83-110, dStage_KeepDoorInfo at include/d/d_stage.h:979-986).",
+  "ma2room (Forsaken Fortress 2nd visit) has 17 door10 placements and ALL of them are plain type 0 with swbit 0xFF. It has no locked doors, no small keys and no big key - only a map and a compass chest. Its doors also have non-cardinal rot.y, unlike the other five dungeons."
+ ],
+ "_not_determined": [
+  "What the MAP item visually changes. d_menu_dmap.cpp is 188 lines of pure /* Nonmatching */ stubs (every body, including screenSet, initialize, treasureSet, treasureDraw and dMap_isBossDoor). The storage bit is certain; the rendered effect is not readable. Confidence: low.",
+  "How the dungeon map decides a door is a boss door. dMap_isBossDoor(stage_tgsc_data_class*) exists at src/d/d_menu_dmap.cpp:25-27 and is a stub. It takes a raw TGDR record, so it almost certainly re-reads the type nibble - but that is an inference, not a read. Confidence: low.",
+  "What the COMPASS shows. Only the HUD-refresh trigger is decompiled (src/d/d_meter.cpp:4510-4519); the content is drawn by the stubbed dmap code. Confidence: low.",
+  "Everything about the KDDOOR actor (doorKD / doorSH / ZenshKD / K_ZshKD / doorSZ): its lock behaviour, its models, its member layout. src/d/actor/d_a_kddoor.cpp is 342 lines with every body stubbed and the header has no member variables at all. Confidence: low. Only the 9 retail placements (7 doorSH + 2 doorKD, all in kindan) and the inherited dDoor_info_c param layout are solid.",
+  "Whether mItem is 32 or 64 bits. The array is u32[1] but the assert says i < 64 (src/d/d_save.cpp:1112-1121). Unresolved in the decomp itself.",
+  "The meaning of the unnamed event flags the door code touches: dSv_event_flag_c::UNK_1101, UNK_1140, UNK_1704, UNK_1710, UNK_1B01, UNK_2601, UNK_2602 and dSv_event_tmp_flag_c::UNK_0440. The decomp has not named them.",
+  "Which floor image (dmapNNN.png) corresponds to which FLOR entry / floor number. The counts match per dungeon (kindan 5 FLOR / 5 images, M_Dai 3/3, kaze 3/3, M_NewD2 4/4, Siren 4/4) but the FLOR chunk itself was not decoded here.",
+  "How dSv_zone_c zones are assigned to rooms (dComIfGp_roomControl_getZoneNo) - only relevant if the remake wants zone-scoped switches (>= 0xC0); no dungeon door in the retail data uses one.",
+  "Whether the free-standing 'item' actors carrying id 0x15 in M_NewD2 and M_Dai are gated by anything (they are in stage_data.json but the gating flag was not traced)."
+ ]
+}

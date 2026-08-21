@@ -192,7 +192,8 @@ def subsystems() -> list[tuple[str, str, str]]:
         ("Sailing", "partial",
          "boat physics, sail and wind; no cannon or crane, the Great Sea is one heavy scene"),
         ("Save / story bits", "ok", "dSv_event_flag_c byte array, story_done, items, switches"),
-        ("Day / night", "missing", "layers carry day and night variants; the clock is always day"),
+        ("Day / night", "ok",
+         "600 real seconds per in-game day (dKy: 360 units, 0.02/frame); layers swap at 6 and 18"),
         ("Dungeons", "missing", "no dungeon logic mined yet: keys, switches, boss gates"),
     ]
 
