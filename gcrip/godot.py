@@ -2875,6 +2875,9 @@ func _ready() -> void:
             door_test = true
             if a.begins_with("--door="):
                 door_want = a.substr(7)
+    # pad mappings at boot (was only done on a menu warp: a shortcut launch ran the pad raw)
+    _apply_saved_pad_mappings.call_deferred()
+    Input.joy_connection_changed.connect(func(_id, _c): _apply_saved_pad_mappings())
     if load_game():
         print("gcrip: save file loaded (", str(save.get("saved_at", "?")), ")")
         if not selftest and shot_actor == "" and not door_test:
@@ -3216,7 +3219,6 @@ func go_to_stage(stage: String) -> void:
     last_warp_ms = -100000
     warp(stage, room, spawn)
     _apply_saved_pad_mappings()
-    Input.joy_connection_changed.connect(func(_id, _c): _apply_saved_pad_mappings())
 
 # ---- world helpers used by actors
 
