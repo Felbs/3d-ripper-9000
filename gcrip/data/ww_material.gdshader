@@ -126,8 +126,11 @@ void fragment() {
         float h = (look == 3) ? mix(n1, n2, 0.5) : n1 * 0.7 + n2 * 0.3;
         float dx = vnoise(p + vec2(0.05, 0.0)) - h;
         float dy = vnoise(p + vec2(0.0, 0.05)) - h;
-        NORMAL_MAP = normalize(vec3(-dx * micro_normal * 6.0, -dy * micro_normal * 6.0, 1.0)) * 0.5 + 0.5;
-        NORMAL_MAP_DEPTH = 1.0;
+        // perturb the view-space normal directly with a world-space wobble.  NORMAL_MAP needs
+        // tangents and most ripped meshes carry none (the engine warns on every surface), so
+        // this route works on everything the rip produces
+        vec3 wobble = mat3(VIEW_MATRIX) * vec3(-dx, 0.0, -dy);
+        NORMAL = normalize(NORMAL + wobble * micro_normal * 6.0);
     }
     if (look == 3 && backlight > 0.0) {
         BACKLIGHT = vec3(backlight);

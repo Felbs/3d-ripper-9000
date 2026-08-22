@@ -1947,7 +1947,7 @@ func _selftest_tick() -> void:
         Game.save_game("selftest")
     if _st_frame == 14:
         var ok := Game.load_game()
-        print("selftest: save file exists=", FileAccess.file_exists(Game.SAVE_PATH), " reload=", ok, " keys=", Game.save.keys().size())
+        print("selftest: save file exists=", FileAccess.file_exists(Game.save_path()), " reload=", ok, " keys=", Game.save.keys().size())
     if _ST_SCRIPT.has(_st_frame):
         var a: Array = _ST_SCRIPT[_st_frame]
         if a[0] == "board":
@@ -3170,6 +3170,8 @@ var models_test: bool = "--models" in OS.get_cmdline_user_args()
 var no_toon: bool = "--no-toon" in OS.get_cmdline_user_args()
 # --shade=toon|hybrid|clay|paper|pbr : the look to start in (F6 cycles them in play)
 var shade_arg := ""
+# --gi : turn SDFGI on (off by default: at this world scale it is heavy, and it crashed once)
+var gi_on: bool = "--gi" in OS.get_cmdline_user_args()
 
 # --hitsw[=<kind>] : strike every hit switch in this stage with that attack kind
 var hitsw_test := ""
@@ -3259,7 +3261,18 @@ var night: bool:
 var _night_live := -1              # what the layers on screen assume; -1 until the first tick
 var clock_reload_on_flip := true   # rebuild the stage at dusk / dawn so its layer swaps
 signal day_passed(day: int)        # midnight rolled over: dKankyo_DayProc's hook
-const SAVE_PATH := "user://gcrip_save.json"
+const SAVE_FILE := "user://gcrip_save.json"
+const SAVE_FILE_TEST := "user://gcrip_save_test.json"
+
+var _save_file := ""   # latched on first use: a harness that ends its scripted phase must not
+                       # fall through to the player's file afterwards
+
+func save_path() -> String:
+    # a headless harness must never touch the file a person plays on - that is how a --defeat
+    # test once left "dr_gohma" in the user's save.  Decided ONCE per process.
+    if _save_file == "":
+        _save_file = SAVE_FILE_TEST if (scripted() or OS.get_cmdline_user_args().size() > 0)             else SAVE_FILE
+    return _save_file
 var autosave_frames := 0
 var continued := false
 var event_running := false
@@ -3446,14 +3459,14 @@ func save_game(reason := "") -> void:
         save["last_pos"] = [pos.x, pos.y, pos.z]
         save["last_facing"] = float(link.get("facing"))
     save["saved_at"] = Time.get_datetime_string_from_system()
-    var f := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
+    var f := FileAccess.open(save_path(), FileAccess.WRITE)
     if f:
         f.store_string(JSON.stringify(save, " "))
         if reason != "":
             print("gcrip: saved (", reason, ")")
 
 func load_game() -> bool:
-    var f := FileAccess.open(SAVE_PATH, FileAccess.READ)
+    var f := FileAccess.open(save_path(), FileAccess.READ)
     if f == null:
         return false
     var parsed = JSON.parse_string(f.get_as_text())
@@ -3467,8 +3480,8 @@ func new_game() -> void:
     save = {"hearts": 12, "hearts_max": 12, "magic": 16, "rupees": 0, "heavy": false,
             "items": {},
             "day": 0, "day_time": FRESH_DAY_TIME}
-    if FileAccess.file_exists(SAVE_PATH):
-        DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+    if FileAccess.file_exists(save_path()):
+        DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path()))
     get_tree().paused = false
     if stage_data.has("sea_r44"):
         go_to_stage("sea_r44", 206)   # d_save.cpp: a fresh file starts on Outset's lookout
@@ -6073,8 +6086,12 @@ func toonify(root: Node, archive := "") -> int:
         if mi.mesh == null:
             continue
         for i in range(mi.mesh.get_surface_count()):
-            var src: Material = mi.get_active_material(i)
-            if src is ShaderMaterial:
+            # the ORIGINAL material is the one on the mesh; an override from a previous look is
+            # replaced, not stacked, so F6 can re-shade a loaded scene
+            var src: Material = mi.mesh.surface_get_material(i)
+            if src == null:
+                src = mi.get_active_material(i)
+            if src == null or src is ShaderMaterial:
                 continue
             mi.set_surface_override_material(i, _toon_material(src))
             n += 1
@@ -6118,9 +6135,12 @@ func toon_input(event: InputEvent) -> void:
         var i := SHADE_MODES.find(shade_mode)
         set_shade_mode(SHADE_MODES[(i + 1) % SHADE_MODES.size()])
         show_text("Look: %s  (F6 cycles)" % shade_mode)
+        # re-apply to the scene that is already loaded.  Reloading the whole sea under F6 -
+        # 1224 actors, SDFGI, SSIL and a 25 MB sky torn down and rebuilt in a frame - is what
+        # crashed the engine in the first play session.
         var cs := get_tree().current_scene
-        if cs:
-            get_tree().reload_current_scene()
+        if cs and cs.has_method("_apply_toon"):
+            cs.call("_apply_toon")
 
 func toon_tick() -> void:
     if not toon_on or _toon_cache.is_empty():
@@ -9112,6 +9132,7 @@ func _setup_lighting() -> void:
     var env: Environment = env_node.environment
     if env == null:
         return
+    env.sdfgi_enabled = Game.gi_on and outdoors
     # an HDRI dropped next to project.godot wins over the simulated atmosphere
     for cand in ["res://sky.hdr", "res://sky.exr"]:
         if ResourceLoader.exists(cand):
@@ -10090,7 +10111,7 @@ ssao_radius = 120.0
 ssao_intensity = 1.5
 ssil_enabled = true
 ssil_radius = 200.0
-sdfgi_enabled = true
+sdfgi_enabled = false
 sdfgi_use_occlusion = true
 sdfgi_cascades = 6
 sdfgi_min_cell_size = 40.0
