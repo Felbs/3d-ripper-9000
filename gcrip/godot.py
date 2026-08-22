@@ -5789,6 +5789,9 @@ const DUNGEON_BIG_KEY := 4         # bit 2
 
 # ---- cel shading -----------------------------------------------------------------------
 var sun_direction := Vector3(0.55, -0.72, 0.42)   # set by the stage's light rig each tick
+# the luminance of a lit diffuse white right now, lux / pi - what unshaded shaders scale by so
+# they sit at the same exposure as the lit surfaces (physical light units)
+var scene_nits := 31800.0
 var toon_shader: Shader = null
 var lit_shader: Shader = null
 var toon_ramp: Texture2D = null
@@ -5833,6 +5836,7 @@ func _fx_material(d: Dictionary) -> ShaderMaterial:
     m.set_shader_parameter("prm_color", Color(prm[0] / 255.0, prm[1] / 255.0, prm[2] / 255.0, prm[3] / 255.0))
     m.set_shader_parameter("env_color", Color(env[0] / 255.0, env[1] / 255.0, env[2] / 255.0, env[3] / 255.0))
     m.set_shader_parameter("additive", bool(d.get("additive", false)))
+    m.set_shader_parameter("nits", scene_nits)
     _fx_mats[key] = m
     return m
 
@@ -6127,6 +6131,7 @@ func toon_tick() -> void:
         m.set_shader_parameter("c0", Vector3(cs[0].r, cs[0].g, cs[0].b))
         m.set_shader_parameter("k0", Vector3(cs[1].r, cs[1].g, cs[1].b))
         m.set_shader_parameter("sun_dir", sun_direction)
+        m.set_shader_parameter("nits", scene_nits)
 
 func shade_report() -> Dictionary:
     # which classes the current stage's surfaces landed in - the --shade harness prints it
@@ -8273,6 +8278,7 @@ uniform vec3 sun_dir = vec3(0.55, -0.72, 0.42);
 uniform sampler2D toon_ramp : filter_linear;
 uniform vec3 c0 : source_color = vec3(0.42, 0.44, 0.52);
 uniform vec3 k0 : source_color = vec3(1.0, 0.94, 0.82);
+uniform float nits = 1.0;   // physical units: unshaded output is luminance
 
 varying vec3 w_normal;
 
@@ -8305,7 +8311,7 @@ void fragment() {
     float toon = texture(toon_ramp, vec2(d, 0.5)).r;
     vec3 lit = mix(c0, k0, toon);
     vec3 base = mix(sea_day, sea_night, night);
-    ALBEDO = base * lit;
+    ALBEDO = base * lit * nits;
 }
 """
 
@@ -8321,16 +8327,17 @@ uniform sampler2D mask_tex : source_color, filter_linear;
 uniform vec4 prm_color : source_color = vec4(1.0);
 uniform vec4 env_color : source_color = vec4(0.0, 0.0, 0.0, 1.0);
 uniform bool additive = false;
+uniform float nits = 1.0;   // physical units: unshaded output is luminance
 
 void fragment() {
     vec4 t = texture(mask_tex, UV);
     vec3 rgb = mix(env_color.rgb, prm_color.rgb, t.r);
     float a = t.a * COLOR.a * prm_color.a;
     if (additive) {
-        ALBEDO = rgb * a;
+        ALBEDO = rgb * a * nits;
         ALPHA = a;
     } else {
-        ALBEDO = rgb;
+        ALBEDO = rgb * nits;
         ALPHA = a;
     }
 }
@@ -8353,6 +8360,9 @@ uniform vec3 sun_dir = vec3(0.55, -0.72, 0.42);
 uniform vec3 c0 : source_color = vec3(0.42, 0.44, 0.52);   // shadow / TEV register 0
 uniform vec3 k0 : source_color = vec3(1.0, 0.94, 0.82);    // lit / konst 0
 uniform float alpha_scissor = 0.0;
+// physical light units: an unshaded colour is in NITS.  The stage sets this to the luminance a
+// lit diffuse white would have under the current sun, so the toon look matches the exposure.
+uniform float nits = 1.0;
 
 varying vec3 world_normal;
 
@@ -8370,7 +8380,7 @@ void fragment() {
     if (alpha_scissor > 0.0 && base.a < alpha_scissor) {
         discard;
     }
-    ALBEDO = base.rgb * lit;
+    ALBEDO = base.rgb * lit * nits;
     ALPHA = base.a;
 }
 """
@@ -9109,13 +9119,14 @@ func _setup_lighting() -> void:
             print("gcrip light: using HDRI ", cand)
             break
     if not outdoors:
-        # a dungeon has no sky: a dim fill so the lit looks are not pitch black, and the sky's
-        # ambient kept out of the room
+        # a dungeon has no sky: a fill so the lit looks are not pitch black, and the sky's
+        # ambient kept out of the room.  Physical units: these are lux / nits, not 0..1.
         sun.light_intensity_lux = 400.0
         sun.shadow_enabled = false
         env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
         env.ambient_light_color = Color(0.35, 0.36, 0.42)
-        env.ambient_light_energy = 1.0
+        env.ambient_light_energy = 120.0
+        Game.scene_nits = 400.0 / PI + 120.0
         env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
         env.background_mode = Environment.BG_COLOR
         env.background_color = Color(0.02, 0.02, 0.03)
@@ -9145,6 +9156,8 @@ func _light_tick() -> void:
         sun.light_intensity_lux = 150.0              # moonlight
         sun.light_temperature = 7500.0
     Game.sun_direction = dir
+    # what a lit white reads as right now; the sky adds roughly a fifth on top of the sun
+    Game.scene_nits = maxf(sun.light_intensity_lux, 150.0) * 1.2 / PI
 
 
 
@@ -9220,6 +9233,7 @@ func _ocean_tick() -> void:
     ocean_mat.set_shader_parameter("wave_scale", Game.sea_cur_scale)
     ocean_mat.set_shader_parameter("night", 1.0 if Game.is_night() else 0.0)
     ocean_mat.set_shader_parameter("sun_dir", Game.sun_direction)
+    ocean_mat.set_shader_parameter("nits", Game.scene_nits)
     var cs := Game.toon_sun_colors()
     ocean_mat.set_shader_parameter("c0", Vector3(cs[0].r, cs[0].g, cs[0].b))
     ocean_mat.set_shader_parameter("k0", Vector3(cs[1].r, cs[1].g, cs[1].b))
@@ -10032,7 +10046,7 @@ exposure_aperture = 16.0
 exposure_shutter_speed = 100.0
 exposure_sensitivity = 100.0
 auto_exposure_enabled = true
-auto_exposure_min_exposure_value = 6.0
+auto_exposure_min_exposure_value = 1.0
 auto_exposure_max_exposure_value = 15.0
 auto_exposure_speed = 1.2
 

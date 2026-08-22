@@ -42,6 +42,7 @@ uniform float grain_scale = 18.0;
 uniform sampler2D toon_ramp : filter_linear;
 uniform vec3 c0 : source_color = vec3(0.42, 0.44, 0.52);   // TEV register 0 - the "ambient"
 uniform vec3 k0 : source_color = vec3(1.0, 0.94, 0.82);    // konst 0 - the lit colour
+uniform float nits = 1.0;   // physical units: the toon look's emission is luminance
 
 varying vec3 v_world_pos;
 
@@ -137,7 +138,7 @@ void fragment() {
         vec3 l = normalize(mat3(VIEW_MATRIX) * vec3(-0.55, 0.72, -0.42));
         float d = clamp(dot(n, l) * 0.5 + 0.5, 0.0, 1.0);
         float toon = texture(toon_ramp, vec2(d, 0.5)).r;
-        EMISSION = base.rgb * mix(c0, k0, toon);
+        EMISSION = base.rgb * mix(c0, k0, toon) * nits;
         ALBEDO = vec3(0.0);
         SPECULAR = 0.0;
     }
