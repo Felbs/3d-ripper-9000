@@ -30,7 +30,7 @@ flowchart LR
     G1 --> G1_1["Items (X)<br/><i>8: leaf, bow, boomerang, bomb, hookshot, rope, telescope, windwa</i>"]
     class G1_1 ok;
     GAME --> G2["Actors"]
-    G2 --> G2_0["Enemies<br/><i>28 fully mined, 14 stubbed in the decomp (Gnd, PW, bable, bbaba,</i>"]
+    G2 --> G2_0["Enemies<br/><i>36 fully mined, 16 stubbed in the decomp (Gnd, PW, bable, bbaba,</i>"]
     class G2_0 partial;
     G2 --> G2_1["Actor models<br/><i>52 animated models with clips and head attachment</i>"]
     class G2_1 ok;
@@ -56,7 +56,7 @@ flowchart LR
 | Doors | ok | 122 distinct door landings, all checked for a floor |
 | Player movement | ok | 27 states: GROUND, AIR, ROLL, SWIM, LAND, ATTACK, JUMPCUT, JUMPCUT_LAND, DAMAGE, GLIDE, CARRY, GRAB, VJUMP, HANG, CLIMB, LADDER, CLIMBWALL, AIM, ITEM_WAIT, HOOKPULL, SHIP, ROPE_THROW, ROPE, LOOK, CROUCH, CRAWL, CONDUCT |
 | Items (X) | ok | 8: leaf, bow, boomerang, bomb, hookshot, rope, telescope, windwaker |
-| Enemies | partial | 28 fully mined, 14 stubbed in the decomp (Gnd, PW, bable, bbaba, magtail, nezumi, Sss, Puti, gmos, wiz_r, Oq, p_hat, pow, Oqw) |
+| Enemies | partial | 36 fully mined, 16 stubbed in the decomp (Gnd, PW, bable, bbaba, magtail, nezumi, Sss, Puti, gmos, wiz_r, Oq, p_hat, Ji1, Ss, pow, Oqw) |
 | Actor models | ok | 52 animated models with clips and head attachment |
 | Cutscenes (.stb) | ok | 48 baked and played end to end |
 | Events (event_list) | ok | interpreter runs staff/cut timelines: camera, dialogue, actor animation |

@@ -753,20 +753,20 @@
   "actor": "daCanon_c, src/d/actor/d_a_canon.cpp - FULLY DECOMPILED, zero stub bodies. The NPC that talks you into it and hands out the prize, daNpc_Kg2_c, is 34 stub bodies.",
   "cost": "UNRECOVERABLE. daCanon_c never touches rupees; the fee is charged by the stubbed daNpc_Kg2_c before it orders the CANON_GAME event. Do not invent a price.",
   "rules": [
-   "Ten shots, five targets. wait_proc arms the game the moment the event cut named 'Canon_game' starts: it calls createTargetObj(), sets m65A = 0 hits and m65C = 10 shots, teleports the player 200 units back along the cannon's home angle, and calls dComIfGp_startMiniGame(3) (src/d/actor/d_a_canon.cpp:250-281).",
-   "The five targets are barrels dropped on a random 8x8 polar grid in front of the cannon. createTargetObj loops until it has five accepted cells: each candidate is (rnd(8), rnd(8)) and createCheck rejects it if the COLUMN index already belongs to an earlier target - so no two targets ever share a bearing (src/d/actor/d_a_canon.cpp:138-150, 172-184).",
+   "Ten shots, five targets. wait_proc arms the game the moment the event cut named 'Canon_game' starts: it calls createTargetObj(), sets m65A = 0 hits and m65C = 10 shots, teleports the player 200 units back along the cannon's home angle, and calls dComIfGp_startMiniGame(3) (src/d/actor/d_a_canon.cpp:251-281).",
+   "The five targets are barrels dropped on a random 8x8 polar grid in front of the cannon. createTargetObj loops until it has five accepted cells: each candidate is (rnd(8), rnd(8)) and createCheck rejects it if the COLUMN index already belongs to an earlier target - so no two targets ever share a bearing (src/d/actor/d_a_canon.cpp:139-150, 173-184).",
    "getGridPos maps a grid cell to a world position: distance = row * 1500 + 10500, bearing = home.angle.y + angle_y_tbl[column], and the y is snapped to the sea wave height. angle_y_tbl spans -0x1200 to +0x1200 in eight steps, so the targets occupy a 50-degree fan from 10500 to 21000 units out (src/d/actor/d_a_canon.cpp:29-30, 117-125).",
    "The targets are Obj_Barrel2 children created with params 0x037F003F: type 3 (the mine/target variant), itemSave 0x7F, itemNo 0x3F which is the 'no item' code, buoy 0 so each carries a marker flag (src/d/actor/d_a_canon.cpp:180; param layout at include/d/actor/d_a_obj_barrel2.h:50-70).",
    "Aiming (PadMove): yaw is clamped to home.angle.y +/- 0x1200 (about 25 degrees each way) and pitch to the band [home.angle.x, home.angle.x + 0x1000] (about 22.5 degrees). Stick deflection past 0.5 moves the target angle by up to 0x400 per frame in yaw and 512 in pitch, and shape_angle chases it with cLib_addCalcAngleS(.., 4, 0x100, 0x10) (src/d/actor/d_a_canon.cpp:449-489).",
-   "Firing: A fires. The shot's flight time in frames is m652 = ((home.angle.x + 0x1000) - shape_angle.x) / 0x1000 * 56 + 64, i.e. 64 frames at maximum elevation up to 120 frames at minimum - a flatter shot flies longer. The landing distance is the same ratio * 10500 + 10500, so range runs from 10500 to 21000 units, exactly the span the targets occupy (src/d/actor/d_a_canon.cpp:127-136, 328-338).",
+   "Firing: A fires. The shot's flight time in frames is m652 = ((home.angle.x + 0x1000) - shape_angle.x) / 0x1000 * 56 + 64, i.e. 64 frames at maximum elevation up to 120 frames at minimum - a flatter shot flies longer. The landing distance is the same ratio * 10500 + 10500, so range runs from 10500 to 21000 units, exactly the span the targets occupy (src/d/actor/d_a_canon.cpp:128-136, 329-339).",
    "The shell follows a parabola: its height above the chord is scaled by 1 - 4*(t - 0.5)^2 where t is the fraction of flight remaining (src/d/actor/d_a_canon.cpp:341-346).",
    "m65C is decremented at the moment of firing, and the corresponding 2D shot icon is greyed out (src/d/actor/d_a_canon.cpp:337-338).",
-   "Landing: a 30-frame pause. If the shell's collision cylinder hit, m65A is incremented, a target icon is greyed out, and dComIfGp_setMiniGameRupee(m65A) republishes the HIT COUNT - so the on-screen number is hits, not rupees (src/d/actor/d_a_canon.cpp:360-380).",
-   "Three end sounds are played on Kg2: JA_SE_PLAYSPOT_END_S on the fifth hit, JA_SE_PLAYSPOT_END_F when the shots run out, and JA_SE_PLAYSPOT_DESTROY on any ordinary hit (src/d/actor/d_a_canon.cpp:373-390).",
+   "Landing: a 30-frame pause. If the shell's collision cylinder hit, m65A is incremented, a target icon is greyed out, and dComIfGp_setMiniGameRupee(m65A) republishes the HIT COUNT - so the on-screen number is hits, not rupees (src/d/actor/d_a_canon.cpp:370-379).",
+   "Three end sounds are played on Kg2: JA_SE_PLAYSPOT_END_S on the fifth hit, JA_SE_PLAYSPOT_END_F when the shots run out, and JA_SE_PLAYSPOT_DESTROY on any ordinary hit (src/d/actor/d_a_canon.cpp:380-392).",
    "The game continues only while m65C > 0 AND m65A < 5; otherwise end_proc_init runs (src/d/actor/d_a_canon.cpp:400-406).",
    "OUTCOME: 5 hits out of 5 sets dComIfGp_setMiniGameResult(1) and daNpc_Kg2_c::setCanonGameResult(1). Anything else sets (2, 2). There is no partial-credit tier inside daCanon_c (src/d/actor/d_a_canon.cpp:410-424).",
-   "60 frames later end_proc destroys every remaining target barrel (breakAllObj spawns a bomb on each) and calls dComIfGp_endMiniGame(3) (src/d/actor/d_a_canon.cpp:186-198, 426-447).",
-   "SHIPPED BUG: CreateHeap fills m5AC using ARRAY_SSIZE(m584) = 10 although m5AC has only 5 elements, overrunning the array by five pointers (src/d/actor/d_a_canon.cpp:535-544, the decomp marks it Bug)."
+   "60 frames later end_proc destroys every remaining target barrel (breakAllObj spawns a bomb on each) and calls dComIfGp_endMiniGame(3) (src/d/actor/d_a_canon.cpp:186-199, 426-447).",
+   "SHIPPED BUG: CreateHeap fills m5AC using ARRAY_SSIZE(m584) = 10 although m5AC has only 5 elements, overrunning the array by five pointers (src/d/actor/d_a_canon.cpp:535-545, the decomp marks it Bug)."
   ],
   "constants": {
    "shots": {
@@ -825,15 +825,15 @@
    },
    "yaw_limit": {
     "value": "+/- 0x1200 from home.angle.y",
-    "file": "src/d/actor/d_a_canon.cpp:456, 464"
+    "file": "src/d/actor/d_a_canon.cpp:456-468"
    },
    "pitch_limit": {
     "value": "home.angle.x .. home.angle.x + 0x1000",
-    "file": "src/d/actor/d_a_canon.cpp:472, 479"
+    "file": "src/d/actor/d_a_canon.cpp:470-482"
    },
    "shot_flight_frames": {
     "value": "((home.angle.x + 0x1000) - shape_angle.x)/0x1000 * 56 + 64  ->  64..120",
-    "file": "src/d/actor/d_a_canon.cpp:333-334"
+    "file": "src/d/actor/d_a_canon.cpp:330-331"
    },
    "countdown_frames_before_first_shot": {
     "value": 60,
@@ -859,13 +859,13 @@
      "when": "5 hits out of 5",
      "prize": "minigame result 1, canon_game_result 1 -> KG2_CLEAR_DEMO then KG2_GETDEMO; the item number is chosen by the stubbed daNpc_Kg2_c and KG2_GETDEMO's CREATEITEM carries no ItemNo property, so the prize is UNKNOWN",
      "bit": null,
-     "file": "src/d/actor/d_a_canon.cpp:414-417"
+     "file": "src/d/actor/d_a_canon.cpp:416-419"
     },
     {
      "when": "fewer than 5 hits, or the ten shots run out",
      "prize": "minigame result 2, canon_game_result 2 - no prize",
      "bit": null,
-     "file": "src/d/actor/d_a_canon.cpp:418-422"
+     "file": "src/d/actor/d_a_canon.cpp:420-423"
     }
    ],
    "register": null
@@ -877,9 +877,9 @@
   "sources": [
    "src/d/actor/d_a_canon.cpp:29-30",
    "src/d/actor/d_a_canon.cpp:117-150",
-   "src/d/actor/d_a_canon.cpp:172-198",
-   "src/d/actor/d_a_canon.cpp:244-352",
-   "src/d/actor/d_a_canon.cpp:353-447",
+   "src/d/actor/d_a_canon.cpp:173-199",
+   "src/d/actor/d_a_canon.cpp:244-351",
+   "src/d/actor/d_a_canon.cpp:352-447",
    "src/d/actor/d_a_canon.cpp:449-489",
    "src/d/actor/d_a_canon.cpp:521-576",
    "include/d/actor/d_a_canon.h:26, 59-78",
@@ -896,18 +896,18 @@
   "cost": "UNRECOVERABLE. daNpc_Sarace_c charges the fee and it is a stub. daGoal_Flag_c never touches rupees. Do not invent a price.",
   "rules": [
    "The race arms itself only on a start-code-1 entry: daGoal_Flag_c::_create checks strcmp(getStartStageName(), \"Ocean\") == 0 && getStartStagePoint() == 1. Ocean spawns 0 and 10 carry no such code, so those are the free practice sail-around (src/d/actor/d_a_goal_flag.cpp:562-594).",
-   "TIME LIMIT: 240 seconds minus 10 seconds per unit of event register 0xAAFF. The register is the difficulty level - each time the course is beaten it presumably rises, but NOTHING in src/ ever writes it (the only two hits for UNK_AAFF in the whole tree are this read and the enum definition), so the progression rule itself is not recoverable (src/d/actor/d_a_goal_flag.cpp:566-568, include/d/actor/d_a_goal_flag.h:24).",
+   "TIME LIMIT: 240 seconds minus 10 seconds per unit of event register 0xAAFF. The register is the difficulty level - each time the course is beaten it presumably rises, but NOTHING in src/ ever writes it (the only two hits for UNK_AAFF in the whole tree are this read and the enum definition), so the progression rule itself is not recoverable (src/d/actor/d_a_goal_flag.cpp:566-568, include/d/actor/d_a_goal_flag.h:21, 49).",
    "The timer is a dTimer_c created with fopMsgM_Timer_create(fpcNm_TIMER_e, 2, time_limit, 3, 0, 221, 439, 32, 419, NULL); the 3-2-1-GO overlay is a separate process, dMinigame_Starter_c, which loads the Mgst archive and the ship_race1.blo layout (src/d/actor/d_a_goal_flag.cpp:569-587, src/d/d_minigame_starter.cpp:1-4).",
-   "RaceStart drives the race_start_cam event through the Gflag staff's 00_dummy..04_dummy cuts, calls countStart() on cut index 1, starts the clock with timer_p->start(7) once the countdown says GO, and plays JA_BGM_SEA_GAME (src/d/actor/d_a_goal_flag.cpp:744-779).",
+   "RaceStart drives the race_start_cam event through the Gflag staff's 00_dummy..04_dummy cuts, calls countStart() on cut index 1, starts the clock with timer_p->start(7) once the countdown says GO, and plays JA_BGM_SEA_GAME (src/d/actor/d_a_goal_flag.cpp:745-780).",
    "THE COURSE IS WORTH EXACTLY 150 RUPEES. The 38 Ktarur barrels in Ocean decode (itemNo = params & 0x3F) to 20 barrels holding a Green Rupee (1), 11 holding a Yellow Rupee (10), 1 holding a Red Rupee (20) and 6 holding item 0x3F = nothing. 20*1 + 11*10 + 1*20 = 150, which is exactly l_HIO.mPerfectRupeeScore. The six empty barrels are type 2, the mine variant, and they are the ones that get a marker flag (prm_get_buoy() == 0) (out/rip/GZLE01/godot/stage_data.json:Ocean; include/d/actor/d_a_obj_barrel2.h:50-70; src/d/actor/d_a_obj_barrel2.cpp:272-296).",
    "Rupees are counted into the minigame counter, not the wallet: daRaceItem_c::raceItemGet maps green 1, blue 5, yellow 10, red 20, purple 50, orange 100, silver 200 into dComIfGp_plusMiniGameRupee (src/d/d_a_race_item_static.cpp:26-58).",
    "The finish line is a pair of path points: daGoal_Flag_c reads points 0 and 1 of the path named in params >> 16 into mGoalFlagPolePos[0..1] and remembers which side of that line the player started on (src/d/actor/d_a_goal_flag.cpp:550-600).",
-   "goal_check() returns +1 for crossing the line the right way and -1 for crossing it backwards. The FIRST correct crossing only sets mRaceEndState = 1 (it is the start line); the SECOND correct crossing ends the race - with 0 rupees collected it is a failure (state 2), otherwise a finish (state 3) (src/d/actor/d_a_goal_flag.cpp:795-810).",
-   "Three ways to lose, all ending at race_fail_cam: the clock reaching 0, crossing the line backwards, and crossing the finish having collected nothing. All three play JA_SE_SGAME_TIMER_0 or fall to minigame result 2 and BGM JA_BGM_SEA_FAIL (src/d/actor/d_a_goal_flag.cpp:795-840).",
-   "A finish is classified by rupees: fewer than mPerfectRupeeScore = 150 is finish_type 1, otherwise finish_type 2 = perfect. The MiniGameTerminater is created with (finish_type, remaining_time = getRestTimeMs()/10, rupees_collected) (src/d/actor/d_a_goal_flag.cpp:822-847).",
-   "The results camera can be skipped with A, B or START, but only after l_HIO.mEndCamEarlyFrame = 150 frames (5 seconds). Either way it ends with dComIfGp_setNextStage(\"sea\", 1, dIsleRoom_BoatingCourse_e) - back onto the dock in front of Sarace (src/d/actor/d_a_goal_flag.cpp:864-897).",
+   "goal_check() returns +1 for crossing the line the right way and -1 for crossing it backwards. The FIRST correct crossing only sets mRaceEndState = 1 (it is the start line); the SECOND correct crossing ends the race - with 0 rupees collected it is a failure (state 2), otherwise a finish (state 3) (src/d/actor/d_a_goal_flag.cpp:800-808).",
+   "Three ways to lose, all ending at race_fail_cam: the clock reaching 0, crossing the line backwards, and crossing the finish having collected nothing. All three play JA_SE_SGAME_TIMER_0 or fall to minigame result 2 and BGM JA_BGM_SEA_FAIL (src/d/actor/d_a_goal_flag.cpp:800-820).",
+   "A finish is classified by rupees: fewer than mPerfectRupeeScore = 150 is finish_type 1, otherwise finish_type 2 = perfect. The MiniGameTerminater is created with (finish_type, remaining_time = getRestTimeMs()/10, rupees_collected) (src/d/actor/d_a_goal_flag.cpp:826-847).",
+   "The results camera can be skipped with A, B or START, but only after l_HIO.mEndCamEarlyFrame = 150 frames (5 seconds). Either way it ends with dComIfGp_setNextStage(\"sea\", 1, dIsleRoom_BoatingCourse_e) - back onto the dock in front of Sarace (src/d/actor/d_a_goal_flag.cpp:869-899).",
    "A mid-race restart (falling out of the course) is special-cased in the player: daPy_lk_c::startRestartRoom sees minigame type 1, forces the same next stage, plays JA_SE_FORCE_BACK and writes ship_race_result = 3 (src/d/actor/d_a_player_main.cpp:10855-10866).",
-   "DELIBERATE INVERSION: _delete maps minigame result 1 (the ordinary finish) to ship_race_result 2 and result 2 (the failure) to ship_race_result 1, carrying the rupee count across in both cases. Do not 'fix' this when porting (src/d/actor/d_a_goal_flag.cpp:713-729)."
+   "DELIBERATE INVERSION: _delete maps minigame result 1 (the ordinary finish) to ship_race_result 2 and result 2 (the failure) to ship_race_result 1, carrying the rupee count across in both cases. Do not 'fix' this when porting (src/d/actor/d_a_goal_flag.cpp:713-730)."
   ],
   "constants": {
    "time_limit_seconds": {
@@ -966,19 +966,19 @@
      "when": "finish with 150 rupees (every rupee barrel emptied)",
      "prize": "finish_type 2 'perfect'; ship_race_result = 2 with ship_race_rupee = 150. What Sarace pays is UNKNOWN - he is a stub",
      "bit": null,
-     "file": "src/d/actor/d_a_goal_flag.cpp:824-826, 713-720"
+     "file": "src/d/actor/d_a_goal_flag.cpp:826-830, 718-721"
     },
     {
      "when": "finish with fewer than 150 rupees",
      "prize": "finish_type 1; ship_race_result = 2 with the collected count",
      "bit": null,
-     "file": "src/d/actor/d_a_goal_flag.cpp:824-826"
+     "file": "src/d/actor/d_a_goal_flag.cpp:826-830"
     },
     {
      "when": "time out, cross backwards, or finish with nothing",
      "prize": "finish_type 0; ship_race_result = 1",
      "bit": null,
-     "file": "src/d/actor/d_a_goal_flag.cpp:828-831, 721-724"
+     "file": "src/d/actor/d_a_goal_flag.cpp:831-834, 722-725"
     },
     {
      "when": "thrown out of the course mid-race",
@@ -1000,11 +1000,11 @@
   "confidence": "high for the timer, the scoring and the 150-rupee barrel total; low for the entry fee, the payout table and what raises the difficulty register",
   "sources": [
    "src/d/actor/d_a_goal_flag.cpp:550-600",
-   "src/d/actor/d_a_goal_flag.cpp:713-729",
-   "src/d/actor/d_a_goal_flag.cpp:744-779",
-   "src/d/actor/d_a_goal_flag.cpp:781-860",
-   "src/d/actor/d_a_goal_flag.cpp:864-897",
-   "include/d/actor/d_a_goal_flag.h:11-40",
+   "src/d/actor/d_a_goal_flag.cpp:713-730",
+   "src/d/actor/d_a_goal_flag.cpp:745-780",
+   "src/d/actor/d_a_goal_flag.cpp:783-866",
+   "src/d/actor/d_a_goal_flag.cpp:869-899",
+   "include/d/actor/d_a_goal_flag.h:11-60",
    "src/d/d_a_race_item_static.cpp:13-58",
    "src/d/actor/d_a_obj_barrel2.cpp:272-296",
    "include/d/actor/d_a_obj_barrel2.h:50-91",
@@ -1086,6 +1086,392 @@
    "include/d/d_save.h:318",
    "out/rip/GZLE01/godot/stage_data.json:sea",
    "out/rip/GZLE01/godot/events/sea.json:BMCON_NEXT, BMCON_END, BMCON_END2, BMCON_RESULT, BMCON_GET_ITEM, BirdStart, BirdLook"
+  ]
+ },
+ "salvage_corp": {
+  "name": "Salvage - hauling sunken treasure up with the Grappling Hook (the Salvage Corp's trade)",
+  "stage": "The whole Great Sea. 449 salvage markers are placed across stages sea / sea_r11 / sea_r44 under five object names, all mapping to fpcNm_Salvage_e (src/d/d_stage.cpp:535-540). The Salvage Corp's own barge is a daObjIkada_c ship type, not a game actor (src/d/actor/d_a_obj_ikada.cpp:1-4).",
+  "actor": "daSalvage_c, src/d/actor/d_a_salvage.cpp (one stub body out of 771 lines) plus its data class dSalvage_control_c, src/d/d_salvage.cpp - FULLY DECOMPILED. The chest that surfaces is daSTBox_c, src/d/actor/d_a_salvage_tbox.cpp - fully decompiled.",
+  "cost": "No rupee cost. The cost is equipment and time: the ship must be in crane mode with the Grappling Hook out (daShip_c::checkCraneMode()), and the hook has to be winched down past a depth threshold.",
+  "rules": [
+   "Salvage markers are registered into a single 160-slot table: 128 slots for sea-grid markers and 32 for room markers (dSalvage_control_c::MAX_SEA = 128, MAX_ROOM = 32, include/d/d_salvage.h:69-73). Markers are re-registered every time the room changes.",
+   "Marker parameters (src/d/d_salvage.cpp:12-20): kind = params >> 28, saveNo = params >> 20 & 0xFF, roomNo = params >> 12 & 0xFF, itemNo = params >> 4 & 0xFF, type = params & 0x0F, switchNo = home.angle.z & 0xFF, and for kind 0 the candidate index = home.angle.z & 0x03.",
+   "SIX KINDS, and they are the whole taxonomy of Wind Waker salvage (src/d/d_salvage.cpp:87-112, src/d/actor/d_a_salvage.cpp:276-340, 503-530):",
+   "  kind 0 - a Treasure Chart point. saveNo is the chart number 1..49 (validated 1..128). It only exists once the chart is opened and not yet completed; hauling it sets dComIfGs_onCompleteCollectMap(saveNo) and event bit 0x3E02. Triforce Charts additionally need dComIfGs_isCollectMapTriforce(itemNo - 0x60) before the point becomes active.",
+   "  kind 2 - a switch-gated point (saveNo validated 0..15). If the switch belongs to a Big Octo the marker is dragged to the octo's live position each frame; hauling it sets the ocean save bit.",
+   "  kind 3 - a plain sea point remembered by dComIfGs_onOceanSvBit(roomNo, saveNo).",
+   "  kind 4 - the same, but only active in daylight: clrFlag while dKy_daynight_check() != DAY, setFlag during the day.",
+   "  kind 5 - a blank. checkDistance keeps it as a LAST RESORT only, returning any other overlapping marker first, and checkOrder routes it to the SALVAGE_HAZURE ('miss') event instead of SALVAGE_GETITEM.",
+   "  kind 6 - a moon-gated point. Active only when !dKy_moon_type_chk() && dKyr_moon_arrival_check() && the matching bit in daSalvage_c::m_savelabel[saveNo] is clear; hauling it sets that bit rather than an ocean bit, and the marker is NOT re-initialised afterwards.",
+   "THE TREASURE-CHART POINTS ARE RANDOMISED PER SAVE FILE. Each of the 49 chart numbers is placed FOUR times, at four different spots, distinguished by home.angle.z & 0x03 = 0, 1, 2, 3. Only the candidate whose index equals dSv_player_info_c::mRandomSalvagePoint is registered at all; the other three are dropped in dSalvage_control_c::entry (src/d/d_salvage.cpp:13, 95-100; include/d/d_save.h:457-468). Cross-checked in the placement data: 47 charts have exactly 4 placements and 2 have 8.",
+   "REACH: the grapple's tip must be inside the marker's XZ radius AND at least a randomised depth below the water surface. checkArea uses l_salvage_depth = {1000, 1500, 2000} indexed by mRndDepthIdx, which is re-rolled as rnd(10000) % 3 every time the crane leaves every marker's XZ radius - so how deep you have to dig changes from attempt to attempt (src/d/actor/d_a_salvage.cpp:348-350, 442-463).",
+   "RADIUS AND HEIGHT come from the placement scale, per kind: kind 0 gets R = scale.x * 700 and H = scale.y * 1000; kind 5 gets R = scale.x * 500, H = scale.y * 1000; every other kind gets R = scale.x * 400, H = scale.y * 500 (src/d/d_salvage.cpp:125-138).",
+   "The proximity chime JA_SE_OBJ_SALVAGE_TAG plays within 5000 units of an active marker of an effect-bearing kind (src/d/actor/d_a_salvage.cpp:341-343).",
+   "Four outcomes are ordered depending on marker type and which way the crane is turned: type 1 splits on ship->getCraneAngle() < 0 into m2E9 1 or 2, and kinds 5 / types 0,2,3 into m2E9 3 or 4, selecting between SALVAGE_GETITEM, the left-hand variant, SALVAGE_HAZURE and the plain event (src/d/actor/d_a_salvage.cpp:353-372, 168-240).",
+   "The chest that comes up is fpcNm_SALVAGE_TBOX_e created with params (type << 8) | itemNo; it hands over the item with fopAcM_createItemForTrBoxDemo (src/d/actor/d_a_salvage.cpp:195-197; src/d/actor/d_a_salvage_tbox.cpp:217, 370, 440).",
+   "A blank can bite back: daSalvage_c::createEnemy() spawns an Octorok (fpcNm_OQ_e, subtype 2) on top of the player (src/d/actor/d_a_salvage.cpp:466-470; src/d/d_stage.cpp:806).",
+   "Ghost-ship style markers can be re-homed onto a moving daOship_c by matching switch numbers (onSalvageForOship, src/d/actor/d_a_salvage.cpp:473-499)."
+  ],
+  "constants": {
+   "table_slots": {
+    "value": {
+     "sea": 128,
+     "room": 32,
+     "total": 160
+    },
+    "file": "include/d/d_salvage.h:69-73"
+   },
+   "depth_thresholds_units": {
+    "value": [
+     1000.0,
+     1500.0,
+     2000.0
+    ],
+    "file": "src/d/actor/d_a_salvage.cpp:443",
+    "note": "picked by mRndDepthIdx = rnd(10000) % 3, re-rolled whenever the crane leaves every marker's XZ radius"
+   },
+   "radius_by_kind": {
+    "value": {
+     "kind0": "scale.x * 700",
+     "kind5": "scale.x * 500",
+     "other": "scale.x * 400"
+    },
+    "file": "src/d/d_salvage.cpp:125-138"
+   },
+   "height_by_kind": {
+    "value": {
+     "kind0": "scale.y * 1000",
+     "kind5": "scale.y * 1000",
+     "other": "scale.y * 500"
+    },
+    "file": "src/d/d_salvage.cpp:125-138"
+   },
+   "chime_distance_units": {
+    "value": 5000.0,
+    "file": "src/d/actor/d_a_salvage.cpp:341"
+   },
+   "chart_candidates_per_chart": {
+    "value": 4,
+    "file": "src/d/d_salvage.cpp:13, 89-95"
+   },
+   "draw_near_distances": {
+    "value": {
+     "outersea": 20.0,
+     "inside": 10.0,
+     "cmap": 80.0,
+     "disappear_frames": 20
+    },
+    "file": "src/d/actor/d_a_salvage.cpp:23-26"
+   },
+   "placement_census": {
+    "value": {
+     "Salvage_kind0_treasure_chart": {
+      "placements": 204,
+      "distinct_charts": 49,
+      "note": "4 candidate spots each, 2 charts placed 8 times"
+     },
+     "Salvag2_kind3_ocean_bit": {
+      "placements": 118,
+      "items": {
+       "red_rupee": 52,
+       "purple_rupee": 66
+      },
+      "saveNo_range": [
+       0,
+       15
+      ]
+     },
+     "SalvagE_kind5_blank": {
+      "placements": 76,
+      "itemNo": 255,
+      "saveNo": 255
+     },
+     "SalvagN_kind4_daytime_only": {
+      "placements": 35,
+      "items": {
+       "yellow_rupee": 7,
+       "red_rupee": 19,
+       "purple_rupee": 9
+      },
+      "saveNo_range": [
+       3,
+       10
+      ]
+     },
+     "SalvFM_kind6_moon_gated": {
+      "placements": 16,
+      "saveNo": "0..15 indexing daSalvage_c::m_savelabel",
+      "items": "Red Rupee everywhere except saveNo 4, which is a Purple Rupee"
+     },
+     "total": 449
+    },
+    "file": "out/rip/GZLE01/godot/stage_data.json (stages sea, sea_r11, sea_r44)"
+   },
+   "chart_prize_census": {
+    "value": {
+     "silver_rupee_200": 23,
+     "piece_of_heart": 11,
+     "green_rupee": 1,
+     "triforce_shard_1_to_8": 8,
+     "treasure_charts_53_to_58": 6,
+     "total_charts": 49
+    },
+    "file": "out/rip/GZLE01/godot/stage_data.json; item ids at include/d/d_item_data.h:22, 14, 8, 104-111, 204-209",
+    "note": "itemNo = params >> 4 & 0xFF. 0x61..0x68 are dItemNo_TRIFORCE1_e..TRIFORCE8_e; daSalvage_c subtracts 0x60 to get the shard number (src/d/actor/d_a_salvage.cpp:310-314)."
+   }
+  },
+  "rewards": {
+   "_storage": "Three different places depending on kind: kind 0 sets dComIfGs_onCompleteCollectMap(chartNo) in dSv_player_map_c::field_0x0[3] plus event bit 0x3E02; kinds 2, 3 and 4 set dComIfGs_onOceanSvBit(roomNo, saveNo) in dSv_ocean_c::field_0x0[50]; kind 6 sets the event bit daSalvage_c::m_savelabel[saveNo].",
+   "tiers": [
+    {
+     "when": "kind 0, a treasure-chart point",
+     "prize": "whatever the marker's itemNo says - 23 charts hold a Silver Rupee (200), 11 a Piece of Heart, 8 a Triforce Shard, 6 a Treasure Chart 53-58, 1 a Green Rupee",
+     "bit": "onCompleteCollectMap(saveNo) + 0x3E02",
+     "file": "src/d/actor/d_a_salvage.cpp:508-512"
+    },
+    {
+     "when": "kinds 2, 3, 4",
+     "prize": "a Red or Purple Rupee (Yellow on some kind-4 points), once per point",
+     "bit": "ocean save bit (roomNo, saveNo)",
+     "file": "src/d/actor/d_a_salvage.cpp:515-518"
+    },
+    {
+     "when": "kind 5",
+     "prize": "nothing - SALVAGE_HAZURE, and daSalvage_c::createEnemy may put an Octorok on your head",
+     "bit": null,
+     "file": "src/d/actor/d_a_salvage.cpp:466-470"
+    },
+    {
+     "when": "kind 6, moon-gated",
+     "prize": "a Red Rupee (Purple at saveNo 4)",
+     "bit": "daSalvage_c::m_savelabel[saveNo] - the table starts 0x2080, 0x2004, 0x2002, 0x2804, 0x2802, 0x2801, 0x2980, 0x2940, 0x3B01, 0x3C80, ...",
+     "file": "src/d/actor/d_a_salvage.cpp:520-522, src/d/d_com_static.cpp:115-125"
+    }
+   ],
+   "register": null
+  },
+  "story_steps": [],
+  "confidence": "high for the mechanics, the depth rule, the per-save randomisation and the placement census; medium for the mapping of type/kind onto the four SALVAGE_* events (one branch of checkOrder is the file's single stub)",
+  "sources": [
+   "src/d/d_salvage.cpp:12-160",
+   "src/d/d_salvage.cpp:190-240",
+   "src/d/actor/d_a_salvage.cpp:21-26",
+   "src/d/actor/d_a_salvage.cpp:69-86",
+   "src/d/actor/d_a_salvage.cpp:168-260",
+   "src/d/actor/d_a_salvage.cpp:268-375",
+   "src/d/actor/d_a_salvage.cpp:442-530",
+   "include/d/d_salvage.h:10-77",
+   "include/d/actor/d_a_salvage.h:10-121",
+   "src/d/actor/d_a_salvage_tbox.cpp:19, 217, 316, 370, 440",
+   "src/d/d_com_static.cpp:115-125",
+   "src/d/d_stage.cpp:535-540, 806",
+   "include/d/d_save.h:410-437, 457-468, 685-694",
+   "src/d/d_save.cpp:851-960, 1163-1183",
+   "out/rip/GZLE01/godot/stage_data.json (sea, sea_r11, sea_r44)"
+  ]
+ },
+ "savage_labyrinth": {
+  "name": "The Savage Labyrinth (the Outset Island fighting cave)",
+  "stage": "Three stages: Cave09, Cave10 and Cave11, each with 21 rooms (0..20) and 27 spawns. The decomp names them in as many words: 'Savage Labyrinth' at src/f_op/f_op_actor_mng.cpp:1242 and the same triple in the audio scene table at src/JAZelAudio/JAIZelScene.cpp:388-390.",
+  "actor": "There is no single labyrinth actor. The floor structure is placement: one Pitfall (daObj_Hole_c, OBJ_HOLE, src/d/actor/d_a_obj_hole.cpp - fully decompiled) per room, Ysdls00 warp lights (daWarpls_c, src/d/actor/d_a_warpls.cpp - ENTIRELY STUBBED) at the rest points, SW_C00 switch objects and, in Cave10 room 17, one ALLdie (daAlldie_c, src/d/actor/d_a_alldie.cpp - fully decompiled).",
+  "cost": "Free. No rupee cost exists anywhere for these stages.",
+  "rules": [
+   "A HARD RULE THAT IS EASY TO MISS: enemies in the Savage Labyrinth drop NOTHING. fopAcM_createIball returns fpcM_ERROR_PROCESS_ID_e immediately when the start stage name is Cave09, Cave10 or Cave11, before the drop roll is even made - so no hearts, no rupees, no arrows from anything you kill in there (src/f_op/f_op_actor_mng.cpp:1239-1244).",
+   "Each room holds exactly ONE Pitfall hole, and every single one of the 61 placed holes has exitIdx 0 with the model flag set. daObj_Hole_c::modeWait triggers when the player is within l_HIO.m08 * scale.x + mScaleLocal*10 of it, plays the DEFAULT_PITFALL event, and then calls dLib_setNextStageBySclsNum(0, current.roomNo) - i.e. the destination is SCLS entry 0 of the CURRENT ROOM's own dzr, not of the stage dzs (src/d/actor/d_a_obj_hole.cpp:96-136, 233-246).",
+   "That is why the floor chain does not appear in the ripped stage report: out/rip/GZLE01/stages/Cave09/Cave09_report.json:exits is empty because it lists stage-level SCLS only. Reading each room dzr's SCLS[0] would recover the exact floor order; that is the open lead for this minigame.",
+   "Hole census: Cave09 has a hole in all 21 rooms; Cave10 in rooms 0..19 (room 20 has the chest and a warp instead); Cave11 in rooms 0..9 and 11..20 (room 10 has a warp instead).",
+   "Cave10 room 17 is the only room in the three stages with an ALLdie: daAlldie_c polls fopAcM_myRoomSearchEnemy every frame, and once the room has been enemy-free for 65 consecutive frames it calls dComIfGs_onSwitch(params >> 8, roomNo). Everywhere else the 'clear the room to open the way' logic is not in a decompiled actor (src/d/actor/d_a_alldie.cpp:18-48, 68-80).",
+   "The Ysdls00 warp lights are the rest / bail-out points. Cave09 has them in rooms 0, 15 and 20; Cave10 in rooms 0, 15 and 20; Cave11 in rooms 0, 10, 15 and 20. Their params are 0x10FF01E0 (room 0 everywhere), 0x10FF01FF (the mid-stage ones), 0x10FF010C (Cave09 room 20) and 0x10FF000E (Cave10 room 20). daWarpls_c has no decompiled body at all, so this parameter layout is NOT decoded here; the raw values are recorded so a remake can match them later.",
+   "Room 0 of each stage carries no fight actors beyond a Piwa and a pot in Cave09 - it is the arrival room.",
+   "The rooms are otherwise pure enemy arenas: bonbori lamps (26 / 29 / 48), Zenfire flame jets (18 / 18 / 17), SW_C00 switch objects (11 / 12 / 9) and CmTrap spike traps (6, Cave10 only)."
+  ],
+  "constants": {
+   "stages": {
+    "value": [
+     "Cave09",
+     "Cave10",
+     "Cave11"
+    ],
+    "file": "src/f_op/f_op_actor_mng.cpp:1239-1244"
+   },
+   "rooms_per_stage": {
+    "value": 21,
+    "file": "out/rip/GZLE01/stages/Cave09/Cave09_report.json:rooms"
+   },
+   "no_enemy_drops": {
+    "value": true,
+    "file": "src/f_op/f_op_actor_mng.cpp:1239-1244"
+   },
+   "alldie_clear_delay_frames": {
+    "value": 65,
+    "file": "src/d/actor/d_a_alldie.cpp:32"
+   },
+   "pitfall_count": {
+    "value": {
+     "Cave09": 21,
+     "Cave10": 20,
+     "Cave11": 20
+    },
+    "file": "out/rip/GZLE01/godot/stage_data.json"
+   },
+   "warp_light_rooms": {
+    "value": {
+     "Cave09": [
+      0,
+      15,
+      20
+     ],
+     "Cave10": [
+      0,
+      15,
+      20
+     ],
+     "Cave11": [
+      0,
+      10,
+      15,
+      20
+     ]
+    },
+    "file": "out/rip/GZLE01/godot/stage_data.json"
+   },
+   "chest_item_decode": {
+    "value": "daTbox_c::getItemNo() = home.angle.z >> 8 & 0xFF; funcType = params & 0x7F; tboxNo = params >> 7 & 0x1F; swNo = params >> 12 & 0xFF",
+    "file": "include/d/actor/d_a_tbox.h:35-37, src/d/actor/d_a_tbox.cpp:398-404, 962"
+   },
+   "floor_numbering": {
+    "value": null,
+    "file": null,
+    "note": "NOT RECOVERABLE from src/. The stage order and the floor number each room corresponds to are carried in the per-room SCLS tables and in the stubbed daWarpls_c. Nothing in the decompilation states 'floor 30' or 'floor 50'."
+   }
+  },
+  "rewards": {
+   "_storage": "Ordinary treasure-chest storage (daTbox_c save flags), not an event register.",
+   "tiers": [
+    {
+     "when": "Cave09 room 20 - the deepest room of that stage",
+     "prize": "a tkrCTf chest holding dItemNo_COLLECT_MAP_06_e = 0xF9 (a chart)",
+     "bit": "chest params 0xFF20B586 -> funcType 6, tboxNo 9, swNo 11; rot.z = -1780 (0xF90C) so itemNo = 0xF9",
+     "file": "out/rip/GZLE01/godot/stage_data.json:Cave09; include/d/actor/d_a_tbox.h:35-37"
+    },
+    {
+     "when": "Cave10 room 20",
+     "prize": "a takara3 chest holding dItemNo_HEART_PIECE_e = 0x07",
+     "bit": "chest params 0xFF200600 -> funcType 0 (normal), tboxNo 12, swNo 0; rot.z = 1806 (0x070E) so itemNo = 0x07",
+     "file": "out/rip/GZLE01/godot/stage_data.json:Cave10"
+    },
+    {
+     "when": "Cave11",
+     "prize": "no chest is placed anywhere in Cave11",
+     "bit": null,
+     "file": "out/rip/GZLE01/godot/stage_data.json:Cave11"
+    }
+   ],
+   "register": null
+  },
+  "confidence": "high for the two chest contents, the no-drops rule and the room census; low for which real floor number each chest sits on, because the floor chain lives in per-room SCLS data this rip does not expose and in a fully stubbed warp actor",
+  "story_steps": [],
+  "sources": [
+   "src/f_op/f_op_actor_mng.cpp:1234-1250",
+   "src/JAZelAudio/JAIZelScene.cpp:388-390",
+   "src/d/actor/d_a_obj_hole.cpp:96-136, 233-246",
+   "src/d/actor/d_a_alldie.cpp:11-80",
+   "src/d/actor/d_a_warpls.cpp:9-75",
+   "src/d/actor/d_a_tbox.cpp:396-404, 955-975",
+   "include/d/actor/d_a_tbox.h:35-37",
+   "src/d/d_stage.cpp:481-499, 573, 813",
+   "out/rip/GZLE01/godot/stage_data.json:Cave09, Cave10, Cave11",
+   "out/rip/GZLE01/stages/Cave09/Cave09_report.json"
+  ]
+ },
+ "fishman_charts": {
+  "name": "The Fishmen - feeding bait to fill in the sea chart (and the ten-arrow Fishman game)",
+  "stage": "The Great Sea, one Fishman per sea grid: 49 NpcSo actors in stage sea, one more in sea_r44 and one in sea_r11, alongside 245 TagSo marker tags in sea (out/rip/GZLE01/godot/stage_data.json). 49 is exactly dIsleIdx_COUNT_e (include/d/d_save.h:407).",
+  "actor": "daNpc_So_c, src/d/actor/d_a_npc_so.cpp - 72 stub bodies out of 450 lines. Its helper tag daTag_So_c (src/d/actor/d_a_tag_so.cpp) IS fully decompiled but holds only a volume, no rules.",
+  "cost": "One piece of bait per Fishman. The bait is carried in the Bait Bag (dItemNo_BAIT_BAG_e = 0x2C); daNpc_So_c::_searchEsa() is the function that looks for it, and it is a stub, so how many pieces are consumed is not stated in src/.",
+  "rules": [
+   "RULES LARGELY UNRECOVERABLE - daNpc_So_c is a stub. What follows is the storage and the wiring, which ARE recoverable, plus an honest list of what is not.",
+   "THE SEA CHART STORAGE: dSv_player_map_c::mFmapBits[dIsleIdx_COUNT_e] is one byte per sea grid, 49 grids. Bit 0 is set by onSaveArriveGrid(no) and read by isSaveArriveGrid(no); bit 1 is the separate GBA-link copy set by onSaveArriveGridForAgb (include/d/d_save.h:425-432, src/d/d_save.cpp:929-960). The array is the per-quadrant 'this square of the chart is filled in' state, and it has six spare bits per grid.",
+   "NOTHING IN THE DECOMPILED TREE CALLS onSaveArriveGrid OR onFmapBit for gameplay. The only caller of anything in that family is d_map.cpp:1796 -> onSaveArriveGridForAgbUseGridPos, the GBA link. Whatever the Fishman writes when he draws in your chart is inside the stub. Do not invent a bit index.",
+   "The Fishman's talk-and-feed sequence is visible only as symbol names: _searchEsa (find the bait), _searchTagSo / _searchMinigameTagSo (find his marker volumes), modeEventEsaInit/modeEventEsa (eat), modeEventMapopenInit/modeEventMapopen (draw the chart), modeEventBowInit/modeEventBow (the bow game), modeGetRupeeInit/modeGetRupee, modeEventTriForceInit/modeEventTriForce (include/d/actor/d_a_npc_so.h:19-77).",
+   "THE TEN-ARROW GAME. include/d/actor/d_a_npc_so.h:15 defines getMiniGameRestArrow() { return 10 - mB78; }, so mB78 counts arrows used and the allowance is 10. src/d/d_meter.cpp:2472-2482 draws it: while dComIfGp_getMiniGameType() == 8 it finds the NPC_SO actor, hides the tens pane when the count is below 10 and always shows the units pane. No decompiled code ever calls startMiniGame(8), and the whole cutMiniGame* family (cutMiniGameStart, cutMiniGameWaitProc, cutMiniGamePlTurnProc, cutMiniGamePlUpProc, cutMiniGameWarpProc, cutMiniGameReturnProc, cutMiniGameEndProc, include/d/actor/d_a_npc_so.h:102-115) is stubbed, so the scoring, the targets and the prize are all invisible.",
+   "TagSo marker volumes ARE decoded: params bits 0-7 are the marker id, bits 8-15 a radius multiplied by 100 (0xFF meaning the default 1600), bits 16-23 a mode byte where 1 draws a debug fan of half-angle 0x3500 around shape_angle.y. The actor has no execute logic at all - it is pure data for the Fishman to find (src/d/actor/d_a_tag_so.cpp:40-63).",
+   "245 TagSo against 49 Fishmen is about five markers per Fishman - consistent with _searchTagSo picking a swim target and _searchMinigameTagSo picking a game target, but that mapping is not stated anywhere."
+  ],
+  "constants": {
+   "fishmen_count": {
+    "value": 49,
+    "file": "out/rip/GZLE01/godot/stage_data.json:sea",
+    "note": "= dIsleIdx_COUNT_e, one per sea grid; plus one each in sea_r11 and sea_r44"
+   },
+   "tagso_count": {
+    "value": 245,
+    "file": "out/rip/GZLE01/godot/stage_data.json:sea"
+   },
+   "tagso_default_radius": {
+    "value": 1600.0,
+    "file": "src/d/actor/d_a_tag_so.cpp:50-55"
+   },
+   "tagso_fan_half_angle": {
+    "value": "0x3500",
+    "file": "src/d/actor/d_a_tag_so.cpp:27"
+   },
+   "minigame_arrow_allowance": {
+    "value": 10,
+    "file": "include/d/actor/d_a_npc_so.h:15"
+   },
+   "minigame_type_id": {
+    "value": 8,
+    "file": "src/d/d_meter.cpp:2472"
+   },
+   "chart_storage": {
+    "value": "dSv_player_map_c::mFmapBits[49], bit 0 = arrived/filled, bit 1 = GBA copy",
+    "file": "include/d/d_save.h:425-433, src/d/d_save.cpp:929-960"
+   },
+   "bait_cost": {
+    "value": null,
+    "file": null,
+    "note": "NOT RECOVERABLE - _searchEsa is a stub."
+   },
+   "chart_fill_writer": {
+    "value": null,
+    "file": null,
+    "note": "NOT RECOVERABLE - no gameplay caller of onSaveArriveGrid / onFmapBit exists in src/."
+   }
+  },
+  "rewards": {
+   "_storage": "dSv_player_map_c::mFmapBits[49] for the chart squares; nothing else is tied to the Fishmen anywhere in src/.",
+   "tiers": [
+    {
+     "when": "feed a Fishman bait",
+     "prize": "he fills in that quadrant of the sea chart (event SO_MAPOPEN) and, per the story data, may hand over rupees (modeGetRupee)",
+     "bit": "a bit of mFmapBits[grid] - which one is not recoverable",
+     "file": "include/d/actor/d_a_npc_so.h:60-63, 73-74"
+    },
+    {
+     "when": "the ten-arrow Fishman game",
+     "prize": "UNKNOWN - every cutMiniGame* body is a stub and nothing calls startMiniGame(8)",
+     "bit": null,
+     "file": "include/d/actor/d_a_npc_so.h:102-115"
+    }
+   ],
+   "register": null
+  },
+  "story_steps": [
+   "mg_fishman_chart",
+   "mg_fishman_bow"
+  ],
+  "confidence": "high for the storage layout, the actor census and the ten-arrow allowance; low for everything the Fishman actually does, because the actor is a stub",
+  "sources": [
+   "src/d/actor/d_a_npc_so.cpp:1-4",
+   "include/d/actor/d_a_npc_so.h:9-130",
+   "src/d/actor/d_a_tag_so.cpp:10-63",
+   "src/d/d_meter.cpp:2465-2485",
+   "include/d/d_save.h:355-433",
+   "src/d/d_save.cpp:851-960",
+   "src/d/d_map.cpp:152-155, 1796",
+   "include/d/d_item_data.h:51",
+   "out/rip/GZLE01/godot/stage_data.json:sea, sea_r11, sea_r44"
   ]
  }
 }
