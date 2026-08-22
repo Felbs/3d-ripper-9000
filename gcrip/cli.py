@@ -352,7 +352,13 @@ def cmd_godot(args: argparse.Namespace) -> int:
         out_dir=Path(args.out) if args.out else None,
         quiet=args.quiet,
         renderer=args.renderer,
-        hdri=Path(args.hdri) if args.hdri else None,
+        hdri={
+            k: Path(v)
+            for k, v in {
+                "day": args.hdri, "sunset": args.hdri_sunset, "night": args.hdri_night
+            }.items()
+            if v
+        } or None,
     )
     return 0
 
@@ -543,9 +549,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument(
         "--hdri", default=None,
-        help="a Radiance .hdr to light outdoor stages with; the sun is found in it and the"
-        " shadow light pointed there",
+        help="daytime HDR to light outdoor stages with (hidden behind a stylised sky; used for"
+        " ambient and reflections only). The visible sun tracks the game clock.",
     )
+    p.add_argument("--hdri-sunset", default=None, help="HDR used at dawn/dusk")
+    p.add_argument("--hdri-night", default=None, help="HDR used at night")
     p.add_argument("-q", "--quiet", action="store_true")
     p.set_defaults(fn=cmd_godot)
 

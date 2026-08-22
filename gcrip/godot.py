@@ -8275,6 +8275,43 @@ func _physics_process(_delta: float) -> void:
     Game.run_event(ev)
 """
 
+_SKYDOME_SHADER = """shader_type spatial;
+render_mode unshaded, cull_front, depth_draw_never;
+// gcrip: the visible sky - a WW-style gradient with a sun disc at the game's own sun.  It is a
+// skybox (the vertex trick pins it to the far plane), so it hides the HDR environment behind it
+// while the HDR keeps lighting and reflecting.  The sun here is the DirectionalLight's direction,
+// so the painted sun and the cast shadows always agree, and both track the clock.
+
+uniform vec3 zenith : source_color = vec3(0.20, 0.45, 0.75);
+uniform vec3 horizon : source_color = vec3(0.75, 0.85, 0.92);
+uniform vec3 ground : source_color = vec3(0.30, 0.34, 0.40);
+uniform vec3 sun_travel = vec3(0.0, -1.0, 0.0);   // direction the light travels
+uniform vec3 sun_color : source_color = vec3(1.0, 0.96, 0.86);
+uniform float sun_size = 0.007;    // angular radius, cos space
+uniform float nits = 8000.0;
+
+varying vec3 dir;
+
+void vertex() {
+    dir = normalize(VERTEX);
+    vec4 clip = PROJECTION_MATRIX * MODELVIEW_MATRIX * vec4(VERTEX, 1.0);
+    POSITION = clip.xyww;          // z = w -> farthest depth, always behind the scene
+}
+
+void fragment() {
+    float y = dir.y;
+    vec3 sky = y > 0.0
+        ? mix(horizon, zenith, pow(clamp(y, 0.0, 1.0), 0.5))
+        : mix(horizon, ground, clamp(-y * 4.0, 0.0, 1.0));
+    vec3 sun_pos = -normalize(sun_travel);
+    float d = dot(dir, sun_pos);
+    float disc = smoothstep(1.0 - sun_size, 1.0 - sun_size * 0.25, d);
+    float glow = pow(max(d, 0.0), 6.0) * 0.25 + pow(max(d, 0.0), 64.0) * 0.6;
+    ALBEDO = vec3(0.0);
+    EMISSION = (sky + sun_color * (disc * 4.0 + glow)) * nits;
+}
+"""
+
 _OCEAN_SHADER = """shader_type spatial;
 render_mode cull_disabled, depth_draw_opaque, unshaded;
 // gcrip: the Great Sea surface.  The wave sum is daSea_packet_c's, with the four wave rows
@@ -9118,8 +9155,17 @@ func _spawn_flame_lights() -> void:
 var sun: DirectionalLight3D = null
 var env_node: WorldEnvironment = null
 var outdoors := true
-var hdri_sun := Vector3.ZERO     # the map's sun direction when an HDRI lights the stage
-var hdri_ratio := 0.0
+var hdri_slots: Dictionary = {}   # slot -> {file, sun_elev_deg, sun_to_sky}
+var dome: MeshInstance3D = null
+var dome_mat: ShaderMaterial = null
+var current_slot := ""
+
+# the WW-ish palette for the visible sky, by slot: [zenith, horizon, ground, sun]
+const SKY_PALETTE := {
+    "day":    [Color(0.20, 0.45, 0.78), Color(0.74, 0.85, 0.93), Color(0.32, 0.36, 0.42), Color(1.0, 0.97, 0.88)],
+    "sunset": [Color(0.16, 0.20, 0.42), Color(0.98, 0.55, 0.28), Color(0.30, 0.24, 0.26), Color(1.0, 0.66, 0.36)],
+    "night":  [Color(0.02, 0.03, 0.10), Color(0.09, 0.12, 0.24), Color(0.04, 0.05, 0.10), Color(0.75, 0.82, 1.0)],
+}
 
 func _setup_lighting() -> void:
     sun = get_node_or_null("Sun")
@@ -9133,27 +9179,15 @@ func _setup_lighting() -> void:
     if env == null:
         return
     env.sdfgi_enabled = Game.gi_on and outdoors
-    # an HDRI dropped next to project.godot wins over the simulated atmosphere
-    for cand in ["res://sky.hdr", "res://sky.exr"]:
-        if ResourceLoader.exists(cand):
-            var pano := PanoramaSkyMaterial.new()
-            pano.panorama = load(cand)
-            # physical units: the map's radiance is relative, so scale its mean sky to a
-            # clear-day sky luminance (about 8,000 nits) - the sun's own disc then lands near
-            # the right brightness through the measured sun-to-sky ratio
-            env.sky.sky_material = pano
-            var mf := FileAccess.open("res://sky.json", FileAccess.READ)
-            if mf:
-                var meta = JSON.parse_string(mf.get_as_text())
-                if meta is Dictionary:
-                    var sd: Array = meta.get("sun_dir", [])
-                    if sd.size() == 3:
-                        hdri_sun = Vector3(float(sd[0]), float(sd[1]), float(sd[2])).normalized()
-                    hdri_ratio = float(meta.get("sun_to_sky", 0.0))
-                    print("gcrip light: HDRI ", meta.get("source", cand), " - sun from ",
-                        hdri_sun, ", ", int(hdri_ratio), "x the sky mean")
-            pano.energy_multiplier = 8000.0
-            break
+    # the HDR lights the world (ambient + reflection); a stylised sky dome hides it as the
+    # background, and the visible sun is the game's own, tracked by the clock
+    var mf := FileAccess.open("res://sky.json", FileAccess.READ)
+    if mf:
+        var meta = JSON.parse_string(mf.get_as_text())
+        if meta is Dictionary:
+            hdri_slots = meta.get("slots", {})
+    if outdoors and not hdri_slots.is_empty():
+        _build_skydome()
     if not outdoors:
         # a dungeon has no sky: a fill so the lit looks are not pitch black, and the sky's
         # ambient kept out of the room.  Physical units: these are lux / nits, not 0..1.
@@ -9170,20 +9204,52 @@ func _setup_lighting() -> void:
     print("gcrip light: ", "outdoor" if outdoors else "indoor", " rig in ", name,
         " (", kind, ")")
 
+func _slot_for_hour(h: float) -> String:
+    if h < 5.5 or h >= 19.0:
+        return "night"
+    if h < 7.5 or h >= 17.0:
+        return "sunset"
+    return "day"
+
+func _build_skydome() -> void:
+    dome_mat = ShaderMaterial.new()
+    dome_mat.shader = load("res://skydome.gdshader")
+    var sphere := SphereMesh.new()
+    sphere.radius = 1.0
+    sphere.height = 2.0
+    sphere.radial_segments = 32
+    sphere.rings = 16
+    sphere.material = dome_mat
+    dome = MeshInstance3D.new()
+    dome.name = "SkyDome"
+    dome.mesh = sphere
+    dome.extra_cull_margin = 16384.0
+    dome.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    add_child(dome)
+    print("gcrip light: sky dome up; HDR slots ", hdri_slots.keys())
+
+func _apply_slot(slot: String) -> void:
+    if slot == current_slot or not (env_node and env_node.environment):
+        return
+    current_slot = slot
+    var env: Environment = env_node.environment
+    # the HDR for this slot lights and reflects (hidden behind the dome)
+    if hdri_slots.has(slot):
+        var f := "res://" + str(hdri_slots[slot].get("file", ""))
+        if ResourceLoader.exists(f):
+            var pano := PanoramaSkyMaterial.new()
+            pano.panorama = load(f)
+            pano.energy_multiplier = 8000.0 if slot == "day" else (3000.0 if slot == "sunset" else 300.0)
+            env.sky.sky_material = pano
+    if dome_mat and SKY_PALETTE.has(slot):
+        var pal: Array = SKY_PALETTE[slot]
+        dome_mat.set_shader_parameter("zenith", pal[0])
+        dome_mat.set_shader_parameter("horizon", pal[1])
+        dome_mat.set_shader_parameter("ground", pal[2])
+        dome_mat.set_shader_parameter("sun_color", pal[3])
+
 func _light_tick() -> void:
     if sun == null or not outdoors:
-        return
-    if hdri_sun != Vector3.ZERO:
-        # an HDRI is measured light: its sun dictates the shadows, the clock does not.  The
-        # key-to-fill balance follows the map's own sun-to-sky ratio.
-        sun.global_transform = Transform3D(Basis.looking_at(hdri_sun, Vector3.UP),
-            Vector3(0, 10000, 0))
-        var el := rad_to_deg(asin(clampf(-hdri_sun.y, -1.0, 1.0)))
-        var low := clampf(1.0 - el / 60.0, 0.0, 1.0)
-        sun.light_temperature = lerpf(5800.0, 2800.0, pow(low, 1.5))
-        sun.light_intensity_lux = clampf(8000.0 * hdri_ratio * 0.1, 10000.0, 100000.0)
-        Game.sun_direction = hdri_sun
-        Game.scene_nits = sun.light_intensity_lux * 1.2 / PI
         return
     # the sun's arc from the clock: 06:00 on the eastern horizon, noon overhead, 18:00 west;
     # a warm colour temperature near the horizon and white at noon.  Same direction is pushed
@@ -9206,6 +9272,11 @@ func _light_tick() -> void:
     Game.sun_direction = dir
     # what a lit white reads as right now; the sky adds roughly a fifth on top of the sun
     Game.scene_nits = maxf(sun.light_intensity_lux, 150.0) * 1.2 / PI
+    if not hdri_slots.is_empty():
+        _apply_slot(_slot_for_hour(h))
+    if dome_mat:
+        dome_mat.set_shader_parameter("sun_travel", dir)
+        dome_mat.set_shader_parameter("nits", Game.scene_nits)
 
 
 
@@ -10926,44 +10997,36 @@ def _godot_glb(stage_gltf: Path, out_glb: Path, *, suffix_rooms: bool = True) ->
     return n_col
 
 
-def _write_hdri(out_dir: Path, hdri: Path | None) -> None:
-    """Copy the map in as sky.hdr and write sky.json with where its sun is."""
+def _write_hdri(out_dir: Path, hdri: dict | None) -> None:
+    """Write sky_<slot>.hdr for each slot and sky.json describing them all."""
     import shutil
 
-    dst = out_dir / "sky.hdr"
-    meta = out_dir / "sky.json"
-    if hdri is None:
-        return
-    if not hdri.exists():
-        print(f"  hdri: {hdri} not found")
+    if not hdri:
         return
     from gcrip.formats import hdr as hdr_mod
 
-    try:
-        img = hdr_mod.parse(hdri.read_bytes())
-        direction, peak, ratio = img.sun()
-        shutil.copyfile(hdri, dst)
-        meta.write_text(
-            json.dumps(
-                {
-                    "source": hdri.name,
-                    "width": img.width,
-                    "height": img.height,
-                    "sun_dir": [round(v, 5) for v in direction],
-                    "sun_peak": peak,
-                    "sun_to_sky": ratio,
-                },
-                indent=1,
-            ),
-            encoding="utf-8",
-        )
-        el = math.degrees(math.asin(-direction[1]))
-        print(
-            f"  hdri: {hdri.name} {img.width}x{img.height}, sun {el:.0f} deg up, "
-            f"{ratio:.0f}x the sky mean -> sky.hdr + sky.json"
-        )
-    except Exception as exc:
-        print(f"  hdri not written: {exc}")
+    slots = {}
+    for slot, path in hdri.items():
+        if not path.exists():
+            print(f"  hdri {slot}: {path} not found")
+            continue
+        try:
+            img = hdr_mod.parse(path.read_bytes())
+            direction, peak, ratio = img.sun()
+            shutil.copyfile(path, out_dir / f"sky_{slot}.hdr")
+            el = math.degrees(math.asin(max(-1.0, min(1.0, -direction[1]))))
+            slots[slot] = {
+                "source": path.name,
+                "file": f"sky_{slot}.hdr",
+                "sun_dir": [round(v, 5) for v in direction],
+                "sun_elev_deg": round(el, 1),
+                "sun_to_sky": round(ratio, 1),
+            }
+            print(f"  hdri {slot}: {path.name} sun {el:.0f} deg up -> sky_{slot}.hdr")
+        except Exception as exc:
+            print(f"  hdri {slot} not written: {exc}")
+    if slots:
+        (out_dir / "sky.json").write_text(json.dumps({"slots": slots}, indent=1), encoding="utf-8")
 
 
 def _write_ies(out_dir: Path) -> None:
@@ -11563,7 +11626,7 @@ def export_godot(
     out_dir: Path | None = None,
     quiet: bool = False,
     renderer: str = "forward_plus",
-    hdri: Path | None = None,
+    hdri: dict | None = None,
 ) -> dict:
     t0 = time.monotonic()
     rip_dir = Path(rip_dir)
@@ -11723,6 +11786,7 @@ def export_godot(
     _write_particles(rip_dir, out_dir)
     (out_dir / "fx.gdshader").write_text(_FX_SHADER, encoding="utf-8")
     (out_dir / "ocean.gdshader").write_text(_OCEAN_SHADER, encoding="utf-8")
+    (out_dir / "skydome.gdshader").write_text(_SKYDOME_SHADER, encoding="utf-8")
     _write_ies(out_dir)
     _write_hdri(out_dir, hdri)
     _write_toon_ramp(rip_dir, out_dir)
