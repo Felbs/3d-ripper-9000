@@ -42,8 +42,9 @@ IMPLEMENTED = {
                " two-body proximity and the facing test, with a real ERROR branch",
     "npc_tag": "actors/npc_tag.gd - a volume that box-tests one named NPC and never the player."
                " Wired end to end, but not yet seen to fire in an integration test",
-    "hit": "actors/hit_object.gd - take_hit stages that each order an event. The one mined case"
-           " cannot fire: the Ajav wall is absent from the ripped placement data",
+    "hit": "actors/hit_object.gd - take_hit stages that each order an event, positioned from"
+           " the stage's own placement records. Verified: the Ajav wall over Jabun's cave"
+           " breaks in three stages, ajav_destroy0 -> ajav_destroy1 -> ajav_uzu",
 }
 
 # An enemy the mined data names but enemies.json has no profile for is never wrapped, so its
@@ -132,6 +133,14 @@ def step_status(step: dict, scenes: dict[str, set[str]] | None) -> tuple[str, st
             return "partial", f"stage '{step.get('stage')}' is not in the build"
         if ev and ev not in scenes[key]:
             return "missing", f"no TagEv in {key} orders '{ev}'"
+    if kind == "hit" and not isinstance(step.get("hit"), dict):
+        # the mechanism is real, but hit_object.gd is handed a structured block (actor, events,
+        # min_damage, room) built by _STORY_HIT; a step mined with its geometry only in the
+        # trigger prose has nothing to spawn
+        return "partial", (
+            "the mechanism works, but this step has no structured hit block, so nothing"
+            " is spawned for it"
+        )
     if kind in ("defeat", "boss", "enemy_defeat"):
         missing_actor = unwrapped_enemy(step, read(BUILD / "enemies.json", {}) or {})
         if missing_actor:

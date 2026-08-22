@@ -1,0 +1,1879 @@
+{
+ "_source": "Mined read-only from the zeldaret/tww decompilation at Z:/memRip/sources/tww and from the retail GZLE01 disc image (placement chunks read straight out of res/Stage/<stage>/Stage.arc:stage.dzs and Room<N>.arc:room.dzr with gcrip.formats.dzs, so LOGIC actors that out/rip/GZLE01/stages/*_report.json drops are included here). Area: the caves, labyrinths and puzzle grottoes - Cave03, Cave05, Cave06, Cave07, Cave09+Cave10+Cave11 (the Savage Labyrinth), TyuTyu, MiniHyo (Ice Ring Isle), MiniKaz (Fire Mountain), SubD42 (Needle Rock Isle), SubD43 (Angular Isles), SubD71 (Boating Course), TF_02, TF_03, TF_04 (Cabana Labyrinth), TF_05, TF_07, WarpD (Diamond Steppe Island). Same schema and conventions as ww_story_fortress.json. This file is the PUZZLE half of the area: gcrip/data/ww_story_caves.json already models the two generic cave patterns (the enemies-cleared chest 'cave_clear_room' and the switch/TACT chest 'cave_switch_chest') plus the chest/item storage rules, and those are cross-referenced rather than repeated. Save-slot facts are taken from gcrip/data/ww_dungeons.json and not re-derived. Almost nothing in this area is an event bit: the two exceptions (0x1901 and 0x1902) are the Ice Ring Isle / Fire Mountain 'the ice stays melted forever' flags, and everything else lives in dSv_memBit_c::mTbox and mSwitch for the stage's save slot.",
+ "_corrections": {
+  "note": "Three things stated in gcrip/data/ww_story_caves.json can now be settled with hard data. Recorded here so the next miner does not have to re-derive them; the caves file itself was NOT edited.",
+  "cave_entry": "Its step 'cave_entry' is marked low and says the entrance record could not be recovered. It can: every secret cave in the game is entered through a `Pitfall` actor placed in the sea room. d_stage.cpp:813 maps the placement name \"Pitfall\" to fpcNm_OBJ_HOLE_e subtype 1, i.e. daObj_Hole_c - exactly the actor the caves file guessed at under the archive name 'Aana'. It reads mExitIdx = params & 0xFF (src/d/actor/d_a_obj_hole.cpp:230-247) and, when DEFAULT_PITFALL ends, calls dLib_setNextStageBySclsNum(mExitIdx, current.roomNo) (src/d/actor/d_a_obj_hole.cpp:120-135), which resolves against the ROOM's SCLS table, not the stage's - which is why the stage-level export showed nothing. Every pairing is in _instances.grottoes below, read out of the room.dzr files.",
+  "cave_switch_chest": "Its step 'cave_switch_chest' says 'What turns the switch on is the room's own puzzle or gauntlet and is not recorded in the placement data the miner reads.' For every type-6 TACT chest in the area it IS recorded: an SWtact / SWtactB actor (fpcNm_SW_TACT_e, d_stage.cpp:635-636) sits on the Triforce platform carrying the same switch number, and turns it on when Link conducts the song its 'answer' field names. All four in this area answer 0 = the Wind's Requiem. See step triforce_platform_song.",
+  "savage_labyrinth": "Its step 'savage_labyrinth' infers the segment order from the reward layout and concludes 'Cave10 is the first stretch, Cave11 the middle, Cave09 the last'. That is wrong. sea room 44 (Outset) SCLS entry 8 is ('Cave09', 0, 0) and the room's Pitfall at (-208621, 2250, 317729) carries params 0x00FF0008, i.e. exit index 8 - so the labyrinth STARTS in Cave09 room 0, which is also the only one of the three room 0s that holds the Piwa stone tablet reading 'The Savage Labyrinth / Deep in the never-ending darkness, the way to the Golden Shard you seek awaits' (message 837). Following the per-room SCLS chains gives exactly 50 floors; see step savage_labyrinth_descent and _instances.savage_labyrinth."
+ },
+ "_bits": {
+  "0x1901": {
+   "dec": 6401,
+   "byte_mask": [
+    25,
+    1
+   ],
+   "meaning": "ICE RING ISLE IS PERMANENTLY THAWED. Raised by daTagvolcano::Act_c the moment it sees the Ice Ring Isle chest already opened (dComIfGs_isTbox(prm_get_bitTRB()) with bitTRB = 1). Once it is set the type-0 VolTag standing in sea room 40 turns the ice switch on at create time instead of off, so the icy clouds (GiceL) never re-form and the cave can be entered freely with no timer.",
+   "set_by": "src/d/actor/d_a_tag_volcano.cpp:136 (daTagvolcano::Act_c::_execute, mType != 1 branch)",
+   "read_by": [
+    "src/d/actor/d_a_tag_volcano.cpp:44"
+   ],
+   "confidence": "high"
+  },
+  "0x1902": {
+   "dec": 6402,
+   "byte_mask": [
+    25,
+    2
+   ],
+   "meaning": "FIRE MOUNTAIN IS PERMANENTLY EXTINGUISHED. The twin of 0x1901, raised when the Fire Mountain chest (bitTRB = 0) is already open. It does two things: the type-0 VolTag in sea room 20 forces the volcano switch on at create so Ykzyg stays frozen with no timer, and daObjYboil_c::_create returns cPhs_STOP_e - the field of boiling geysers around Fire Mountain never loads again.",
+   "set_by": "src/d/actor/d_a_tag_volcano.cpp:134 (daTagvolcano::Act_c::_execute, mType == 1 branch)",
+   "read_by": [
+    "src/d/actor/d_a_tag_volcano.cpp:35",
+    "src/d/actor/d_a_obj_Yboil.cpp:89"
+   ],
+   "confidence": "high"
+  },
+  "0xA207": {
+   "dec": 41479,
+   "byte_mask": [
+    162,
+    7
+   ],
+   "meaning": "NOT A BIT - an event REGISTER. Byte 162 of dSv_event_c::mFlags, mask 0x07, i.e. a 3-bit counter. daObj_Warpt_c uses six of these (0xA207, 0xA107, 0xA007, 0x9F07, 0xA307, 0xA407, indexed by its m2B8 group field) as the 'which special warp pot have you already used' memory, through onWarpBit / isWarpBit. NONE of the six is touched by any pot in my area: every Warpt/Warpnt in WarpD is a plain type 0 or 1, and only types 2/3/4 (isSp()) read m2B8. Documented because the warp-pot actor is modelled here and a remake will hit these registers on Forsaken Fortress / Ganon's Tower pots.",
+   "set_by": "src/d/actor/d_a_obj_warpt.cpp:285-289 (onWarpBit)",
+   "read_by": [
+    "src/d/actor/d_a_obj_warpt.cpp:292-295",
+    "src/d/actor/d_a_obj_warpt.cpp:554-582"
+   ],
+   "confidence": "high"
+  }
+ },
+ "_actors": {
+  "VolTag": {
+   "name": "Tag - Volcano (the Ice Ring / Fire Mountain timer)",
+   "file": "src/d/actor/d_a_tag_volcano.cpp",
+   "profile": "d_stage.cpp:973 OBJNAME(\"VolTag\", fpcNm_Tag_Volcano_e, 255, 0)",
+   "param_decode": {
+    "rule": "include/d/actor/d_a_tag_volcano.h:10-24 - bitTRB = params & 0x3F, type = (params >> 6) & 3, swSave = (params >> 8) & 0xFF, timer = (params >> 16) & 0xFF. The timer value is multiplied by 10 and handed to dTimer_createTimer as SECONDS (dTimer_c::_create does mLimitTime = OSSecondsToTicks(prm->mLimitTimeMs), src/d/d_timer.cpp:98).",
+    "confidence": "high"
+   },
+   "types": {
+    "0": "the SEA-side half. Placed in the island's sea room. On create it consults 0x1902 (Fire Mountain) / 0x1901 (Ice Ring) and forces its switch on if the cave is already beaten, or on for 10 frames if the player is restarting from a death in that room (dComIfGs_getStartPoint() == 2), else off. While the switch is on it waits for the event FREEZE_VOLCANO / MELT_ICE to end, then calls dTimer_createTimer(3, timer * 10, 1, 0, 221, 439, 32, 419). When the timer hits zero it plays JA_SE_ISLE_TIMER_0, shakes the pad, turns its switch OFF (which re-freezes / re-ignites the island) and deletes the timer.",
+    "1": "the CAVE-side half inside MiniKaz. Watches dComIfGs_isTbox(bitTRB); on success it deletes the timer and raises 0x1902. Otherwise, when the timer runs out, it orders the event TAG_VOLCANO and on demo-accept calls dComIfGp_setNextStage(\"sea\", 2, dIsleRoom_FireMountain_e).",
+    "2": "the CAVE-side half inside MiniHyo. Identical but raises 0x1901 and returns to dIsleRoom_IceRingIsle_e."
+   },
+   "timer_survives_the_stage_change": "daTagvolcano::Act_c::check_timer_clear (src/d/actor/d_a_tag_volcano.cpp:60-69) returns false - i.e. does NOT delete timer 3 - when the next stage name is \"MiniKaz\" or \"MiniHyo\". That single strcmp is what lets the countdown carry from the sea into the cave.",
+   "placements": [
+    {
+     "stage": "sea",
+     "room": 40,
+     "params": "0x001E1B01",
+     "type": 0,
+     "swSave": 27,
+     "timer_seconds": 300,
+     "pos": [
+      79900,
+      0,
+      219100
+     ]
+    },
+    {
+     "stage": "sea",
+     "room": 20,
+     "params": "0x001E181F",
+     "type": 0,
+     "swSave": 24,
+     "timer_seconds": 300,
+     "pos": [
+      180000,
+      2300,
+      -120000
+     ]
+    },
+    {
+     "stage": "MiniHyo",
+     "room": 0,
+     "params": "0x001EFF81",
+     "type": 2,
+     "bitTRB": 1,
+     "swSave": 255,
+     "timer_seconds": 300,
+     "pos": [
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "stage": "MiniKaz",
+     "room": 0,
+     "params": "0x001EFF40",
+     "type": 1,
+     "bitTRB": 0,
+     "swSave": 255,
+     "timer_seconds": 300,
+     "pos": [
+      0,
+      0,
+      0
+     ]
+    }
+   ]
+  },
+  "Pitfall": {
+   "name": "Object - Grotto hole (the mouth of every secret cave)",
+   "file": "src/d/actor/d_a_obj_hole.cpp",
+   "profile": "d_stage.cpp:813 OBJNAME(\"Pitfall\", fpcNm_OBJ_HOLE_e, 1, 0)",
+   "param_decode": {
+    "rule": "daObj_Hole_c::getArg (src/d/actor/d_a_obj_hole.cpp:230-247): mExitIdx = params & 0xFF, mHasModel = (params >> 8) & 0xFF clamped to 0xFF when >= 1, mScaleLocal = home.angle.z (0xFFFF read as 0).",
+    "confidence": "high"
+   },
+   "behaviour": "Link stepping into its circle puts it in modeEvent, which orders the boilerplate event DEFAULT_PITFALL and, when that ends, calls dLib_setNextStageBySclsNum(mExitIdx, current.roomNo) - or dComIfGp_setNextStage(getStartStageName(), 0, roomNo) when mExitIdx is 0xFF (src/d/actor/d_a_obj_hole.cpp:120-135). Because the room number is passed, dLib_setNextStageBySclsNum reads the ROOM's SCLS chunk (src/d/d_lib.cpp:236-256), which is why the stage-level SCLS export is empty for the sea."
+  },
+  "SW_C00": {
+   "name": "Proximity switch volume",
+   "file": "src/d/actor/d_a_swc00.cpp",
+   "param_decode": {
+    "rule": "include/d/actor/d_a_swc00.h:9-11 - sw1 (the switch it drives) = params & 0xFF, sw2 (an enable switch, 0xFF = always enabled) = (params >> 8) & 0xFF, type = (params >> 16) & 3. The trigger radius is scale.x * 100 + 30 and the height window is -100 .. scale.y * 100 (daSwc00_Create, src/d/actor/d_a_swc00.cpp:60-67).",
+    "confidence": "high"
+   },
+   "behaviour": "Every frame, if the enable switch is on and Link is inside the cylinder, dComIfGs_onSwitch(sw1, roomNo); a type != 0 volume then deletes itself (one-shot), while a type 0 volume turns sw1 back OFF the moment Link leaves. src/d/actor/d_a_swc00.cpp:12-32."
+  },
+  "AND_SW2": {
+   "name": "AND gate (n consecutive switches -> one switch, optional timer, optional event)",
+   "file": "src/d/actor/d_a_andsw2.cpp",
+   "param_decode": {
+    "rule": "num = params & 0xFF, type = (params >> 8) & 0xFF (0 = ONE_OFF, 1 = CONTINUOUS), swbit-to-SET = (params >> 16) & 0xFF, swbit2 = first switch to CHECK = (params >> 24) & 0xFF; eventNo = home.angle.x & 0xFF, timer = home.angle.z & 0xFF (x15 frames). If swbit2 is 0xFF the check starts at swbit + 1. src/d/actor/d_a_andsw2.cpp:25-83.",
+    "confidence": "high"
+   },
+   "event_lookup": "mEventIdx = dComIfGp_evmng_getEventIdx(NULL, eventNo) (src/d/actor/d_a_andsw2.cpp:192). dEvent_manager_c::getEventIdx with a null name and a non-0xFF index resolves stageEventInfo->events[eventNo].mName and then looks THAT NAME up in the event list (src/d/d_event_manager.cpp:342-359) - so home.angle.x is an index into the stage.dzs EVNT table, and because every EVNT entry in this area is literally named 'MapToolCamera', all such lookups collapse onto the first MapToolCamera event."
+  },
+  "AND_SW0": {
+   "name": "AND gate, older variant (also turns its switch back OFF)",
+   "file": "src/d/actor/d_a_andsw0.cpp",
+   "param_decode": {
+    "rule": "num = params & 0xFF, behaviourType = (params >> 8) & 0xFF, firstSwitchToCheck = (params >> 16) & 0xFF (0xFF read as 0 -> start at switchToSet + 1), switchToSet = (params >> 24) & 0xFF; timer = (home.angle.z & 0xFF) * 15, eventNo = home.angle.x. src/d/actor/d_a_andsw0.cpp:317-339.",
+    "confidence": "high"
+   },
+   "behaviour": "behaviourType 0 latches (ACT_WAIT after firing); anything else falls through to ACT_OFF_ALL, which turns switchToSet back off as soon as one of the checked switches drops. src/d/actor/d_a_andsw0.cpp:30-79."
+  },
+  "MhmrSW0": {
+   "name": "Skull Hammer switch",
+   "file": "src/d/actor/d_a_obj_swhammer.cpp",
+   "param_decode": {
+    "rule": "include/d/actor/d_a_obj_swhammer.h:12-24 - swSave (turned ON when pounded) = (params >> 8) & 0xFF, swSave2 (turned OFF at the same moment) = params & 0xFF.",
+    "confidence": "high"
+   },
+   "behaviour": "It only reacts to AT_TYPE_SKULL_HAMMER coming from fpcNm_PLAYER_e (src/d/actor/d_a_obj_swhammer.cpp:214); on a hit it calls on_switch() and then off_switch2() (src/d/actor/d_a_obj_swhammer.cpp:363-365). A pair of them with crossed swSave/swSave2 makes a two-state toggle."
+  },
+  "Mori1": {
+   "name": "Barred wooden door (MDOOR)",
+   "file": "src/d/actor/d_a_mdoor.cpp",
+   "profile": "d_stage.cpp:459 OBJNAME(\"Mori1\", fpcNm_MDOOR_e, 255, 0)",
+   "param_decode": {
+    "rule": "src/d/actor/d_a_mdoor.cpp:15-33 - swbit = params & 0xFF, type = (params >> 8) & 0xFF, toolId = (params >> 16) & 0xFF, shapeType = (params >> 24) & 0xFF.",
+    "confidence": "high"
+   },
+   "behaviour": "type 2 sits in ACT_SWITCH until dComIfGs_isSwitch(swbit, roomNo), then orders DEFAULT_STOP_OPEN and swings open (src/d/actor/d_a_mdoor.cpp:148-158, 321-330)."
+  },
+  "door10 / Zenshut": {
+   "name": "Standard door and 'clear the room' barred door",
+   "file": "src/d/actor/d_a_door10.cpp, parameters in src/d/d_door.cpp",
+   "param_decode": {
+    "rule": "dDoor_info_c (src/d/d_door.cpp:16-61): swbit = params & 0xFF, type = (params >> 8) & 0xF, eventNo = (params >> 12) & 0xFF, swbit2 = (params >> 20) & 0xFF; front room = home.angle.x & 0x3F, back room = (home.angle.x >> 6) & 0x3F; shipId = home.angle.z & 0x3F, arg1 = (home.angle.z >> 8) & 0xFF.",
+    "confidence": "high"
+   },
+   "the_gauntlet_rule": "THE key fact for this area. daDoor10_c::chkStopOpen (src/d/actor/d_a_door10.cpp:120-172): for a type 2 door approached from the front, once the front room is displayed and fopAcM_myRoomSearchEnemy(frontRoom) == NULL, it counts a 0x41-frame delay down, calls dComIfGs_onSwitch(swbit, roomNo) and lifts its bars. That is the engine-level 'kill everything in the room and the bars go up' rule, and it is what drives the TF_02 / TF_07 four-room gauntlet. chkStopClose puts the bars back whenever the switch is off (src/d/actor/d_a_door10.cpp:604-643)."
+  },
+  "bonbori (EP)": {
+   "name": "Torch",
+   "file": "src/d/actor/d_a_ep.cpp",
+   "param_decode": {
+    "rule": "src/d/actor/d_a_ep.cpp:643-652 - type = params & 0x3F, hasGa = (params >> 6) & 1, hasObm = (params >> 7) & 1, burnTimer = (params >> 8) & 0xFF (0xFF = burns forever, else value * 10 + 1 frames), keepLitSwitch = (params >> 16) & 0xFF, onSwitchNo = (params >> 24) & 0xFF.",
+    "confidence": "high"
+   },
+   "behaviour": "While unlit it holds m508 = onSwitchNo + 1; a fire hit on its sphere calls dComIfGs_onSwitch(onSwitchNo) and starts the burn timer (src/d/actor/d_a_ep.cpp:216-227). Crucially it also works the other way round: whenever onSwitchNo is turned on by anything else the torch lights, and when it is turned off the torch goes out (src/d/actor/d_a_ep.cpp:286-296) - which is how the TF_02 torches act as pure progress lamps."
+  },
+  "SWtact / SWtactB": {
+   "name": "Wind Waker song switch",
+   "file": "src/d/actor/d_a_swtact.cpp",
+   "param_decode": {
+    "rule": "include/d/actor/d_a_swtact.h:36-40 - switchNo = params & 0xFF, answer = (params >> 8) & 0xFF, model = (params >> 16) & 0x0F (1 = draw the Itact conducting mark).",
+    "confidence": "high"
+   },
+   "answer_table": "daSwTact_c::getAnswer (src/d/actor/d_a_swtact.cpp:93-112) maps answer 0->song 0, 1->1, 2->5, 3->2, 4->3, 5->4, 0xFF->-1 (any song). The song numbers are the dComIfGs_onTact ids: 0 Wind's Requiem, 1 Ballad of Gales, 2 Command Melody, 3 Earth God's Lyric, 4 Wind God's Aria, 5 Song of Passing (src/d/d_item.cpp:1089-1117, items 0x6D..0x72).",
+   "behaviour": "When Link is inside getR() and starts conducting it calls player->setTactZev(id, getAnswer(), NULL); if the song he then plays matches, and no event is running, fopAcM_onSwitch(switchNo) (src/d/actor/d_a_swtact.cpp:114-170)."
+  },
+  "Warpt / Warpnt": {
+   "name": "Warp pot (lidded / open)",
+   "file": "src/d/actor/d_a_obj_warpt.cpp",
+   "profile": "d_stage.cpp:605-606 - both are fpcNm_OBJ_WARPT_e; Warpt is subtype 0, Warpnt subtype 1",
+   "param_decode": {
+    "rule": "daObj_Warpt_c::getArg (src/d/actor/d_a_obj_warpt.cpp:705-731). mode = params & 0xF. For the non-special modes (0 and 1): ownIdx = (params >> 4) & 0xFF, destSclsNum = (params >> 12) & 0xFF, lidSwitch = home.angle.x & 0xFF, enableSwitch = (home.angle.x >> 8) & 0xFF. Mode 1 calls dComIfGs_onSwitch(lidSwitch) at create, so a mode-1 pot is open from the start; a mode 0 pot starts lidded (m2C6 = 'isHuta'). For the special modes 2/3/4 the layout changes to group = (params >> 4) & 0xF, three destination scls numbers at (params >> 8), (>> 16) and (>> 24), and the destination is chosen from the 3-bit event register m_event_reg[group].",
+    "confidence": "high"
+   },
+   "behaviour": "Standing on it orders DEFAULT_WARP; when that event ends, normalWarp() checks dComIfGs_isSwitch(enableSwitch) and, if on, calls warp(destSclsNum) -> dLib_setNextStageBySclsNum(destSclsNum, current.roomNo) (src/d/actor/d_a_obj_warpt.cpp:277-282, 542-551). The lid is broken by AT_TYPE_BOMB, by fire, or by the Skull Hammer / a Stalfos mace (src/d/actor/d_a_obj_warpt.cpp:455-470), and breaking it sets lidSwitch (line 396)."
+  },
+  "Fmastr2 (FM)": {
+   "name": "Floormaster",
+   "file": "src/d/actor/d_a_fm.cpp",
+   "param_decode": {
+    "rule": "daFm_c::getArg (src/d/actor/d_a_fm.cpp:3262-3290): mExitSclsNum (field_0x2C7, a u8) = params & 0xFF, path number = (params >> 16) & 0xFF, field_0x2D4 = params >> 24; home.angle.x low byte and (>> 8) byte are two more args, and home.angle.z & 0xFF, when not 0xFF, becomes a radius of value * 100.",
+    "confidence": "high"
+   },
+   "behaviour": "When it has grabbed Link and DEFAULT_FM_GRAB / DEFAULT_FM_GRAB_FOOT ends it calls dLib_setNextStageBySclsNum(mExitSclsNum, roomNo), or, if that is 0xFF, dumps him back at the start of the current stage (src/d/actor/d_a_fm.cpp:1796-1801 and :2033-2038). It is a warp, not just a damage source."
+  },
+  "Tag_Light (LTag1 / LTagR0)": {
+   "name": "Light shaft volume / light sensor",
+   "file": "src/d/actor/d_a_tag_light.cpp",
+   "profile": "d_stage.cpp:626-627 - LTag1 is subtype 1, LTagR0 subtype 2",
+   "param_decode": {
+    "rule": "include/d/actor/d_a_tag_light.h:17-36 - type = params & 3, swSave2 = (params >> 2) & 0xFF, ccR = (params >> 8) & 3, coneRatio = (params >> 10) & 0xF, fadeType = (params >> 14) & 3, swSave = (params >> 16) & 0xFF, schBit = (params >> 24) & 0xFF.",
+    "confidence": "high"
+   },
+   "behaviour": "type 2 is a SENSOR: it counts up while chk_light() is true and, past 10 frames, calls fopAcM_onSwitch(swSave) (src/d/actor/d_a_tag_light.cpp:441-456). type 1 is the drawn shaft, faded in/out by chk_sw() && chk_sch()."
+  },
+  "ALLdie": {
+   "name": "Room-cleared switch",
+   "file": "src/d/actor/d_a_alldie.cpp",
+   "param_decode": {
+    "rule": "daAlldie_c::getSwbit (src/d/actor/d_a_alldie.cpp:18-20) = (params >> 8) & 0xFF.",
+    "confidence": "high"
+   },
+   "behaviour": "It first waits until fopAcM_myRoomSearchEnemy(roomNo) returns something, then until it returns NULL, then calls dComIfGs_onSwitch(swbit, roomNo) (src/d/actor/d_a_alldie.cpp:25-46). Unlike the type-2 door rule it works with no door attached, so it is the generic 'clear the room, something appears' primitive."
+  },
+  "SW_HIT0": {
+   "name": "Impact switch (obm_syougekisw)",
+   "file": "src/d/actor/d_a_swhit0.cpp",
+   "param_decode": {
+    "rule": "src/d/actor/d_a_swhit0.cpp:73-100 - swNo = params & 0xFF, evNo = (params >> 8) & 0xFF, type = (params >> 16) & 0x0F, timer = (params >> 20) & 0xFF (0xFF read as 0), swNo2 = home.angle.z & 0xFF.",
+    "confidence": "high"
+   },
+   "behaviour": "Its target sphere accepts almost every attack type except light/wind/water; a hit runs a small CHANGE demo whose action step calls dComIfGs_onSwitch(swNo, roomNo) (src/d/actor/d_a_swhit0.cpp:200-235)."
+  },
+  "Stone2 (Ebrock / Ekao)": {
+   "name": "Liftable boulder / carved face stone",
+   "file": "src/d/actor/d_a_stone2.cpp",
+   "param_decode": {
+    "rule": "include/d/actor/d_a_stone2.h:47-63 - itemNo = params & 0x3F, swSave = (params >> 8) & 0xFF, itemSave = (params >> 16) & 0x7F, type = (params >> 24) & 7, cull = (params >> 28) & 7, shadow = (params >> 31) & 1. The type indexes M_attr[5]: 2 = 'Ebrock' (large), 3 = 'Ekao', 4 = 'Ebrock' (small) (src/d/actor/d_a_stone2.cpp:46-80).",
+    "confidence": "high"
+   },
+   "behaviour": "Destroying it calls on_switch() -> fopAcM_onSwitch(swSave) when swSave != 0xFF (src/d/actor/d_a_stone2.cpp:107-113). IMPORTANT: src/d/actor/d_a_stone2.cpp:286 reads `if (m644 != 3 && hitObj->ChkAtType(AT_TYPE_BOMB))`, so type 3 - the Ekao - is the one variant a bomb will NOT break; it has to be lifted."
+  },
+  "Obj_Mtest (MwtrSB)": {
+   "name": "Invisible water/region volume",
+   "file": "src/d/actor/d_a_obj_mtest.cpp",
+   "param_decode": {
+    "rule": "include/d/actor/d_a_obj_mtest.h:22-36 - type = params & 7, swSave = (params >> 8) & 0xFF, arg0 = (params >> 16) & 0xF, arg1 = (params >> 24) & 0xF. chk_appear: arg0 0 = present while the switch is ON, 1 = present while it is OFF, anything else = always (src/d/actor/d_a_obj_mtest.cpp:67-78). Type 4 (the MwtrSB name) has no model at all - bmd_data[4] is -1.",
+    "confidence": "high"
+   }
+  },
+  "Ysdls00 / Ywarp00 (WARPLIGHT)": {
+   "name": "The pillar of light that takes Link out of a cave",
+   "file": "src/d/actor/d_a_warpls.cpp",
+   "decomp_status": "EVERY function in d_a_warpls.cpp is /* Nonmatching */ - 127 lines of empty bodies, and include/d/actor/d_a_warpls.h declares no members and no parameter accessors. The class has check_warp_link / check_warp_distance / checkOrder / eventOrder / warp_eff_start, so the shape of it is known, but no parameter field can be quoted.",
+   "param_layout": "NOT DETERMINED. Observed values are all of the form 0x10FF_xx_yy: MiniHyo/MiniKaz/TF_04/TF_03/TF_07/SubD71 0x10FF00E0, WarpD/SubD42/SubD43/TF_02/TF_05 0x10FF0080, Cave03/Cave06/Cave09/Cave10/Cave11 room 0 0x10FF01E0, Cave09 r15 / Cave10 r15 / Cave11 r10,15,20 0x10FF01FF, Cave09 r20 0x10FF010C, Cave10 r20 0x10FF000E. In every stage that also carries the SW_C00 entrance ring the low byte equals that ring's sw1 (0xE0 or 0x80), which is why the ring is read below as what makes the exit column appear - but that is an inference from the placement data, not from code."
+  }
+ },
+ "_instances": {
+  "grottoes": {
+   "note": "Every cave in this area and its mouth, read out of the sea room's own room.dzr. exitIdx is the Pitfall's params & 0xFF; the destination is entry exitIdx of that room's SCLS table. This is the table gcrip/data/ww_story_caves.json's 'cave_entry' step could not recover.",
+   "rows": [
+    {
+     "sea_room": 2,
+     "island": "Star Island",
+     "pitfall_params": "0x00FF0000",
+     "exit_idx": 0,
+     "dest": "Cave02 room 0 spawn 0",
+     "pos": [
+      -201260,
+      570,
+      -319374
+     ]
+    },
+    {
+     "sea_room": 7,
+     "island": "Overlook Island",
+     "pitfall_params": "0x00FF0000",
+     "exit_idx": 0,
+     "dest": "TF_02 room 0 spawn 0",
+     "pos": [
+      301209,
+      1850,
+      -299373
+     ]
+    },
+    {
+     "sea_room": 12,
+     "island": "Pawprint Isle (ChuChu cave)",
+     "pitfall_params": "0x00FF0000",
+     "exit_idx": 0,
+     "dest": "TyuTyu room 0 spawn 0",
+     "pos": [
+      80308,
+      390,
+      -179767
+     ]
+    },
+    {
+     "sea_room": 12,
+     "island": "Pawprint Isle (Wizzrobe cave, the side ledge)",
+     "pitfall_params": "0x00FFFF01",
+     "exit_idx": 1,
+     "dest": "Cave07 room 0 spawn 0",
+     "pos": [
+      77363,
+      632,
+      -180279
+     ]
+    },
+    {
+     "sea_room": 13,
+     "island": "Dragon Roost Island",
+     "pitfall_params": "0x00FFFF02",
+     "exit_idx": 2,
+     "dest": "TF_06 room 0 spawn 0",
+     "pos": [
+      199292,
+      38,
+      -199047
+     ]
+    },
+    {
+     "sea_room": 16,
+     "island": "Rock Spire Isle",
+     "pitfall_params": "0x00FF0000",
+     "exit_idx": 0,
+     "dest": "Cave04 room 0 spawn 0",
+     "pos": [
+      -221836,
+      1050,
+      -118150
+     ]
+    },
+    {
+     "sea_room": 20,
+     "island": "Fire Mountain",
+     "pitfall_params": "0x00FF0000",
+     "exit_idx": 0,
+     "dest": "MiniKaz room 0 spawn 0",
+     "pos": [
+      180004,
+      2300,
+      -119980
+     ]
+    },
+    {
+     "sea_room": 29,
+     "island": "Needle Rock Isle",
+     "pitfall_params": "0x00FFFF00",
+     "exit_idx": 0,
+     "dest": "SubD42 room 0 spawn 0",
+     "pos": [
+      -281900,
+      300,
+      119000
+     ]
+    },
+    {
+     "sea_room": 31,
+     "island": "Stone Watcher Island",
+     "pitfall_params": "0x00FF0000",
+     "exit_idx": 0,
+     "dest": "TF_01 room 0 spawn 0",
+     "pos": [
+      -120110,
+      1050,
+      99695
+     ]
+    },
+    {
+     "sea_room": 34,
+     "island": "Bomb Island",
+     "pitfall_params": "0x00FF0000",
+     "exit_idx": 0,
+     "dest": "Cave01 room 0 spawn 0",
+     "pos": [
+      219579,
+      800,
+      79625
+     ]
+    },
+    {
+     "sea_room": 35,
+     "island": "Bird's Peak Rock",
+     "pitfall_params": "0x00FF0000",
+     "exit_idx": 0,
+     "dest": "TF_03 room 0 spawn 0",
+     "pos": [
+      303882,
+      600,
+      102821
+     ]
+    },
+    {
+     "sea_room": 36,
+     "island": "Diamond Steppe Island",
+     "pitfall_params": "0x00FF0000",
+     "exit_idx": 0,
+     "dest": "WarpD room 0 spawn 0",
+     "pos": [
+      -298004,
+      2087,
+      199943
+     ]
+    },
+    {
+     "sea_room": 40,
+     "island": "Ice Ring Isle",
+     "pitfall_params": "0x00FF0000",
+     "exit_idx": 0,
+     "dest": "MiniHyo room 0 spawn 0",
+     "pos": [
+      79326,
+      744,
+      219902
+     ]
+    },
+    {
+     "sea_room": 42,
+     "island": "Cliff Plateau Isles (lower mouth)",
+     "pitfall_params": "0x00FF0000",
+     "exit_idx": 0,
+     "dest": "Cave03 room 0 spawn 0",
+     "pos": [
+      281416,
+      550,
+      179343
+     ]
+    },
+    {
+     "sea_room": 42,
+     "island": "Cliff Plateau Isles (upper mouth)",
+     "pitfall_params": "0x00FF0001",
+     "exit_idx": 1,
+     "dest": "Cave03 room 0 spawn 1",
+     "pos": [
+      279088,
+      950,
+      179316
+     ]
+    },
+    {
+     "sea_room": 43,
+     "island": "Horseshoe Island",
+     "pitfall_params": "0x00FFFF00",
+     "exit_idx": 0,
+     "dest": "Cave05 room 0 spawn 0",
+     "pos": [
+      -321100,
+      1042,
+      301600
+     ]
+    },
+    {
+     "sea_room": 44,
+     "island": "Outset Island (under the stone head)",
+     "pitfall_params": "0x00FF0008",
+     "exit_idx": 8,
+     "dest": "Cave09 room 0 spawn 0 - THE SAVAGE LABYRINTH",
+     "pos": [
+      -208621,
+      2250,
+      317729
+     ]
+    },
+    {
+     "sea_room": 47,
+     "island": "Angular Isles",
+     "pitfall_params": "0x00FFFF01",
+     "exit_idx": 1,
+     "dest": "SubD43 room 0 spawn 0",
+     "pos": [
+      102000,
+      450,
+      319200
+     ]
+    },
+    {
+     "sea_room": 48,
+     "island": "Boating Course",
+     "pitfall_params": "0x00FFFF00",
+     "exit_idx": 0,
+     "dest": "SubD71 room 0 spawn 0",
+     "pos": [
+      180101,
+      405,
+      277699
+     ]
+    }
+   ],
+   "no_mouth_on_the_sea": "Cave06, TF_05 and TF_07 each carry an SCLS entry pointing back at a sea room (Cave06 -> sea 44 spawn 10, TF_05 -> sea 31 spawn 1, TF_07 -> sea 44 spawn 0) but NO Pitfall anywhere in the sea points at them. They are unreachable. TF_04 (the Cabana Labyrinth) is not a grotto at all: its only exit is ('Abesso', 0, 1), the Private Oasis cabana interior."
+  },
+  "savage_labyrinth": {
+   "note": "The 50 floors, walked out of the per-room SCLS tables. Each floor room carries a hole whose SCLS entry 0 is the next floor; the rooms listed with an 'escape' also carry SCLS entry 1 = ('Cave09', 0, 1), the warp back up to the entrance chamber. Read from res/Stage/Cave09|Cave10|Cave11/Room*.arc:room.dzr on the retail disc.",
+   "entrance": "Cave09 room 0 (spawn 0). It holds the Piwa stone tablet, params 0x00020345 -> daObjPaper type 2, message 0x0345 = 837, and nothing else but the eight-volume SW_C00 ring and the exit light.",
+   "chain": [
+    {
+     "floors": "1-10",
+     "stage": "Cave09",
+     "rooms": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      11,
+      12,
+      13,
+      14,
+      15
+     ],
+     "escape_rooms": [
+      5
+     ],
+     "then": "Cave10 room 1"
+    },
+    {
+     "floors": "11-20",
+     "stage": "Cave10",
+     "rooms": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      11,
+      12,
+      13,
+      14,
+      15
+     ],
+     "escape_rooms": [
+      5,
+      15
+     ],
+     "then": "Cave09 room 6"
+    },
+    {
+     "floors": "21-30",
+     "stage": "Cave09",
+     "rooms": [
+      6,
+      7,
+      8,
+      9,
+      10,
+      16,
+      17,
+      18,
+      19,
+      20
+     ],
+     "escape_rooms": [
+      10,
+      20
+     ],
+     "reward": "room 20 - tkrCTf, tboxNo 11, switch 11, item 0xF9 COLLECT_MAP_06 (Triforce Chart 6)",
+     "then": "Cave11 room 1"
+    },
+    {
+     "floors": "31-40",
+     "stage": "Cave11",
+     "rooms": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      11,
+      12,
+      13,
+      14,
+      15
+     ],
+     "escape_rooms": [
+      5,
+      15
+     ],
+     "then": "Cave10 room 6"
+    },
+    {
+     "floors": "41-50",
+     "stage": "Cave10",
+     "rooms": [
+      6,
+      7,
+      8,
+      9,
+      10,
+      16,
+      17,
+      18,
+      19,
+      20
+     ],
+     "escape_rooms": [],
+     "reward": "room 20 - takara3, tboxNo 12, item 0x07 HEART_PIECE",
+     "then": "sea room 44 spawn 10 (Outset) - the only way out"
+    }
+   ],
+   "unreachable": "Cave10 room 0 and Cave11 room 0 are complete copies of the Cave09 entrance chamber (identical spawn at (-800, 400, 0), identical eight-volume SW_C00 ring, identical exit light) that nothing links to. Cave11 rooms 6-10 dead-end into Cave11 room 11, which is already on the floors 31-40 run, and Cave11 rooms 16-20 chain to ('Cave09', 21, 0) - a room number that does not exist; Cave09 ships Room0..Room20 only. All of that is dev leftover.",
+   "floor_furniture": "The only floors carrying more than enemies: Cave10 room 7 has three SW_C00 (sw1 224/225/226, all one-shot) in a triangle, Cave10 room 8 an MhmrSW0 hammer switch (sets 224), Cave10 room 17 an ALLdie (sets 224), Cave09 rooms 6 and 17 one large SW_C00 (sw1 224, radius 830). Nothing in the exported placement data reads switch 224 in those rooms, so what those four floors gate could not be determined."
+  },
+  "warp_maze": {
+   "note": "WarpD, Diamond Steppe Island. Every pot is a daObj_Warpt_c in mode 0 (lidded, name 'Warpt') or mode 1 (open, name 'Warpnt'). ownIdx is the pot's own SCLS/spawn number; dest is SCLS entry destSclsNum of WarpD room 0, whose table is entry 0 = ('sea', 36, 1) and entries 1..21 = ('WarpD', 0, 1..21). enableSw must be ON before the pot will fire, and a mode-1 pot turns its own lidSw on at create - so a lidded pot works only once its PARTNER (which is always the open one) exists.",
+   "pairs": [
+    {
+     "a": "Warpnt (1180, 0, 240) lidSw 129",
+     "b": "Warpnt (1850, 0, 850) lidSw 130",
+     "note": "both open from the start - the free two-way link near the entrance"
+    },
+    {
+     "a": "Warpt (2600, 0, 1050) lidSw 133",
+     "b": "Warpnt (3300, 0, -450) lidSw 134"
+    },
+    {
+     "a": "Warpt (3350, 0, 1095) lidSw 137",
+     "b": "Warpnt (4400, 600, -2200) lidSw 138"
+    },
+    {
+     "a": "Warpt (3100, 0, -2100) lidSw 141",
+     "b": "Warpnt (4800, 400, 550) lidSw 142"
+    },
+    {
+     "a": "Warpt (4150, 400, -850) lidSw 145",
+     "b": "Warpnt (1800, 807, -2060) lidSw 146"
+    }
+   ],
+   "decoys": [
+    "Warpt (2490, 0, -2000) lidSw 132",
+    "Warpt (2200, 0, -150) lidSw 135",
+    "Warpt (2950, 0, -450) lidSw 139",
+    "Warpt (3970, 400, 950) lidSw 140",
+    "Warpt (4550, 400, -850) lidSw 144"
+   ],
+   "decoy_rule": "All five decoys carry destSclsNum 1 and enableSw 129 - i.e. they always fire (129 is forced on by the Warpnt at (1180, 0, 240)) and always dump Link back at spawn 1, right next to where he started. That is the whole maze: five real two-way links and five one-way trapdoors home.",
+   "floormasters": "Five Fmastr2, all with params 0xFFFF0613 -> mExitSclsNum 0x13 = 19, i.e. a grab warps Link to WarpD spawn 19 at (830, 0, 160), also next to the entrance. They sit at (3280, 0, 650), (2400, 0, -1100), (3200, 0, -1380), (4350, 400, 0) and (1400, 807, -1580).",
+   "spawns_19_20_21": "params 0xFFFFE000, at (830, 0, 160), (2290, 0, 600) and (2800, 0, -1300). Only 19 is used by anything in the stage; 20 and 21 have no referrer.",
+   "chests": "takara (params 0xFF100180) tboxNo 3, item 0xDB COLLECT_MAP_36 (Treasure Chart 36) at (1220, 881, -790) on the upper ledge; takara2 (0xFF000B80) tboxNo 23, item 0x1F JOY_PENDANT at (4553, 600, -1650). Both func type 0, so they are simply there once you reach them."
+  },
+  "chests": {
+   "note": "Every TRES in my stages, decoded with the rules already established in ww_story_caves.json (func = params & 0x7F, tboxNo = (params >> 7) & 0x1F, swNo = (params >> 12) & 0xFF, shape = (params >> 20) & 0xF, item = (rot.z >> 8) & 0xFF). Positions are raw dzr coordinates, NOT the recentred ones in the stage reports.",
+   "rows": [
+    {
+     "stage": "Cave03",
+     "slot": 12,
+     "name": "takara2",
+     "params": "0xFF000380",
+     "func": 0,
+     "tboxNo": 7,
+     "item": "0x1F JOY_PENDANT",
+     "pos": [
+      3630,
+      600,
+      -600
+     ]
+    },
+    {
+     "stage": "Cave05",
+     "slot": 13,
+     "name": "takara7",
+     "params": "0xFF1FF082",
+     "func": 2,
+     "tboxNo": 1,
+     "swNo": 255,
+     "item": "0xD4 COLLECT_MAP_43",
+     "pos": [
+      677,
+      50,
+      -404
+     ]
+    },
+    {
+     "stage": "Cave06",
+     "slot": 12,
+     "name": "takara6",
+     "params": "0xFF212901",
+     "func": 1,
+     "tboxNo": 18,
+     "swNo": 18,
+     "item": "0x07 HEART_PIECE",
+     "pos": [
+      745,
+      107,
+      -433
+     ],
+     "note": "nothing in Cave06 sets switch 18 - see step cave06_dead_copy"
+    },
+    {
+     "stage": "Cave07",
+     "slot": 13,
+     "name": "tkrAGc",
+     "params": "0xFF0FF102",
+     "func": 2,
+     "tboxNo": 2,
+     "swNo": 255,
+     "item": "0x0F SILVER_RUPEE",
+     "pos": [
+      2500,
+      27,
+      0
+     ]
+    },
+    {
+     "stage": "Cave09",
+     "room": 20,
+     "slot": 13,
+     "name": "tkrCTf",
+     "params": "0xFF20B586",
+     "func": 6,
+     "tboxNo": 11,
+     "swNo": 11,
+     "item": "0xF9 COLLECT_MAP_06",
+     "pos": [
+      0,
+      -70,
+      -4400
+     ]
+    },
+    {
+     "stage": "Cave10",
+     "room": 20,
+     "slot": 13,
+     "name": "takara3",
+     "params": "0xFF200600",
+     "func": 0,
+     "tboxNo": 12,
+     "item": "0x07 HEART_PIECE",
+     "pos": [
+      0,
+      -70,
+      -4490
+     ]
+    },
+    {
+     "stage": "Cave11",
+     "slot": 13,
+     "chest": "none"
+    },
+    {
+     "stage": "TyuTyu",
+     "slot": 12,
+     "name": "takara2",
+     "params": "0xFF000100",
+     "func": 0,
+     "tboxNo": 2,
+     "item": "0x04 RED_RUPEE",
+     "pos": [
+      1446,
+      1800,
+      3557
+     ]
+    },
+    {
+     "stage": "TyuTyu",
+     "slot": 12,
+     "name": "takara2",
+     "params": "0xFF000C00",
+     "func": 0,
+     "tboxNo": 24,
+     "item": "0x05 PURPLE_RUPEE",
+     "pos": [
+      -499,
+      -300,
+      6967
+     ]
+    },
+    {
+     "stage": "TyuTyu",
+     "slot": 12,
+     "name": "takara2",
+     "params": "0xFF000C80",
+     "func": 0,
+     "tboxNo": 25,
+     "item": "0x1F JOY_PENDANT",
+     "pos": [
+      -3559,
+      -358,
+      2536
+     ]
+    },
+    {
+     "stage": "TyuTyu",
+     "slot": 12,
+     "name": "takara3",
+     "params": "0xFF200D00",
+     "func": 0,
+     "tboxNo": 26,
+     "item": "0x07 HEART_PIECE",
+     "pos": [
+      -4777,
+      -200,
+      4132
+     ]
+    },
+    {
+     "stage": "MiniHyo",
+     "slot": 12,
+     "name": "takara3",
+     "params": "0xFF200080",
+     "func": 0,
+     "tboxNo": 1,
+     "item": "0x29 IRON_BOOTS",
+     "pos": [
+      -461,
+      75,
+      2268
+     ]
+    },
+    {
+     "stage": "MiniKaz",
+     "slot": 12,
+     "name": "takara6",
+     "params": "0xFF2E3001",
+     "func": 1,
+     "tboxNo": 0,
+     "swNo": 227,
+     "item": "0x28 POWER_BRACELETS",
+     "pos": [
+      -563,
+      100,
+      2792
+     ]
+    },
+    {
+     "stage": "SubD42",
+     "slot": 13,
+     "name": "tkrASw",
+     "params": "0xFF006481",
+     "func": 1,
+     "tboxNo": 9,
+     "swNo": 6,
+     "item": "0x06 ORANGE_RUPEE",
+     "pos": [
+      771,
+      0,
+      163
+     ]
+    },
+    {
+     "stage": "SubD43",
+     "slot": 13,
+     "name": "takaraM",
+     "params": "0xFF004304",
+     "func": 4,
+     "tboxNo": 6,
+     "swNo": 4,
+     "item": "0x0F SILVER_RUPEE",
+     "pos": [
+      3500,
+      525,
+      0
+     ]
+    },
+    {
+     "stage": "SubD71",
+     "slot": 13,
+     "name": "takara5",
+     "params": "0xFF147781",
+     "func": 1,
+     "tboxNo": 15,
+     "swNo": 71,
+     "item": "0xC2 COLLECT_MAP_61",
+     "pos": [
+      2511,
+      27,
+      -12
+     ]
+    },
+    {
+     "stage": "TF_02",
+     "slot": 12,
+     "name": "tkrCTf",
+     "params": "0xFF20B586",
+     "func": 6,
+     "tboxNo": 11,
+     "swNo": 11,
+     "item": "0xF7 COLLECT_MAP_08",
+     "pos": [
+      2600,
+      20,
+      0
+     ]
+    },
+    {
+     "stage": "TF_03",
+     "slot": 12,
+     "name": "tkrCTf",
+     "params": "0xFF210806",
+     "func": 6,
+     "tboxNo": 16,
+     "swNo": 16,
+     "item": "0xFC COLLECT_MAP_03",
+     "pos": [
+      2830,
+      245,
+      0
+     ]
+    },
+    {
+     "stage": "TF_04",
+     "slot": 12,
+     "name": "tkrCTf",
+     "params": "0xFF211886",
+     "func": 6,
+     "tboxNo": 17,
+     "swNo": 17,
+     "item": "0xFD COLLECT_MAP_02",
+     "pos": [
+      4150,
+      50,
+      -50
+     ]
+    },
+    {
+     "stage": "TF_04",
+     "slot": 12,
+     "name": "takara2",
+     "params": "0xFF000B00",
+     "func": 0,
+     "tboxNo": 22,
+     "item": "0x06 ORANGE_RUPEE",
+     "pos": [
+      1950,
+      -490,
+      -1550
+     ]
+    },
+    {
+     "stage": "TF_05",
+     "slot": 13,
+     "name": "takara2",
+     "params": "0xFF000000",
+     "func": 0,
+     "tboxNo": 0,
+     "item": "0x06 ORANGE_RUPEE",
+     "pos": [
+      5700,
+      0,
+      -1
+     ]
+    },
+    {
+     "stage": "TF_07",
+     "slot": 13,
+     "name": "tkrAGc",
+     "params": "0xFF0FF182",
+     "func": 2,
+     "tboxNo": 3,
+     "swNo": 255,
+     "item": "0x0F SILVER_RUPEE",
+     "pos": [
+      1400,
+      0,
+      0
+     ]
+    },
+    {
+     "stage": "WarpD",
+     "slot": 12,
+     "name": "takara",
+     "params": "0xFF100180",
+     "func": 0,
+     "tboxNo": 3,
+     "item": "0xDB COLLECT_MAP_36",
+     "pos": [
+      1220,
+      881,
+      -790
+     ]
+    },
+    {
+     "stage": "WarpD",
+     "slot": 12,
+     "name": "takara2",
+     "params": "0xFF000B80",
+     "func": 0,
+     "tboxNo": 23,
+     "item": "0x1F JOY_PENDANT",
+     "pos": [
+      4553,
+      600,
+      -1650
+     ]
+    }
+   ],
+   "slot_cross_check": "gcrip/data/ww_dungeons.json puts Cave01-04, Cave06, Fairy01-06, TyuTyu, MiniHyo, MiniKaz, TF_01-04 and WarpD all in slot 12 (STAGE_SUBDUNGEON), and Cave05, Cave07, Cave09-11, SubD42/43/71, TF_05-07 and Asoko all in slot 13 (STAGE_SUBDUNGEON_NEW). That means every one of those stages shares ONE 32-bit mTbox word and ONE 128-bit mSwitch array. The tboxNo values confirm it: within slot 12 the set is {0 MiniKaz, 1 MiniHyo, 2 TyuTyu, 3 WarpD, 5 Cave01, 6 Cave02, 7 Cave03, 8 Cave04, 10 TF_01, 11 TF_02, 16 TF_03, 17 TF_04, 18 Cave06, 22 TF_04b, 23 WarpDb, 24/25/26 TyuTyu} - 18 chests, no collisions. Within slot 13 the set is {0 TF_05, 0 TF_06, 1 Cave05, 2 Cave07, 3 TF_07, 6 SubD43, 9 SubD42, 11 Cave09, 12 Cave10, 15 SubD71} - the only clash is TF_05 with TF_06, and TF_05 is unreachable. The persistent switch numbers agree the same way: slot 12 uses 11 (TF_02), 16 (TF_03), 17 (TF_04), 18 (Cave06), 36 (the MiniKaz Ekao); slot 13 uses 4 (SubD43), 6 (SubD42), 11 (Cave09), 71 (SubD71). A remake MUST model the slots, not one block per stage."
+  }
+ },
+ "steps": [
+  {
+   "id": "grotto_entrance",
+   "stage": "sea",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "object",
+    "detail": "THE ANSWER to the open question in gcrip/data/ww_story_caves.json's 'cave_entry' step. Every secret cave, including all of mine, is entered through a `Pitfall` actor - d_stage.cpp:813 maps that placement name to fpcNm_OBJ_HOLE_e subtype 1, which is daObj_Hole_c, the 'Object - Grotto' actor. Its getArg reads mExitIdx = params & 0xFF and mHasModel = (params >> 8) & 0xFF (clamped to 0xFF when >= 1); home.angle.z is a local scale, with 0xFFFF read as 0. Stepping into its circle orders the boilerplate event DEFAULT_PITFALL, and when that ends it calls dLib_setNextStageBySclsNum(mExitIdx, current.roomNo). Because a room number is passed, that resolves against the ROOM's SCLS chunk (src/d/d_lib.cpp:236-256), which is exactly why the stage-level SCLS export for the sea shows only house doors. Reading the sea room.dzr files directly off the disc gives all 19 mouths; they are in _instances.grottoes."
+   },
+   "event": "DEFAULT_PITFALL",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/d_stage.cpp:813",
+    "src/d/actor/d_a_obj_hole.cpp:120-135",
+    "src/d/actor/d_a_obj_hole.cpp:230-247",
+    "src/d/d_lib.cpp:236-256",
+    "res/Stage/sea/Room*.arc:room.dzr (ACTR Pitfall + SCLS, read from the GZLE01 disc image)"
+   ],
+   "notes": "Cliff Plateau Isles (sea room 42) is the one island with TWO Pitfalls: params 0x00FF0000 -> Cave03 spawn 0 (the low mouth at the shore) and 0x00FF0001 -> Cave03 spawn 1 (the high mouth on the plateau). Cave03's own SCLS is the mirror pair, ('sea', 42, 2) and ('sea', 42, 1)."
+  },
+  {
+   "id": "cave_exit_lightcolumn",
+   "stage": "Cave09",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "object",
+    "detail": "Every cave in the area repeats one piece of furniture at its landing point: a ring of eight (sometimes nine) SW_C00 proximity volumes on a circle of radius ~500 around the spot Link falls in, plus a single Ysdls00 (fpcNm_WARPLIGHT_e) standing on the spot itself. The SW_C00 are all one-shot (type 3, so they delete themselves after firing) and all drive the same switch, and that switch number equals the low byte of the Ysdls00's parameters in every stage where both exist - 0xE0 (224) in MiniHyo, MiniKaz, Cave03, Cave06, Cave09/10/11, SubD71, TF_03, TF_04, TF_07 and SubD42, 0x80 (128) in WarpD, SubD43, TF_02 and TF_05. Read as: stepping off the landing pad in any direction raises the switch and the pillar of light that takes you back out appears."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "src/d/actor/d_a_swc00.cpp:12-32",
+    "src/d/actor/d_a_swc00.cpp:60-67",
+    "include/d/actor/d_a_swc00.h:9-11",
+    "src/d/d_stage.cpp:907",
+    "src/d/actor/d_a_warpls.cpp:1-127",
+    "res/Stage/*/Room0.arc:room.dzr"
+   ],
+   "notes": "Medium, not high, for one reason: d_a_warpls.cpp is 100% /* Nonmatching */ and its header declares no parameter accessors, so the Ysdls00 field layout cannot be quoted - the match between the SW_C00 sw1 and the Ysdls00 low byte is a correlation across sixteen stages, not a decoded field. Two stages break it and should be checked in play: MiniHyo's ring carries an ENABLE switch of 1 (params 0x000301E0) and MiniKaz's carries 0 (0x000300E0), and nothing in either stage turns switch 1 or switch 0 on, so on a literal reading those two rings never fire. Every other stage in the area uses 0xFF (always enabled). Cave10 room 20 (Savage Labyrinth floor 50) has an Ysdls00 with low byte 0x0E and no ring at all."
+  },
+  {
+   "id": "icering_melt",
+   "stage": "sea",
+   "room": 40,
+   "layer": -1,
+   "trigger": {
+    "kind": "hit",
+    "detail": "Ice Ring Isle is sealed by a wall of ice with a carved head, daObjDragonhead_c, placed as `Qdghd` at (100000, 0, 200000) with params 0x00001B00 -> switchNo = (params >> 8) & 0xFF = 27. Its collision sphere accepts ONE attack type, AT_TYPE_FIRE_ARROW, and is pinned in code to the fixed world point (79338, 950, 220000) regardless of where the actor is placed. A fire arrow on it calls dComIfGs_onSwitch(27, homeRoom) once. The icy clouds around the island are a second actor, `GiceL` = daObjIceisland_c, params 0x00001B00 -> the same switch 27; when it sees the switch go on it orders the event MELT_ICE and plays its BRK forwards, and when the switch goes off again it orders FREEZE_ICE and plays it backwards."
+   },
+   "event": "MELT_ICE",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_obj_dragonhead.cpp:24",
+    "src/d/actor/d_a_obj_dragonhead.cpp:52",
+    "src/d/actor/d_a_obj_dragonhead.cpp:100-101",
+    "src/d/actor/d_a_obj_dragonhead.cpp:143-156",
+    "src/d/actor/d_a_obj_iceisland.cpp:60-77",
+    "src/d/actor/d_a_obj_iceisland.cpp:81-124",
+    "include/d/actor/d_a_obj_iceisland.h:44",
+    "res/Stage/sea/Room40.arc:room.dzr"
+   ],
+   "notes": "Fire Arrows come from the Fairy Queen at Mother & Child Isles (message 14362, recorded in ww_story_caves.json's _not_mine block), so this whole beat is gated behind that scene even though nothing in the data says so. sea room 40 also carries two Ikori ice blocks (params 0x000000E0 = switch 224, and 0x000000FF = no switch; the second stands on the room-40 takara chest at (82300, 20, 220200)) and four Yllic/Ylsic ice lifts, all daIlift_c, which is another fully stubbed actor."
+  },
+  {
+   "id": "icering_timer_starts",
+   "stage": "sea",
+   "room": 40,
+   "layer": -1,
+   "trigger": {
+    "kind": "timer",
+    "detail": "The countdown is a separate actor. A type-0 VolTag sits in sea room 40 at (79900, 0, 219100) with params 0x001E1B01: swSave 27 (shared with Qdghd and GiceL), timer field 30. While that switch is on and the event MELT_ICE has ENDED it calls dTimer_createTimer(3, 30 * 10, 1, 0, 221.0f, 439.0f, 32.0f, 419.0f) - timer mode 3, 300 seconds (dTimer_c::_create converts the argument with OSSecondsToTicks). From then on it pauses the clock whenever an event is running and restarts it when the event ends. If the clock reaches zero it plays JA_SE_ISLE_TIMER_0, shakes the pad, turns switch 27 back OFF - which makes GiceL play FREEZE_ICE and re-seal the island - and deletes the timer."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_tag_volcano.cpp:80-127",
+    "include/d/actor/d_a_tag_volcano.h:10-24",
+    "src/d/d_timer.cpp:754-757",
+    "src/d/d_timer.cpp:54-110",
+    "res/Stage/sea/Room40.arc:room.dzr"
+   ],
+   "notes": "The clock survives the stage change into the cave only because daTagvolcano::Act_c::check_timer_clear returns false when dComIfGp_getNextStageName() is \"MiniKaz\" or \"MiniHyo\" - one strcmp is the entire mechanism (src/d/actor/d_a_tag_volcano.cpp:60-69). If a save is resumed from a death in the same room, _create sets field_0x2a0 = 10 and forces the switch on for ten frames, which is the 'you died inside, the island is briefly still open' case."
+  },
+  {
+   "id": "icering_iron_boots",
+   "stage": "MiniHyo",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "chest",
+    "detail": "MiniHyo is a single room with the timer running. The prize is takara3, params 0xFF200080 -> func type 0 (NORMAL, always present), tboxNo 1, shape 2; rot.z 0x2901 -> item 0x29 = dItemNo_IRON_BOOTS_e, at (-461, 75, 2268). The route to it is unlocked terrain, not switches: three keeth, two Kui stakes at (-760, -700, 10) and (-730, -200, -200) below floor level, one WindTag gust volume at (688, 29, 1449) scaled (1.2, 1.5, 1.2), one Ikori ice block (params 0x000000EC = switch 236) sitting on an ootubo1 pot at (-3109, 196, -241), and two loose `item` rupee actors."
+   },
+   "event": "TREASURE",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "0x29 dItemNo_IRON_BOOTS_e",
+   "confidence": "high",
+   "sources": [
+    "res/Stage/MiniHyo/Stage.arc:stage.dzs (TRES)",
+    "res/Stage/MiniHyo/Room0.arc:room.dzr",
+    "include/d/d_item_data.h:48",
+    "gcrip/data/ww_story_caves.json steps cave_open_chest"
+   ],
+   "notes": "tboxNo 1 is the number the cave-side VolTag watches - see icering_beaten. The chest bit lands in dSv_save_c::mMemory[12] (slot 12, STAGE_SUBDUNGEON) per gcrip/data/ww_dungeons.json, shared with eighteen other cave stages; the tboxNo values across slot 12 are all distinct, which is the cross-check that the shared-slot model is right."
+  },
+  {
+   "id": "icering_beaten",
+   "stage": "MiniHyo",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "bits",
+    "detail": "A second VolTag, this one type 2, sits at the origin of MiniHyo with params 0x001EFF81 -> bitTRB 1, swSave 255, timer 30. Every frame it asks dComIfGs_isTbox(1) - has the Iron Boots chest been opened. The moment it is true it deletes timer 3 and calls dComIfGs_onEventBit(0x1901), and from then on the type-0 VolTag out in sea room 40 forces switch 27 on at create, so the island stays thawed with no clock forever."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x1901"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_tag_volcano.cpp:129-137",
+    "src/d/actor/d_a_tag_volcano.cpp:44-51",
+    "res/Stage/MiniHyo/Room0.arc:room.dzr"
+   ],
+   "notes": "Note the ordering: the flag is raised from the CHEST BIT, not from a cutscene and not from the item pickup, so a remake that grants the Iron Boots without setting mTbox bit 1 in slot 12 will leave Ice Ring Isle permanently timed."
+  },
+  {
+   "id": "icering_timeout",
+   "stage": "MiniHyo",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "timer",
+    "detail": "The failure branch of the same actor. If the chest is still shut and dComIfG_getTimerRestTimeMs() reaches zero, the cave-side VolTag plays JA_SE_ISLE_TIMER_0, shakes the pad, deletes the timer, sets field_0x2a4 = 1 and orders the event TAG_VOLCANO; it keeps re-ordering it until the demo is accepted, at which point it calls dComIfGp_setNextStage(\"sea\", 2, dIsleRoom_IceRingIsle_e) - Link is thrown out onto the island at start code 2. TAG_VOLCANO is the one non-boilerplate script in MiniHyo's and MiniKaz's event lists. (On the non-JPN builds there is also a fallback: if the timer pointer is already gone the actor orders TAG_VOLCANO immediately, src/d/actor/d_a_tag_volcano.cpp:155-161.)"
+   },
+   "event": "TAG_VOLCANO",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_tag_volcano.cpp:138-174",
+    "out/rip/GZLE01/godot/events/MiniHyo.json",
+    "tools/ww_story_mine.py MiniHyo MiniKaz"
+   ],
+   "notes": "Both MiniHyo and MiniKaz have a two-entry EVNT table of nothing but MapToolCamera and not one PLYR spawn or TagEv volume that orders an event, so TAG_VOLCANO is ordered by name from the actor, never from placement data."
+  },
+  {
+   "id": "firemountain_freeze",
+   "stage": "sea",
+   "room": 20,
+   "layer": -1,
+   "trigger": {
+    "kind": "hit",
+    "detail": "The mirror image of the Ice Ring beat. Fire Mountain's cone is `Ykzyg` = daObjVolcano::Act_c at (180000, 1, -120000), params 0x00001800 -> swSave = (params >> 8) & 0xFF = 24. In its fire_main state its target collision accepts only AT_TYPE_ICE_ARROW; a hit orders FREEZE_VOLCANO, and in freeze_demo_wait, once the demo is accepted, it calls fopAcM_onSwitch(24), stops the fire, and fires the AK_SN_MINIKAZANICE00 / MINIKAZANSMOKE00 / MINIKAZANKIRA00 particles. When the switch later goes off it orders FIRE_VOLCANO and erupts again."
+   },
+   "event": "FREEZE_VOLCANO",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_obj_volcano.cpp:19",
+    "src/d/actor/d_a_obj_volcano.cpp:263-275",
+    "src/d/actor/d_a_obj_volcano.cpp:277-305",
+    "src/d/actor/d_a_obj_volcano.cpp:189-190",
+    "include/d/actor/d_a_obj_volcano.h:14-19",
+    "res/Stage/sea/Room20.arc:room.dzr"
+   ],
+   "notes": "Ice Arrows come from the same Fairy Queen scene as the Fire Arrows. sea room 20 also holds the room-33-style Daiocta (params 0x0FFF2801, rot.z 255, so the plain DAIOCTA_DEAD) and a Bb at (179200, 2790, -120888)."
+  },
+  {
+   "id": "firemountain_timer_starts",
+   "stage": "sea",
+   "room": 20,
+   "layer": -1,
+   "trigger": {
+    "kind": "timer",
+    "detail": "The type-0 VolTag in sea room 20, params 0x001E181F -> swSave 24, timer field 30. Same code path as Ice Ring: once switch 24 is on and FREEZE_VOLCANO has ended it creates timer 3 for 300 seconds, and on expiry it turns switch 24 off, which makes daObjVolcano order FIRE_VOLCANO and re-erupt. Its bitTRB field reads 31 but is never used, because bitTRB is only consulted by the type 1/2 branch."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_tag_volcano.cpp:33-53",
+    "src/d/actor/d_a_tag_volcano.cpp:80-127",
+    "res/Stage/sea/Room20.arc:room.dzr"
+   ],
+   "notes": "Note that _create branches on `current.roomNo == dIsleRoom_FireMountain_e` (20) to decide which of the two event names and which of the two bits to use - the actor identifies its island by ROOM NUMBER, not by a parameter."
+  },
+  {
+   "id": "firemountain_power_bracelets",
+   "stage": "MiniKaz",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "defeat",
+    "detail": "The prize is takara6, params 0xFF2E3001 -> func type 1 (SWITCH), tboxNo 0, swNo 227, shape 2; rot.z 0x2800 -> item 0x28 = dItemNo_POWER_BRACELETS_e, at (-563, 100, 2792). Switch 227 comes from an AND_SW2 at (-891, 39, 2941), params 0xE1E30002 with home.angle.z 5: it checks two consecutive switches starting at 225 and, when both are on, waits 5 * 15 = 75 frames and sets 227. Switches 225 and 226 are carried in the rot.z of the two magtail at (39, 0, 2599) and (242, 0, 2317) - the two Magtails guarding the chest alcove."
+   },
+   "event": "TREASURE",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "0x28 dItemNo_POWER_BRACELETS_e",
+   "confidence": "medium",
+   "sources": [
+    "src/d/actor/d_a_andsw2.cpp:25-83",
+    "src/d/actor/d_a_andsw2.cpp:85-104",
+    "res/Stage/MiniKaz/Stage.arc:stage.dzs (TRES)",
+    "res/Stage/MiniKaz/Room0.arc:room.dzr",
+    "include/d/d_item_data.h:47"
+   ],
+   "notes": "The AND_SW2 decode and the chest decode are high-confidence; what is medium is the claim that the two magtail set switches 225 and 226. Their rot.z values are exactly 225 and 226 while every other magtail in the area carries 255, which is the pattern other enemies use for a death switch, but src/d/actor/ has no d_a_mgtl / d_a_magtail translation unit to quote. MiniKaz also carries a second, degenerate AND_SW2 (params 0x00000001 at (-1000, 0, 2800): checks switch 0 and sets switch 0) that does nothing."
+  },
+  {
+   "id": "firemountain_beaten",
+   "stage": "MiniKaz",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "bits",
+    "detail": "The type-1 VolTag at the origin of MiniKaz, params 0x001EFF40 -> bitTRB 0. When dComIfGs_isTbox(0) becomes true it deletes timer 3 and raises 0x1902. That flag does two things: the sea-room-20 VolTag forces switch 24 on at create so the volcano stays frozen, AND daObjYboil_c::_create returns cPhs_STOP_e, so the fifty boiling geysers around Fire Mountain never spawn again."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0x1902"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_tag_volcano.cpp:129-137",
+    "src/d/actor/d_a_tag_volcano.cpp:33-42",
+    "src/d/actor/d_a_obj_Yboil.cpp:85-101"
+   ],
+   "notes": "The failure branch is identical to icering_timeout except that it returns to dIsleRoom_FireMountain_e (20) instead of 40."
+  },
+  {
+   "id": "firemountain_ekao",
+   "stage": "MiniKaz",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "object",
+    "detail": "There is a locked door of sorts inside Fire Mountain that nothing in the placement data explains. An `Ekao` (daStone2::Act_c) stands at (-160, 50, 1715), params 0xF37F243F -> type 3 (the 'Ekao' entry of M_attr, the carved face stone), swSave 36, no contained item. Type 3 is the ONE Stone2 variant that a bomb will not break (src/d/actor/d_a_stone2.cpp:286 guards the bomb branch with `m644 != 3`), so it can only be picked up. Right on top of it sits a TagHt hint volume, params 0xFFFFE011 -> daTag_Hint_c type 17, swbit 224, message home.angle.x = 5771: 'With the power you have now, you can neither lift nor destroy that stone. And yet, somewhere on this sea, the power to do so lies waiting for one to find it. You must seek it out.'"
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "src/d/actor/d_a_stone2.cpp:46-80",
+    "src/d/actor/d_a_stone2.cpp:97-113",
+    "src/d/actor/d_a_stone2.cpp:286",
+    "include/d/actor/d_a_stone2.h:47-63",
+    "src/d/actor/d_a_tag_hint.cpp:21-53",
+    "res/Stage/MiniKaz/Room0.arc:room.dzr",
+    "out/rip/GZLE01/text/messages.json#id=5771"
+   ],
+   "notes": "The oddity is worth flagging because a remake has to decide what to do with it: the power the message points at is the Power Bracelets, and the Power Bracelets are the reward of this very cave, sitting 1100 units further down the same corridor. Switch 36 (which the stone raises when lifted) is a persistent slot-12 switch and NOTHING else in MiniKaz - or in any other stage I dumped - reads it. So either the Ekao only blocks an optional pocket, or it is meant to be cleared on a return visit. Which of the two could not be settled from the data."
+  },
+  {
+   "id": "savage_labyrinth_entrance",
+   "stage": "Cave09",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "object",
+    "detail": "sea room 44 (Outset) SCLS entry 8 is ('Cave09', 0, 0) and the Pitfall at (-208621, 2250, 317729) carries params 0x00FF0008, i.e. exit index 8. So the Savage Labyrinth begins in CAVE09 room 0, not Cave10. Cave09 room 0 is also the only one of the three identical entrance chambers that carries the stone tablet: a `Piwa` (daObjPaper, d_stage.cpp:891 subtype 2) at (613, 50, -130) with params 0x00020345 -> type 2, message 0x0345 = 837: 'The Savage Labyrinth / Deep in the never-ending darkness, the way to the Golden Shard you seek awaits.'"
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/sea/Room44.arc:room.dzr (SCLS + ACTR Pitfall)",
+    "res/Stage/Cave09/Room0.arc:room.dzr",
+    "include/d/actor/d_a_obj_paper.h:20-35",
+    "src/d/d_stage.cpp:891",
+    "out/rip/GZLE01/text/messages.json#id=837"
+   ],
+   "notes": "This overturns the segment order stated in gcrip/data/ww_story_caves.json's 'savage_labyrinth' step, which inferred Cave10 -> Cave11 -> Cave09 from the reward layout. See _corrections."
+  },
+  {
+   "id": "savage_labyrinth_descent",
+   "stage": "Cave09",
+   "room": 1,
+   "layer": -1,
+   "trigger": {
+    "kind": "room_enter",
+    "detail": "ONE modelled floor for all fifty. A floor is a room with enemies and a hole in it; the hole's SCLS entry 0 names the next floor and the engine's own room machinery does the rest - there is no per-floor logic, no event and no switch anywhere in the chain. Following those entries from Cave09 room 0 gives, in order: Cave09 rooms 1,2,3,4,5,11,12,13,14,15 (floors 1-10) -> Cave10 rooms 1,2,3,4,5,11,12,13,14,15 (11-20) -> Cave09 rooms 6,7,8,9,10,16,17,18,19,20 (21-30) -> Cave11 rooms 1,2,3,4,5,11,12,13,14,15 (31-40) -> Cave10 rooms 6,7,8,9,10,16,17,18,19,20 (41-50). Exactly fifty. Each floor's enemy set is the whole content; the full room list is in _instances.savage_labyrinth."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/Cave09/Room*.arc:room.dzr (SCLS)",
+    "res/Stage/Cave10/Room*.arc:room.dzr (SCLS)",
+    "res/Stage/Cave11/Room*.arc:room.dzr (SCLS)",
+    "gcrip/data/ww_story_caves.json step savage_labyrinth"
+   ],
+   "notes": "Cross-reference: the caves file already records the one engine special-case, fopAcM_createIball checking getStartStageName() against \"Cave09\"/\"Cave10\"/\"Cave11\" and refusing to create any drop, so nothing killed in the labyrinth drops hearts or rupees (src/f_op/f_op_actor_mng.cpp:1239-1244). The only floors with any furniture beyond enemies are Cave10 room 7 (three SW_C00 on switches 224/225/226), Cave10 room 8 (an MhmrSW0 hammer switch setting 224), Cave10 room 17 (an ALLdie setting 224) and Cave09 rooms 6 and 17 (one wide SW_C00 each on 224); nothing in the exported data reads any of them."
+  },
+  {
+   "id": "savage_labyrinth_escape",
+   "stage": "Cave09",
+   "room": 5,
+   "layer": -1,
+   "trigger": {
+    "kind": "warp",
+    "detail": "Nine of the fifty floors carry a SECOND SCLS entry, ('Cave09', 0, 1) - back up to the entrance chamber, spawn 1. They are Cave09 rooms 5, 10 and 20, Cave10 rooms 5 and 15, and Cave11 rooms 5, 10, 15 and 20 (the last two on the unreachable branch). Cave10 room 10 has only the one entry and Cave10 room 20 exits straight to the sea."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "res/Stage/Cave09/Room5.arc:room.dzr",
+    "res/Stage/Cave10/Room5.arc:room.dzr",
+    "res/Stage/Cave11/Room5.arc:room.dzr"
+   ],
+   "notes": "Medium because the SCLS entries are certain but WHAT USES THEM is not. No Warpt, no second Pitfall and no daObj_Hole_c appears in any of those rooms in the dzr; every room in the three stages holds only enemies, pots and the odd SW_C00. The most likely referrer is the room's own geometry-driven exit (a dzb polygon with an exit id), which this pipeline does not export. Recorded so the next pass over the collision data can bind it."
+  },
+  {
+   "id": "savage_labyrinth_floor30",
+   "stage": "Cave09",
+   "room": 20,
+   "layer": -1,
+   "trigger": {
+    "kind": "conduct",
+    "detail": "Floor 30's reward room. tkrCTf, params 0xFF20B586 -> func type 6 (TACT), tboxNo 11, swNo 11, at (0, -70, -4400), item 0xF9 = COLLECT_MAP_06, Triforce Chart 6. Switch 11 is turned on by an SWtactB at (0, -70, -4000) with params 0x0001000B -> switchNo 11, answer 0, model 1: stand on the Triforce mark and conduct the Wind's Requiem. The room's exit continues to Cave11 room 1 (floor 31)."
+   },
+   "event": "DEFAULT_TREASURE_APPEAR",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "0xF9 dItemNo_COLLECT_MAP_06_e (Triforce Chart 6)",
+   "confidence": "high",
+   "sources": [
+    "res/Stage/Cave09/Room20.arc:room.dzr",
+    "res/Stage/Cave09/Stage.arc:stage.dzs (TRES)",
+    "src/d/actor/d_a_swtact.cpp:93-170",
+    "include/d/actor/d_a_swtact.h:36-40",
+    "gcrip/data/ww_story_caves.json step cave_switch_chest"
+   ],
+   "notes": "Same Ysdls00 exit column stands on the platform (params 0x10FF010C). Cave09 is in save slot 13, so switch 11 and tbox bit 11 there are a different pair from TF_02's identically numbered 11 in slot 12."
+  },
+  {
+   "id": "savage_labyrinth_floor50",
+   "stage": "Cave10",
+   "room": 20,
+   "layer": -1,
+   "trigger": {
+    "kind": "chest",
+    "detail": "The end. takara3, params 0xFF200600 -> func type 0 (always present), tboxNo 12, at (0, -70, -4490), item 0x07 HEART_PIECE. This room's SCLS is a single entry, ('sea', 44, 10) - the only way out of floor 50 is back up to Outset. Six PLYR spawns all sit stacked on the same point (0, 400, -2600), the arrival from floor 49."
+   },
+   "event": "TREASURE",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "0x07 dItemNo_HEART_PIECE_e",
+   "confidence": "high",
+   "sources": [
+    "res/Stage/Cave10/Room20.arc:room.dzr",
+    "res/Stage/Cave10/Stage.arc:stage.dzs (TRES)",
+    "gcrip/data/ww_story_caves.json step cave_heart_piece"
+   ],
+   "notes": "Unlike floor 30 this one is a plain NORMAL chest with no song and no switch - by the time you are standing there you have earned it. Note the consequence of the corrected floor order: the Triforce Chart is the FLOOR 30 reward and the Piece of Heart is the FLOOR 50 reward, which is the opposite of the way round the caves file's inferred ordering implied."
+  },
+  {
+   "id": "savage_labyrinth_leftovers",
+   "stage": "Cave11",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "room_enter",
+    "detail": "A third of the labyrinth's rooms are dead data. Cave10 room 0 and Cave11 room 0 are byte-for-byte copies of the Cave09 entrance chamber (same spawn at (-800, 400, 0), same ring of eight SW_C00 with sw1 224, same Ysdls00 with params 0x10FF01E0, same exit ('sea', 44, 10)) minus the Piwa tablet, and nothing links to either. Cave11 rooms 6-10 chain into Cave11 room 11, which the floors 31-40 run already occupies, so they are a duplicate on-ramp with no entrance. Cave11 rooms 16-20 chain 16 -> 17 -> 18 -> 19 -> 20 -> ('Cave09', 21, 0), and Cave09 has no Room21.arc - a dangling reference."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/Cave10/Room0.arc:room.dzr",
+    "res/Stage/Cave11/Room0.arc:room.dzr",
+    "res/Stage/Cave11/Room20.arc:room.dzr",
+    "res/Stage/Cave09 (FST listing: Room0..Room20 only)"
+   ],
+   "notes": "A remake should build the fifty floors from the chain in _instances.savage_labyrinth and skip these eleven rooms entirely, or it will end up with an unreachable second entrance and a crash on the Cave09-room-21 link."
+  },
+  {
+   "id": "triforce_platform_song",
+   "stage": "TF_02",
+   "room": 6,
+   "layer": -1,
+   "trigger": {
+    "kind": "conduct",
+    "detail": "What actually raises the switch under every Triforce-platform chest, which gcrip/data/ww_story_caves.json left open. Each of those chests has an SWtact (or SWtactB) parked on the same Triforce mark carrying the SAME switch number: TF_02 room 6 SWtact params 0x0000000B -> switch 11 at (2235, 0, -2); TF_03 room 0 SWtact 0x00000010 -> switch 16 at (2530, 226, 0); TF_04 SWtactB 0x00010011 -> switch 17 at (4150, 50, 200); Cave09 room 20 SWtactB 0x0001000B -> switch 11 at (0, -70, -4000). Every one of them has answer field 0, and daSwTact_c::getAnswer maps answer 0 to tact music 0 = the Wind's Requiem (dItemNo_WINDS_REQUIEM_e 0x6D -> item_func_tact_song1 -> dComIfGs_onTact(0)). Conducting it inside getR() calls fopAcM_onSwitch(switchNo), the chest's actionSwOnWait sees the switch and orders DEFAULT_TREASURE_APPEAR. Each SWtact is paired with a TagMsg at the identical position, params 0xFFFFFF3F with home.angle.x = 2102 = 'Designs that reflect wind are drawn here.'"
+   },
+   "event": "DEFAULT_TREASURE_APPEAR",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_swtact.cpp:93-170",
+    "include/d/actor/d_a_swtact.h:36-40",
+    "src/d/d_item.cpp:1089-1117",
+    "include/d/d_item_data.h:116-121",
+    "res/Stage/TF_02/Room6.arc:room.dzr",
+    "res/Stage/TF_03/Room0.arc:room.dzr",
+    "res/Stage/TF_04/Room0.arc:room.dzr",
+    "res/Stage/Cave09/Room20.arc:room.dzr",
+    "out/rip/GZLE01/text/messages.json#id=2102",
+    "gcrip/data/ww_story_caves.json step cave_switch_chest"
+   ],
+   "notes": "TF_01 (Stone Watcher Island) is not in my stage list but almost certainly follows the same pattern with switch 10. TF_04's is the 'B' variant, SWtactB, which differs only in the OBJNAME row - both map to fpcNm_SW_TACT_e (d_stage.cpp:635-636) - though the model flag is 1 on TF_04 and Cave09 and 0 on TF_02 and TF_03, so two of the four draw the Itact conducting mark and two rely on the floor texture."
+  },
+  {
+   "id": "gauntlet_quad_room",
+   "stage": "TF_02",
+   "room": 1,
+   "layer": -1,
+   "trigger": {
+    "kind": "defeat",
+    "detail": "The shape of the Overlook Island cave: a cross-shaped hub (room 1) with four barred Zenshut doors leading to four enemy rooms and a fifth to the chest room. The four side doors carry params 0x0FFFF294/295/296/297 -> type 2, switch 148/149/150/151, front rooms 2/3/4/5, back room 1. Type 2 is the engine's clear-the-room door: daDoor10_c::chkStopOpen lifts the bars once fopAcM_myRoomSearchEnemy(frontRoom) returns NULL and calls dComIfGs_onSwitch(switch, roomNo). Room 2 holds five Bokoblins, room 3 two Wizzrobes, room 4 three Armos plus four Boko Babas, room 5 two Stalfos. The fifth Zenshut is 0x0FFFF223 -> switch 35, front room 1, back room 6 (the chest room)."
+   },
+   "event": "DEFAULT_STOP_OPEN",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_door10.cpp:120-172",
+    "src/d/actor/d_a_door10.cpp:184-217",
+    "src/d/d_door.cpp:16-61",
+    "res/Stage/TF_02/Stage.arc:stage.dzs (TGDR)",
+    "res/Stage/TF_02/Room*.arc:room.dzr"
+   ],
+   "notes": "The 'clear the room and the bars lift' rule here is the door-side twin of the chest-side rule ww_story_caves.json models in its 'cave_clear_room' step (daTbox_c::actionGenocide). Both use fopAcM_myRoomSearchEnemy on the room number; the door version adds a 0x41-frame delay and remembers itself in a switch, the chest version a 65-frame delay."
+  },
+  {
+   "id": "gauntlet_progress_torches",
+   "stage": "TF_02",
+   "room": 1,
+   "layer": -1,
+   "trigger": {
+    "kind": "bits",
+    "detail": "Four torches at the hub's corners act as a progress display. bonbori at (-1084, 400, 1086), (1084, 400, 1086), (-1085, 400, -1085) and (1084, 400, -1086) carry params 0xA8FFFF81 / 0xA9.. / 0xAA.. / 0xAB.. -> EP onSwitchNo 168, 169, 170, 171 with no burn timer, and daEp reads that switch every frame: on = lit, off = out. Eight AND_SW2 drive them - 0x94A80001, 0x95A90001, 0x96AA0001, 0x97AB0001 map door switches 148..151 onto torches 168..171 one for one (and each carries an EVNT index in home.angle.x, 1..4, so clearing a room also fires a camera event), while 0x23A80001, 0x23A90001, 0x23AA0001, 0x23AB0001 light all four from switch 35. A ninth, 0x94980004, checks all of 148..151 and sets switch 152."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "src/d/actor/d_a_ep.cpp:643-652",
+    "src/d/actor/d_a_ep.cpp:286-296",
+    "src/d/actor/d_a_andsw2.cpp:25-104",
+    "src/d/actor/d_a_andsw2.cpp:192",
+    "res/Stage/TF_02/Room1.arc:room.dzr"
+   ],
+   "notes": "Two loose ends I could not tie off. (1) Nothing anywhere in TF_02 reads switch 152, the four-of-four result. (2) Switch 35, which the four second-bank AND_SW2 check and which the chest-room door needs, is set by that door's own type-2 enemy-clear rule on its front room - which is room 1, the hub, and the hub has no enemies, so on a literal reading the exit opens at once and all four torches light at once. Either the hub is not room-loaded at that moment, or one of the two banks is dev leftover. Flagged rather than guessed."
+  },
+  {
+   "id": "tf07_broken_copy",
+   "stage": "TF_07",
+   "room": 1,
+   "layer": -1,
+   "trigger": {
+    "kind": "room_enter",
+    "detail": "TF_07 is an unfinished duplicate of TF_02's hub, and the data says so plainly. It has the same four Zenshut at the same coordinates with the same switch numbers 148..151, the same four bonbori at the same corners and the same nine AND_SW2 layout - but the torches carry params 0xFFFFFF81, i.e. onSwitchNo 0xFF, so none of them can ever light; the AND_SW2 bank has been rewritten into the volatile 0xE0..0xE4 range with one gate setting switch 0xFF (nothing) and two more checking the same switch they set; the entrance door is a door10 with switch 191 and the exit a door12; the stage ships only Room1.arc, so the four gauntlet rooms the Zenshut point at do not exist; and no Pitfall in the sea points at it. Its chest is a tkrAGc, params 0xFF0FF182 -> func 2 (ENEMIES), tboxNo 3, item 0x0F SILVER_RUPEE."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/TF_07/Stage.arc:stage.dzs",
+    "res/Stage/TF_07/Room1.arc:room.dzr",
+    "res/Stage/TF_07 (FST listing: Stage.arc + Room1.arc only)",
+    "gcrip/data/ww_stages.py"
+   ],
+   "notes": "ww_stages.py already labels TF_07 'Unused'; this is the evidence. Its room 1's SCLS is ('sea', 44, 0), i.e. it thinks it belongs to Outset, where the actual Pitfall goes to Cave09."
+  },
+  {
+   "id": "cabana_hammer_doors",
+   "stage": "TF_04",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "hit",
+    "detail": "The Cabana Labyrinth's top floor is four Skull Hammer switches and four barred doors, paired one to one. MhmrSW0 at (2222, 40, -1171), (2378, 40, 830), (2224, 40, -718) and (3574, 40, 1080) carry params 0x0003E1FF, 0x0003E3FF, 0x0003E5FF, 0x0003E7FF -> swSave 225, 227, 229, 231 with no swSave2, and each only reacts to AT_TYPE_SKULL_HAMMER from the player. The four Mori1 doors at (2450, 0, -1440), (2250, 0, -340), (2350, 0, 1160) and (3550, 0, 660) carry params 0x01FF02E1, 0x01FF02E5, 0x01FF02E3, 0x01FF02E7 -> type 2, swbit 225, 229, 227, 231. Pound a switch and its door swings open."
+   },
+   "event": "DEFAULT_STOP_OPEN",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "include/d/actor/d_a_obj_swhammer.h:12-24",
+    "src/d/actor/d_a_obj_swhammer.cpp:207-220",
+    "src/d/actor/d_a_obj_swhammer.cpp:340-370",
+    "src/d/actor/d_a_mdoor.cpp:15-33",
+    "src/d/actor/d_a_mdoor.cpp:140-160",
+    "src/d/actor/d_a_mdoor.cpp:321-330",
+    "res/Stage/TF_04/Room0.arc:room.dzr"
+   ],
+   "notes": "The Skull Hammer requirement is what gates the whole labyrinth. TF_04's only exit is ('Abesso', 0, 1), the Private Oasis cabana interior, so this is the one cave in my set that is not entered from the sea through a Pitfall. Its other furniture: eight nezumi rats, two Rdead2 in the basement at y -850, two Otana shelves, a Mhsg9 ladder (params 0x00FFFF01) at (4150, -850, 560) and twelve pots."
+  },
+  {
+   "id": "cabana_water_cull",
+   "stage": "TF_04",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "object",
+    "detail": "A pure engineering trick worth copying, not a puzzle. TF_04's top floor is carpeted with twenty MwtrSB water volumes, all with params 0x0F01EE04 -> daObjMtest type 4 (no model - a pure region), swSave 238, arg0 = 1 which means 'exist only while the switch is OFF'. Three wide SW_C00 sit on the lower floors - params 0x0000FFEB, 0x0000FFEC, 0x0000FFED at (600, -600, 410), (3200, -600, -1670) and (3730, -900, 1470), type 0 so they release when Link leaves, radii of 1630-1830 - driving switches 235, 236, 237. Three AND_SW0 at (-200/-100/0, 0, -900) with params 0xEEEB0101, 0xEEEC0101, 0xEEED0101 each watch one of those and set switch 238, with behaviour type 1 so they clear it again. Net effect: the moment Link drops to a lower floor all twenty water regions on the floor above switch off, and they come back when he climbs out."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "include/d/actor/d_a_obj_mtest.h:22-36",
+    "src/d/actor/d_a_obj_mtest.cpp:67-78",
+    "src/d/actor/d_a_andsw0.cpp:30-79",
+    "src/d/actor/d_a_andsw0.cpp:317-339",
+    "src/d/actor/d_a_swc00.cpp:12-32",
+    "res/Stage/TF_04/Room0.arc:room.dzr"
+   ],
+   "notes": "Medium only on the READING - every parameter here is decoded from real code, but calling it a culling trick rather than a puzzle is an interpretation. It is the interpretation the numbers force: arg0 = 1 (present while OFF) plus zone volumes on the floors below is not a mechanic a player can act on."
+  },
+  {
+   "id": "needlerock_six_torches",
+   "stage": "SubD42",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "hit",
+    "detail": "Needle Rock Isle's cave is a light-the-lamps room. Six bonbori are scattered up the cavern - (3924, 440, -626), (4064, 2256, -1583), (1165, 904, -383), (2202, 0, 475), (1828, 1023, 1620) and (865, 0, -61) - with params 0xE1FFFFC3, 0xE2FFFFC3, 0xE3FFFFC3, 0xE4FFFFC3, 0xE5FFFFC3, 0xE6FFFFC3: EP type 3, burn timer 0xFF (they stay lit forever) and onSwitchNo 225, 226, 227, 228, 229, 230. One AND_SW2 at (745, 0, 305), params 0xE1060006, checks six consecutive switches from 225 and sets switch 6. The chest is tkrASw, params 0xFF006481 -> func type 1 (SWITCH), tboxNo 9, swNo 6, item 0x06 ORANGE_RUPEE at (771, 0, 163) - it appears once all six burn."
+   },
+   "event": "DEFAULT_TREASURE_APPEAR",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "0x06 dItemNo_ORANGE_RUPEE_e",
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_ep.cpp:643-652",
+    "src/d/actor/d_a_ep.cpp:210-232",
+    "src/d/actor/d_a_andsw2.cpp:25-104",
+    "res/Stage/SubD42/Room0.arc:room.dzr",
+    "res/Stage/SubD42/Stage.arc:stage.dzs (TRES)"
+   ],
+   "notes": "The room also holds a Kanban signboard at (622, 0, -337), twenty ootubo1 and four kotubo pots, and five NBOX collision boxes. Its EVNT table is ['WARPT_OPEN', 'MapToolCamera'] and no spawn or volume in the stage orders either."
+  },
+  {
+   "id": "subd42_warpd_leftover",
+   "stage": "SubD42",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "warp",
+    "detail": "SubD42's room 0 SCLS table has 22 entries: entry 0 is ('sea', 29, 5), its real exit, and entries 1-21 are ('WarpD', 0, 1) .. ('WarpD', 0, 21) - the entire warp-pot table of the Diamond Steppe maze, verbatim. SubD42 contains no Warpt, no Warpnt and only one PLYR spawn, so none of the 21 can ever fire. Its EVNT table (WARPT_OPEN, MapToolCamera) and its eight-volume SW_C00 entrance ring are also identical to WarpD's, which is what the copy was made from."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/SubD42/Room0.arc:room.dzr (SCLS)",
+    "res/Stage/WarpD/Room0.arc:room.dzr (SCLS)"
+   ],
+   "notes": "Harmless in the retail game but a real trap for a remake that builds warp targets by walking the SCLS table: it would wire twenty-one non-existent pots in Needle Rock Isle straight into Diamond Steppe Island."
+  },
+  {
+   "id": "warp_maze_pot",
+   "stage": "WarpD",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "warp",
+    "detail": "Diamond Steppe Island's maze is fifteen daObj_Warpt_c pots in one room. Six are `Warpnt` (mode 1 - dComIfGs_onSwitch(lidSwitch) at create, so open from the start) and nine are `Warpt` (mode 0 - lidded until something breaks the lid). Each pot's params carry its own index at (>> 4) & 0xFF and its DESTINATION as an SCLS number at (>> 12) & 0xFF; home.angle.x carries its own lid switch in the low byte and, in the next byte, the switch that must be on before it will fire. Standing on a pot orders DEFAULT_WARP; on the event ending, normalWarp() tests the enable switch and calls dLib_setNextStageBySclsNum(dest, roomNo). WarpD's room SCLS is entry 0 = ('sea', 36, 1) and entries 1..21 = ('WarpD', 0, 1..21), and spawns 1..21 sit exactly on the pots - so every warp lands Link on another pot in the same room. The full pairing is in _instances.warp_maze."
+   },
+   "event": "DEFAULT_WARP",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_obj_warpt.cpp:705-731",
+    "src/d/actor/d_a_obj_warpt.cpp:277-282",
+    "src/d/actor/d_a_obj_warpt.cpp:504-551",
+    "src/d/d_stage.cpp:605-606",
+    "res/Stage/WarpD/Room0.arc:room.dzr"
+   ],
+   "notes": "The design reads cleanly out of the numbers: five bidirectional pairs (129<->130, 133<->134, 137<->138, 141<->142, 145<->146) where the open Warpnt of each pair is what enables its lidded partner, plus five decoy Warpt (lid switches 132, 135, 139, 140, 144) that all carry destination 1 and enable switch 129 - so they always work and always drop you back at the start. Spawns 1..21 all auto-play EVNT entry 0 = WARPT_OPEN (params >> 24 == 0), the pot-lid-opening camera, which is why WarpD is the only stage in this whole area with eighteen event-playing spawns."
+  },
+  {
+   "id": "warp_maze_floormaster",
+   "stage": "WarpD",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "defeat",
+    "detail": "Five Fmastr2 Floormasters patrol the maze, all with identical params 0xFFFF0613 and home.angle (-1, 0, 5). daFm_c::getArg reads mExitSclsNum = params & 0xFF = 0x13 = 19 and a detection radius of home.angle.z * 100 = 500. When one grabs Link and DEFAULT_FM_GRAB / DEFAULT_FM_GRAB_FOOT ends it calls dLib_setNextStageBySclsNum(19, roomNo) -> ('WarpD', 0, 19), spawn 19 at (830, 0, 160), right beside the entrance. They are the maze's real punishment, not the damage."
+   },
+   "event": "DEFAULT_FM_GRAB",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_fm.cpp:3262-3290",
+    "src/d/actor/d_a_fm.cpp:1796-1801",
+    "src/d/actor/d_a_fm.cpp:2033-2038",
+    "include/d/actor/d_a_fm.h:135",
+    "res/Stage/WarpD/Room0.arc:room.dzr"
+   ],
+   "notes": "They sit at (3280, 0, 650), (2400, 0, -1100), (3200, 0, -1380), (4350, 400, 0) and (1400, 807, -1580), each with a distinct enemy_no 0..4. Spawns 20 and 21 (at (2290, 0, 600) and (2800, 0, -1300)) exist and are wired into the SCLS table but nothing references them."
+  },
+  {
+   "id": "angular_isles_light_sensors",
+   "stage": "SubD43",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "object",
+    "detail": "SubD43, the Angular Isles cave, is a light puzzle. Fifteen LTagR0 (daTagLight::Act_c subtype 2, params 0x00040402 -> type 2, swSave 4) are packed into a 3-wide by 5-tall grid on the wall at x = 3405, y 590..870, z -95..105. A type-2 Tag_Light is a SENSOR: it counts up while chk_light() is true and, once past ten frames, calls fopAcM_onSwitch(swSave). Two LTag1 (subtype 1, params 0x00FFFFFD) at (3075, 975, 975) and (3063, 975, -1097), scaled (1, 15, 1) and tilted, are the drawn shafts of light. The chest is takaraM, params 0xFF004304 -> func type 4 (SWITCH_TRANSPARENT), tboxNo 6, swNo 4, item 0x0F SILVER_RUPEE at (3500, 525, 0) - it fades in when switch 4 goes on."
+   },
+   "event": "DEFAULT_TREASURE_APPEAR",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "0x0F dItemNo_SILVER_RUPEE_e",
+   "confidence": "medium",
+   "sources": [
+    "include/d/actor/d_a_tag_light.h:17-36",
+    "src/d/actor/d_a_tag_light.cpp:441-456",
+    "src/d/d_stage.cpp:626-627",
+    "res/Stage/SubD43/Room0.arc:room.dzr",
+    "res/Stage/SubD43/Stage.arc:stage.dzs (TRES)"
+   ],
+   "notes": "Medium because chk_light() itself is not quoted here - what counts as 'lit' for a Tag_Light sensor (a mirror beam, the Mirror Shield, a torch) is decided inside d_a_tag_light.cpp's light-cone maths, which I read the switch half of but not the geometry half. The room also holds seven Ecube movable boxes stacked at x = 2025, y 27..777, all with params 0x8C00FF00 -> daObjMovebox type 12, no switch, buoy bit set (they float), and three PLYR spawns (1, 2, 3) wired to SCLS entries 1-3 that no actor in the stage references - the same kind of leftover as SubD42's, except here the spawns at least exist."
+  },
+  {
+   "id": "boating_course_hit_switches",
+   "stage": "SubD71",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "hit",
+    "detail": "The Boating Course cave (SubD71 room 0) is a three-switch room built on the same geometry template as SubD43. Three SW_HIT0 impact switches sit in the alcoves at (2000, 326, -1050), (2000, 471, 1050) and (3250, 514, 0) with params 0x0FF0FFE3, 0x0FF0FFE2, 0x0FF0FFE1 -> swNo 227, 226, 225, evNo 255, type 15, no timer. One AND_SW0 at (2500, 1121, 0), params 0x47E1FF03, checks three consecutive switches from 225 and sets switch 71. The chest is takara5, params 0xFF147781 -> func type 1 (SWITCH), tboxNo 15, swNo 71, item 0xC2 = COLLECT_MAP_61 (Treasure Chart 61) at (2511, 27, -12). Fifteen Puti guard the alcoves, three of them (params 0xFFE332B0, 0xFFE232B0, 0xFFE132B0) carrying the same 0xE1/0xE2/0xE3 bytes as the switches."
+   },
+   "event": "DEFAULT_TREASURE_APPEAR",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "0xC2 dItemNo_COLLECT_MAP_61_e (Treasure Chart 61)",
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_swhit0.cpp:73-100",
+    "src/d/actor/d_a_swhit0.cpp:200-235",
+    "src/d/actor/d_a_andsw0.cpp:30-79",
+    "src/d/actor/d_a_andsw0.cpp:317-339",
+    "res/Stage/SubD71/Room0.arc:room.dzr",
+    "res/Stage/SubD71/Stage.arc:stage.dzs (TRES)"
+   ],
+   "notes": "The AND_SW0's behaviourType byte is 0xFF, which is not one of the named cases; daAndsw0_check falls through to the `default` arm and goes to ACT_OFF_ALL, so switch 71 is CONTINUOUS - it drops again if any of the three hit switches is turned off. Nothing in the room turns them off, so in practice it latches."
+  },
+  {
+   "id": "subd71_ghost_ship_rooms",
+   "stage": "SubD71",
+   "room": 1,
+   "layer": -1,
+   "trigger": {
+    "kind": "room_enter",
+    "detail": "SubD71 is two unrelated places in one stage. Room 0 is the Boating Course cave; rooms 1 and 2 are the GHOST SHIP interior. Both carry a PScnChg at (0, -500, -4200) / (200, -500, -4200) - d_stage.cpp:572 maps that name to fpcNm_TAG_GSHIP_e, daTagGhostship, whose demo staff id is literally \"PScnChg\" - and both exit to ('sea', 23, 0), Greatfish Isle. The furniture is coffins and skeletons, not cave furniture: sixteen Odokuro (TSUBO subtype 5), ten MKanok2 coffins, twelve Stal, two Rdead1, four pow, two bable, two wiz_r. Each room clears the same way: an ALLdie at (0, -600, -3000) with params 0xFFFFE0FF sets switch 224 once the room has been emptied, and a Mhsg4h ladder at (0, -600, -2900) with params 0x00FFE004 (daObjLadder type 4, swSave 224) rises on it."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "src/d/d_stage.cpp:572",
+    "src/d/actor/d_a_tag_ghostship.cpp:44",
+    "src/d/actor/d_a_alldie.cpp:18-46",
+    "include/d/actor/d_a_obj_ladder.h:27-39",
+    "res/Stage/SubD71/Room1.arc:room.dzr",
+    "res/Stage/SubD71/Room2.arc:room.dzr",
+    "include/d/d_save.h:328"
+   ],
+   "notes": "Medium on the identification: the actor cast, the PScnChg tag and the Greatfish exit make the Ghost Ship reading near-certain, but nothing NAMES it and I did not mine the Ghost Ship chapter, so the room-1 / room-2 split (two variants? two layers of the same room?) is not settled. Both rooms carry a layer-8 alternative actor set - room 1 gets six Stal and four MKanok2 on layer 8, room 2 gets two Rdead1 and two MKanok2 - which is how the interior changes with the story. This is flagged for whoever mines the Ghost Ship, not claimed here."
+  },
+  {
+   "id": "cliff_plateau_two_mouths",
+   "stage": "Cave03",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "warp",
+    "detail": "Cave03 is the one cave in the game with two mouths, and both halves are in the data. sea room 42 carries two Pitfalls (params 0x00FF0000 at (281416, 550, 179343) and 0x00FF0001 at (279088, 950, 179316)) and Cave03 has two PLYR spawns to match - spawn 0 at (0, 400, 20) at the bottom and spawn 1 at (3750, 1698, -1750) at the top - and two SCLS entries back out, ('sea', 42, 2) and ('sea', 42, 1). Each spawn has its own Ysdls00 exit column: params 0x10FF00E0 at the bottom, 0x10FF01E0 at the top, and the top one has its own single SW_C00 (0x0003FFE0) beside it at (3750, 1300, -1300) plus a Dsaku - a breakable fence (fpcNm_SAKU_e, hurt by sword, bomb, fire, machete, Skull Hammer or fire arrow) at (3750, 1300, -1400) blocking it."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/sea/Room42.arc:room.dzr",
+    "res/Stage/Cave03/Room0.arc:room.dzr",
+    "src/d/d_stage.cpp:861",
+    "src/d/actor/d_a_saku.cpp:17"
+   ],
+   "notes": "gcrip/data/ww_story_caves.json lists Cave03's furniture as '50 s_turu vines, 9 Kmi02, 7 Kryu00, 1 Dsaku, and 7 loose item actors'. The seven loose rupees are the tell for how the climb works: each one hovers 300-600 units directly above a Ygstp00 (fpcNm_Obj_Ygush00_e, params 0x00000002, scale 4.0-4.5) at (48,-20,-953), (350,-20,959), (940,-20,250), (1847,100,-847), (1950,100,0), (850,-20,-651) and (1847,200,952). Cave03 is a vertical shaft climbed on seven water/air spouts, with the chest (takara2, tboxNo 7, JOY_PENDANT) at (3630, 600, -600) and the Dsaku-blocked upper exit at the top."
+  },
+  {
+   "id": "pawprint_chuchu_boulders",
+   "stage": "TyuTyu",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "object",
+    "detail": "TyuTyu (Pawprint Isle's ChuChu cave) is the richest plain cave in the area - four chests, no switches at all, and two hard obstacles. The chests are takara2 tboxNo 2 (0x04 RED_RUPEE) at (1446, 1800, 3557), takara2 tboxNo 24 (0x05 PURPLE_RUPEE) at (-499, -300, 6967), takara2 tboxNo 25 (0x1F JOY_PENDANT) at (-3559, -358, 2536) and takara3 tboxNo 26 (0x07 HEART_PIECE) at (-4777, -200, 4132); all four are func type 0, i.e. simply present. The obstacles are two Ebrock (daStone2 type 2, params 0xF27FFF3F, swSave 0xFF so they raise nothing) at (-2412, -300, 2916) and (-464, -300, 5753), and three Kui stakes stacked vertically at (920, 400/1050/1701, 3751) under the first chest."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "src/d/actor/d_a_stone2.cpp:46-80",
+    "src/d/actor/d_a_stone2.cpp:280-292",
+    "src/d/d_stage.cpp:645",
+    "src/d/d_stage.cpp:654",
+    "res/Stage/TyuTyu/Room0.arc:room.dzr",
+    "res/Stage/TyuTyu/Stage.arc:stage.dzs (TRES)"
+   ],
+   "notes": "The Ebrock (type 2) is the variant that DOES fall to a bomb - src/d/actor/d_a_stone2.cpp:286 excludes only type 3 from the bomb branch - so unlike MiniKaz's Ekao these two are bombable and no Power Bracelets gate is implied. The three Kui at 650-unit vertical spacing under the 1800-high chest read as a grapple climb, but daKui has no decompiled translation unit in src/d/actor/, so that is inference from geometry. The rest of the room is scenery: twelve 'ho' flames (fpcNm_FF_e), eighteen c_green and six c_red ChuChus, four swood, dozens of kusax grass."
+  },
+  {
+   "id": "tf05_hammer_toggle_puzzle",
+   "stage": "TF_05",
+   "room": 1,
+   "layer": -1,
+   "trigger": {
+    "kind": "hit",
+    "detail": "TF_05 is unreachable but it holds the most elaborate switch machine in the area, and it is worth recording because it is a finished design. Room 1 has nine MhmrSW0 hammer switches. The first two are a TOGGLE PAIR: params 0x00038284 (sets 130, clears 132) and 0x00038482 (sets 132, clears 130) at (700, 0, -200) and (700, 0, 200) - only one of the two side doors can be open at a time. The other seven form two chains, 0x00038B8C / 0x00038C8D / 0x00038DFF (139->140->141, each clearing the next) and 0x00038E8F / 0x00038F90 / 0x00039091 / 0x000391FF (142..145). Two AND_SW2 harvest them: 0x8B830003 checks 139,140,141 and sets 131, 0x8E850004 checks 142..145 and sets 133. Those four numbers, 130/131/132/133, are the swbits of the four door10 doors from the hub to rooms 2-5 (params 0x096FF082, 0x097FF083, 0x095FF084, 0x094FF085). A fifth chain of AND_SW2 (0x86870001, 0x87880001, 0x959F0002, 0x9F890001, 0x898A0001) walks 134 -> 135 -> ... -> 138, lighting the three type-3 bonbori 135/136/137, and it is kicked off by an SW_C00 at (200, 0, 0), params 0x0003FF86 -> sw1 134, radius 430. A last AND_SW2, 0x94810004, checks 148..151 and sets 129, the exit door's switch."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "include/d/actor/d_a_obj_swhammer.h:12-24",
+    "src/d/actor/d_a_andsw2.cpp:25-104",
+    "src/d/d_door.cpp:16-61",
+    "res/Stage/TF_05/Room0.arc:room.dzr",
+    "res/Stage/TF_05/Room1.arc:room.dzr",
+    "res/Stage/TF_05/Stage.arc:stage.dzs"
+   ],
+   "notes": "Medium because every individual parameter is decoded from real accessors but the puzzle as a whole cannot be verified - the stage is unreachable, so it was never balanced or tested. Nothing sets switches 148..151, which the final AND_SW2 needs, so the exit door to room 6 (and its takara2 chest, tboxNo 0, ORANGE_RUPEE at (5700, 0, -1)) can never open. TF_05 also has the area's only Ywarp00 (params 0x00FF0080) - the same WARPLIGHT actor as Ysdls00 - and it sits on LAYER 8, so it only exists on a layer nothing selects. Room 0's spawn 0 carries params 0x01FF5000, i.e. EVNT index 1 = MapToolCamera; ww_story_caves.json already flags that as a debug camera."
+  },
+  {
+   "id": "cave06_dead_copy",
+   "stage": "Cave06",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "room_enter",
+    "detail": "Cave06 is not a designed cave at all - it is a copy of a Savage Labyrinth entrance chamber with one chest added. Its room 0 holds the same PLYR spawn at (-800, 400, 0), the same ring of eight SW_C00 with params 0x0003FFE0, and the same Ysdls00 with params 0x10FF00E0 as Cave09/Cave10/Cave11 room 0, and its only SCLS entry is ('sea', 44, 10) - the Savage Labyrinth's own exit spawn on Outset. No Pitfall anywhere in the sea points at Cave06. Its chest, takara6 params 0xFF212901, is func type 1 (SWITCH) on swNo 18, and nothing in the stage sets switch 18, so even if you were dropped in you could not open it."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/Cave06/Room0.arc:room.dzr",
+    "res/Stage/Cave06/Stage.arc:stage.dzs (TRES)",
+    "res/Stage/Cave09/Room0.arc:room.dzr",
+    "res/Stage/sea/Room*.arc:room.dzr (no Pitfall targets Cave06)",
+    "gcrip/data/ww_stages.py"
+   ],
+   "notes": "gcrip/data/ww_story_caves.json lists Cave06 as 'Unused - the stage holds only the chest and one Ysdls00 water plane'. That is right about the chest and wrong about the Ysdls00, which is the WARPLIGHT exit column, not water; and the stage also carries the eight-volume SW_C00 ring, which the report drops because SW_C00 is a logic actor."
+  },
+  {
+   "id": "minihyo_debug_pitfall",
+   "stage": "MiniHyo",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "warp",
+    "detail": "A live debug link left in a retail stage. MiniHyo room 0's SCLS table has two entries: ('sea', 40, 1) - the way out - and ('ITest62', 0, 0). A Pitfall sits at (487, -50, 1395) with params 0x00FFFF01, i.e. mExitIdx 1, which resolves to that second entry. Falling into it takes Link to ITest62, one of the disc's I_Test debug stages."
+   },
+   "event": "DEFAULT_PITFALL",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/MiniHyo/Room0.arc:room.dzr (SCLS + ACTR Pitfall)",
+    "src/d/actor/d_a_obj_hole.cpp:230-247",
+    "src/d/actor/d_a_obj_hole.cpp:120-135"
+   ],
+   "notes": "Whether it is reachable in play depends on the collision around (487, -50, 1395), which is below the walkable floor (y -50 against a room whose floor sits at y 0); it may well be sealed. A remake should simply not build it."
+  }
+ ]
+}
