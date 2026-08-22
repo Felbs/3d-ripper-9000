@@ -236,9 +236,11 @@ def subsystems() -> list[tuple[str, str, str]]:
          " effect (sword, items, voices) is still silent: seStart is a stub, so their"
          " id -> bank/program mapping is not recoverable from source"),
         ("Sailing", "partial",
-         "boat physics, sail, wind, wave_max from the real MULT values, and RTBL room streaming:"
-         " the game's own table keeps exactly {sea floor, one island} resident, so the sea"
-         " draws 1 of 49 room subtrees instead of all of them. No cannon, crane or cyclones"),
+         "boat physics, sail, wind, wave_max from the real MULT values, RTBL room streaming"
+         " (1 of 49 room subtrees drawn), and - new - an ocean surface that actually renders:"
+         " a 65x65 heightfield of 800-unit cells around Link with the four cosines evaluated in"
+         " the vertex shader from the same SEA_WAVES the buoyancy reads. Cel-shaded; a PBR"
+         " water mode is a second variant of this mesh. No cannon, crane or cyclones"),
         ("Save / story bits", "ok", "dSv_event_flag_c byte array, story_done, items, switches"),
         ("Day / night", "ok",
          "600 real seconds per in-game day (dKy: 360 units, 0.02/frame); layers swap at 6 and 18"),

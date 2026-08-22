@@ -351,6 +351,7 @@ def cmd_godot(args: argparse.Namespace) -> int:
         args.stage or None,
         out_dir=Path(args.out) if args.out else None,
         quiet=args.quiet,
+        renderer=args.renderer,
     )
     return 0
 
@@ -534,6 +535,11 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("ripdir", help="finished rip folder, e.g. out/rip/GZLE01")
     p.add_argument("stage", nargs="*", help="stage folder names under stages/ (default: all)")
     p.add_argument("-o", "--out", default=None, help="output dir (default <ripdir>/godot)")
+    p.add_argument(
+        "--renderer", default="forward_plus",
+        choices=["forward_plus", "mobile", "gl_compatibility"],
+        help="Godot rendering method; forward_plus enables SDFGI/SSR/SSAO (default)",
+    )
     p.add_argument("-q", "--quiet", action="store_true")
     p.set_defaults(fn=cmd_godot)
 

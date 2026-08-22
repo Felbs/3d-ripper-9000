@@ -8135,6 +8135,65 @@ func _physics_process(_delta: float) -> void:
     Game.run_event(ev)
 """
 
+_OCEAN_SHADER = """shader_type spatial;
+render_mode cull_disabled, depth_draw_opaque, unshaded;
+// gcrip: the Great Sea surface.  The wave sum is daSea_packet_c's, with the four wave rows
+// pushed from the SAME const the CPU sea_height() reads, so the boat floats on what you see.
+//   y = 1 + sum_i amp_i * scale * cos(k_i * (dx_i*x + dz_i*z) - phase_i(t) + off_i)
+// Cel shading on purpose: the real TEV is C0 + K0*tex0 + K1*tex2 with no Fresnel and no
+// reflection; this is the ramp-lit sea colour, which is what the game actually looks like.
+
+uniform vec4 wave_a = vec4(2.5, 13600.0, 0.0, 200.0);     // amp, wavelength, phase s16, period
+uniform vec4 wave_b = vec4(2.5, 11200.0, 4000.0, 190.0);
+uniform vec4 wave_c = vec4(2.5, 8800.0, 8000.0, 210.0);
+uniform vec4 wave_d = vec4(2.5, 6400.0, 12000.0, 180.0);
+uniform vec4 dir_ab = vec4(0.98, 0.20, 0.20, 0.98);        // (dx,dz) of a, (dx,dz) of b
+uniform vec4 dir_cd = vec4(-0.98, 0.20, 0.20, -0.98);
+uniform float wave_scale = 30.0;     // the room's wave_max, eased (sea_cur_scale)
+uniform float t_frames = 0.0;        // physics frames, the clock sea_height() uses
+uniform vec3 sea_day : source_color = vec3(0.16, 0.42, 0.62);
+uniform vec3 sea_night : source_color = vec3(0.05, 0.12, 0.24);
+uniform float night = 0.0;
+uniform vec3 sun_dir = vec3(0.55, -0.72, 0.42);
+uniform sampler2D toon_ramp : filter_linear;
+uniform vec3 c0 : source_color = vec3(0.42, 0.44, 0.52);
+uniform vec3 k0 : source_color = vec3(1.0, 0.94, 0.82);
+
+varying vec3 w_normal;
+
+float wave(vec4 w, vec2 d, vec2 xz, out vec2 grad) {
+    float k = 6.28 / w.y;
+    float phase = 6.2831853 * (mod(t_frames, w.w) / w.w - 0.5);
+    float arg = k * dot(d, xz) - phase + w.z * 6.2831853 / 65536.0;
+    float a = w.x * wave_scale;
+    grad = -a * sin(arg) * k * d;
+    return a * cos(arg);
+}
+
+void vertex() {
+    vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+    vec2 xz = wp.xz;
+    vec2 g, ga, gb, gc, gd;
+    float y = 1.0;
+    y += wave(wave_a, dir_ab.xy, xz, ga);
+    y += wave(wave_b, dir_ab.zw, xz, gb);
+    y += wave(wave_c, dir_cd.xy, xz, gc);
+    y += wave(wave_d, dir_cd.zw, xz, gd);
+    g = ga + gb + gc + gd;
+    VERTEX.y = y - (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).y;
+    w_normal = normalize(vec3(-g.x, 1.0, -g.y));
+    NORMAL = (inverse(MODEL_MATRIX) * vec4(w_normal, 0.0)).xyz;
+}
+
+void fragment() {
+    float d = clamp(dot(normalize(w_normal), -normalize(sun_dir)) * 0.5 + 0.5, 0.0, 1.0);
+    float toon = texture(toon_ramp, vec2(d, 0.5)).r;
+    vec3 lit = mix(c0, k0, toon);
+    vec3 base = mix(sea_day, sea_night, night);
+    ALBEDO = base * lit;
+}
+"""
+
 _FX_SHADER = """shader_type spatial;
 render_mode unshaded, blend_mix, depth_draw_never, cull_disabled, billboard_keep_scale, particle_trails;
 // gcrip: the JPA TEV preset that 634 of 1091 Wind Waker effects use -
@@ -8802,6 +8861,82 @@ func _spawn_tags() -> void:
     _spawn_hit_switches()
     _apply_toon()
     _stream_init()
+    _spawn_ocean()
+
+# ---- the ocean surface (daSea_packet_c) --------------------------------------------------
+const OCEAN_CELL := 800.0        # the game's heightfield cell
+const OCEAN_CELLS := 64          # 65 x 65 vertices, window +-25600
+const OCEAN_SKIRT := 450000.0    # the flat quads beyond the heightfield
+# the same rule the exporter applies when it writes the player's water_level: the Great Sea's
+# water is the y = 0 plane, every other stage has none (proper per-stage water volumes come
+# with the dzb liquid surfaces later)
+var water_level: float = -1.0e9     # set in _spawn_ocean: `name` is empty at init time
+var ocean: MeshInstance3D = null
+var ocean_mat: ShaderMaterial = null
+var ocean_skirt: MeshInstance3D = null
+
+func _spawn_ocean() -> void:
+    if String(name).to_lower().begins_with("sea"):
+        water_level = 0.0
+    if water_level < -1.0e8 or not ResourceLoader.exists("res://ocean.gdshader"):
+        return
+    ocean_mat = ShaderMaterial.new()
+    ocean_mat.shader = load("res://ocean.gdshader")
+    # the four rows of Game.SEA_WAVES, so the surface and the buoyancy share one truth
+    var w: Array = Game.SEA_WAVES
+    ocean_mat.set_shader_parameter("wave_a", Vector4(w[0][0], w[0][1], w[0][2], w[0][5]))
+    ocean_mat.set_shader_parameter("wave_b", Vector4(w[1][0], w[1][1], w[1][2], w[1][5]))
+    ocean_mat.set_shader_parameter("wave_c", Vector4(w[2][0], w[2][1], w[2][2], w[2][5]))
+    ocean_mat.set_shader_parameter("wave_d", Vector4(w[3][0], w[3][1], w[3][2], w[3][5]))
+    ocean_mat.set_shader_parameter("dir_ab", Vector4(w[0][3], w[0][4], w[1][3], w[1][4]))
+    ocean_mat.set_shader_parameter("dir_cd", Vector4(w[2][3], w[2][4], w[3][3], w[3][4]))
+    if Game.toon_ready():
+        ocean_mat.set_shader_parameter("toon_ramp", Game.toon_ramp)
+    var plane := PlaneMesh.new()
+    plane.size = Vector2(OCEAN_CELL * OCEAN_CELLS, OCEAN_CELL * OCEAN_CELLS)
+    plane.subdivide_width = OCEAN_CELLS - 1
+    plane.subdivide_depth = OCEAN_CELLS - 1
+    plane.material = ocean_mat
+    ocean = MeshInstance3D.new()
+    ocean.name = "Ocean"
+    ocean.mesh = plane
+    ocean.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    add_child(ocean)
+    # the skirt: one huge flat quad under everything, so the horizon is never empty.
+    # Its vertices sit at the far edge where the wave sum averages to ~1.0 anyway.
+    var far := PlaneMesh.new()
+    far.size = Vector2(OCEAN_SKIRT * 2.0, OCEAN_SKIRT * 2.0)
+    far.subdivide_width = 7
+    far.subdivide_depth = 7
+    far.material = ocean_mat
+    ocean_skirt = MeshInstance3D.new()
+    ocean_skirt.name = "OceanSkirt"
+    ocean_skirt.mesh = far
+    ocean_skirt.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    add_child(ocean_skirt)
+    ocean_skirt.position = Vector3(0, water_level - 2.0, 0)
+    _ocean_tick()
+    print("gcrip: ocean surface in ", name, " (", OCEAN_CELLS + 1, "x", OCEAN_CELLS + 1,
+        " cells of ", OCEAN_CELL, ")")
+
+func _ocean_tick() -> void:
+    if ocean == null or ocean_mat == null:
+        return
+    var cam := get_viewport().get_camera_3d()
+    var centre: Vector3 = cam.global_position if cam else Vector3.ZERO
+    var lk := Game.player()
+    if lk:
+        centre = lk.global_position
+    # snap the window to the 800-unit lattice, as the game does, so vertices never swim
+    ocean.position = Vector3(
+        floor(centre.x / OCEAN_CELL) * OCEAN_CELL, water_level,
+        floor(centre.z / OCEAN_CELL) * OCEAN_CELL)
+    ocean_mat.set_shader_parameter("t_frames", float(Engine.get_physics_frames()))
+    ocean_mat.set_shader_parameter("wave_scale", Game.sea_cur_scale)
+    ocean_mat.set_shader_parameter("night", 1.0 if Game.is_night() else 0.0)
+    var cs := Game.toon_sun_colors()
+    ocean_mat.set_shader_parameter("c0", Vector3(cs[0].r, cs[0].g, cs[0].b))
+    ocean_mat.set_shader_parameter("k0", Vector3(cs[1].r, cs[1].g, cs[1].b))
 
 # ---- room streaming (RTBL) --------------------------------------------------------------
 var room_sets: Array = []
@@ -9085,6 +9220,7 @@ func _start_bgm() -> void:
         Game.run_event("StartCamera")
 
 func _process(_delta: float) -> void:
+    _ocean_tick()
     if not room_nodes.is_empty() and Engine.get_process_frames() % 20 == 0:
         _stream_update()
     if name != "sea":
@@ -10303,7 +10439,7 @@ def _copy_music(rip_dir: Path, out_dir: Path, stages: list[str]) -> int:
     return n
 
 
-def _project_godot(title: str, main_scene: str) -> str:
+def _project_godot(title: str, main_scene: str, renderer: str = "forward_plus") -> str:
     k = _KEYS
     return f"""; generated by gcrip godot - open this folder with Godot 4
 config_version=5
@@ -10312,7 +10448,7 @@ config_version=5
 
 config/name={json.dumps(title)}
 run/main_scene="res://scenes/{main_scene}.tscn"
-config/features=PackedStringArray("4.2")
+config/features=PackedStringArray("4.4")
 
 [autoload]
 
@@ -10349,8 +10485,8 @@ wav={{
 
 [rendering]
 
-renderer/rendering_method="gl_compatibility"
-renderer/rendering_method.mobile="gl_compatibility"
+renderer/rendering_method="{renderer}"
+renderer/rendering_method.mobile="{renderer}"
 """
 
 
@@ -10952,6 +11088,7 @@ def export_godot(
     *,
     out_dir: Path | None = None,
     quiet: bool = False,
+    renderer: str = "forward_plus",
 ) -> dict:
     t0 = time.monotonic()
     rip_dir = Path(rip_dir)
@@ -11103,6 +11240,7 @@ def export_godot(
     _write_footsteps(rip_dir, out_dir)
     _write_particles(rip_dir, out_dir)
     (out_dir / "fx.gdshader").write_text(_FX_SHADER, encoding="utf-8")
+    (out_dir / "ocean.gdshader").write_text(_OCEAN_SHADER, encoding="utf-8")
     _write_toon_ramp(rip_dir, out_dir)
     (out_dir / "warp.gd").write_text(_WARP_GD, encoding="utf-8")
     (out_dir / "event_runner.gd").write_text(_EVENT_GD, encoding="utf-8")
@@ -11208,7 +11346,9 @@ def export_godot(
             names[st] = WW_STAGE_NAMES[key]
     (out_dir / "stage_names.json").write_text(json.dumps(names, indent=1), encoding="utf-8")
     main = next((n for n in ("sea_r44", "M_NewD2", "sea") if n in done), done[0])
-    (out_dir / "project.godot").write_text(_project_godot(title, main), encoding="utf-8")
+    (out_dir / "project.godot").write_text(
+        _project_godot(title, main, renderer), encoding="utf-8"
+    )
     seconds = round(time.monotonic() - t0, 1)
     if not quiet:
         print(
