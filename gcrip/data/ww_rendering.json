@@ -1,0 +1,2101 @@
+{
+ "_source": {
+  "what": "How The Legend of Zelda: The Wind Waker actually shades what gcrip rips, and what the Godot remake must add to stop looking like flat-lit glTF. Covers the BMD/BDL MAT3 material section, the toon ramp, the five J3D material-animation formats, and the d_kankyo time-of-day/weather palette that drives the whole look.",
+  "generated": "2026-08-21",
+  "game": "GZLE01 (The Wind Waker, NTSC-U)",
+  "evidence": {
+   "decomp": "Z:/memRip/sources/tww (read-only). All file:line citations are from that tree.",
+   "disc": "Z:/3d ripper/roms/Legend of Zelda, The - The Wind Waker (USA).iso, read through gcrip.disc.image + gcrip.formats.rarc/yaz0.",
+   "rip": "Z:/3d ripper/out/rip/GZLE01 (already-extracted glTF output, used for baseline counts)",
+   "method": "A scratch MAT3 decoder was written that reads ALL 30 MAT3 blocks (the shipped gcrip parser reads 12). Every GX enum value it decodes was then checked against include/dolphin/gx/GXEnum.h, and the decoded TEV recipe was checked against the hand-written GX copy of the same recipe in src/d/d_cloth_packet.cpp:396-437. Archives were pulled straight out of the ISO, not from the rip output.",
+   "models_parsed": [
+    "res/Object/Link.arc :: cl.bdl (Link's body, 24 materials, 41 textures)",
+    "res/Stage/sea/Room44.arc :: model.bdl (Outset terrain) and model1.bdl (Outset water)",
+    "res/Object/System.arc :: toon.bti + toonex.bti (the real ramps, decoded to pixels)",
+    "res/Stage/sea/Stage.arc :: stage.dzs EnvR/Colo/Pale/Virt chunks",
+    "corpus survey over 108 models / 272 materials from 9 archives"
+   ]
+  },
+  "honesty": {
+   "hardware_boundary": "The TEV combiner arithmetic, GX_TG_SRTG's colour-to-texcoord conversion, the GX_DF_CLAMP diffuse clamp, texture filtering of the ramp and the GX_FOG_PERSP_LIN curve all execute in the GameCube Flipper GPU. The decomp only packs register words and pushes them at the FIFO (e.g. GXSetTevSwapMode is literally three bit-inserts at src/dolphin/gx/GXTev.c:237-245). Where this file describes what those ops compute, that comes from the GX programming model plus the observed data, NOT from a line of decomp source. Every such claim is marked hardware_not_source: true.",
+   "what_is_measured": "Byte offsets, block sizes, TEV opcodes, palette RGB values and counts in this file were read out of real files. Counts are stated with their sample size.",
+   "not_determined": [
+    "The exact byte offsets of the BPK/PAK1 header fields were inferred from five real files by arithmetic (each declared array lands exactly where the previous one ends); the decomp's J3DAnmColorKeyData names them only as field_0x.., so the offsets are self-consistent but not independently named. Confidence medium-high.",
+    "The exact on-disk layout of BVA/VAF1 was not independently re-derived; gcrip's own parse_bva (j3d_anim.py:278) already implements it and the decomp confirms what it writes.",
+    "Whether Godot 4's glTF importer sets vertex_color_use_as_albedo on these particular imports was not verified by running the engine - it is stated as importer behaviour, not as an observation of this project.",
+    "The FILI 'toon switch' bit is unmapped even in the decomp (include/d/d_stage.h:1114-1119 returns mParam & 0), so per-room toon inversion cannot be reproduced - it is dead in the retail game anyway.",
+    "No per-stage sweep of Pale tables was done; only sea/Stage.arc was decoded in full. Dungeon and interior stages will have their own tables with different moods.",
+    "The exact pixel dimensions and content of toon.bti/toonex.bti were measured from the disc, but WHICH of the two a given material gets is decided purely by the first two characters of a placeholder texture name, so a model could in principle bind both.",
+    "No frame-by-frame comparison against an emulator was made. Every claim here is from source, from bytes, or from the GX programming model - none from looking at the game running."
+   ]
+  }
+ },
+ "_current": {
+  "summary": "gcrip reads geometry, skinning, one base texture per material and BCK/BTP animation. It reads none of the shading. The glTF it writes is a metallic=0 / roughness=1 PBR material with a single baseColorTexture, so Godot lights it with a smooth Lambert+GGX term under one static DirectionalLight3D. Wind Waker is a two-tone toon ramp modulated by a per-time-of-day colour pair. That is the gap.",
+  "parser": {
+   "file": "Z:/3d ripper/gcrip/formats/j3d.py",
+   "mat3_parser": "j3d.py:619 _parse_mat3",
+   "mat3_blocks_read": [
+    "0 material entries (0x14C stride)",
+    "1 remap table",
+    "2 name table",
+    "4 cull mode",
+    "5 material colour (only index 0, as u8 RGBA)",
+    "11 texgen (type/source/matrix)",
+    "13 tex matrix (centre/scale/rot/trans)",
+    "15 texture index",
+    "16 tev order",
+    "24 alpha compare",
+    "25 blend",
+    "26 zmode (write flag only)"
+   ],
+   "mat3_blocks_named_but_discarded": {
+    "3 indirect": "_ind_off - never read",
+    "6 numColorChans": "_nchan_off",
+    "7 colorChan": "_chan_off - lighting on/off, matSrc REG/VTX, litMask, diffuseFn",
+    "8 ambColor": "_amb_off",
+    "9 light": "_light_off",
+    "12 postTexGen": "_posttexgen_off",
+    "14 postTexMtx": "_posttexmtx_off",
+    "17 tevColor": "_tevcol_off - the four s10 TEV registers. This is where the environment's ambient colour lands.",
+    "18 tevKColor": "_konst_off - the four u8 konst colours. The environment's light colour and the point-light tint land here.",
+    "19 numTevStages": "_ntev_off",
+    "20 tevStage": "_tevstage_off - THE ENTIRE SHADER. Never read.",
+    "21/22 tevSwapMode + table": "_swap_off/_swaptbl_off - selects which ramp channel a stage reads",
+    "23 fog": "_fog_off",
+    "27 zCompLoc": "_zcomp_off",
+    "28 dither": "_dither_off",
+    "29 nbtScale": "_nbt_off"
+   },
+   "note": "j3d.py:619-653 unpacks all 30 offsets and then underscore-discards 18 of them. The structure is understood; only the payloads are unread."
+  },
+  "material_model": {
+   "dataclass": "j3d.py:166 Material - tex_slots, tev_orders, texgens, cull, blend, alpha compare, zwrite, one material_color, tex_matrices",
+   "heuristics": [
+    "j3d.py:215 Material.diffuse() - ranks TEV stages to guess ONE base-colour texture: prefers an identity texture matrix, then colour formats over intensity-only formats (which is why the I4 toon ramp usually loses), then stage order.",
+    "j3d.py:194 Material.detail() - finds a second layer in the same UV space and gltf.py:209 _Composites bakes base x detail into a new PNG (Wind Waker eyes)."
+   ]
+  },
+  "gltf_writer": {
+   "file": "Z:/3d ripper/gcrip/export/gltf.py",
+   "material_fn": "gltf.py:263 _material",
+   "emits": "pbrMetallicRoughness{metallicFactor:0, roughnessFactor:1}, at most one baseColorTexture, doubleSided from cull_mode==0, alphaMode BLEND/MASK/OPAQUE from blend_type and the GX alpha test, alphaCutoff from the alpha ref.",
+   "does_not_emit": [
+    "any TEV stage",
+    "any TEV register or konst colour",
+    "the material colour",
+    "the ambient colour",
+    "the colour-channel lighting flags",
+    "fog",
+    "the toon ramp binding",
+    "KHR_materials_emissive_strength or any shading extension"
+   ],
+   "vertex_colours": "gltf.py:464-470 DOES export COLOR_0 and COLOR_1. Only COLOR_0 is meaningful to glTF; COLOR_1 is written but nothing consumes it."
+  },
+  "godot_side": {
+   "file": "Z:/3d ripper/gcrip/godot.py (495 KB, read-only for this task)",
+   "materials": "godot.py never touches an imported model's material. All 7 uses of material_override are on procedurally built primitives (the hookshot chain, the King of Red Lions sail and mast, wake particles, enemy projectiles). Ripped .glb models keep whatever Godot's glTF importer made.",
+   "lighting": "one DirectionalLight3D, basis from godot.py:8379 _sun_basis() - a fixed -50 deg pitch / 30 deg yaw, light_energy 1.3, shadows on. It never moves.",
+   "environment": "godot.py:8462-8470 - a ProceduralSkyMaterial (top 0.24,0.44,0.72 / horizon 0.65,0.78,0.9), Environment with ambient_light_source=3 and tonemap_mode=2. No fog. No colour ever changes.",
+   "clock": "the clock is already fully mined and running (godot.py ~4448-4600): day_time 0..360 units, hour() = t/15, minute(), is_night(), night_stop(), day_proc() rollover, TIME_ADV per frame. It drives placement layers and night flags ONLY. Nothing visual is wired to it. This is the single biggest piece of already-paid-for work sitting unused.",
+   "import_presets": "gcrip writes no .glb.import file (0 occurrences of 'gltf/' in godot.py); Godot generates the default one. The default has import_script/path=\"\" and materials/extract=0, which is exactly the hook a toon-material post-import script would use."
+  },
+  "measured_loss": {
+   "sample": "108 models / 272 materials, parsed with gcrip's own j3d.parse from 9 archives pulled from the ISO (Link, Always, System, Bo, Md, Oq, sea/Stage, sea/Room13, sea/Room44)",
+   "texture_layers_dropped_by_the_exporter": 190,
+   "materials_that_get_no_texture_at_all": 11,
+   "materials_where_diffuse_picked_the_toon_ramp_as_base_colour": 3,
+   "materials_where_detail_baked_a_correct_second_layer": 29,
+   "comment": "190 of the bound texture layers never reach glTF. 11 materials export as plain white because their colour is a TEV konst, not a texture - the Outset water material SC_01_mizu is one of them: its only TEV stage outputs konst (70,90,150), a deep blue, and it ships as white."
+  },
+  "toon_ramp_in_the_rip": {
+   "gltf_models_exported": 1856,
+   "models_carrying_a_ZAtoon_texture": 213,
+   "models_carrying_a_ZBtoonEX_texture": 349,
+   "share": "562 of 1856 exported models (30%) reference a toon ramp",
+   "problem": "every exported ZAtoon.png / ZBtoonEX.png in out/rip/GZLE01 is 8x8 pixels. Verified on Link's cl_tex/ZBtoonEX.png and on Aisi/Always ZAtoon.png. The 8x8 image in the BMD is a PLACEHOLDER the game replaces at load time (see _toon.name_patch). gcrip exports the placeholder and never fetches the real 256-wide ramp from System.arc."
+  }
+ },
+ "_materials": {
+  "what_mat3_is": "MAT3 is a section header (count + 30 u32 block offsets, all relative to the section start) followed by an array of 0x14C-byte material entries. An entry holds almost no data - it is a bag of INDICES into the 30 shared blocks. That indirection is why a material can be understood only by reading every block.",
+  "verified_header_layout": {
+   "0x00": "'MAT3'",
+   "0x04": "u32 section size",
+   "0x08": "u16 material count",
+   "0x0A": "u16 pad",
+   "0x0C..0x84": "30 x u32 block offsets, section-relative, 0 = absent",
+   "block_order": [
+    "0 materialEntries",
+    "1 remapTable(u16 per material)",
+    "2 nameTable",
+    "3 indirect",
+    "4 cullMode(u32)",
+    "5 matColor(u8x4)",
+    "6 numColorChans(u8)",
+    "7 colorChan(8B)",
+    "8 ambColor(u8x4)",
+    "9 lightInfo",
+    "10 numTexGens(u8)",
+    "11 texGen(4B)",
+    "12 postTexGen",
+    "13 texMtx(0x64)",
+    "14 postTexMtx",
+    "15 texNo(u16)",
+    "16 tevOrder(4B)",
+    "17 tevColor(s16x4 = 8B)",
+    "18 tevKColor(u8x4)",
+    "19 numTevStages(u8)",
+    "20 tevStage(0x14)",
+    "21 tevSwapMode",
+    "22 tevSwapTable",
+    "23 fog(0x2C)",
+    "24 alphaCompare(8B)",
+    "25 blend(4B)",
+    "26 zMode(4B)",
+    "27 zCompLoc(u8)",
+    "28 dither(u8)",
+    "29 nbtScale"
+   ]
+  },
+  "verified_entry_layout_0x14C": {
+   "0x00": "u8 materialMode",
+   "0x01": "u8 cullIdx",
+   "0x02": "u8 numColorChansIdx",
+   "0x03": "u8 numTexGensIdx",
+   "0x04": "u8 numTevStagesIdx",
+   "0x05": "u8 zCompLocIdx",
+   "0x06": "u8 zModeIdx",
+   "0x07": "u8 ditherIdx",
+   "0x08": "u16 matColorIdx[2]",
+   "0x0C": "u16 colorChanIdx[4]",
+   "0x14": "u16 ambColorIdx[2]",
+   "0x18": "u16 lightIdx[8]",
+   "0x28": "u16 texGenIdx[8]",
+   "0x38": "u16 postTexGenIdx[8]",
+   "0x48": "u16 texMtxIdx[10]",
+   "0x5C": "u16 postTexMtxIdx[20]",
+   "0x84": "u16 texNoIdx[8]",
+   "0x94": "u16 tevKColorIdx[4]",
+   "0x9C": "u8 tevKColorSel[16]",
+   "0xAC": "u8 tevKAlphaSel[16]",
+   "0xBC": "u16 tevOrderIdx[16]",
+   "0xDC": "u16 tevColorIdx[4]",
+   "0xE4": "u16 tevStageIdx[16]",
+   "0x104": "u16 tevSwapModeIdx[16]",
+   "0x124": "u16 tevSwapTableIdx[4]",
+   "0x12C": "u16 unused[12]",
+   "0x144": "u16 fogIdx",
+   "0x146": "u16 alphaCompIdx",
+   "0x148": "u16 blendIdx",
+   "0x14A": "u16 nbtScaleIdx",
+   "confirmed_by": "include/JSystem/J3DGraphLoader/J3DMaterialFactory.h:48-79 struct J3DMaterialInitData names every one of these fields at exactly these offsets",
+   "one_discrepancy": "the decomp declares mTexMtxIdx[8] at 0x048 followed by an unnamed field_0x058[44]. gcrip reads mTexMtxIdx[10] at 0x048 (covering 0x048..0x05C), which extends two slots into that unnamed blob. GX has ten texture matrices (GX_TEXMTX0..GX_TEXMTX9, GXEnum.h:728-740), so the [10] reading is the more complete one and the decomp simply left slots 8-9 unnamed. Both agree on the first eight and every value read for slots 0-2 was sane on every model checked.",
+   "remap_confirmed": "J3DMaterialFactory always dereferences mpMaterialInitData[mpMaterialID[idx]] (J3DMaterialFactory.cpp:483, :493, :530, :541) - block 1 really is a material remap table, exactly as j3d.py:657 uses it",
+   "confidence": "high"
+  },
+  "tev_stage_struct_0x14": {
+   "0x00": "u8 unknown (0xFF)",
+   "0x01..0x04": "u8 colorInA/B/C/D  (GXTevColorArg)",
+   "0x05": "u8 colorOp",
+   "0x06": "u8 colorBias",
+   "0x07": "u8 colorScale",
+   "0x08": "u8 colorClamp",
+   "0x09": "u8 colorRegID (0 PREV, 1 REG0, 2 REG1, 3 REG2)",
+   "0x0A..0x0D": "u8 alphaInA/B/C/D (GXTevAlphaArg)",
+   "0x0E": "u8 alphaOp",
+   "0x0F": "u8 alphaBias",
+   "0x10": "u8 alphaScale",
+   "0x11": "u8 alphaClamp",
+   "0x12": "u8 alphaRegID",
+   "0x13": "u8 unknown",
+   "confirmed_by": "include/JSystem/J3DGraphBase/J3DStruct.h:159-180 struct J3DTevStageInfo - 20 bytes, mapped field-for-field by J3DTevs.h:92-98 setTevStageInfo",
+   "note": "the RUNTIME J3DTevStage (J3DTevs.h:34-120) is only 8 bytes because it stores already-packed BP register words - J3DTevStage::load (J3DTevs.h:107-110) writes two raw u32s and stops. The 20-byte form above is the on-disc form and the one to decode."
+  },
+  "fog_block_layout_0x2C": {
+   "source": "include/JSystem/J3DGraphBase/J3DStruct.h:102-126 J3DFogInfo, read straight off disc by J3DMaterialFactory::newFog (J3DMaterialFactory.cpp:620-626)",
+   "0x00": "u8 mType (GXFogType)",
+   "0x01": "u8 mAdjEnable",
+   "0x02": "u16 mCenter",
+   "0x04": "f32 mStartZ",
+   "0x08": "f32 mEndZ",
+   "0x0C": "f32 mNearZ",
+   "0x10": "f32 mFarZ",
+   "0x14": "GXColor mColor",
+   "0x18": "u16 mFogAdjTable[10]",
+   "correction": "the byte at 0x01 is the fog RANGE-ADJUST enable, not a fog on/off switch. Fog is active when mType != 0. Every Wind Waker material surveyed carries mType == 2 == GX_FOG_PERSP_LIN."
+  },
+  "gx_enum_values_used": {
+   "verified_against": "Z:/memRip/sources/tww/include/dolphin/gx/GXEnum.h",
+   "GXTevColorArg": {
+    "GX_CC_CPREV": 0,
+    "GX_CC_APREV": 1,
+    "GX_CC_C0": 2,
+    "GX_CC_A0": 3,
+    "GX_CC_C1": 4,
+    "GX_CC_A1": 5,
+    "GX_CC_C2": 6,
+    "GX_CC_A2": 7,
+    "GX_CC_TEXC": 8,
+    "GX_CC_TEXA": 9,
+    "GX_CC_RASC": 10,
+    "GX_CC_RASA": 11,
+    "GX_CC_ONE": 12,
+    "GX_CC_HALF": 13,
+    "GX_CC_KONST": 14,
+    "GX_CC_ZERO": 15,
+    "line": "GXEnum.h:293-310"
+   },
+   "GXTevAlphaArg": {
+    "GX_CA_APREV": 0,
+    "GX_CA_A0": 1,
+    "GX_CA_A1": 2,
+    "GX_CA_A2": 3,
+    "GX_CA_TEXA": 4,
+    "GX_CA_RASA": 5,
+    "GX_CA_KONST": 6,
+    "GX_CA_ZERO": 7,
+    "line": "GXEnum.h:335-344"
+   },
+   "GXTevOp": {
+    "GX_TEV_ADD": 0,
+    "GX_TEV_SUB": 1,
+    "GX_TEV_COMP_R8_GT": 8,
+    "GX_TEV_COMP_R8_EQ": 9,
+    "GX_TEV_COMP_GR16_GT": 10,
+    "GX_TEV_COMP_GR16_EQ": 11,
+    "GX_TEV_COMP_BGR24_GT": 12,
+    "GX_TEV_COMP_BGR24_EQ": 13,
+    "GX_TEV_COMP_RGB8_GT": 14,
+    "GX_TEV_COMP_RGB8_EQ": 15,
+    "line": "GXEnum.h:271-284"
+   },
+   "GXTevBias": {
+    "GX_TB_ZERO": 0,
+    "GX_TB_ADDHALF": 1,
+    "GX_TB_SUBHALF": 2,
+    "line": "GXEnum.h:286-291"
+   },
+   "GXTevScale": {
+    "GX_CS_SCALE_1": 0,
+    "GX_CS_SCALE_2": 1,
+    "GX_CS_SCALE_4": 2,
+    "GX_CS_DIVIDE_2": 3,
+    "line": "GXEnum.h:319-325"
+   },
+   "GXTevRegID": {
+    "GX_TEVPREV": 0,
+    "GX_TEVREG0": 1,
+    "GX_TEVREG1": 2,
+    "GX_TEVREG2": 3,
+    "line": "GXEnum.h:327-333"
+   },
+   "GXTevKColorSel": {
+    "1": 0,
+    "7/8": 1,
+    "3/4": 2,
+    "5/8": 3,
+    "1/2": 4,
+    "3/8": 5,
+    "1/4": 6,
+    "1/8": 7,
+    "K0": 12,
+    "K1": 13,
+    "K2": 14,
+    "K3": 15,
+    "K0_R": 16,
+    "K0_G": 20,
+    "K0_B": 24,
+    "K0_A": 28,
+    "line": "GXEnum.h:536-565",
+    "note": "GXTevKAlphaSel (GXEnum.h:508-534) shares the fractions but has NO whole-K entries at 12-15 - an alpha stage can only take one channel of a konst. K1 == 13 is what d_kankyo.cpp:1772 tests for to find the point-light stage."
+   },
+   "GXTexGenType": {
+    "GX_TG_MTX3x4": 0,
+    "GX_TG_MTX2x4": 1,
+    "GX_TG_BUMP0..7": "2..9",
+    "GX_TG_SRTG": 10,
+    "line": "GXEnum.h:575-587"
+   },
+   "GXTexGenSrc": {
+    "GX_TG_POS": 0,
+    "GX_TG_NRM": 1,
+    "GX_TG_TEX0..TEX7": "4..11",
+    "GX_TG_TEXCOORD0..6": "12..18",
+    "GX_TG_COLOR0": 19,
+    "GX_TG_COLOR1": 20,
+    "line": "GXEnum.h:589-611"
+   },
+   "GXCompare": {
+    "NEVER": 0,
+    "LESS": 1,
+    "EQUAL": 2,
+    "LEQUAL": 3,
+    "GREATER": 4,
+    "NEQUAL": 5,
+    "GEQUAL": 6,
+    "ALWAYS": 7,
+    "line": "GXEnum.h:465-474"
+   },
+   "GXAlphaOp": {
+    "AND": 0,
+    "OR": 1,
+    "XOR": 2,
+    "XNOR": 3,
+    "line": "GXEnum.h:476-482"
+   },
+   "GXBlendMode": {
+    "NONE": 0,
+    "BLEND": 1,
+    "LOGIC": 2,
+    "SUBTRACT": 3,
+    "line": "GXEnum.h:146-152"
+   },
+   "GXBlendFactor": {
+    "ZERO": 0,
+    "ONE": 1,
+    "SRC_COLOR/DST_COLOR": 2,
+    "INV_SRC_COLOR/INV_DST_COLOR": 3,
+    "SRC_ALPHA": 4,
+    "INV_SRC_ALPHA": 5,
+    "DST_ALPHA": 6,
+    "INV_DST_ALPHA": 7,
+    "line": "GXEnum.h:154-165"
+   },
+   "GXCullMode": {
+    "NONE": 0,
+    "FRONT": 1,
+    "BACK": 2,
+    "ALL": 3,
+    "line": "GXEnum.h:16-21",
+    "trap": "1 is FRONT and 2 is BACK - the opposite of the intuitive order"
+   },
+   "GXDiffuseFn": {
+    "NONE": 0,
+    "SIGN": 1,
+    "CLAMP": 2,
+    "line": "GXEnum.h:109-113"
+   },
+   "GXColorSrc": {
+    "REG": 0,
+    "VTX": 1,
+    "line": "GXEnum.h:91-94"
+   },
+   "GXAttnFn": {
+    "SPEC": 0,
+    "SPOT": 1,
+    "NONE": 2,
+    "line": "GXEnum.h:115-119"
+   },
+   "GXFogType": {
+    "GX_FOG_NONE": 0,
+    "GX_FOG_PERSP_LIN": 2,
+    "GX_FOG_PERSP_EXP": 4,
+    "GX_FOG_PERSP_EXP2": 5,
+    "GX_FOG_ORTHO_LIN": 10,
+    "line": "GXEnum.h:484-501",
+    "decode": "fsel = type & 7, isOrtho = (type >> 3) & 1 (src/dolphin/gx/GXPixel.c:14-15)"
+   },
+   "GXChannelID": {
+    "COLOR0": 0,
+    "COLOR1": 1,
+    "ALPHA0": 2,
+    "ALPHA1": 3,
+    "COLOR0A0": 4,
+    "COLOR1A1": 5,
+    "COLOR_ZERO": 6,
+    "ALPHA_BUMP": 7,
+    "ALPHA_BUMPN": 8,
+    "COLOR_NULL": 255,
+    "line": "GXEnum.h:78-89"
+   },
+   "GXTexMtx": {
+    "GX_TEXMTX0": 30,
+    "step": 3,
+    "GX_TEXMTX9": 57,
+    "GX_IDENTITY": 60,
+    "line": "GXEnum.h:728-740"
+   },
+   "GXTexFmt": {
+    "I4": 0,
+    "I8": 1,
+    "IA4": 2,
+    "IA8": 3,
+    "RGB565": 4,
+    "RGB5A3": 5,
+    "RGBA8": 6,
+    "CI14": 9,
+    "CMPR": 14
+   },
+   "texmtx_index_encoding": "the texgen's matrix byte is 30 + 3*n for TEXMTX0..9 and 60 for GX_IDENTITY - matches j3d.py:188 texgen_matrix()",
+   "absent_index_defaults": "J3DMaterialFactory.cpp:528 - a 0xFFFF tevColor index defaults to (0,0,0,0); :539 - a 0xFFFF tevKColor index defaults to white; :197-208 - a 0xFF kColorSel defaults to 12 (GX_TEV_KCSEL_K0) and a 0xFF kAlphaSel to 28 (GX_TEV_KASEL_K0_A). gcrip applies none of these because it reads none of these fields."
+  },
+  "how_a_material_reaches_gx": {
+   "runtime_shape": "J3DMaterial (include/JSystem/J3DGraphBase/J3DMaterial.h:13-131) is a thin facade over five polymorphic sub-blocks: mColorBlock, mTexGenBlock, mTevBlock, mIndBlock, mPEBlock (members at :114-130)",
+   "tev_block_variants": "J3DTevBlock1 / 2 / 4 / 16 / Patched (J3DMatBlock.h:546, :387, :309, :465, :232) - the loader picks one by stage count. All carry J3DGXColorS10 mTevColor[4] and J3DGXColor mTevKColor[4].",
+   "critical_asymmetry": "only mTevColor[0..2] are ever uploaded. J3DMatBlock.cpp:42-44 loadTevColor(reg, c) calls GXTevRegID(reg + 1), and the block load() loops are 'for i < 3' (J3DMatBlock.cpp:636-638, :697-699, :758-760). So material TevColor[0/1/2] -> GX_TEVREG0/1/2 and TevColor[3] (which would be GX_TEVPREV) is parsed from MAT3, stored, and never loaded. That dead slot is exactly what d_resorce.cpp:94-96 hijacks to stash the TEV stage count, and it is why every model on disc ships tevColorReg[3] = (0,0,0,0). Konst colours are 1:1: KColor[i] -> GXTevKColorID(i) (J3DMatBlock.cpp:46-48), loop i < 4.",
+   "packed_at_runtime": "several fields become packed IDs with lookup tables: J3DZMode is one u16 (calcZModeID, J3DMatBlock.h:594), J3DAlphaComp a u16 + two refs (calcAlphaCmpID, :662), J3DColorChan one u16 (calcColorChanID, :951), J3DTevSwapModeTable a single u8 index into j3dTevSwapTableTable[1024] (J3DTevs.h:170). None of that affects an offline decoder - the on-disc forms are plain structs.",
+   "texmtx_runtime": "J3DTexMtxInfo (J3DStruct.h:50-87) is 0x64 bytes and is read straight off disc (J3DMaterialFactory.cpp:491-497): u8 mProjection (GXTexMtxType), u8 mInfo (low 7 bits = J3DTexMtxMode, bit 7 = Maya calc-type), Vec mCenter at 0x04, the 0x14-byte SRT at 0x10, Mtx44 mEffectMtx at 0x24. The SRT-to-matrix builders are J3DTransform.cpp:220-311 - gcrip's TexMtx.apply() at j3d.py:158 implements the same centre-pivot form."
+  },
+  "parsed_example_link": {
+   "file": "res/Object/Link.arc :: cl.bdl, J3D2bdl4, 364544 bytes",
+   "sections": {
+    "INF1": [
+     32,
+     992
+    ],
+    "VTX1": [
+     1024,
+     40576
+    ],
+    "EVP1": [
+     41600,
+     3744
+    ],
+    "DRW1": [
+     45344,
+     832
+    ],
+    "JNT1": [
+     46176,
+     3392
+    ],
+    "SHP1": [
+     49568,
+     31424
+    ],
+    "MAT3": [
+     80992,
+     12352
+    ],
+    "MDL3": [
+     93344,
+     13344
+    ],
+    "TEX1": [
+     106688,
+     257856
+    ]
+   },
+   "mat3": {
+    "material_count": 24,
+    "block_sizes_bytes": {
+     "materialEntries": 3652,
+     "indirect": 7488,
+     "texMtx": 300,
+     "tevStage": 140,
+     "tevColor": 40,
+     "tevKColor": 12,
+     "tevOrder": 12,
+     "texGen": 12,
+     "fog": 44,
+     "colorChan": 32
+    },
+    "note": "the indirect block is 7488 bytes = 24 x 0x138, i.e. one indirect record per material even though Link uses none"
+   },
+   "material_0_ear": {
+    "numColorChans": 1,
+    "numTexGens": 2,
+    "numTevStages": 3,
+    "cull": "BACK",
+    "zmode": {
+     "test": true,
+     "func": "LEQUAL",
+     "write": true
+    },
+    "zCompLoc": true,
+    "matColor0": [
+     255,
+     255,
+     255,
+     255
+    ],
+    "ambColor0": [
+     50,
+     50,
+     50,
+     50
+    ],
+    "colorChan0": {
+     "lighting": true,
+     "matSrc": "REG",
+     "litMask": 3,
+     "diffuseFn": "CLAMP",
+     "attnFn": "SPOT",
+     "ambSrc": "REG"
+    },
+    "texGen": [
+     {
+      "type": "MTX2x4",
+      "src": "TEX0",
+      "mtx": "IDENTITY"
+     },
+     {
+      "type": "SRTG",
+      "src": "COLOR0",
+      "mtx": "IDENTITY"
+     }
+    ],
+    "texNo": [
+     {
+      "slot": 0,
+      "tex": 34,
+      "name": "linktexS3TC"
+     },
+     {
+      "slot": 1,
+      "tex": 35,
+      "name": "ZBtoonEX"
+     }
+    ],
+    "tevKColor": [
+     [
+      255,
+      255,
+      255,
+      255
+     ],
+     [
+      160,
+      90,
+      0,
+      255
+     ],
+     [
+      255,
+      255,
+      255,
+      255
+     ],
+     [
+      255,
+      255,
+      255,
+      255
+     ]
+    ],
+    "tevColorReg_s16": [
+     [
+      128,
+      128,
+      128,
+      255
+     ],
+     [
+      255,
+      255,
+      255,
+      255
+     ],
+     [
+      255,
+      255,
+      255,
+      255
+     ],
+     [
+      0,
+      0,
+      0,
+      0
+     ]
+    ],
+    "kColorSel": [
+     "K0",
+     "K0",
+     "K1"
+    ],
+    "kAlphaSel": [
+     "K0_A",
+     "K3_A",
+     "K0_A"
+    ],
+    "stages": [
+     {
+      "stage": 0,
+      "order": {
+       "texcoord": 1,
+       "texmap": 1,
+       "chan": "COLOR_NULL"
+      },
+      "color": "out = C0*(1-toon) + K0*toon   [A=C0 B=KONST C=TEXC D=ZERO ADD bias0 x1 clamp -> PREV]",
+      "meaning": "the toon lerp: shadow colour C0 -> light colour K0 across the ramp"
+     },
+     {
+      "stage": 1,
+      "order": {
+       "texcoord": 0,
+       "texmap": 0,
+       "chan": "COLOR_NULL"
+      },
+      "color": "out = TEXC * CPREV   [A=ZERO B=TEXC C=CPREV D=ZERO]",
+      "alpha": "out = TEXA * K0_A",
+      "meaning": "modulate the albedo texture by the shade term"
+     },
+     {
+      "stage": 2,
+      "order": {
+       "texcoord": 1,
+       "texmap": 1,
+       "chan": "COLOR_NULL"
+      },
+      "color": "out = CPREV + K1*toon   [A=ZERO B=KONST C=TEXC D=CPREV]",
+      "meaning": "the optional point-light add. K1 defaults to (160,90,0) here and is overwritten per frame by dKy_tevstr_c::mColorK1; the whole stage is switched off by dropping the stage count when mColorK1.a == 0 (d_kankyo.cpp:1777-1785)"
+     }
+    ],
+    "alphaComp": {
+     "comp0": "ALWAYS",
+     "ref0": 0,
+     "op": "OR",
+     "comp1": "ALWAYS",
+     "ref1": 0
+    },
+    "blend": {
+     "type": "NONE",
+     "src": "ONE",
+     "dst": "ZERO"
+    },
+    "fog": {
+     "type": "2 = GX_FOG_PERSP_LIN",
+     "adjEnable": false,
+     "adjCenter": 320,
+     "startZ": 10.0,
+     "endZ": 2000.0,
+     "nearZ": 10.0,
+     "farZ": 10000.0,
+     "color": [
+      255,
+      255,
+      255,
+      255
+     ],
+     "note": "authored values; d_kankyo.cpp:1831-1849 overwrites startZ/endZ/near/far/colour every frame from the room's palette"
+    }
+   },
+   "material_1_eyeL": {
+    "numTevStages": 2,
+    "texNo": [
+     {
+      "slot": 0,
+      "name": "eyeh.1"
+     },
+     {
+      "slot": 1,
+      "name": "hitomi"
+     }
+    ],
+    "texGen": [
+     {
+      "type": "MTX2x4",
+      "src": "TEX0",
+      "mtx": "IDENTITY"
+     },
+     {
+      "type": "MTX2x4",
+      "src": "TEX0",
+      "mtx": "TEXMTX1"
+     }
+    ],
+    "stages": [
+     "s0: out = TEXC (pupil, through TEXMTX1)",
+     "s1: out = TEXC * CPREV (eye white)"
+    ],
+    "blend": {
+     "type": "BLEND",
+     "src": "DSTALPHA",
+     "dst": "INVDSTALPHA"
+    },
+    "note": "no toon at all. TEXMTX1 is what the game slides to move the pupil. gcrip's detail()/_Composites already bakes this pair into one PNG at the rest pose, which is why the eyes are not blank - but the pupil can then never move."
+   }
+  },
+  "parsed_example_terrain": {
+   "file": "res/Stage/sea/Room44.arc :: model.bdl (Outset Island terrain)",
+   "shape": "every material in this model has the SAME recipe",
+   "material_0_A_doom_a_v": {
+    "numColorChans": 1,
+    "numTevStages": 2,
+    "numTexGens": 1,
+    "cull": "BACK",
+    "colorChan0": {
+     "lighting": false,
+     "matSrc": "VTX",
+     "ambSrc": "REG"
+    },
+    "tevColorReg0_s16": [
+     0,
+     0,
+     0,
+     255
+    ],
+    "tevKColor0": [
+     255,
+     255,
+     255,
+     255
+    ],
+    "stages": [
+     {
+      "stage": 0,
+      "order": {
+       "texcoord": 0,
+       "texmap": 0,
+       "chan": "COLOR0A0"
+      },
+      "color": "out = C0*(1-RASC) + K0*RASC",
+      "alpha": "out = TEXA * RASA"
+     },
+     {
+      "stage": 1,
+      "order": {
+       "texcoord": 0,
+       "texmap": 0,
+       "chan": "COLOR_NULL"
+      },
+      "color": "out = TEXC * CPREV",
+      "alpha": "out = APREV * K0_A"
+     }
+    ],
+    "final": "colour = albedo.rgb * lerp(TEVREG0, KONST0, vertexColour.rgb)",
+    "alphaComp": {
+     "comp0": "GEQUAL",
+     "ref0": 128,
+     "op": "AND",
+     "comp1": "LEQUAL",
+     "ref1": 255
+    },
+    "meaning": "there is no runtime lighting on room geometry at all. COLOR0 comes straight from the vertex colours baked at authoring time (matSrc=VTX, lighting off). The day/night look is entirely the two endpoints: TEVREG0 is the room's ambient/shadow colour and KONST0 is its light colour, and d_kankyo rewrites both every frame. In the file they sit at (0,0,0) and (255,255,255), so a naive export reduces to albedo * vertexColour - flat noon, forever."
+   }
+  },
+  "parsed_example_water": {
+   "file": "res/Stage/sea/Room44.arc :: model1.bdl (Outset water)",
+   "SC_01_mizu": {
+    "numTevStages": 1,
+    "textures_bound": 0,
+    "texGens": 0,
+    "tevKColor0": [
+     70,
+     90,
+     150,
+     255
+    ],
+    "tevColorReg1_s16": [
+     70,
+     90,
+     150,
+     255
+    ],
+    "stage0": "colour = KONST (K0), alpha = KONST (K3_A)",
+    "so_what": "a material whose entire appearance is a konst colour. gcrip's diffuse() returns None, _material() emits no baseColorTexture, and Godot renders it WHITE. This is one of the 11 measured cases."
+   },
+   "SC_01_mizuB_v_x": {
+    "numTevStages": 4,
+    "textures": [
+     "Txa_nami_01",
+     "Txa_nami_01",
+     "Txa_sirokuro_a"
+    ],
+    "texGen": [
+     "MTX2x4 TEX0 via TEXMTX0",
+     "MTX2x4 TEX0 via TEXMTX1",
+     "MTX2x4 TEX0 IDENTITY"
+    ],
+    "texMtx_translations_at_rest": [
+     [
+      -0.03,
+      -0.97
+     ],
+     [
+      0.03,
+      -0.97
+     ],
+     [
+      0.0,
+      0.0
+     ]
+    ],
+    "colorChan0": {
+     "lighting": false,
+     "matSrc": "VTX"
+    },
+    "shape": "colour is just TEVREG0 (white) passed down all four stages; the ENTIRE look is in the alpha chain: alpha = ((wave1.a*K0) + wave2.a*K0) * mask.a * vertexAlpha",
+    "blend": {
+     "type": "BLEND",
+     "src": "SRCALPHA",
+     "dst": "INVSRCALPHA"
+    },
+    "zmode": {
+     "test": true,
+     "func": "LEQUAL",
+     "write": false
+    },
+    "so_what": "gcrip picks Txa_nami_01 as a baseColorTexture, which is wrong in kind: this is white foam shaped by two scrolling alpha layers. The two TEXMTX translations are the BTK's animated scroll frozen at frame 0."
+   }
+  },
+  "corpus_survey": {
+   "sample": "108 models / 272 materials, 9 archives from the ISO",
+   "tev_stage_count": {
+    "1": 60,
+    "2": 66,
+    "3": 125,
+    "4": 18,
+    "5": 3
+   },
+   "max_tev_stages_seen": 5,
+   "texgen_SRTG_from_COLOR0": 149,
+   "binds_a_Z_toon_placeholder": 103,
+   "chan0_lighting_on_matSrc_REG": 179,
+   "chan0_lighting_off_matSrc_REG": 45,
+   "chan0_lighting_off_matSrc_VTX": 39,
+   "chan0_lighting_on_matSrc_VTX": 9,
+   "indirect_texturing_enabled": 27,
+   "projected_or_env_texgen_MTX3x4": 6,
+   "textures_bound_per_material": {
+    "0": 11,
+    "1": 71,
+    "2": 161,
+    "3": 12,
+    "4": 15,
+    "5": 2
+   },
+   "blend_NONE": 172,
+   "blend_BLEND": 100,
+   "alpha_test_on": 65,
+   "fog_type_nonzero_in_the_file": 215,
+   "TEVREG0_non_trivial_in_file": 165,
+   "TEVREG1_non_trivial": 69,
+   "TEVREG2_non_trivial": 21,
+   "K0_non_white": 9,
+   "K1_non_white": 142,
+   "K2_non_white": 6,
+   "K3_non_white": 28,
+   "reading": "55% of materials do the toon lookup. 61% ship a non-trivial TEVREG0 - that slot is the environment ambient. 52% ship a non-white K1 - that is the point-light tint. Only 5 stage-count buckets exist and none exceeds 5 stages, so a single uber-shader with <=5 configurable stages covers the whole game."
+  },
+  "godot_expressibility": {
+   "verdict": "StandardMaterial3D cannot express Wind Waker. A ShaderMaterial can express essentially all of it, because every recipe in the corpus is <=5 TEV stages of lerp/multiply/add over at most 5 textures, two colour registers and a 2D ramp.",
+   "StandardMaterial3D_can_hold": [
+    "albedo_texture (one layer)",
+    "albedo_color (could carry a konst colour - would fix the 11 white materials cheaply)",
+    "vertex_color_use_as_albedo (matches the terrain matSrc=VTX case, and Godot's glTF importer sets it when COLOR_0 is present - importer behaviour, not verified here)",
+    "cull_mode from GXCullMode",
+    "transparency ALPHA / ALPHA_SCISSOR + alpha_scissor_threshold from the GX alpha test",
+    "depth_draw_opaque / no_depth_test from GX zmode",
+    "blend_mode MIX / ADD / SUB - covers GX BLEND(SRCALPHA,INVSRCALPHA) and SUBTRACT",
+    "SHADING_MODE_UNSHADED for the many lighting=false materials",
+    "detail_albedo + detail_blend_mode MUL - a real 2-layer modulate without baking a PNG",
+    "uv1_scale / uv1_offset - a static J3D TexMtx SRT (rotation is NOT expressible)"
+   ],
+   "StandardMaterial3D_cannot_hold": [
+    "the toon ramp lookup (needs a texture indexed by N.L)",
+    "the C0/K0 lerp - two independently animated colour endpoints",
+    "more than two texture layers",
+    "per-stage swap tables (which ramp channel a stage reads)",
+    "TEV bias/scale (x2, x4, /2, +-0.5)",
+    "any of the compare ops (GX_TEV_COMP_*)",
+    "indirect texturing (27/272 materials)",
+    "a rotating UV matrix",
+    "per-material fog start/end"
+   ],
+   "ShaderMaterial_recommended_uniforms": [
+    "sampler2D albedo0..albedo3 + their UV set index",
+    "sampler2D toon_ramp (the 256x256 toonex or 256x8 toon)",
+    "vec4 tev_reg[4] (s10, so allow values outside 0..1 - real files carry alpha 279)",
+    "vec4 tev_konst[4]",
+    "mat3 tex_mtx[8] (BTK-animated)",
+    "int stage_count + a packed per-stage recipe (a/b/c/d/op/bias/scale/out, 4 bytes each)",
+    "the two environment colours as GLOBAL uniforms so one clock write repaints the world"
+   ],
+   "what_stays_lost": [
+    "indirect texturing without a second pass or a bump-offset approximation",
+    "GX's exact 8-bit-per-stage clamping and the s10 register range - a float shader is more precise than the hardware, which is visually harmless",
+    "the alpha-compare AND/OR of two comparisons (Godot has one scissor threshold); the measured corpus uses GEQUAL 128 AND LEQUAL 255, which is a plain >=128 scissor",
+    "GX dither and zCompLoc (early-Z), which are performance, not appearance"
+   ],
+   "cheapest_useful_step": "keep StandardMaterial3D but set albedo_color from the material's dominant konst/register colour when diffuse() returns None. That alone fixes the 11 white materials, including Outset's water."
+  }
+ },
+ "_toon": {
+  "one_line": "Wind Waker turns the rasterised lighting value into a texture coordinate and reads a hard-stepped ramp with it, then lerps between two environment colours by that step. There is no smooth diffuse term anywhere in the game.",
+  "where_the_ramp_lives": {
+   "on_disc": "res/Object/System.arc",
+   "files": [
+    "archive/dat/toon.bti",
+    "archive/dat/toonex.bti"
+   ],
+   "decomp_names": "assets/GZLE01/res/Object/System.h:11-12 - dRes_INDEX_SYSTEM_BTI_TOON_e=0x3, dRes_INDEX_SYSTEM_BTI_TOONEX_e=0x4",
+   "loaded": "src/d/d_s_logo.cpp:709-716 at boot, once, into dDlst_list_c::mToonImage / mToonExImage (include/d/d_drawlist.h:661-662)",
+   "generated_at_runtime": false
+  },
+  "measured_ramp_pixels": {
+   "toon.bti": {
+    "format": "I4",
+    "size": [
+     256,
+     8
+    ],
+    "wrapS": 0,
+    "wrapT": 0,
+    "magFilter": "LINEAR",
+    "minFilter": "LINEAR",
+    "all_8_rows_identical": true,
+    "curve": "0 for u < 119/255, a linear rise from 119 to 137, 255 after",
+    "step_points_index_value": [
+     [
+      0,
+      0
+     ],
+     [
+      119,
+      17
+     ],
+     [
+      121,
+      34
+     ],
+     [
+      123,
+      51
+     ],
+     [
+      124,
+      68
+     ],
+     [
+      125,
+      85
+     ],
+     [
+      126,
+      102
+     ],
+     [
+      127,
+      119
+     ],
+     [
+      128,
+      136
+     ],
+     [
+      129,
+      153
+     ],
+     [
+      130,
+      170
+     ],
+     [
+      131,
+      187
+     ],
+     [
+      132,
+      204
+     ],
+     [
+      133,
+      221
+     ],
+     [
+      135,
+      238
+     ],
+     [
+      137,
+      255
+     ]
+    ],
+    "as_a_shader": "smoothstep(0.467, 0.537, x) is a near-exact fit - the whole terminator is 7% of the range, centred on 0.5"
+   },
+   "toonex.bti": {
+    "format": "CMPR",
+    "size": [
+     256,
+     256
+    ],
+    "wrapS": 0,
+    "wrapT": 0,
+    "magFilter": "LINEAR",
+    "minFilter": "LINEAR",
+    "rows_identical": false,
+    "row0_step_points": [
+     [
+      0,
+      0
+     ],
+     [
+      117,
+      10
+     ],
+     [
+      120,
+      24
+     ],
+     [
+      124,
+      66
+     ],
+     [
+      128,
+      140
+     ],
+     [
+      132,
+      198
+     ],
+     [
+      137,
+      255
+     ]
+    ],
+    "max_abs_row_deviation_from_row0": 33,
+    "meaning": "the extended ramp is 2D. The vertical axis is the second light."
+   }
+  },
+  "name_patch": {
+   "mechanism": "the ramp inside every BMD/BDL is an 8x8 placeholder. At archive-mount time the game rewrites it by NAME PREFIX ONLY.",
+   "code": "src/d/d_resorce.cpp:76-82 - if name[0]=='Z': name[1]=='A' -> toon.bti, name[1]=='B' -> toonex.bti",
+   "verified_in_data": "res/Object/Link.arc::cl.bdl TEX1 entry 35 is named 'ZBtoonEX' and is 8x8 I4 (32 bytes of pixel data). The real toonex.bti is 256x256 CMPR. Every ZAtoon.png/ZBtoonEX.png in out/rip/GZLE01 is 8x8.",
+   "side_effect": "the same pass stashes the material's original TEV stage count in the alpha of the unused 4th TEV register (src/d/d_resorce.cpp:94-96), which d_kankyo.cpp:1769 reads back to decide whether to enable the point-light stage. That is why tevColorReg[3] is (0,0,0,0) on disc but non-zero in RAM.",
+   "for_the_remake": "gcrip must load System.arc/toon.bti + toonex.bti once, and substitute them for any texture whose name starts with 'ZA' or 'ZB'. This is a two-character test, exactly as the game does it."
+  },
+  "how_the_lookup_works": {
+   "step_1_lighting": "GXSetChanCtrl(GX_COLOR0, enable, GX_SRC_REG, GX_SRC_REG, litMask, GX_DF_CLAMP, GX_AF_NONE) - the rasterised COLOR0 is clamp(N.L) of a coloured light against a white material colour (src/d/d_cloth_packet.cpp:407)",
+   "step_2_light_colours_are_channel_masks": {
+    "light0": "colour (255,0,0) - pure RED (d_kankyo.cpp:1726-1728, :1545-1547, :3410-3412)",
+    "light1": "colour (0,G,0) - pure GREEN (d_kankyo.cpp:2557-2559)",
+    "full_bg_types": "white (255,255,255) (d_kankyo.cpp:1730-1732)",
+    "why": "so COLOR0.R carries the sun/moon N.L and COLOR0.G carries the point-light N.L, independently, in one rasterised colour"
+   },
+   "step_3_texgen": "GXSetTexCoordGen2(GX_TEXCOORD1, GX_TG_SRTG, GX_TG_COLOR0, GX_IDENTITY) (d_cloth_packet.cpp:410). GX_TG_SRTG = 'source raster to texgen': the rasterised colour becomes the (s,t) pair. So (s,t) = (N.L_sun, N.L_pointlight). This is why toonex is a 256x256 2D texture and not a 1D strip.",
+   "step_4_binding": "the ramp is loaded into GX_TEXMAP1 (d_cloth_packet.cpp:188) and read by TEV stage 0 via GXSetTevOrder(GX_TEVSTAGE0, GX_TEXCOORD1, GX_TEXMAP1, GX_COLOR0A0) (d_cloth_packet.cpp:413)",
+   "step_5_swap": "GXSetTevSwapMode(GX_TEVSTAGE0, GX_TEV_SWAP0, GX_TEV_SWAP1) - texture swap SWAP1 = (R,R,R,A), so stage 0 broadcasts the ramp's RED channel. The point-light stage uses GX_TEV_SWAP2 = (G,G,G,A), the GREEN channel (d_cloth_packet.cpp:412, :425-428). Swap tables are the GX defaults set at src/dolphin/gx/GXInit.c:368-371 and re-set by src/JSystem/J3DGraphBase/J3DSys.cpp:238-241.",
+   "step_6_combine": "GXSetTevColorIn(GX_TEVSTAGE0, GX_CC_C0, GX_CC_C1, GX_CC_TEXC, GX_CC_ZERO) -> out = lerp(C0, C1, ramp) (d_cloth_packet.cpp:414). Stage 1 multiplies by the albedo. Optional stage 2 adds C2 * ramp.g.",
+   "hardware_not_source": true,
+   "hardware_note": "GX_TG_SRTG's colour->texcoord conversion, the swap-table broadcast, the GX_DF_CLAMP clamp and the TEV lerp itself all run in the Flipper GPU. The decomp only writes the register words."
+  },
+  "where_the_two_colours_come_from": {
+   "in_the_model_file": "TEV register 0 and konst 0 (and konst 1 for the point light) carry authored defaults - Link's 'ear' ships C0=(128,128,128), K0=(255,255,255), K1=(160,90,0)",
+   "at_runtime": "src/d/d_kankyo.cpp:1763-1853 setLightTevColorType_sub overwrites them every frame from the per-actor dKy_tevstr_c: setTevColor(0, mColorC0) at :1821 and setTevKColor(0, mColorK0) at :1827, plus setTevKColor(1, mColorK1) at :1780",
+   "index_to_register": "src/JSystem/J3DGraphBase/J3DMatBlock.cpp:42-48 - material TevColor[i] goes to GXTevRegID(i+1), so index 0 -> GX_TEVREG0; material KColor[i] goes to GXTevKColorID(i), so index 0 -> GX_KCOLOR0",
+   "hand_written_copies": [
+    "src/d/d_cloth_packet.cpp:433-435",
+    "src/d/actor/d_a_goal_flag.cpp:190-192",
+    "src/d/actor/d_a_hookshot.cpp:49-50"
+   ],
+   "critical_fact": "the game NEVER calls GXSetChanAmbColor or GXSetChanMatColor to tint the world. Wind Waker's 'ambient' is not the GX ambient register - it is TEVREG0 fed into a TEV lerp against the toon ramp. Get that one thing right and the remake looks like the game."
+  },
+  "point_light_stage_gating": {
+   "code": "src/d/d_kankyo.cpp:1769-1786",
+   "how": "reads getTevColor(3).mColor.a (the stashed original stage count), checks whether the stage before it selects konst K1 (getTevKColorSel(n-1) == 13 == GX_TEV_KCSEL_K1), and then either enables the stage and writes K1 + light mask 3, or drops the stage count by one. So the third stage exists in the file but is off unless a point light is near.",
+   "godot_equivalent": "a bool uniform, not a separate material"
+  },
+  "dead_feature": {
+   "toon_proc_check": "src/d/d_kankyo.cpp:88-99 always returns false. It gated a per-room 'invert the toon lighting' mode keyed on FILI's toon switch, and include/d/d_stage.h:1114-1119 shows that switch is unmapped (mParam & 0). Consumers at d_kankyo.cpp:1535, :1797, :2928, :3369 are all dead in retail. Do not implement it."
+  },
+  "godot_recipe": {
+   "shader_sketch": "in a spatial shader with render_mode unshaded (or a custom light() function): t = clamp(dot(N, L), 0, 1); ramp = texture(toon, vec2(t, point_light_term)).r; shade = mix(TEV_C0, TEV_K0, ramp); ALBEDO = albedo_tex.rgb * shade; then optionally += TEV_K1 * ramp_green",
+   "why_a_custom_light_is_better": "Godot's light() function still gives per-light control and keeps shadows working, whereas unshaded loses shadow receipt entirely",
+   "ramp_import": "toon.bti/toonex.bti must be imported with filter=linear, repeat=disabled (the BTIs say wrapS=wrapT=CLAMP, mag=min=LINEAR) and NO mipmaps"
+  }
+ },
+ "_anim_tracks": {
+  "summary": "Five J3D formats animate materials. gcrip parses two of them and exports one. The three unparsed ones (BTK, BRK, BPK) are exactly the ones that carry the moving water, the glowing/pulsing colours and the fading effects.",
+  "where_the_decomp_defines_them": {
+   "all_classes": "include/JSystem/J3DGraphAnimator/J3DAnimation.h - there is no per-format header; every animation class is in that one file",
+   "magic_dispatch": "src/JSystem/J3DGraphLoader/J3DAnmLoader.cpp:14-87 J3DAnmLoaderDataBase::load - checks header magic 'J3D1' then switches on the 4-byte type. So the 8-byte file magic is 'J3D1' + type. Models are 'J3D2' instead ('J3D2bmd3' / 'J3D2bdl4' / 'J3D2bmt3', J3DModelLoader.cpp:24-57).",
+   "section_dispatch": "key formats at J3DAnmLoader.cpp:373-403 (ANK1, PAK1, CLK1, TTK1, TRK1, VCK1); full formats at :181-211 (ANF1, PAF1, TPT1, CLF1, VAF1, VCF1)",
+   "the_one_apply_function": "src/JSystem/J3DGraphAnimator/J3DMaterialAnm.cpp:51-75 J3DMaterialAnm::calc(J3DMaterial*) is the single place every material animation lands. Slot counts (J3DMaterialAnm.h:172-178): mMatColorAnm[2], mTexNoAnm[8], mTevColorAnm[4], mTevKColorAnm[4], mTexMtxAnm[8].",
+   "material_binding": "BTK/BRK/BPK/BTP all bind BY MATERIAL NAME. searchUpdateMaterialID (J3DAnimation.cpp:879-894 for BTK, :1062-1077 for BRK, :697-710 BPK, :863-876 BTP) looks each name up in the model's MAT3 name table and OVERWRITES the on-disc remap array in place with the resolved index, or 0xFFFF for 'this material is not in this model'. So the u16 remap array on disc is a stale authoring-time index - an offline tool must match by name, which is exactly what rip.py:333-380 already does for BTP. BVA is the exception: it is positional by shape index.",
+   "key_interpolation_is_pure_software": "J3DHermiteInterpolationS (J3DAnimation.cpp:323-366, with the equivalent C in the comment at :324-331), J3DGetKeyFrameInterpolationS (:369-411) and the templated float version (:414-456). Key stride is chosen by J3DAnmKeyTableBase::mType: 0 means 3 floats per key (time, value, tangent), anything else means 4 (time, value, inTangent, outTangent). gcrip's j3d_anim.py:94 _hermite already implements the same curve for BCK.",
+   "loop_modes": "J3DFrameCtrl::Attribute_e (J3DAnimation.h:824-831): NULL=-1, NONE=0, RESET=1, LOOP=2, REVERSE=3, LOOP_REVERSE=4. Outset's water BTK ships loopMode 2 = LOOP."
+  },
+  "formats": {
+   "BTK": {
+    "class": "J3DAnmTextureSRTKey (J3DAnimation.h:392-478, size 0x88, mKind 4)",
+    "magic": "J3D1btk1",
+    "section": "TTK1 (J3DAnmLoader.cpp:387)",
+    "loader": "J3DAnmKeyLoader_v15::setAnmTextureSRT, J3DAnmLoader.cpp:473-514",
+    "evaluator": "J3DAnmTextureSRTKey::calcTransform, J3DAnimation.cpp:519-552",
+    "animates": "texture matrices - scale, rotation and translation of a J3D TexMtx, per material, per texmtx slot. Scrolling water, lava, waterfalls, spinning whirlpools, sliding eye pupils.",
+    "writes_exactly": "J3DTexMtx::mTexMtxInfo.mSRT for one of the material's 8 texture matrices (J3DMaterialAnm.cpp:71-74). The SRT fields are mScaleX, mScaleY, mRotation, mTranslationX, mTranslationY (J3DStruct.h:27-33).",
+    "gcrip_status": "NOT PARSED. Only classified (classify.py:33, survey.py:32).",
+    "verified_layout": {
+     "header_is_0x60_bytes": "J3DAnmTextureSRTKeyData, J3DAnimation.h:157-189",
+     "section_header_from_section_start": {
+      "0x08": "u8 loopMode (J3DFrameCtrl::Attribute_e)",
+      "0x09": "u8 mDecShift - the rotation fixed-point shift",
+      "0x0A": "s16 mFrameMax (duration)",
+      "0x0C": "u16 mTrackNum = 3 * (number of animated texture matrices)",
+      "0x0E": "u16 scale value-pool count",
+      "0x10": "u16 rotation value-pool count",
+      "0x12": "u16 translation value-pool count",
+      "0x14": "s32 animTableOffset",
+      "0x18": "s32 updateMaterialIDOffset (remap)",
+      "0x1C": "s32 nameTableOffset (material names, ResNTAB)",
+      "0x20": "s32 texMtxIDOffset (u8 per entry - WHICH of the material's 8 tex matrices this track drives)",
+      "0x24": "s32 srtCentreOffset (Vec, 3 f32 per entry - STATIC, not keyframed)",
+      "0x28": "s32 scale pool (f32)",
+      "0x2C": "s32 rotation pool (s16)",
+      "0x30": "s32 translation pool (f32)",
+      "0x34..0x58": "a SECOND, 'post' (dual tex-transform) track set with the same seven arrays - counts at 0x34..0x3A, offsets at 0x3C..0x58. Only applied when its name-table offset at 0x44 is non-zero (J3DAnmLoader.cpp:491-504).",
+      "0x5C": "s32 mTexMtxCalcType, clamped to {0,1}; 1 = Maya-style SRT (J3DAnmLoader.cpp:505-513). It is stuffed into the top bit of J3DTexMtxInfo::mInfo at attach time (J3DMaterialAttach.cpp:89)."
+     },
+     "anim_entry": "0x36 bytes = 3 x J3DAnmTransformKeyTable (J3DAnimation.h:40-44, 0x12 each), i.e. three {scale, rotation, translate} triples of J3DAnmKeyTableBase {u16 maxFrame, u16 offset, u16 type}",
+     "only_5_of_the_9_subtracks_are_read": {
+      "source": "J3DAnimation.cpp:519-552",
+      "mScaleX": "entry[0].scale  (default 1.0 when maxFrame == 0)",
+      "mScaleY": "entry[1].scale  (default 1.0)",
+      "mRotation": "entry[2].rotation, raw s16 << mDecShift  (default 0)",
+      "mTranslationX": "entry[0].translate  (default 0.0)",
+      "mTranslationY": "entry[1].translate  (default 0.0)",
+      "unused_on_disc": "entry[0].rotation, entry[1].rotation, entry[2].scale, entry[2].translate - present in the file, never evaluated"
+     },
+     "centre_is_static": "there is no keyframed centre. The Vec at the centre array is copied once into J3DTexMtxInfo::mCenter when the animation is attached (J3DMaterialAttach.cpp:90-92).",
+     "attach_side_effect": "entryTexMtxAnimator (J3DMaterialAttach.cpp:57-100) will CREATE a J3DTexMtx if the material had none (:77-80) and force the texcoord's gen matrix to GX_TEXMTX0 + texMtxID*3 (:82-83). So a BTK can animate a matrix the MAT3 never declared - an offline tool must not assume the slot exists.",
+     "rotation_scale": "raw s16 * (180/32768) * 2^mDecShift degrees"
+    },
+    "validated_against": {
+     "file": "res/Stage/sea/Room44.arc :: btk/model1.btk (Outset water), 2784 bytes",
+     "read": {
+      "loopMode": 2,
+      "rotationFractionExponent": 1,
+      "duration": 100,
+      "animCount": 16,
+      "scaleValues": 171,
+      "rotValues": 33,
+      "transValues": 116,
+      "materials": [
+       "SC_01_mizuB_v_x x2",
+       "SC_01_mizu_v x2",
+       "SC_01_mizu_v_x x2",
+       "SC_01_mizu_v(2) x5",
+       "SC_01_mizu_v_x(2) x2",
+       "SC_01_mizu_v(3) x2",
+       "SC_01_mizu_v(4)"
+      ],
+      "texMtxIndex_per_anim": [
+       0,
+       1,
+       0,
+       1,
+       0,
+       1,
+       0,
+       1,
+       2,
+       3,
+       4,
+       0,
+       1,
+       0,
+       1,
+       0
+      ]
+     },
+     "byte_order_note": "the raw table dump prints as scaleX rotX transX / scaleY rotY transY / scaleZ rotZ transZ because each 0x12 entry is {scale, rot, translate}; the SEMANTIC mapping is the 5-track one above, not a literal X/Y/Z reading",
+     "arithmetic_proof": "animTable 96 + 16*0x36 = 960 = remapOffset; texMtxIdx 1312 + 16 = 1328 = centreOffset; centre 1328 + 16*12 = 1520 = scaleOffset; scale 1520 + 171*4 = 2204 = rotOffset; rot 2204 + 33*2 = 2270 -> pad 2272 = transOffset; trans 2272 + 116*4 = 2736 <= section size 2740. Every boundary lands exactly.",
+     "confidence": "high - layout self-validates on a real file"
+    },
+    "godot_mapping": "AnimationPlayer tracks on ShaderMaterial uniforms. Each anim becomes up to 3 value tracks (uv_scale, uv_rotation, uv_offset) on 'shader_parameter/tex_mtx_N'. With StandardMaterial3D only uv1_offset and uv1_scale are animatable and only for one layer, and rotation is not expressible at all. The vast majority of BTKs in the game are pure translation (Outset's water: two tracks of trans only, at (-0.03,-0.97) and (+0.03,-0.97) per unit time), so even a translation-only implementation buys most of the effect."
+   },
+   "BRK": {
+    "class": "J3DAnmTevRegKey (J3DAnimation.h:542-619, size 0x74, mKind 5)",
+    "magic": "J3D1brk1",
+    "section": "TRK1 (J3DAnmLoader.cpp:390)",
+    "loader": "J3DAnmKeyLoader_v15::setAnmTevReg, J3DAnmLoader.cpp:560-588",
+    "animates": "TEV colours - and it animates TWO INDEPENDENT SETS: the s10 TEV REGISTER colours and the u8 KONST colours, with separate counts, separate remap tables and separate name tables.",
+    "confirmed_two_track_systems": "J3DAnimation.h:594-618 declares mCRegUpdateMaterialNum and mKRegUpdateMaterialNum, mCRegDataCount{R,G,B,A} and mKRegDataCount{R,G,B,A}, two JUTNameTabs, two remap arrays, J3DAnmCRegKeyTable* and J3DAnmKRegKeyTable*, and two sets of four s16* pools. The two evaluators differ in their CLAMP RANGE, which is the proof they are different datatypes: getTevColorReg clamps to [-1024, 1023] (J3DAnimation.cpp:913-918) while getTevKonstReg clamps to [0, 255] (:993-998). Both raw pools are s16 on disc.",
+    "writes_exactly": "J3DMaterialAnm.cpp:63-66 writes mTevColor[i] for i < 3 ONLY, and :67-70 writes all four mTevKColor[i]. Combined with the +1 in loadTevColor (J3DMatBlock.cpp:42-44), a BRK register track with colorId 0/1/2 lands in GX_TEVREG0/1/2. colorId 3 is stored and never uploaded.",
+    "destination_comes_from_the_file": "J3DMaterialAttach.cpp:115-119 and :127-131 take the destination slot from the entry's mColorId, NOT from the loop index",
+    "gcrip_status": "NOT PARSED. Only classified (classify.py:32, survey.py:33).",
+    "verified_layout": {
+     "section_header_from_section_start": {
+      "0x08": "u8 loopMode",
+      "0x0A": "u16 duration",
+      "0x0C": "u16 registerAnimCount",
+      "0x0E": "u16 konstAnimCount",
+      "0x10..0x17": "u16 register R,G,B,A value counts",
+      "0x18..0x1F": "u16 konst R,G,B,A value counts",
+      "0x20": "u32 registerAnimTableOffset",
+      "0x24": "u32 konstAnimTableOffset",
+      "0x28": "u32 registerRemapOffset",
+      "0x2C": "u32 konstRemapOffset",
+      "0x30": "u32 registerNameTableOffset",
+      "0x34": "u32 konstNameTableOffset",
+      "0x38..0x44": "u32 register R,G,B,A value array offsets",
+      "0x48..0x54": "u32 konst R,G,B,A value array offsets"
+     },
+     "anim_entry": "0x1C bytes = 4 x {u16 keyCount, u16 firstIndex, u16 tangentMode} (R,G,B,A) + u8 colorId + 3 pad. colorId selects which of the 4 registers / 4 konst slots this track drives. Confirmed by the decomp structs J3DAnmCRegKeyTable (J3DAnimation.h:62-69) and J3DAnmKRegKeyTable (:71-78), both 0x1C with a trailing u8 mColorId.",
+     "value_arrays": "s16. A track with keyCount n>1 stores 3 or 4 values per key (time/value/tangent); with n==1 it stores one constant."
+    },
+    "validated_against": {
+     "sample": "11 BRK files in res/Object/Link.arc",
+     "stride_proof": "for every file the animation table end lands EXACTLY on the first value array: bomb.brk 96 + 1*0x1C = 124 = regROffset; garwfi00.brk 96 + 4*0x1C = 208 = konstROffset; ymgcs00_ms.brk 96 + 2*0x1C = 152. 11/11.",
+     "examples": [
+      "bomb.brk: 134 frames, 1 register anim on material 'Bom1', colorId 1, 30 keys on each of R,G,B (120 s16 values each) - the bomb fuse flashing red",
+      "garwfi00.brk: 12 frames, 4 konst anims on materials glitter/glitter(2..4), colorId 2, alpha-only keys - the arrow glitter fading",
+      "yaura00_r.brk / yaura00_g.brk: 29 frames, 1 register anim on 'auraMat', colorId 1 - the red and green magic aura variants",
+      "ymgcs00_ms.brk: two register anims on the SAME material 'bubble_soto_tx' with colorId 1 and 2 - proof that one material's several registers animate independently"
+     ],
+     "confidence": "high"
+    },
+    "godot_mapping": "AnimationPlayer value tracks on shader uniforms 'shader_parameter/tev_reg_N' and 'shader_parameter/tev_konst_N'. There is no StandardMaterial3D equivalent for more than one of them (albedo_color could take exactly one). Note the s10 range: register values are signed 10-bit and REAL FILES EXCEED 255 (Outset's SC_01_mizuB_v_x ships TEVREG1 alpha = 279), so the uniform must be a float vec4, not a Color clamped to 0..1."
+   },
+   "BPK": {
+    "class": "J3DAnmColorKey (J3DAnimation.h:657-678), base J3DAnmColor (:622-655), mKind 1",
+    "magic": "J3D1bpk1",
+    "section": "PAK1 (J3DAnmLoader.cpp:381)",
+    "loader": "J3DAnmKeyLoader_v15::setAnmColor, J3DAnmLoader.cpp:522-538",
+    "evaluator": "J3DAnmColorKey::getColor, J3DAnimation.cpp:753-838 (clamps 0..255)",
+    "full_variant": "BPA / J3DAnmColorFull, magic J3D1bpa1, section PAF1 (J3DAnmLoader.cpp:189) - same destination, per-frame instead of keyed",
+    "animates": "the material COLOUR (the GX channel material colour), per material, RGBA.",
+    "writes_exactly": "J3DColorBlock::mMatColor[0].mColor (J3DMaterialAnm.cpp:52-55). Note mMatColor is a 2-element array but entryMatColorAnimator (J3DMaterialAttach.cpp:49) and setMatColorAnimator (:246) both hard-code slot 0, so in practice BPK only ever drives colour channel 0's material colour. It does NOT touch mAmbColor.",
+    "gcrip_status": "NOT PARSED. Only classified (classify.py:35).",
+    "verified_layout": {
+     "section_header_from_section_start": {
+      "0x08": "u8 loopMode",
+      "0x0A": "u16 duration",
+      "0x0C": "u16 colorAnimCount",
+      "0x0E..0x15": "u16 R,G,B,A value counts",
+      "0x16": "u32 animTableOffset",
+      "0x1A": "u32 remapOffset",
+      "0x1E": "u32 nameTableOffset",
+      "0x22..0x2E": "u32 R,G,B,A value offsets"
+     },
+     "anim_entry": "0x18 bytes = 4 x {u16 keyCount, u16 firstIndex, u16 tangentMode}. NO colorId byte - unlike BRK, because there is only one material colour slot per track. Confirmed by J3DAnmColorKeyTable (J3DAnimation.h:14-22): J3DAnmKeyTableBase mColorInfo[4], size 0x18, indexed RED/GREEN/BLUE/ALPHA = 0/1/2/3.",
+     "note": "the exact byte offsets of the header fields above were read off raw files, not from a decomp struct - the decomp's J3DAnmColorKeyData (J3DAnimation.h:136-155) confirms the total size is 0x34 but its member names are field_0x..; the offsets in the file appear in the order animTable, remap, name, R, G, B, A"
+    },
+    "validated_against": {
+     "sample": "5 BPK files in res/Object/Always.arc (yj_in/loop/out/scale/delete - the 'yj' item-get sparkle set)",
+     "arithmetic_proof": "yj_delete.bpk: animTable 0x40=64, 1 anim, 64 + 0x18 = 88 = 0x58 = R offset; R count 1 -> 0x5A pad 0x5C = G; G count 12 -> 0x5C+24 = 0x74 = B; B count 1 -> 0x76 pad 0x78 = A; A count 12 -> 0x78+24 = 0x90 = remapOffset. Exact.",
+     "confidence": "medium-high - validated arithmetically on one family of files; the byte offsets of the header fields are inferred from those files, not from a decomp struct"
+    },
+    "godot_mapping": "an AnimationPlayer track on a shader uniform 'mat_color', or on StandardMaterial3D.albedo_color if the material is simple enough. gcrip currently reads the material colour once (j3d.py:713-716) and does not even export the static value."
+   },
+   "BTP": {
+    "class": "J3DAnmTexPattern (J3DAnimation.h:506-539, size 0x2C, mKind 2)",
+    "magic": "J3D1btp1",
+    "section": "TPT1 (J3DAnmLoader.cpp:192)",
+    "loader": "J3DAnmFullLoader_v15::setAnmTexPattern, J3DAnmLoader.cpp:300-310",
+    "animates": "which TEX1 texture index a material's texture slot points at, per frame. Eye blinks, mouth shapes, breaking-pot debris frames.",
+    "writes_exactly": "J3DTevBlock::mTexNo[slot] (J3DMaterialAnm.cpp:56-62). The per-entry mTexNo byte (J3DAnmTexPatternFullTable, J3DAnimation.h:55-60) is WHICH SLOT, not a texture id - the ids live in the index array. It is a Full format: a pure step lookup with no interpolation (J3DAnimation.cpp:841-849).",
+    "decomp_oddity": "J3DMaterialTable::entryTexNoAnimator is declared at J3DMaterialAttach.h:24 but has no definition anywhere in the tree; only setTexNoAnimator (:254-274) and removeTexNoAnimator (:158-175) are implemented.",
+    "gcrip_status": "PARSED AND EXPORTED. j3d_anim.py:232 parse_btp; gltf.py:715-826 _FaceSwitches turns each distinct texture into a duplicate glTF material, clones the mesh once per alternate with KHR_node_visibility, and exposes the distinct multi-material states as KHR_materials_variants.",
+    "verified_layout": {
+     "0x08": "u8 loopMode",
+     "0x0A": "u16 duration",
+     "0x0C": "u16 animCount",
+     "0x0E": "u16 texIndexCount",
+     "0x10": "u32 animTableOffset",
+     "0x14": "u32 remapOffset",
+     "0x18": "u32 nameTableOffset",
+     "0x1C": "u32 texIndexOffset",
+     "anim_entry": "8 bytes"
+    },
+    "godot_mapping": "already works via glTF variants, but the mesh-cloning approach costs a draw call per alternate. With a ShaderMaterial the honest mapping is a single int uniform 'tex_index' driven by an AnimationPlayer value track with discrete interpolation, indexing a texture array."
+   },
+   "BVA": {
+    "class": "J3DAnmVisibilityFull (J3DAnimation.h:481-503, size 0x1C, mKind 6)",
+    "magic": "J3D1bva1",
+    "section": "VAF1 (J3DAnmLoader.cpp:198)",
+    "loader": "J3DAnmFullLoader_v15::setAnmVisibility, J3DAnmLoader.cpp:318-326",
+    "animates": "per-SHAPE visibility, one byte per frame. Used to pop parts of a model in and out (weapon trails, damage states, breaking geometry).",
+    "writes_exactly": "NOT a material member. J3DVisibilityManager::setVisibility (src/JSystem/J3DGraphAnimator/J3DVisibility.cpp:11-25) walks every shape and sets or clears J3DShpFlag_Hide (0x0001, J3DShape.h:62-69) in J3DShape::mFlags. It is indexed POSITIONALLY by shape index - unlike the other four formats it has no material name table, so pairing a BVA to a model means matching shape counts, not names.",
+    "gcrip_status": "PARSED BUT UNUSED. j3d_anim.py:278 parse_bva is complete and correct (reads loopMode, duration, shapeCount, valueCount, the per-shape (count, firstIndex) table and the byte array), but NOTHING in the repository calls it - a repo-wide grep finds parse_bva only at its own definition. rip.py:354 collects only BCK and BTP.",
+    "godot_mapping": "the easiest win of the five: an AnimationPlayer boolean value track on each MeshInstance3D's 'visible' property, with discrete interpolation. No shader needed, no glTF extension needed. glTF can carry it via KHR_animation_pointer, or gcrip can emit it directly into the .tscn as a track."
+   }
+  },
+  "not_present_in_gcrip_at_all": {
+   "BMT": "an external material table that replaces a model's MAT3 wholesale. Magic 'J3D2bmt3' (note J3D2, not J3D1 - it is a model-family format, not an animation), loaded by J3DModelLoaderDataBase::loadMaterialTable, src/JSystem/J3DGraphLoader/J3DModelLoader.cpp:44. classify.py:29 recognises the magic and classify.py:75 the extension, but nothing parses it. Wind Waker uses BMT for model variants - e.g. assets/GZLE01/res/Object/T_Tree.h:36 dRes_INDEX_T_TREE_BMT_ICE_TOON_e. Any actor that swaps materials by loading a .bmt currently renders with its default look.",
+   "BLK_BLA": "J3DAnmClusterKey / J3DAnmClusterFull (J3DAnimation.h:808, :791), magics J3D1blk1 / J3D1bla1, sections CLK1 / CLF1. Shape-blend (morph) weights. Not material animation and not seen in the archives surveyed.",
+   "BXK_BXA": "J3DAnmVtxColorKey / J3DAnmVtxColorFull (J3DAnimation.h:731, :754), magics J3D1bxk1 / J3D1bxa1, sections VCK1 / VCF1. They animate the VERTEX COLOUR arrays, not the material. Relevant because room geometry reads its lighting from vertex colours - a BXA on a room would animate its baked light. None seen in the archives surveyed.",
+   "BCA": "J3DAnmTransformFull (J3DAnimation.h:372), magic J3D1bca1, section ANF1 - the per-frame twin of BCK. gcrip parses BCK only."
+  }
+ },
+ "_environment": {
+  "one_line": "Wind Waker's entire time-of-day and weather look is two RGB triples per surface class, chosen from a small per-stage table by an 11-slot schedule and written into TEV register 0 and konst 0 every frame. The remake already has the clock; it has none of the colour.",
+  "the_chain": {
+   "1_time": "mCurTime, 0.0 .. 360.0. 15 units = 1 hour. dKy_getdaytime_hour() = time/15.0 (src/d/d_kankyo.cpp:613-616); dKy_getdaytime_minute() at :618-622; dKy_daynight_check() at :624-633 says DAY for 6 <= hour < 18.",
+   "2_schedule": "an 11-entry dKyd_Schedule table maps the current time to a pair of palette SLOTS (0..5) and a blend factor. src/d/d_kankyo.cpp:657-661.",
+   "3_EnvR": "stage_envr_info_class (dzs chunk 'EnvR', 8 bytes = u8 pselect_id[8]) is indexed BY ROOM NUMBER; the inner index is the weather / colour-pattern 0..7. include/d/d_stage.h:161-164; use at d_kankyo.cpp:663-689.",
+   "4_Colo": "stage_pselect_info_class (dzs chunk 'Colo', 0xC bytes = u8 palette_id[8] + f32 change_rate) is indexed by the schedule's palette slot 0..5. include/d/d_stage.h:102-106; use at d_kankyo.cpp:693-732.",
+   "5_Pale": "stage_palet_info_class (dzs chunk 'Pale', 0x2C bytes) holds the actual colours.",
+   "6_Virt": "stage_vrbox_info_class (dzs chunk 'Virt', 0x24 bytes) holds the skybox colours, selected by Pale.mVirtIdx.",
+   "blending": "FOUR palettes are read per frame and blended bilinearly - A/B for the time-of-day crossfade and 0/1 for the weather crossfade (d_kankyo.cpp:845-848, blend maths at :111-124). Weather crossfade speed is Colo.change_rate, floored at 1/30 s; on the 'sea' stage it is forced to 0.0033333334 per frame (~300 frames = 10 s) at d_kankyo.cpp:768-769."
+  },
+  "Pale_layout": {
+   "source": "include/d/d_stage.h:117-133",
+   "fields": [
+    {
+     "off": "0x00",
+     "name": "mActor_C0",
+     "type": "RGB",
+     "goes_to": "TEV register 0 of every actor material"
+    },
+    {
+     "off": "0x03",
+     "name": "mActor_K0",
+     "type": "RGB",
+     "goes_to": "konst 0 of every actor material"
+    },
+    {
+     "off": "0x06",
+     "name": "mBG0_C0",
+     "type": "RGB",
+     "goes_to": "TEV register 0, BG layer 0"
+    },
+    {
+     "off": "0x09",
+     "name": "mBG0_K0",
+     "type": "RGB",
+     "goes_to": "konst 0, BG layer 0"
+    },
+    {
+     "off": "0x0C",
+     "name": "mBG1_C0",
+     "type": "RGB",
+     "goes_to": "BG layer 1 - the sea"
+    },
+    {
+     "off": "0x0F",
+     "name": "mBG1_K0",
+     "type": "RGB"
+    },
+    {
+     "off": "0x12",
+     "name": "mBG2_C0",
+     "type": "RGB"
+    },
+    {
+     "off": "0x15",
+     "name": "mBG2_K0",
+     "type": "RGB"
+    },
+    {
+     "off": "0x18",
+     "name": "mBG3_C0",
+     "type": "RGB"
+    },
+    {
+     "off": "0x1B",
+     "name": "mBG3_K0",
+     "type": "RGB"
+    },
+    {
+     "off": "0x1E",
+     "name": "mFog",
+     "type": "RGB"
+    },
+    {
+     "off": "0x21",
+     "name": "mVirtIdx",
+     "type": "u8",
+     "goes_to": "index into the Virt table"
+    },
+    {
+     "off": "0x24",
+     "name": "mFogStartZ",
+     "type": "f32"
+    },
+    {
+     "off": "0x28",
+     "name": "mFogEndZ",
+     "type": "f32"
+    }
+   ],
+   "surface_classes": "the TevType enum (include/d/d_kankyo.h:133-149) - ACTOR=0, BG0..BG3=1..4, BG0_FULL..BG3_FULL=5..8, PLAYER=9, BG0..BG2_PLIGHT=91..93, ACTOR_NOLIGHT=94, UNK99=99"
+  },
+  "schedule_table": {
+   "source": "src/d/d_kankyo_data.cpp:10-14 (l_time_attribute), the overworld schedule",
+   "struct": "dKyd_Schedule { f32 mTimeEnd (LOWER bound); f32 mTimeBegin (UPPER bound); u8 mPalIdx0; u8 mPalIdx1; } - include/d/d_kankyo_data.h:11-16. The names are swapped relative to their meaning; the comparison at d_kankyo.cpp:658 is 'time >= mTimeEnd && time <= mTimeBegin'.",
+   "slots": [
+    {
+     "units": [
+      0,
+      90
+     ],
+     "hours": "00:00-06:00",
+     "pal": [
+      5,
+      5
+     ],
+     "mood": "night, flat"
+    },
+    {
+     "units": [
+      90,
+      105
+     ],
+     "hours": "06:00-07:00",
+     "pal": [
+      5,
+      0
+     ],
+     "mood": "night -> dawn"
+    },
+    {
+     "units": [
+      105,
+      120
+     ],
+     "hours": "07:00-08:00",
+     "pal": [
+      0,
+      1
+     ],
+     "mood": "dawn -> morning"
+    },
+    {
+     "units": [
+      120,
+      150
+     ],
+     "hours": "08:00-10:00",
+     "pal": [
+      1,
+      2
+     ],
+     "mood": "morning -> day"
+    },
+    {
+     "units": [
+      150,
+      270
+     ],
+     "hours": "10:00-18:00",
+     "pal": [
+      2,
+      2
+     ],
+     "mood": "day, flat"
+    },
+    {
+     "units": [
+      270,
+      285
+     ],
+     "hours": "18:00-19:00",
+     "pal": [
+      2,
+      3
+     ],
+     "mood": "day -> sunset"
+    },
+    {
+     "units": [
+      285,
+      300
+     ],
+     "hours": "19:00-20:00",
+     "pal": [
+      3,
+      4
+     ],
+     "mood": "sunset -> dusk"
+    },
+    {
+     "units": [
+      300,
+      315
+     ],
+     "hours": "20:00-21:00",
+     "pal": [
+      4,
+      5
+     ],
+     "mood": "dusk -> night"
+    },
+    {
+     "units": [
+      315,
+      360
+     ],
+     "hours": "21:00-24:00",
+     "pal": [
+      5,
+      5
+     ],
+     "mood": "night, flat"
+    },
+    {
+     "units": [
+      360,
+      360
+     ],
+     "pal": [
+      5,
+      5
+     ],
+     "mood": "sentinel"
+    },
+    {
+     "units": [
+      360,
+      360
+     ],
+     "pal": [
+      5,
+      5
+     ],
+     "mood": "sentinel"
+    }
+   ],
+   "blend": "get_parcent(upper, lower, time) = (time - lower) / (upper - lower), clamped to <= 1 (d_kankyo.cpp:148-161)",
+   "variants": {
+    "boss": "src/d/d_kankyo_data.cpp:16-20 l_time_attribute_boss - 6 even slots, no day/night realism, used when the stage type is dStageType_BOSS_e (d_kankyo.cpp:398-402)",
+    "menu": "src/d/d_kankyo_data.cpp:22-26 l_time_attribute_menu"
+   }
+  },
+  "real_palette_data": {
+   "source": "res/Stage/sea/Stage.arc :: stage/dzs/stage.dzs, parsed from the ISO",
+   "chunks_present": {
+    "STAG": 1,
+    "RTBL": 1,
+    "SCLS": 1,
+    "TGDR": 1,
+    "MULT": 1,
+    "EnvR": 1,
+    "Colo": 5,
+    "Pale": 8,
+    "Virt": 1,
+    "RCAM": 1,
+    "RARO": 1
+   },
+   "EnvR_0_pselect_id": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    0,
+    0,
+    0
+   ],
+   "Colo": [
+    {
+     "i": 0,
+     "palette_id": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+     ],
+     "change_rate": 0.0
+    },
+    {
+     "i": 1,
+     "palette_id": [
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0,
+      0
+     ],
+     "change_rate": 0.0
+    },
+    {
+     "i": 2,
+     "palette_id": [
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      0,
+      0
+     ],
+     "change_rate": 0.0
+    },
+    {
+     "i": 3,
+     "palette_id": [
+      3,
+      3,
+      3,
+      3,
+      3,
+      3,
+      0,
+      0
+     ],
+     "change_rate": 0.0
+    },
+    {
+     "i": 4,
+     "palette_id": [
+      4,
+      4,
+      4,
+      4,
+      4,
+      4,
+      0,
+      0
+     ],
+     "change_rate": 0.0
+    }
+   ],
+   "Pale": [
+    {
+     "i": 0,
+     "Actor_C0": [
+      106,
+      99,
+      96
+     ],
+     "Actor_K0": [
+      158,
+      158,
+      155
+     ],
+     "BG0_C0": [
+      78,
+      75,
+      78
+     ],
+     "BG0_K0": [
+      140,
+      124,
+      106
+     ],
+     "Fog": [
+      57,
+      52,
+      41
+     ],
+     "virtIdx": 0,
+     "fogStartZ": 0.0,
+     "fogEndZ": 10000.0
+    },
+    {
+     "i": 1,
+     "Actor_C0": [
+      99,
+      67,
+      41
+     ],
+     "Actor_K0": [
+      188,
+      165,
+      121
+     ],
+     "BG0_C0": [
+      16,
+      9,
+      7
+     ],
+     "BG0_K0": [
+      241,
+      178,
+      119
+     ],
+     "Fog": [
+      156,
+      95,
+      50
+     ],
+     "virtIdx": 0,
+     "fogStartZ": 0.0,
+     "fogEndZ": 9000.0
+    },
+    {
+     "i": 2,
+     "Actor_C0": [
+      154,
+      148,
+      109
+     ],
+     "Actor_K0": [
+      255,
+      222,
+      163
+     ],
+     "BG0_C0": [
+      81,
+      68,
+      56
+     ],
+     "BG0_K0": [
+      219,
+      194,
+      161
+     ],
+     "Fog": [
+      179,
+      164,
+      95
+     ],
+     "virtIdx": 0,
+     "fogStartZ": 0.0,
+     "fogEndZ": 8000.0
+    },
+    {
+     "i": 3,
+     "Actor_C0": [
+      147,
+      128,
+      106
+     ],
+     "Actor_K0": [
+      242,
+      229,
+      231
+     ],
+     "BG0_C0": [
+      30,
+      20,
+      10
+     ],
+     "BG0_K0": [
+      227,
+      196,
+      167
+     ],
+     "Fog": [
+      75,
+      65,
+      50
+     ],
+     "virtIdx": 0,
+     "fogStartZ": 0.0,
+     "fogEndZ": 11000.0
+    },
+    {
+     "i": 4,
+     "Actor_C0": [
+      157,
+      140,
+      127
+     ],
+     "Actor_K0": [
+      224,
+      205,
+      195
+     ],
+     "BG0_C0": [
+      36,
+      31,
+      24
+     ],
+     "BG0_K0": [
+      255,
+      203,
+      205
+     ],
+     "Fog": [
+      224,
+      193,
+      168
+     ],
+     "virtIdx": 0,
+     "fogStartZ": 500.0,
+     "fogEndZ": 10000.0
+    },
+    {
+     "i": 5,
+     "Actor_C0": [
+      128,
+      89,
+      68
+     ],
+     "Actor_K0": [
+      212,
+      163,
+      112
+     ],
+     "BG0_C0": [
+      30,
+      20,
+      20
+     ],
+     "BG0_K0": [
+      241,
+      178,
+      119
+     ],
+     "Fog": [
+      140,
+      95,
+      50
+     ],
+     "virtIdx": 0,
+     "fogStartZ": 0.0,
+     "fogEndZ": 8000.0
+    },
+    {
+     "i": 6,
+     "Actor_C0": [
+      109,
+      100,
+      86
+     ],
+     "Actor_K0": [
+      242,
+      229,
+      231
+     ],
+     "BG0_C0": [
+      12,
+      11,
+      7
+     ],
+     "BG0_K0": [
+      227,
+      196,
+      167
+     ],
+     "Fog": [
+      75,
+      65,
+      50
+     ],
+     "virtIdx": 0,
+     "fogStartZ": 0.0,
+     "fogEndZ": 11000.0
+    },
+    {
+     "i": 7,
+     "Actor_C0": [
+      148,
+      129,
+      155
+     ],
+     "Actor_K0": [
+      219,
+      206,
+      213
+     ],
+     "BG0_C0": [
+      36,
+      31,
+      24
+     ],
+     "BG0_K0": [
+      255,
+      203,
+      205
+     ],
+     "Fog": [
+      224,
+      193,
+      168
+     ],
+     "virtIdx": 0,
+     "fogStartZ": 500.0,
+     "fogEndZ": 10000.0
+    }
+   ],
+   "note": "BG1..BG3 C0/K0 are all (255,255,255) in this stage - unused layers. The moods read straight off the numbers: entry 2 is bright warm noon (K0 255,222,163), entry 1 and 5 are the orange sunsets (fog 156,95,50 / 140,95,50), entry 0 is the grey-blue night (Actor_K0 158,158,155, fog 57,52,41).",
+   "engine_defaults_are_useless": "src/d/d_kankyo_data.cpp:28-285 l_field_data - the built-in fallback Pale table is ALL 0xFFFFFF for all 11 colour fields in all 16 entries. Only mVirtIdx and the fog Zs are real. So the colour MUST come from the stage's dzs; there is nothing to copy out of the source.",
+   "engine_default_skybox_is_real": "src/d/d_kankyo_data.cpp:307-396 l_vr_box_data - 8 entries with real sky/cloud/haze colours, e.g. entry 2 (clear noon) mSkyColor (80,120,255), mKasumiMaeColor (163,210,255); entry 6 (night) mSkyColor (14,20,44). These ARE worth copying - they are a ready-made 8-step sky gradient."
+  },
+  "how_it_reaches_a_material": {
+   "per_frame_order": "dKy_Execute -> exeKankyo (d_kankyo.cpp:2000-2087): setDaytime, weather, CalcTevColor. Then dKy_Draw -> drawKankyo (:2384-2392): setSunpos, SetBaseLight, setLight. Then per camera, m_Do_graphic.cpp:1651 calls dKy_setLight.",
+   "setLight": "d_kankyo.cpp:829-1090 blends the four palettes into g_env_light.mActorC0/K0, mBG0..3_C0/K0, mFogColor, mFogStartZ__setLight/mFogEndZ__setLight and the five skybox colours. Actor ambient is scaled by mActColRatio SQUARED while the diffuse is scaled linearly (:850-875).",
+   "settingTevStruct": "d_kankyo.cpp:1592-1761 copies the right pair into a per-actor dKy_tevstr_c and adds nearby point lights (settingTevStruct_plightcol_plus at :1436-1554, eflight at :1556-1588). Writes at :1747-1760.",
+   "setLightTevColorType": "d_kankyo.cpp:1855-1873 walks every material of a model and calls :1763-1853, which writes TEV register 0, konst 0, konst 1, the light object, the TEV stage count and the whole J3DFogInfo.",
+   "dKy_tevstr_c": {
+    "source": "include/d/d_kankyo.h:109-131, size 0xB0",
+    "fields": {
+     "0x00": "J3DLightObj mLightObj",
+     "0x74": "cXyz mLightPosWorld",
+     "0x80": "GXColorS10 mColorC0",
+     "0x88": "GXColor mColorK0",
+     "0x8C": "GXColor mColorK1",
+     "0x90": "GXColorS10 mFogColor",
+     "0x98": "f32 mFogStartZ",
+     "0x9C": "f32 mFogEndZ",
+     "0xA0": "f32 mColpatBlend",
+     "0xA5/0xA6": "u8 mEnvrIdxCurr/Prev",
+     "0xA7/0xA8": "u8 mColpatCurr/Prev",
+     "0xA9": "s8 mRoomNo",
+     "0xAB": "u8 mLightMode"
+    }
+   },
+   "per_room": "each actor carries its own tevstr with its own EnvR index (== its room number, d_kankyo.cpp:1665-1669) and its own crossfade state, so two actors in different rooms are lit differently at the same instant and crossing a boundary fades (d_kankyo.cpp:1390-1394, :1415-1431)."
+  },
+  "light_direction": {
+   "sun_orbit": "setSunpos (d_kankyo.cpp:582-606) - the angle is mCurTime - 15 degrees, radius 80000 in x and y, -48000 in z; the moon is the exact antipode about the camera eye.",
+   "which_light": "SetBaseLight (d_kankyo.cpp:1984-1988) picks the sun when 97.5 < time < 292.5 (06:30 - 19:30) and the moon otherwise, unless the room supplies an LGTV entry (:1975-1982), which overrides it entirely.",
+   "upload": "GXInitLightPos/Dir/Color/Attn then GXLoadLightObjImm at d_kankyo.cpp:2593, :2624, :3379.",
+   "for_the_remake": "the DirectionalLight3D at godot.py:8379 should follow this orbit instead of sitting at a fixed -50/30. One formula, driven by the clock that already exists."
+  },
+  "fog": {
+   "type": "GX_FOG_PERSP_LIN always - GXSetFog at d_kankyo.cpp:3248 (global) and :3298 (per-actor, dKy_GxFog_tevstr_set)",
+   "start_end": "from Pale.mFogStartZ / mFogEndZ, blended; near/far come from the camera (dComIfGd_getView()->mNear/mFar), falling back to 1.0 / 160000.0",
+   "colour": "Pale.mFog, except BG layer 1 (the sea), which uses the skybox's mUsoUmiColor instead (d_kankyo.cpp:1753-1757, GxFog_sea_set at :3261-3267)",
+   "range_adjust": "GXSetFogRangeAdj (d_kankyo.cpp:3326) with mFogAdjCenter = 0x140 = 320 (half of a 640-wide framebuffer) and one of two 10-entry curves at src/d/d_kankyo_data.cpp:398-405: [260,260,270,280,290,300,310,320,330,340] and [250,260,280,320,350,400,480,550,600,800]. This thickens fog toward the screen edges; it is a Flipper feature with no Godot equivalent and is safely ignorable.",
+   "per_material": "materials whose J3DFogInfo type is non-zero get patched every frame (d_kankyo.cpp:1831-1849); materials authored with no fog stay unfogged. 215 of 272 surveyed materials have a non-zero fog type.",
+   "godot_mapping": "WorldEnvironment fog_mode = FOG_MODE_DEPTH with fog_depth_begin = mFogStartZ, fog_depth_end = mFogEndZ, fog_light_color = Pale.mFog. Godot's depth fog is linear in view depth, which matches GX_FOG_PERSP_LIN closely enough. Per-material opt-out needs a shader flag.",
+   "hardware_not_source": true
+  },
+  "dzs_chunk_scoping": {
+   "stage_only": "Pale, Colo, EnvR, LGHT - a room dzr that contains them trips an assert (include/d/d_stage.h:631-672, 'Room non palet data !!')",
+   "room_allowed": "Virt (d_stage.h:661-662)",
+   "confirmed_in_data": "res/Stage/sea/Room44.arc's room.dzr carries FILI, TGDR, 2DMA, LBNK, RPAT, RPPN, PLYR, ACTR, SCOB, SOND, SHIP - no Pale/Colo/EnvR, exactly as the assert predicts. Its FILI is 8 bytes: 1ff6460200000000.",
+   "gcrip_status": "gcrip/formats/dzs.py:94 parses the generic chunk table so EnvR/Colo/Pale/Virt already appear in Dzs.chunks with their (count, offset) - only the ACTR family is decoded (dzs.py:22-23). Adding these four is ~40 lines of struct.unpack against the layouts above."
+  },
+  "clock_facts_for_the_remake": {
+   "already_correct_in_godot_py": [
+    "0..360 unit day",
+    "hour = t/15",
+    "minute",
+    "night 18:00-06:00",
+    "night_stop freeze",
+    "day rollover + day_proc"
+   ],
+   "mTimeAdv": "0.02 per frame (src/d/d_kankyo.cpp:476). At 30 fps a full day is 600 real seconds = 10 minutes.",
+   "room_time_pass": "dComIfGp_roomControl_getTimePass() gates the clock; when false the clock still creeps but is capped - to 165.0 (11:00) during the day and to the 270..345 window (18:00-23:00) at night (d_kankyo.cpp:531-537). godot.py's clock_running() does not model this cap."
+  }
+ },
+ "_priority": {
+  "method": "ranked by visible change per unit of work, using the measured corpus. Each item says what it fixes, roughly what it costs and what it depends on.",
+  "items": [
+   {
+    "rank": 1,
+    "title": "Ship the real toon ramp and a toon ShaderMaterial",
+    "fixes": "562 of 1856 exported models (30%) are toon-shaded characters and props that currently render as smooth-lit plastic. This is the single difference a player names first.",
+    "work": [
+     "extract res/Object/System.arc -> toon.bti (256x8 I4) and toonex.bti (256x256 CMPR) once per rip and write them as res://shaders/toon.png / toonex.png",
+     "in gltf.py, when a material binds a texture whose name starts with ZA or ZB, do NOT emit it as a texture layer - record it in material extras as gcrip_toon_ramp: 'toon'|'toonex' plus the TEV register 0 / konst 0 / konst 1 defaults",
+     "add one .gdshader with a light() function doing shade = mix(tev_c0, tev_k0, texture(ramp, vec2(ndotl, plight)).r) and ALBEDO = base * shade",
+     "add a small EditorScenePostImport script (the .glb.import already has an empty import_script/path) that swaps StandardMaterial3D for the toon ShaderMaterial wherever the extras flag is set"
+    ],
+    "depends_on": [],
+    "risk": "low - the ramp is a texture and the shader is ~30 lines",
+    "confidence": "high"
+   },
+   {
+    "rank": 2,
+    "title": "Wire the existing clock to a time-of-day palette",
+    "fixes": "everything is permanently lit at flat noon. Dawn, sunset, night and the weather crossfades are all missing, and they are the game's signature.",
+    "work": [
+     "decode EnvR / Colo / Pale / Virt in gcrip/formats/dzs.py (the chunk table is already parsed; the layouts are in _environment.Pale_layout)",
+     "emit a per-stage palette JSON next to the stage scene",
+     "in Godot, add an autoload that on each frame reads Game.day_time(), walks the 11-slot schedule in _environment.schedule_table, bilinearly blends the four palettes and writes TWO GLOBAL SHADER UNIFORMS (actor C0/K0 and BG0 C0/K0) plus the fog colour and range",
+     "point the toon shader and a matching BG shader at those globals"
+    ],
+    "measured_payoff": "the Great Sea's own table swings Actor_K0 from (255,222,163) warm noon to (158,158,155) grey night and the fog from (179,164,95) to (57,52,41). That is the whole day/night cycle in six numbers.",
+    "depends_on": [
+     1
+    ],
+    "risk": "low-medium - the data is small and already located; the work is plumbing",
+    "confidence": "high"
+   },
+   {
+    "rank": 3,
+    "title": "Give BG (room) geometry the C0/K0 lerp",
+    "fixes": "room and terrain materials are lighting=false / matSrc=VTX with the recipe albedo * lerp(TEVREG0, KONST0, vertexColour). Exported, that collapses to albedo * vertexColour - correct at noon, wrong at every other hour. 48 of 272 surveyed materials are in this class, and they are the ones covering the screen.",
+    "work": [
+     "a second, simpler .gdshader: ALBEDO = tex.rgb * mix(bg_c0, bg_k0, COLOR.rgb)",
+     "pick the BG layer index per model (BG0 for rooms, BG1 for the sea) and bind the matching global uniform pair"
+    ],
+    "depends_on": [
+     2
+    ],
+    "risk": "low",
+    "confidence": "high"
+   },
+   {
+    "rank": 4,
+    "title": "Parse BTK and drive UV scroll",
+    "fixes": "all water, lava, waterfalls, whirlpools and cloud sheets are frozen. Outset's water alone has a 16-track, 100-frame BTK.",
+    "work": [
+     "add parse_btk to gcrip/formats/j3d_anim.py using the validated TTK1 layout",
+     "export as AnimationPlayer value tracks on shader uniforms (or, for the translation-only majority, as uv1_offset tracks that even StandardMaterial3D can take)",
+     "wire it the way rip.py:333 already pairs BCK/BTP with a model - the BTK sits in the same archive under btk/ and names its materials"
+    ],
+    "depends_on": [],
+    "risk": "low - the format is validated and the pairing machinery exists",
+    "confidence": "high"
+   },
+   {
+    "rank": 5,
+    "title": "Fog",
+    "fixes": "no fog at all today. WW leans on fog for depth on the sea and in every dungeon; 215 of 272 surveyed materials are fog-enabled.",
+    "work": "WorldEnvironment fog_mode = FOG_MODE_DEPTH, begin/end/colour from the same palette blend as item 2. Roughly ten lines once item 2 exists.",
+    "depends_on": [
+     2
+    ],
+    "risk": "low",
+    "confidence": "high"
+   },
+   {
+    "rank": 6,
+    "title": "Fix the 11 white materials - albedo_color from the konst colour",
+    "fixes": "materials whose entire appearance is a TEV konst render white. Outset's water surface is one of them and should be (70,90,150).",
+    "work": "in gltf.py:263 _material, when diffuse() returns None, read tevKColor[0] / tevColor[0] and set pbrMetallicRoughness.baseColorFactor. ~15 lines, no shader needed.",
+    "depends_on": [],
+    "risk": "very low - this is the cheapest item on the list",
+    "confidence": "high"
+   },
+   {
+    "rank": 7,
+    "title": "Move the sun",
+    "fixes": "the DirectionalLight3D is nailed at -50 deg pitch / 30 deg yaw forever, so even with a correct ramp the terminator never moves.",
+    "work": "drive the light basis from setSunpos: angle = day_time - 15 degrees, radius 80000 x/y and -48000 z; swap to the moon outside 06:30-19:30.",
+    "depends_on": [
+     2
+    ],
+    "risk": "low",
+    "confidence": "high"
+   },
+   {
+    "rank": 8,
+    "title": "Parse BRK",
+    "fixes": "pulsing, flashing and fading colours - bomb fuses, magic auras, glitter, bubbles. 11 BRK files in Link.arc alone.",
+    "work": "parse_brk over the validated TRK1 layout; export register and konst tracks as AnimationPlayer tracks on shader uniforms. Remember the s10 range - real files carry values above 255.",
+    "depends_on": [
+     1
+    ],
+    "risk": "low",
+    "confidence": "high"
+   },
+   {
+    "rank": 9,
+    "title": "Use the BVA parser that is already written",
+    "fixes": "per-shape visibility pops. j3d_anim.py:278 parse_bva is complete and correct and nothing calls it.",
+    "work": "collect .bva alongside BCK/BTP in rip.py:333-380 and emit boolean 'visible' tracks with discrete interpolation. No shader involved.",
+    "depends_on": [],
+    "risk": "very low - highest ratio of result to remaining work in the whole list",
+    "confidence": "high"
+   },
+   {
+    "rank": 10,
+    "title": "Multi-layer TEV - stop dropping 190 texture layers",
+    "fixes": "190 of the bound texture layers in the 272-material sample never reach glTF. Detail texturing, shadow layers, highlight layers.",
+    "work": "emit the full TEV recipe (<=5 stages, packed 4 bytes per stage) into material extras and interpret it in the uber-shader. This is the largest item and should come after the ramp and the palette, because those two already recover most of the look.",
+    "depends_on": [
+     1,
+     3
+    ],
+    "risk": "medium - needs a real TEV interpreter in GLSL",
+    "confidence": "medium"
+   },
+   {
+    "rank": 11,
+    "title": "BPK, BMT and indirect texturing",
+    "fixes": "BPK material-colour fades (5 files in Always.arc), BMT material-table variants (e.g. T_Tree's ice_toon), and the 27 of 272 materials using indirect texturing.",
+    "work": "individually small but each is a niche; indirect in particular needs a bump-offset approximation or a second pass.",
+    "depends_on": [
+     10
+    ],
+    "risk": "medium",
+    "confidence": "medium"
+   }
+  ],
+  "explicit_non_goals": [
+   "toon_proc_check / the FILI toon switch - dead in retail (d_kankyo.cpp:88-99)",
+   "GXSetFogRangeAdj - a Flipper edge-thickening feature with no Godot equivalent and no meaningful visual weight",
+   "reproducing GX's per-stage 8-bit clamping - a float shader is more accurate than the hardware and looks the same",
+   "GX dither and zCompLoc - performance, not appearance"
+  ]
+ }
+}

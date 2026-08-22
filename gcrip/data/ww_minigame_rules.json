@@ -1,5 +1,5 @@
 {
- "_source": "Mined read-only from the zeldaret/tww decompilation at Z:/memRip/sources/tww and cross-checked against the ripped GZLE01 (Wind Waker USA) placement data at Z:/3d ripper/out/rip/GZLE01/godot/stage_data.json. THIS FILE IS THE RULES LAYER: scoring, timers, thresholds, costs, attempt limits, failure conditions and prize tiers. The STEP layer - which event plays, which trigger fires it, which room it happens in - lives in gcrip/data/ww_story_minigames.json and is NOT repeated here; each entry's story_steps field names the step ids there that it sits underneath. Where a minigame has no step in that file (auction, joy_pendant, beedle_point_card, savage_labyrinth, nintendo_gallery) story_steps is empty and this file is the only record. \n\nHOW WIND WAKER STORES MINIGAME STATE. There is no per-minigame save area. Persistent counters are EVENT REGISTERS: they live in the same 256-byte event-flag array as the event bits (dSv_event_c { u8 mFlags[0x100]; }, include/d/d_save.h:696-710) and are addressed by the same u16 id, but the LOW BYTE of the id is a multi-bit MASK instead of a single-bit mask. src/d/d_save.cpp:1201-1210: setEventReg(id, v) does mFlags[id>>8] = (mFlags[id>>8] & ~(id & 0xFF)) | v, and getEventReg(id) returns mFlags[id>>8] & (id & 0xFF). Neither accessor shifts, so a 0xFF mask is a whole 0-255 byte, a 0x0F mask is a 0-15 value in the low nibble and a 0x03 mask is a 0-3 value in the low two bits. isEventBit() on a register id returns true when ANY masked bit is set, so a remake that models event flags as named booleans will silently corrupt every score in this file; the storage has to be the raw 256-byte array. Registers used below: 0x86FF Beedle points, 0xC0FF Joy Pendants given, 0x7F0F Knight's Crests sold, 0xAAFF Boating Course difficulty, 0xBEFF Sploosh Kaboom record, 0x790F auction winner, 0xCD03 auction item, 0xA9FF last photo shown to Carlov, and the seventeen figurine bytes 0x80FF-0x84FF / 0x8CFF-0x95FF / 0x9CFF / 0xB1FF.\n\nOTHER SAVE AREAS THE RULES TOUCH. dSv_ocean_c { u16 field_0x0[50]; } (include/d/d_save.h:685-694, src/d/d_save.cpp:1163-1183) is 16 bits per sea grid and remembers which salvage points have been emptied. dSv_player_map_c (include/d/d_save.h:410-437, src/d/d_save.cpp:851-960) holds four 128-bit chart arrays - field_0x0[1]=GetMap, [2]=OpenMap, [3]=CompleteMap - plus mFmapBits[49], one byte per sea grid whose bit 0 is 'arrived here' and bit 1 is the GBA-link copy. dSv_player_info_c::mRandomSalvagePoint (include/d/d_save.h:468) is the per-file randomised salvage slot.\n\nHONESTY. Every constant below carries the file:line it was read from. Actors whose bodies are /* Nonmatching */ stubs in the decomp contribute nothing but symbol names, and where that is the case the entry says so and leaves the number out rather than guessing. Nothing in this file was taken from a guide, a wiki or memory.",
+ "_source": "Mined read-only from the zeldaret/tww decompilation at Z:/memRip/sources/tww and cross-checked against the ripped GZLE01 (Wind Waker USA) placement data at Z:/3d ripper/out/rip/GZLE01/godot/stage_data.json. THIS FILE IS THE RULES LAYER: scoring, timers, thresholds, costs, attempt limits, failure conditions and prize tiers. The STEP layer - which event plays, which trigger fires it, which room it happens in - lives in gcrip/data/ww_story_minigames.json and is NOT repeated here; each entry's story_steps field names the step ids there that it sits underneath. Where a minigame has no step in that file (auction, joy_pendant, beedle_point_card, savage_labyrinth, nintendo_gallery, salvage_corp, rito_mail_sorting) story_steps is empty and this file is the only record. TWO NOTES ON THE BRIEF THIS FILE ANSWERS: (1) the brief asked for the \"Bomb Island cannon game\"; there is no cannon game on Bomb Island. The only daCanon_c in the whole game outside the E3 demo stage sits on Spectacle Island, sea room 10, next to Salvatore/Kg2, and that is what the \"cannon_game\" entry covers. (2) The brief asked for \"Salvage Corp diving\"; the Salvage Corp themselves are only a daObjIkada_c barge with no game logic, so the \"salvage_corp\" entry covers the salvage system they represent - the Grappling Hook haul, its depth rule, its six marker kinds and its per-save randomisation. One BONUS entry that was not on the brief is included, \"rito_mail_sorting\": it turned up while tracing which minigame owns event register 0x8AFF, its actor is fully decompiled, and every threshold and payout in it is readable. \n\nHOW WIND WAKER STORES MINIGAME STATE. There is no per-minigame save area. Persistent counters are EVENT REGISTERS: they live in the same 256-byte event-flag array as the event bits (dSv_event_c { u8 mFlags[0x100]; }, include/d/d_save.h:696-710) and are addressed by the same u16 id, but the LOW BYTE of the id is a multi-bit MASK instead of a single-bit mask. src/d/d_save.cpp:1201-1210: setEventReg(id, v) does mFlags[id>>8] = (mFlags[id>>8] & ~(id & 0xFF)) | v, and getEventReg(id) returns mFlags[id>>8] & (id & 0xFF). Neither accessor shifts, so a 0xFF mask is a whole 0-255 byte, a 0x0F mask is a 0-15 value in the low nibble and a 0x03 mask is a 0-3 value in the low two bits. isEventBit() on a register id returns true when ANY masked bit is set, so a remake that models event flags as named booleans will silently corrupt every score in this file; the storage has to be the raw 256-byte array. Registers used below: 0x86FF Beedle points, 0xC0FF Joy Pendants given, 0x7F0F Knight's Crests sold, 0xAAFF Boating Course difficulty, 0xBEFF Sploosh Kaboom record, 0x790F auction winner, 0xCD03 auction item, 0xA9FF last photo shown to Carlov, and the seventeen figurine bytes 0x80FF-0x84FF / 0x8CFF-0x95FF / 0x9CFF / 0xB1FF.\n\nOTHER SAVE AREAS THE RULES TOUCH. dSv_ocean_c { u16 field_0x0[50]; } (include/d/d_save.h:685-694, src/d/d_save.cpp:1163-1183) is 16 bits per sea grid and remembers which salvage points have been emptied. dSv_player_map_c (include/d/d_save.h:410-437, src/d/d_save.cpp:851-960) holds four 128-bit chart arrays - field_0x0[1]=GetMap, [2]=OpenMap, [3]=CompleteMap - plus mFmapBits[49], one byte per sea grid whose bit 0 is 'arrived here' and bit 1 is the GBA-link copy. dSv_player_info_c::mRandomSalvagePoint (include/d/d_save.h:468) is the per-file randomised salvage slot.\n\nHONESTY. Every constant below carries the file:line it was read from. Actors whose bodies are /* Nonmatching */ stubs in the decomp contribute nothing but symbol names, and where that is the case the entry says so and leaves the number out rather than guessing. Nothing in this file was taken from a guide, a wiki or memory.",
  "_confidence_legend": {
   "high": "read directly out of a decompiled function body or a static table; the numbers are the game's numbers.",
   "medium": "the storage, the trigger or the surrounding wiring is decompiled but one link in the chain (usually the NPC that orders the event) is a stub, so the interpretation is inferred.",
@@ -20,20 +20,20 @@
   "name": "The Windfall Island Auction",
   "stage": "Orichh (Windfall auction house interior). Placement: one Auction actor (the auctioneer) plus eight bidder actors Auc0..Auc7, eleven Fdai pedestals, one takara2 chest, and the NPCs Gp1/Kp1/Kf1/Bm4 (out/rip/GZLE01/godot/stage_data.json:Orichh).",
   "actor": "daAuction_c, src/d/actor/d_a_auction.cpp - FULLY DECOMPILED, zero stub bodies. The rival bidders' own actor daNpcAuction_c (src/d/actor/d_a_npc_auction.cpp) is a stub but holds no rules; daAuction_c drives the whole auction including every rival's bid.",
-  "cost": "No entry fee. You pay only what you bid, and only if you win: on the winning message the auctioneer calls dComIfGp_setItemRupeeCount(-mCurrBid) (src/d/actor/d_a_auction.cpp:1442-1445). A bid is refused if dComIfGs_getRupee() < the entered amount (src/d/actor/d_a_auction.cpp:1339-1343) or if it is not strictly greater than the current bid (src/d/actor/d_a_auction.cpp:1344-1348); both refusals play JA_SE_AUC_BID_NG.",
+  "cost": "No entry fee. You pay only what you bid, and only if you win: on the winning message the auctioneer calls dComIfGp_setItemRupeeCount(-mCurrBid) (src/d/actor/d_a_auction.cpp:1444). A bid is refused if dComIfGs_getRupee() < the entered amount (src/d/actor/d_a_auction.cpp:1339-1343) or if it is not strictly greater than the current bid (src/d/actor/d_a_auction.cpp:1344-1348); both refusals play JA_SE_AUC_BID_NG.",
   "rules": [
    "A round auctions exactly one item. Which item is picked: if event bit 0x4008 is set - meaning the previous round was won by a rival and is being re-run - the item is re-read from register 0xCD03 and the opening bid is raised by 10. Otherwise getItemNo() picks uniformly at random among the entries of l_item_dat whose obtained-bit is not yet set (src/d/actor/d_a_auction.cpp:413-424, 1488-1508).",
    "getItemNo() has a real off-by-one in the shipped game: the counting loop runs i<4 over all four items but the picking loop runs only i<3, so index 3 (the Piece of Heart) is returned only as the fall-through when the random draw does not land on an earlier unobtained item (src/d/actor/d_a_auction.cpp:1488-1508). Reproduce the loop exactly rather than 'fixing' it.",
    "The round is a countdown, not a turn limit. eventStartInit() creates a dTimer_c of 60 seconds for a normal auction and 30 seconds for the second-tier auction (m822 == 2) (src/d/actor/d_a_auction.cpp:643-651).",
    "Six rival bidders (l_npc_dat indices 1..6; index 0 is Link's own row) bid on their own timers. Each rival has a wait rate pair, a bid-increment range and a hard spending limit; a rival stops bidding the moment mCurrBid reaches its limit (src/d/actor/d_a_auction.cpp:67-75, 890-909, 1015-1033).",
    "A rival's raise is mCurrBid += rate * (mBidIncMin + rndF(mBidIncMax - mBidIncMin)); in the late-auction branch the increment is doubled (src/d/actor/d_a_auction.cpp:908, 1033).",
-   "The seating order of the six rivals is shuffled at construction: 100 random swaps over m80C[1..6] (src/d/actor/d_a_auction.cpp:186-197).",
+   "The seating order of the six rivals is shuffled at construction: 100 random swaps over m80C[1..6] (src/d/actor/d_a_auction.cpp:198-208).",
    "Link bids by entering a number. It must be <= his rupee count and > the current bid. When Link outbids a rival by a wide margin the rivals hesitate: if the new bid >= mCurrBid * l_after_bet_rate[m82C] AND mCurrBid >= l_after_bet_chk[m82C], the next rival bid is delayed by 60 * (l_after_bet_wait[m82C][0] + rnd(l_after_bet_wait[m82C][1] - [0])) frames (src/d/actor/d_a_auction.cpp:1362-1368).",
    "Three warning stages fire as the clock runs down, at the l_rest_msg_time1 / l_rest_msg_time2 thresholds in milliseconds, each with its own message and sound (JA_SE_AUC_LAST_SPURT, JA_SE_AUC_FEW_TIME, JA_SE_AUC_5_SEC) (src/d/actor/d_a_auction.cpp:126-151, 935-970, 1044-1079). time1 is used for the 60 s auction, time2 for the 30 s one.",
    "When the clock hits zero the highest bidder wins. If a rival won (m824 != 0) the auctioneer sets bit 0x4008, stores the winner's model number in register 0x790F and the item index in register 0xCD03, and deletes the item actor - that is the 'someone else bought it, come back' state which makes the next round re-auction the same item 10 rupees dearer. If Link won, bit 0x4008 is cleared (src/d/actor/d_a_auction.cpp:1423-1436).",
    "On a Link win the item is created by fopAcM_createItemForPresentDemo and its obtained event bit is set, so each of the four prizes can be won exactly once (src/d/actor/d_a_auction.cpp:1194-1212).",
    "The second-tier auction (m822 == 2, mCurrAuctionItemIndex &= 1) auctions the two statues in l_item_dat2, but hands over the SUBSTITUTE items in l_item_dat22 - Magic Armor for the Postman Statue slot and Treasure Chart 6 for the Shop Guru Statue slot - while still setting the l_item_dat2 obtained-bit (src/d/actor/d_a_auction.cpp:432-441, 1195-1202). That is how the auction pays out once the statues themselves are already owned.",
-   "dComIfGp_startMiniGame(5) marks the play struct while an auction runs (src/d/actor/d_a_auction.cpp:426, 439)."
+   "dComIfGp_startMiniGame(5) marks the play struct while an auction runs (src/d/actor/d_a_auction.cpp:426, 440)."
   ],
   "constants": {
    "timer_normal_seconds": {
@@ -50,7 +50,7 @@
    },
    "rival_count": {
     "value": 6,
-    "file": "src/d/actor/d_a_auction.cpp:186-197"
+    "file": "src/d/actor/d_a_auction.cpp:198-208"
    },
    "l_npc_dat": {
     "value": [
@@ -313,7 +313,7 @@
    "src/d/actor/d_a_auction.cpp:39-43",
    "src/d/actor/d_a_auction.cpp:50-75",
    "src/d/actor/d_a_auction.cpp:126-172",
-   "src/d/actor/d_a_auction.cpp:186-197",
+   "src/d/actor/d_a_auction.cpp:198-208",
    "src/d/actor/d_a_auction.cpp:408-443",
    "src/d/actor/d_a_auction.cpp:643-670",
    "src/d/actor/d_a_auction.cpp:880-970",
@@ -757,7 +757,7 @@
    "The five targets are barrels dropped on a random 8x8 polar grid in front of the cannon. createTargetObj loops until it has five accepted cells: each candidate is (rnd(8), rnd(8)) and createCheck rejects it if the COLUMN index already belongs to an earlier target - so no two targets ever share a bearing (src/d/actor/d_a_canon.cpp:139-150, 173-184).",
    "getGridPos maps a grid cell to a world position: distance = row * 1500 + 10500, bearing = home.angle.y + angle_y_tbl[column], and the y is snapped to the sea wave height. angle_y_tbl spans -0x1200 to +0x1200 in eight steps, so the targets occupy a 50-degree fan from 10500 to 21000 units out (src/d/actor/d_a_canon.cpp:29-30, 117-125).",
    "The targets are Obj_Barrel2 children created with params 0x037F003F: type 3 (the mine/target variant), itemSave 0x7F, itemNo 0x3F which is the 'no item' code, buoy 0 so each carries a marker flag (src/d/actor/d_a_canon.cpp:180; param layout at include/d/actor/d_a_obj_barrel2.h:50-70).",
-   "Aiming (PadMove): yaw is clamped to home.angle.y +/- 0x1200 (about 25 degrees each way) and pitch to the band [home.angle.x, home.angle.x + 0x1000] (about 22.5 degrees). Stick deflection past 0.5 moves the target angle by up to 0x400 per frame in yaw and 512 in pitch, and shape_angle chases it with cLib_addCalcAngleS(.., 4, 0x100, 0x10) (src/d/actor/d_a_canon.cpp:449-489).",
+   "Aiming (PadMove): yaw is clamped to home.angle.y +/- 0x1200 (about 25 degrees each way) and pitch to the band [home.angle.x, home.angle.x + 0x1000] (about 22.5 degrees). Stick deflection past 0.5 moves the target angle by up to 0x400 per frame in yaw and 512 in pitch, and shape_angle chases it with cLib_addCalcAngleS(.., 4, 0x100, 0x10) (src/d/actor/d_a_canon.cpp:449-490).",
    "Firing: A fires. The shot's flight time in frames is m652 = ((home.angle.x + 0x1000) - shape_angle.x) / 0x1000 * 56 + 64, i.e. 64 frames at maximum elevation up to 120 frames at minimum - a flatter shot flies longer. The landing distance is the same ratio * 10500 + 10500, so range runs from 10500 to 21000 units, exactly the span the targets occupy (src/d/actor/d_a_canon.cpp:128-136, 329-339).",
    "The shell follows a parabola: its height above the chord is scaled by 1 - 4*(t - 0.5)^2 where t is the fraction of flight remaining (src/d/actor/d_a_canon.cpp:341-346).",
    "m65C is decremented at the moment of firing, and the corresponding 2D shot icon is greyed out (src/d/actor/d_a_canon.cpp:337-338).",
@@ -837,15 +837,15 @@
    },
    "countdown_frames_before_first_shot": {
     "value": 60,
-    "file": "src/d/actor/d_a_canon.cpp:353"
+    "file": "src/d/actor/d_a_canon.cpp:286"
    },
    "pause_frames_after_landing": {
     "value": 30,
-    "file": "src/d/actor/d_a_canon.cpp:361"
+    "file": "src/d/actor/d_a_canon.cpp:371"
    },
    "end_frames": {
     "value": 60,
-    "file": "src/d/actor/d_a_canon.cpp:411"
+    "file": "src/d/actor/d_a_canon.cpp:412"
    },
    "minigame_type_id": {
     "value": 3,
@@ -880,7 +880,7 @@
    "src/d/actor/d_a_canon.cpp:173-199",
    "src/d/actor/d_a_canon.cpp:244-351",
    "src/d/actor/d_a_canon.cpp:352-447",
-   "src/d/actor/d_a_canon.cpp:449-489",
+   "src/d/actor/d_a_canon.cpp:449-490",
    "src/d/actor/d_a_canon.cpp:521-576",
    "include/d/actor/d_a_canon.h:26, 59-78",
    "include/d/actor/d_a_npc_kg2.h:12, 45-52",
@@ -912,7 +912,7 @@
   "constants": {
    "time_limit_seconds": {
     "value": 240,
-    "file": "include/d/actor/d_a_goal_flag.h:24"
+    "file": "include/d/actor/d_a_goal_flag.h:21"
    },
    "time_limit_formula": {
     "value": "240 - getEventReg(0xAAFF) * 10",
@@ -920,11 +920,11 @@
    },
    "perfect_rupee_score": {
     "value": 150,
-    "file": "include/d/actor/d_a_goal_flag.h:27"
+    "file": "include/d/actor/d_a_goal_flag.h:24"
    },
    "end_cam_early_frame": {
     "value": 150,
-    "file": "include/d/actor/d_a_goal_flag.h:30"
+    "file": "include/d/actor/d_a_goal_flag.h:27"
    },
    "barrels": {
     "value": {
@@ -1103,7 +1103,7 @@
    "  kind 4 - the same, but only active in daylight: clrFlag while dKy_daynight_check() != DAY, setFlag during the day.",
    "  kind 5 - a blank. checkDistance keeps it as a LAST RESORT only, returning any other overlapping marker first, and checkOrder routes it to the SALVAGE_HAZURE ('miss') event instead of SALVAGE_GETITEM.",
    "  kind 6 - a moon-gated point. Active only when !dKy_moon_type_chk() && dKyr_moon_arrival_check() && the matching bit in daSalvage_c::m_savelabel[saveNo] is clear; hauling it sets that bit rather than an ocean bit, and the marker is NOT re-initialised afterwards.",
-   "THE TREASURE-CHART POINTS ARE RANDOMISED PER SAVE FILE. Each of the 49 chart numbers is placed FOUR times, at four different spots, distinguished by home.angle.z & 0x03 = 0, 1, 2, 3. Only the candidate whose index equals dSv_player_info_c::mRandomSalvagePoint is registered at all; the other three are dropped in dSalvage_control_c::entry (src/d/d_salvage.cpp:13, 95-100; include/d/d_save.h:457-468). Cross-checked in the placement data: 47 charts have exactly 4 placements and 2 have 8.",
+   "THE TREASURE-CHART POINTS ARE RANDOMISED PER SAVE FILE. Each of the 49 chart numbers is placed FOUR times, at four different spots, distinguished by home.angle.z & 0x03 = 0, 1, 2, 3. Only the candidate whose index equals dSv_player_info_c::mRandomSalvagePoint is registered at all; the other three are dropped in dSalvage_control_c::entry (src/d/d_salvage.cpp:13, 89-95; include/d/d_save.h:457-468). Cross-checked in the placement data: 47 charts have exactly 4 placements and 2 have 8.",
    "REACH: the grapple's tip must be inside the marker's XZ radius AND at least a randomised depth below the water surface. checkArea uses l_salvage_depth = {1000, 1500, 2000} indexed by mRndDepthIdx, which is re-rolled as rnd(10000) % 3 every time the crane leaves every marker's XZ radius - so how deep you have to dig changes from attempt to attempt (src/d/actor/d_a_salvage.cpp:348-350, 442-463).",
    "RADIUS AND HEIGHT come from the placement scale, per kind: kind 0 gets R = scale.x * 700 and H = scale.y * 1000; kind 5 gets R = scale.x * 500, H = scale.y * 1000; every other kind gets R = scale.x * 400, H = scale.y * 500 (src/d/d_salvage.cpp:125-138).",
    "The proximity chime JA_SE_OBJ_SALVAGE_TAG plays within 5000 units of an active marker of an effect-bearing kind (src/d/actor/d_a_salvage.cpp:341-343).",
@@ -1472,6 +1472,115 @@
    "src/d/d_map.cpp:152-155, 1796",
    "include/d/d_item_data.h:51",
    "out/rip/GZLE01/godot/stage_data.json:sea, sea_r11, sea_r44"
+  ]
+ },
+ "rito_mail_sorting": {
+  "name": "Koboli's letter-sorting game (Dragon Roost postal service) - BONUS, not on the original brief; found because it owns event register 0x8AFF",
+  "stage": "Dragon Roost Island's post office. Koboli is the Bmsw actor (fpcNm_NPC_BMSW_e, src/d/d_stage.cpp:721); once the game is finished with he is replaced at spawn time by Btsw (fpcNm_NPC_BTSW_e, src/d/d_stage.cpp:722).",
+  "actor": "daNpc_Bmsw_c, src/d/actor/d_a_npc_bmsw.cpp - FULLY DECOMPILED, zero stub bodies (1709 lines). daNpc_Btsw_c is the post-game replacement and is also decompiled.",
+  "cost": "Free.",
+  "rules": [
+   "Four lessons, tracked in event register 0xC203 - byte 0xC2, mask 0x03, values 0..3. daNpc_Bmsw_c::_create checks it on spawn: at value 3 with bit 0x2701 still clear it deletes itself and creates Btsw in its place (src/d/actor/d_a_npc_bmsw.cpp:1134-1145).",
+   "Each round is a timer: dTimer_createTimer(6, l_HIO.field_0x30, 3, 4, 221, l_HIO.field_0x48, 32, l_HIO.field_0x4C) with field_0x30 = 0x1E = 30, then dComIfG_TimerStart(6, l_HIO.field_0x32) with field_0x32 = 0x0F = 15. The 30 is the round length in the same unit daGoal_Flag_c uses for its 240-second race timer, i.e. seconds; the 15 is the start mode. field_0x34 = 0x3C = 60 is set but not used by this call (src/d/actor/d_a_npc_bmsw.cpp:80-110, 899-913).",
+   "dComIfGp_setMiniGameRupee(0) then dComIfGp_startMiniGame(7); the minigame counter is the LETTER COUNT, not rupees (src/d/actor/d_a_npc_bmsw.cpp:904-905).",
+   "PASS MARKS, per lesson (daNpc_Bmsw_getGameEndMsg, src/d/actor/d_a_npc_bmsw.cpp:185-244): lesson 0 passes at 10 letters, lesson 1 at 20, lesson 2 at 25. Passing advances the register - message 0x1A38 sets it to 1, 0x1A4D sets it to 2, 0x1A58 sets it to 3 (src/d/actor/d_a_npc_bmsw.cpp:425-447).",
+   "PAYOUT, per lesson (setGameGetRupee, src/d/actor/d_a_npc_bmsw.cpp:808-848): lesson 0 pays nothing below 10 letters and letters/2 at or above 10. Lesson 1 pays nothing below 15, letters/2 from 15 to 19, and letters at 20 or more. Lesson 2 pays nothing below 20, letters from 20 to 24, and letters x 3 at 25 or more. Lesson 3 pays letters x 3 while bit 0x2701 is clear and only letters once it is set. The halving is written as rupees >> 1, which the decomp notes does not match rupees / 2 - so it is an arithmetic shift, and negative counts would round the other way.",
+   "The payout is handed over with dComIfGp_setItemRupeeCount(field_0x960) at the specific message numbers 0x1A39 / 0x1A4E / 0x1A5F / 0x1A59 / 0x1A6F (src/d/actor/d_a_npc_bmsw.cpp:731-740).",
+   "Once bit 0x2701 is set (Koboli's mother's letter has been delivered - daNpc_Btsw_c does this in the GETMOTHERLETTER event) the game becomes an endless high-score run: register 0x8AFF holds the record, a run beats it only with rupees > the record (rupees <= record plays the 'you did not beat it' message), and beating it overwrites the register (src/d/actor/d_a_npc_bmsw.cpp:226-238).",
+   "The record register 0x8AFF is SEEDED AT 25 by daNpc_Btsw_c when the mother's letter event ends, together with bit 0x2701 - so the freeplay record starts at the lesson-2 pass mark (src/d/actor/d_a_npc_btsw.cpp:872-874).",
+   "The record is printed into text by the message system (src/f_op/f_op_msg_mng.cpp:2349, 4344, 6366, 8032).",
+   "Two different events run the round: SHIWAKEGAME before bit 0x2701 and SHIWAKEGAME2 after (src/d/actor/d_a_npc_bmsw.cpp:889-895).",
+   "Side bits: 0x1A02 marks the very first conversation, 0x1A01 marks 'the rules have been explained / declined once' (src/d/actor/d_a_npc_bmsw.cpp:401, 427-431, 527-533)."
+  ],
+  "constants": {
+   "lesson_register": {
+    "value": "0xC203 (byte 0xC2, mask 0x03, values 0-3)",
+    "file": "src/d/actor/d_a_npc_bmsw.cpp:189, 427, 438, 445"
+   },
+   "record_register": {
+    "value": "0x8AFF (byte 0x8A, mask 0xFF)",
+    "file": "src/d/actor/d_a_npc_bmsw.cpp:232-235"
+   },
+   "record_seed": {
+    "value": 25,
+    "file": "src/d/actor/d_a_npc_btsw.cpp:874"
+   },
+   "round_timer": {
+    "value": 30,
+    "file": "src/d/actor/d_a_npc_bmsw.cpp:97, 901",
+    "note": "l_HIO.field_0x30 = 0x1E, passed where daGoal_Flag_c passes seconds"
+   },
+   "timer_start_mode": {
+    "value": 15,
+    "file": "src/d/actor/d_a_npc_bmsw.cpp:98, 911"
+   },
+   "pass_marks": {
+    "value": {
+     "lesson_0": 10,
+     "lesson_1": 20,
+     "lesson_2": 25
+    },
+    "file": "src/d/actor/d_a_npc_bmsw.cpp:192-222"
+   },
+   "payout_table": {
+    "value": {
+     "lesson_0": "letters < 10 -> 0; else letters >> 1",
+     "lesson_1": "letters < 15 -> 0; 15..19 -> letters >> 1; >= 20 -> letters",
+     "lesson_2": "letters < 20 -> 0; 20..24 -> letters; >= 25 -> letters * 3",
+     "lesson_3": "letters * 3 while bit 0x2701 is clear, letters once it is set"
+    },
+    "file": "src/d/actor/d_a_npc_bmsw.cpp:808-845"
+   },
+   "minigame_type_id": {
+    "value": 7,
+    "file": "src/d/actor/d_a_npc_bmsw.cpp:905"
+   }
+  },
+  "rewards": {
+   "_storage": "Two event registers: 0xC203 for how far through the lessons you are and 0x8AFF for the freeplay record. Both are whole-value registers in the event-flag array.",
+   "tiers": [
+    {
+     "when": "lesson 0 cleared (10+ letters)",
+     "prize": "letters/2 rupees; register 0xC203 -> 1",
+     "bit": "0xC203",
+     "file": "src/d/actor/d_a_npc_bmsw.cpp:425-428, 812-818"
+    },
+    {
+     "when": "lesson 1 cleared (20+ letters)",
+     "prize": "letters rupees; register 0xC203 -> 2",
+     "bit": "0xC203",
+     "file": "src/d/actor/d_a_npc_bmsw.cpp:437-439, 819-828"
+    },
+    {
+     "when": "lesson 2 cleared (25+ letters)",
+     "prize": "letters x 3 rupees; register 0xC203 -> 3, after which Koboli is replaced by Btsw",
+     "bit": "0xC203",
+     "file": "src/d/actor/d_a_npc_bmsw.cpp:444-447, 829-837, 1134-1145"
+    },
+    {
+     "when": "freeplay, a run above the stored record",
+     "prize": "letters rupees and a new record",
+     "bit": "0x8AFF",
+     "file": "src/d/actor/d_a_npc_bmsw.cpp:232-238"
+    }
+   ],
+   "register": "0xC203 and 0x8AFF"
+  },
+  "story_steps": [],
+  "confidence": "high, except for the unit of the 30 in the timer call, which is inferred by analogy with daGoal_Flag_c",
+  "sources": [
+   "src/d/actor/d_a_npc_bmsw.cpp:1-4",
+   "src/d/actor/d_a_npc_bmsw.cpp:80-110",
+   "src/d/actor/d_a_npc_bmsw.cpp:185-244",
+   "src/d/actor/d_a_npc_bmsw.cpp:378-450",
+   "src/d/actor/d_a_npc_bmsw.cpp:515-545",
+   "src/d/actor/d_a_npc_bmsw.cpp:725-760",
+   "src/d/actor/d_a_npc_bmsw.cpp:806-850",
+   "src/d/actor/d_a_npc_bmsw.cpp:885-915",
+   "src/d/actor/d_a_npc_bmsw.cpp:1128-1145",
+   "src/d/actor/d_a_npc_btsw.cpp:863-880",
+   "src/f_op/f_op_msg_mng.cpp:2349, 4344, 6366, 8032",
+   "src/d/d_stage.cpp:721-722"
   ]
  }
 }

@@ -182,6 +182,31 @@ class Material:
     zwrite: bool
     material_color: tuple[float, float, float, float]
     tex_matrices: list = field(default_factory=lambda: [None] * 10)  # TexMtx per slot
+    konsts: list = field(default_factory=lambda: [None] * 4)      # GX konst RGBA, 0-255
+    kcolor_sel: tuple = ()                                        # per-stage KONST selector
+    tev_colors: list = field(default_factory=lambda: [None] * 4)  # TEV registers C0..C3
+
+    def flat_color(self) -> tuple[float, float, float] | None:
+        """The authored colour a material draws when it samples no texture.
+
+        GX_TEV_KCSEL 0x0C..0x0F select K0..K3 RGB; stage 0's selector is the one that decides
+        what the first stage puts out.  Falls back to the first konst that is neither black nor
+        white, then to TEV register C0, so a material with a real colour stops exporting white.
+        """
+        cands: list = []
+        if self.kcolor_sel:
+            sel = self.kcolor_sel[0]
+            if 0x0C <= sel <= 0x0F:
+                cands.append(self.konsts[sel - 0x0C])
+        cands += list(self.konsts) + [self.tev_colors[0] if self.tev_colors else None]
+        for c in cands:
+            if not c:
+                continue
+            r, g, b = c[0], c[1], c[2]
+            if (r, g, b) in ((0, 0, 0), (255, 255, 255)):
+                continue
+            return (r / 255.0, g / 255.0, b / 255.0)
+        return None
 
     def texgen_matrix(self, g: TexGen) -> TexMtx | None:
         """The SRT matrix a texgen uses (None for identity / non-SRT matrices)."""
@@ -637,8 +662,8 @@ def _parse_mat3(data: bytes, off: int) -> list[Material]:
         _posttexmtx_off,
         texidx_off,
         tevorder_off,
-        _tevcol_off,
-        _konst_off,
+        tevcol_off,
+        konst_off,
         _ntev_off,
         _tevstage_off,
         _swap_off,
@@ -665,6 +690,23 @@ def _parse_mat3(data: bytes, off: int) -> list[Material]:
         # 0x124 tev swap table[4], 0x12C 12 unused u16s, then:
         alpha_idx = struct.unpack_from(">H", data, p + 0x146)[0]
         blend_idx = struct.unpack_from(">H", data, p + 0x148)[0]
+        # the flat authored colours: konst (RGBA u8) and the TEV registers (RGBA s16)
+        konst_idx = struct.unpack_from(">4H", data, p + 0x94)
+        kcolor_sel = struct.unpack_from(">16B", data, p + 0x9C)
+        tevcol_idx = struct.unpack_from(">4H", data, p + 0xDC)
+        konsts: list = []
+        for ki in konst_idx:
+            if ki == 0xFFFF or not konst_off:
+                konsts.append(None)
+                continue
+            konsts.append(tuple(struct.unpack_from(">4B", data, off + konst_off + ki * 4)))
+        tevcols: list = []
+        for ci in tevcol_idx:
+            if ci == 0xFFFF or not tevcol_off:
+                tevcols.append(None)
+                continue
+            rgba = struct.unpack_from(">4h", data, off + tevcol_off + ci * 8)
+            tevcols.append(tuple(max(0, min(255, v)) for v in rgba))
 
         slots = []
         for ti in tex_idx:
@@ -733,6 +775,9 @@ def _parse_mat3(data: bytes, off: int) -> list[Material]:
                 zwrite=zwrite,
                 material_color=mcol,
                 tex_matrices=tex_matrices,
+                konsts=konsts,
+                kcolor_sel=kcolor_sel,
+                tev_colors=tevcols,
             )
         )
     return mats

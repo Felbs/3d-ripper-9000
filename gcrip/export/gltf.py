@@ -283,6 +283,15 @@ def _material(m: j3d.Material, model: j3d.Model, comps: _Composites | None = Non
             info["texCoord"] = uv
         mat["pbrMetallicRoughness"]["baseColorTexture"] = info
         tex_alpha = tex_alpha or (tex < len(model.textures) and model.textures[tex].has_alpha)
+    else:
+        # No texture reaches glTF for this material, but GX still draws it in a colour: a TEV
+        # konst or register.  Without this the material exports pure white - Outset's water
+        # is one of them, authored as konst (70, 90, 150).
+        flat = m.flat_color()
+        if flat is not None:
+            mat["pbrMetallicRoughness"]["baseColorFactor"] = [
+                round(flat[0], 4), round(flat[1], 4), round(flat[2], 4), 1.0
+            ]
     if m.blend_type in (1, 3):
         mat["alphaMode"] = "BLEND"
     elif m.alpha_comp0 != 7 or m.alpha_comp1 != 7:
