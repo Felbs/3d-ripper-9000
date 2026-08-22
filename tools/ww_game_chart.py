@@ -224,9 +224,10 @@ def subsystems() -> list[tuple[str, str, str]]:
         ("Day / night", "ok",
          "600 real seconds per in-game day (dKy: 360 units, 0.02/frame); layers swap at 6 and 18"),
         ("Dungeons", "partial",
-         "the per-dungeon save block, slot map, key/door decoding and boss flags are mined"
-         " (ww_dungeons.json); boss deaths and room clears work, but keys, locked doors and"
-         " the dungeon-item mask are not wired into the engine"),
+         "small keys, locked doors and the Big Key work (actors/door.gd): the per-dungeon save"
+         " block dSv_memBit_c keyed by the stage's STAG slot, both door families' conflicting"
+         " type numbers, and a Big Key door that spends no key. Chest bits, the 128 memory"
+         " switches and the dungeon map/compass UI are still not modelled"),
     ]
 
 

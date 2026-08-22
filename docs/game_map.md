@@ -46,7 +46,7 @@ flowchart LR
     class G4_0 ok;
     G4 --> G4_1["Save / story bits<br/><i>dSv_event_flag_c byte array, story_done, items, switches</i>"]
     class G4_1 ok;
-    G4 --> G4_2["Dungeons<br/><i>the per-dungeon save block, slot map, key/door decoding and boss</i>"]
+    G4 --> G4_2["Dungeons<br/><i>small keys, locked doors and the Big Key work (actors/door.gd): </i>"]
     class G4_2 partial;
 ```
 
@@ -65,7 +65,7 @@ flowchart LR
 | Sailing | partial | boat physics, sail, wind and wave_max from the real MULT values; no cannon, crane or cyclones, and the Great Sea is one heavy scene - its RTBL streaming rule is mined (ww_greatsea.json) but not built |
 | Save / story bits | ok | dSv_event_flag_c byte array, story_done, items, switches |
 | Day / night | ok | 600 real seconds per in-game day (dKy: 360 units, 0.02/frame); layers swap at 6 and 18 |
-| Dungeons | partial | the per-dungeon save block, slot map, key/door decoding and boss flags are mined (ww_dungeons.json); boss deaths and room clears work, but keys, locked doors and the dungeon-item mask are not wired into the engine |
+| Dungeons | partial | small keys, locked doors and the Big Key work (actors/door.gd): the per-dungeon save block dSv_memBit_c keyed by the stage's STAG slot, both door families' conflicting type numbers, and a Big Key door that spends no key. Chest bits, the 128 memory switches and the dungeon map/compass UI are still not modelled |
 
 ## 2. Story
 

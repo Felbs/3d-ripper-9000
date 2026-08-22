@@ -3138,6 +3138,8 @@ var doors_report: Array = []
 # --models: load every animated actor model and report the ones with no mesh, no clips, or a
 # head model that does not resolve.  --cutscenes: play every baked .stb through to its end.
 var models_test: bool = "--models" in OS.get_cmdline_user_args()
+# --dungeon : report every locked door in this stage, then try each one with and without its key
+var dungeon_test: bool = "--dungeon" in OS.get_cmdline_user_args()
 # --salvage=<kind> : sail the boat onto a point of that kind and work the crane
 var salvage_test := -1
 # --island=<type> : stand Link inside that island's TagIsl, satisfy its terms, watch it fire
@@ -3349,6 +3351,11 @@ func _ready() -> void:
     # pad mappings at boot (was only done on a menu warp: a shortcut launch ran the pad raw)
     _apply_saved_pad_mappings.call_deferred()
     Input.joy_connection_changed.connect(func(_id, _c): _apply_saved_pad_mappings())
+    var dgf := FileAccess.open("res://dungeons.json", FileAccess.READ)
+    if dgf:
+        var dgp = JSON.parse_string(dgf.get_as_text())
+        if dgp is Dictionary:
+            dungeons = dgp
     if load_game():
         print("gcrip: save file loaded (", str(save.get("saved_at", "?")), ")")
         if start_stage == "" and not selftest and shot_actor == "" and not door_test and not story_test and menu_test == "" and event_test == "" and not newgame_test and talk_test == "" and not dialogue_test and not clock_test:
@@ -3810,6 +3817,49 @@ func _opening_start(step: Dictionary, arrived := false) -> void:
             else:
                 story_event_done(id if ev == "" else ev)
 
+func _dungeon_report() -> void:
+    var doors: Array = get_tree().get_nodes_in_group("door")
+    var locked: Array = doors.filter(func(d): return int(d.get("lock")) != 0)
+    print("gcrip dungeon: ", current_stage_key(), " slot ", dungeon_slot(),
+        " key counter shown ", dungeon_shows_keys())
+    print("gcrip dungeon: ", doors.size(), " doors placed, ", locked.size(), " of them locked")
+    var kinds := ["none", "small key", "big key", "room clear"]
+    for d in locked:
+        print("gcrip dungeon:   ", d.get("actor"), " type ", d.get("dtype"), " -> ",
+            kinds[int(d.get("lock"))], " front room ", d.get("front_room"),
+            " switch ", d.get("swbit"), " warp ", "paired" if d.get("warp") != null else "NONE")
+    var lk := player()
+    # a small-key door with no key, then with one
+    for d in locked:
+        if int(d.get("lock")) != 1:
+            continue
+        if lk:
+            lk.global_position = (d as Node3D).global_position + Vector3(0, 5, 100)
+        print("gcrip dungeon: with 0 keys -> prompt '", d.call("interact_prompt", lk), "'")
+        d.call("interact", lk)
+        print("gcrip dungeon:   opened? ", d.get("opened"))
+        add_key(1)
+        print("gcrip dungeon: with 1 key -> prompt '", d.call("interact_prompt", lk), "'")
+        d.call("interact", lk)
+        print("gcrip dungeon:   opened? ", d.get("opened"), " keys left ", key_count())
+        break
+    # and a Big Key door, which must spend nothing
+    for d in locked:
+        if int(d.get("lock")) != 2:
+            continue
+        if lk:
+            lk.global_position = (d as Node3D).global_position + Vector3(0, 5, 100)
+        print("gcrip dungeon: big-key door without it -> '", d.call("interact_prompt", lk), "'")
+        d.call("interact", lk)
+        var before := key_count()
+        give_dungeon_item(DUNGEON_BIG_KEY)
+        d.call("interact", lk)
+        print("gcrip dungeon:   opened? ", d.get("opened"), " keys ", before, " -> ",
+            key_count(), " (a big-key door must spend none)")
+        break
+    print("gcrip dungeon: block now ", save.get("dungeon", {}))
+    get_tree().quit()
+
 func _salvage_test() -> void:
     give_item("rope")
     # put the world into the state this kind needs, the way real play would have by then:
@@ -4190,6 +4240,12 @@ func _process(delta: float) -> void:
                   " ", after.slice(maxi(after.size() - 3, 0)))
             print("gcrip defeat: boss_dead ", save.get("boss_dead", {}))
         elif event_frames > 300:
+            get_tree().quit()
+    if dungeon_test:
+        event_frames += 1
+        if event_frames == 40:
+            _dungeon_report()
+        elif event_frames > 200:
             get_tree().quit()
     if salvage_test >= 0:
         event_frames += 1
@@ -5309,7 +5365,7 @@ func burst(pos: Vector3, color: Color) -> void:
 
 func scripted() -> bool:
     # any headless harness run: nobody is holding the pad, so "press any key" waits must pass
-    return conduct_test or selftest or story_test or newgame_test or dialogue_test or door_test         or talk_test != "" or event_test != "" or shot_actor != "" or scope_test or near_test or defeat_test != "" or hit_test or timer_test != "" or island_test >= 0 or salvage_test >= 0 or opening_test or sweep_test or doors_test \
+    return conduct_test or selftest or story_test or newgame_test or dialogue_test or door_test         or talk_test != "" or event_test != "" or shot_actor != "" or scope_test or near_test or defeat_test != "" or hit_test or timer_test != "" or island_test >= 0 or salvage_test >= 0 or dungeon_test or opening_test or sweep_test or doors_test \
         or models_test or cuts_test or object_test or clock_test
 
 func stage_boss_dead(stage := "") -> bool:
@@ -5426,7 +5482,31 @@ func story_pickup_ok(step: Dictionary) -> bool:
         return true
     return _story_bits_ok(step) and not story_done(sfield(step, "id"))
 
+# d_item_data.h:28, :83-85 - the four items that belong to the dungeon block, not the bag
+const ITEM_SMALL_KEY := 0x15
+const ITEM_MAP := 0x4C
+const ITEM_COMPASS := 0x4D
+const ITEM_BIG_KEY := 0x4E
+
+func dungeon_item_collected(item_no: int) -> bool:
+    # the four items that live in dSv_memBit_c rather than the inventory; true if handled
+    match item_no:
+        ITEM_SMALL_KEY:
+            add_key(1)
+            return true
+        ITEM_MAP:
+            give_dungeon_item(DUNGEON_MAP)
+            return true
+        ITEM_COMPASS:
+            give_dungeon_item(DUNGEON_COMPASS)
+            return true
+        ITEM_BIG_KEY:
+            give_dungeon_item(DUNGEON_BIG_KEY)
+            return true
+    return false
+
 func story_item_collected(item_no: int, actor: String) -> void:
+    dungeon_item_collected(item_no)
     # picking a placed item up, or opening the chest that holds it, closes the step that names
     # it: pickups match on their actor, chests on the dItemNo mined out of the gives_item prose
     var here := current_stage_key()
@@ -5607,6 +5687,48 @@ func try_salvage(at: Vector3) -> Dictionary:
             " - and something came with it" if bool(out["octorok"]) else "")
         show_text("Nothing but sand...")
     return out
+
+# ---- dungeon progression (d_save.h dSv_memBit_c, d_door.cpp) ---------------------------
+var dungeons: Dictionary = {}      # stage -> {slot, key_counter, type}
+
+const DUNGEON_MAP := 1             # mDungeonItem bit 0
+const DUNGEON_COMPASS := 2         # bit 1
+const DUNGEON_BIG_KEY := 4         # bit 2
+
+func dungeon_slot(stage := "") -> int:
+    var key := stage if stage != "" else current_stage_key().split("_r")[0]
+    var info = dungeons.get(key)
+    return int(info["slot"]) if info is Dictionary else 11   # 11 = STAGE_MISC
+
+func dungeon_shows_keys() -> bool:
+    var info = dungeons.get(current_stage_key().split("_r")[0])
+    return info is Dictionary and bool(info.get("key_counter", false))
+
+func _dungeon_block() -> Dictionary:
+    var all: Dictionary = save.get("dungeon", {})
+    var k := str(dungeon_slot())
+    if not all.has(k):
+        all[k] = {"keys": 0, "items": 0}
+        save["dungeon"] = all
+    return all[k]
+
+func key_count() -> int:
+    return int(_dungeon_block().get("keys", 0))
+
+func add_key(n: int) -> void:
+    # mKeyNum is a COUNT in the dungeon's own save block, clamped 0..99 by dMeter_keyMove
+    var b := _dungeon_block()
+    b["keys"] = clampi(int(b.get("keys", 0)) + n, 0, 99)
+    print("gcrip dungeon: slot ", dungeon_slot(), " keys -> ", b["keys"])
+
+func dungeon_item(bit: int) -> bool:
+    return (int(_dungeon_block().get("items", 0)) & bit) != 0
+
+func give_dungeon_item(bit: int) -> void:
+    var b := _dungeon_block()
+    b["items"] = int(b.get("items", 0)) | bit
+    var nm: String = str({1: "Dungeon Map", 2: "Compass", 4: "Big Key"}.get(bit, "?"))
+    print("gcrip dungeon: slot ", dungeon_slot(), " got the ", nm)
 
 func random_salvage_point() -> int:
     # dSv_player_info_c::init: mRandomSalvagePoint = cM_rndF(3.0f) clamped to 0..2, rolled ONCE
@@ -7683,6 +7805,142 @@ func _physics_process(_delta: float) -> void:
     Game.run_event(ev)
 """
 
+_DOOR_GD = """extends StaticBody3D
+# gcrip: a placed door (d_door.cpp + d_a_door10/12/kddoor).  159 door10, 52 door12 and their
+# aliases are placed across the game; until now they were scenery and every doorway was open.
+#
+# The lock is params bits 8-11, and THE TWO FAMILIES DISAGREE about what the numbers mean:
+#   door10 (door10/11/20/21/Zenshut/keyshut/K_Zshut): 4 and 5 = small key, 1 = Big Key,
+#                                                     2 = "clear the room"
+#   door12 (door12/12M/12B/13/13M/13B/keyS12/ZenS12): 1 = small key, 3 = Big Key,
+#                                                     2 = "clear the room"
+# Earth and Wind Temple contain no type-3 door12 at all - their Big Key doors are ordinary
+# door12 placements promoted at runtime when arg1 is 9 or 0xC (d_a_door12.cpp:576-578), and
+# arg1 lives in rot.z >> 8.
+#
+# A small-key door spends one key; a Big Key door spends NOTHING - dDoor_key2_c::keyInit's
+# `if (!mbIsBossDoor) setItemKeyNumCount(-1)` is the only decrement in the game.
+
+enum Lock { NONE, SMALL_KEY, BIG_KEY, ROOM_CLEAR }
+
+var actor := ""
+var node_name := ""    # the placement this came from, so the fallback pass can skip duplicates
+var params := 0
+var swbit := 0xFF
+var swbit2 := 0xFF
+var dtype := 0
+var front_room := 0x3F
+var back_room := 0x3F
+var arg1 := 0
+var lock: int = Lock.NONE
+var opened := false
+var warp: Area3D = null      # the exit volume this door stands in front of
+
+const DOOR10 := ["door10", "door11", "door20", "door21", "Zenshut", "keyshut", "K_Zshut"]
+const DOOR12 := ["door12", "door12M", "door12B", "door13", "door13M", "door13B",
+                 "keyS12", "ZenS12"]
+
+func setup_door(actor_name: String, p: int, rot: Array) -> void:
+    actor = actor_name
+    params = p
+    swbit = p & 0xFF
+    dtype = (p >> 8) & 0xF
+    swbit2 = (p >> 20) & 0xFF
+    var rx := int(rot[0])
+    front_room = rx & 0x3F
+    back_room = (rx >> 6) & 0x3F
+    arg1 = (int(rot[2]) >> 8) & 0xFF
+    if DOOR12.has(actor):
+        # arg1 9 / 0xC promotes an ordinary door12 to the Big Key door (ET and WT use this)
+        if arg1 == 9 or arg1 == 0xC:
+            dtype = 3
+        match dtype:
+            1: lock = Lock.SMALL_KEY
+            3: lock = Lock.BIG_KEY
+            2: lock = Lock.ROOM_CLEAR
+    elif DOOR10.has(actor):
+        match dtype:
+            4, 5: lock = Lock.SMALL_KEY
+            1: lock = Lock.BIG_KEY
+            2: lock = Lock.ROOM_CLEAR
+    if lock != Lock.NONE and swbit != 0xFF and Game.is_switch(front_room, swbit):
+        opened = true      # this door was already unlocked on a previous visit
+    add_to_group("door")
+    _find_warp()
+    if lock != Lock.NONE and not opened:
+        add_to_group("interact")
+
+func _find_warp() -> void:
+    # the exit volume is generated from the SCLS table, not from this placement, so pair them
+    # by proximity - the door slab sits about 70 units in front of its warp box
+    var cs := get_tree().current_scene
+    if cs == null:
+        return
+    var best := 400.0
+    for n in cs.get_children():
+        if not (n is Area3D) or not n.name.begins_with("Warp"):
+            continue
+        var d: float = (n as Area3D).global_position.distance_to(global_position)
+        if d < best:
+            best = d
+            warp = n
+    if warp and lock != Lock.NONE and not opened:
+        warp.set("locked", true)
+
+func _unlock(spend: bool) -> void:
+    opened = true
+    if spend:
+        Game.add_key(-1)
+    if swbit != 0xFF:
+        Game.set_switch(front_room, swbit)   # stays unlocked for good
+    if warp and is_instance_valid(warp):
+        warp.set("locked", false)
+    remove_from_group("interact")
+    print("gcrip door: ", actor, " type ", dtype, " opened",
+        " (spent a small key)" if spend else "")
+
+func interact_prompt(link: Node3D) -> String:
+    if opened or lock == Lock.NONE:
+        return ""
+    if link.global_position.distance_to(global_position) > 140.0:
+        return ""
+    match lock:
+        Lock.SMALL_KEY:
+            return "Open (1 key)" if Game.key_count() > 0 else "Locked"
+        Lock.BIG_KEY:
+            return "Open" if Game.dungeon_item(Game.DUNGEON_BIG_KEY) else "Locked"
+        Lock.ROOM_CLEAR:
+            return "Barred"
+    return ""
+
+func interact(_link: Node3D) -> void:
+    if opened:
+        return
+    match lock:
+        Lock.SMALL_KEY:
+            if Game.key_count() > 0:
+                _unlock(true)
+            else:
+                Game.show_text("It won't open. It needs a small key.")
+        Lock.BIG_KEY:
+            if Game.dungeon_item(Game.DUNGEON_BIG_KEY):
+                _unlock(false)     # a Big Key door spends nothing
+            else:
+                Game.show_text("A huge keyhole... this needs the Big Key.")
+        Lock.ROOM_CLEAR:
+            Game.show_text("The bars are shut tight.")
+
+func _physics_process(_delta: float) -> void:
+    # type 2 lifts its bars once the front room has no live enemies, and then raises its own
+    # switch (d_a_door10.cpp:132-147 / d_a_door12.cpp:155)
+    if opened or lock != Lock.ROOM_CLEAR:
+        return
+    if Engine.get_physics_frames() % 15 != 0:
+        return
+    if Game.room_live_enemies(front_room) == 0:
+        _unlock(false)
+"""
+
 _SALVAGE_GD = """extends Node3D
 # gcrip: a salvage point (d_a_salvage.cpp).  489 of them cover the Great Sea in six kinds.
 # The crane tip has to be inside the ring in XZ and well below the water; a type-1 point gives
@@ -7891,6 +8149,15 @@ const SCRIPTS := {
     "Aj2": "res://actors/npc.gd", "Bmcon1": "res://actors/npc.gd", "Bms1": "res://actors/npc.gd",
     # breakable: takes take_hit() and orders one event per damage stage
     "Ajav": "res://actors/hit_object.gd",
+    # doors: the lock lives in params bits 8-11 (actors/door.gd)
+    "door10": "res://actors/door.gd", "door11": "res://actors/door.gd",
+    "door20": "res://actors/door.gd", "door21": "res://actors/door.gd",
+    "Zenshut": "res://actors/door.gd", "keyshut": "res://actors/door.gd",
+    "K_Zshut": "res://actors/door.gd", "door12": "res://actors/door.gd",
+    "door12M": "res://actors/door.gd", "door12B": "res://actors/door.gd",
+    "door13": "res://actors/door.gd", "door13M": "res://actors/door.gd",
+    "door13B": "res://actors/door.gd", "keyS12": "res://actors/door.gd",
+    "ZenS12": "res://actors/door.gd",
 }
 const CHEST_PREFIXES := ["takara", "tkr", "Tkr"]
 
@@ -8054,6 +8321,38 @@ func _spawn_tags() -> void:
     if k > 0:
         print("gcrip: ", k, " island arrival tags in ", name)
     _spawn_salvage()
+    _spawn_missing_doors()
+
+# Only doors whose MESH resolved get wrapped by _wrap_actors, and several locked kinds
+# (keyshut, keyS12, ZenS12, doorSH) have no model in the exported level - which would leave
+# every small-key door in the game permanently open.  Place those from the record.
+func _spawn_missing_doors() -> void:
+    var info: Dictionary = Game.stage_data.get(name, {})
+    var have: Dictionary = {}
+    for d in get_tree().get_nodes_in_group("door"):
+        have[str(d.get("node_name"))] = true
+    var n := 0
+    for rec in info.get("actors", []):
+        var act := str(rec.get("actor", ""))
+        if not SCRIPTS.has(act) or SCRIPTS[act] != "res://actors/door.gd":
+            continue
+        var nn: String = str(rec.get("node", "")).replace(".", "_").replace(":", "_")
+        if have.has(nn):
+            continue
+        var lay := int(rec.get("layer", -1))
+        var rm: int = int(rec["room"]) if rec.get("room") != null else -1
+        if lay >= 0 and lay != Game.story_layer(name, rm):
+            continue
+        var dn := StaticBody3D.new()
+        dn.set_script(load("res://actors/door.gd"))
+        dn.name = "Door_%s_%d" % [act, n]
+        add_child(dn)
+        dn.global_position = Vector3(rec["pos"][0], rec["pos"][1], rec["pos"][2])
+        dn.set("node_name", nn)
+        dn.setup_door(act, int(rec["params"]), rec.get("rot", [0, 0, 0]))
+        n += 1
+    if n > 0:
+        print("gcrip: ", n, " doors with no model placed from the record in ", name)
 
 const SALVAGE_NAMES := ["Salvage", "Salvag2", "SalvagN", "SwSlvg", "SalvFM", "SalvagE"]
 
@@ -8291,6 +8590,9 @@ func _wrap_actors() -> void:
             node.setup(params, mesh, true)
         elif script_path.ends_with("sign.gd"):
             node.setup(params, mesh, rot_y)
+        elif script_path.ends_with("door.gd"):
+            node.set("node_name", node_name)
+            node.setup_door(actor, params, rec.get("rot", [0, 0, 0]))
         elif script_path.ends_with("chest.gd"):
             node.setup(int(rot[2]), mesh, rot_y, params)
         elif script_path.ends_with("pickup.gd"):
@@ -8595,6 +8897,7 @@ _WARP_GD = """extends Area3D
 @export var dest_room := 0
 @export var dest_spawn := 0
 var armed := false   # arriving through this door puts Link inside the box: wait until he leaves
+var locked := false  # a placed door actor in front of this exit has not been unlocked yet
 
 func _ready() -> void:
     body_entered.connect(_on_body_entered)
@@ -8610,6 +8913,8 @@ func _on_body_exited(body: Node3D) -> void:
         armed = true
 
 func _on_body_entered(body: Node3D) -> void:
+    if locked:
+        return
     if armed and body is CharacterBody3D:
         Game.warp(dest_stage, dest_room, dest_spawn)
 """
@@ -10055,6 +10360,7 @@ def export_godot(
         "tag_event.gd": _TAG_EVENT_GD,
         "tag_island.gd": _TAG_ISLAND_GD,
         "salvage.gd": _SALVAGE_GD,
+        "door.gd": _DOOR_GD,
         "npc_tag.gd": _NPC_TAG_GD,
         "hit_object.gd": _HIT_OBJECT_GD,
         "warp_object.gd": _WARP_OBJECT_GD,
@@ -10069,6 +10375,28 @@ def export_godot(
     msgs = rip_dir / "text" / "messages.json"
     if msgs.exists():  # gcrip msg output -> in-game text box
         shutil.copyfile(msgs, out_dir / "messages.json")
+    # which save slot each stage's dungeon state lives in, and whether the HUD shows keys
+    # (STAG mProp: slot = (mProp >> 1) & 0x7F, key counter = mProp & 1)
+    dung_src = Path(__file__).parent / "data" / "ww_dungeons.json"
+    try:
+        dung_all = json.loads(dung_src.read_text(encoding="utf-8"))
+        slots = dung_all.get("_stage_save_slots", {}).get("stages", {})
+    except (OSError, ValueError):
+        slots = {}
+    (out_dir / "dungeons.json").write_text(
+        json.dumps(
+            {
+                k: {
+                    "slot": v.get("slot", 11),
+                    "key_counter": bool(v.get("key_counter_shown", False)),
+                    "type": v.get("stage_type", ""),
+                }
+                for k, v in slots.items()
+            },
+            indent=1,
+        ),
+        encoding="utf-8",
+    )
     sd_path = out_dir / "stage_data.json"
     if sd_path.exists():  # partial re-exports must not clobber other stages' spawn data
         with contextlib.suppress(OSError, ValueError):
