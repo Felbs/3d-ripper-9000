@@ -1,0 +1,842 @@
+{
+ "_source": "Mined read-only from the zeldaret/tww decompilation at Z:/memRip/sources/tww and the ripped GZLE01 (Wind Waker USA) disc data at Z:/3d ripper/out/rip/GZLE01. This file is the INTERIOR of Ganon's Tower - the Phantom Ganon maze (GanonJ), the two stairwells (GanonL, GanonN), the four rematch arenas behind the trial doors (Xboss0..Xboss3) - plus ma3room, the third-visit skin of the Forsaken Fortress interior. It EXTENDS gcrip/data/ww_story_ganon.json, which covers the same chapter at the level of 'four trial doors, Phantom Ganon, Puppet Ganon, the roof, the ending'; the index rule it established (d_a_obj_vgnfd.cpp's three parallel arrays, so index i is one boss: 0 Gohma, 1 Kalle Demos, 2 Jalhalla, 3 Molgera) is used here and not re-derived. Same schema as ww_story_fortress.json. Room-to-room wiring in these stages is almost entirely PLACEMENT DATA, not events: TGDR door actors (front/back room numbers packed into rot.x, a gate switch in the low byte of params) and the room SCLS exit tables. The SCLS tables were read straight out of the disc arcs (res/Stage/<stage>/Room<n>.arc:room.dzr, chunk SCLS) because the *_report.json 'exits' list is empty for every stage in this file - the reports only bind exits that a ripped door model sits on. Event-bit ids are authoritative; the UNK_xxxx names are placeholders invented by the decomp team.",
+
+ "_switch_numbers": {
+  "source": "src/d/d_save.cpp:1585-1601 (dSv_info_c::isSwitch), include/d/d_save.h:964-966",
+  "rule": "A switch number selects WHICH save area it lives in, and that decides how long it is remembered. 0x00-0x7F: dSv_save_c::mMemory switch bits - the per-dungeon save block, slot from the STAG chunk (slot 8 = STAGE_GT for every Ganon* and Xboss* stage, slot 2 = STAGE_FF for ma2room/ma3room; see ww_dungeons.json). Permanent. 0x80-0xBF: mDan, dungeon-temporary. 0xC0-0xEF: mZone[zone], zone-temporary. 0xFF and -1 always read FALSE.",
+  "why_it_matters": "Ganon's Tower uses all three ranges in one stage: the maze's trap rooms are held shut by ZONE switches 192-195 (forgotten the moment you leave), its exit door by MEMORY switch 1 (remembered forever, because it is the Light Arrow chest), and its 'you found the right door' cues by DUNGEON switches 128-132."
+ },
+
+ "_doors": {
+  "source": "src/d/d_door.cpp:16-51 (dDoor_info_c accessors), src/d/actor/d_a_door10.cpp:52-83 and 118-172",
+  "params": "getSwbit = params & 0xFF (front-side gate switch, 0xFF = none). getType = (params >> 8) & 0xF. getEventNo = (params >> 12) & 0xFF. getSwbit2 = (params >> 20) & 0xFF (back-side gate switch).",
+  "rot": "getFRoomNo = home.angle.x & 0x3F, getBRoomNo = (home.angle.x >> 6) & 0x3F, getShipId = home.angle.z & 0x3F, getArg1 = (home.angle.z >> 8) & 0xFF. A door whose front room EQUALS its back room is a door that leads nowhere but the room it is already in - the maze's fake doors are exactly these.",
+  "type_2_rule": "daDoor10_c::chkStopOpen (d_a_door10.cpp:132-160): for a type-2 door seen from the front, once the front room is loaded and fopAcM_myRoomSearchEnemy(room) returns NULL for 0x41 frames, the door RAISES ITS OWN SWITCH and the bars lift. That is the whole 'kill everything in here to get out' rule - no separate actor is involved. A type-0 door with a switch just waits for someone else to set it (d_a_door10.cpp:169).",
+  "objnames": "door10, door20 and Zenshut are all fpcNm_DOOR10_e - the same actor with different models (src/d/d_stage.cpp:451,453,455). door12 is fpcNm_DOOR12_e (d_stage.cpp:473). KGBdor is fpcNm_MBDOOR_e (d_stage.cpp:944)."
+ },
+
+ "_maze": {
+  "stage": "GanonJ",
+  "entered_from": "GanonM Room1.arc SCLS[0] -> GanonJ room 1 spawn 0",
+  "grid": "Twelve rooms on a 3100-unit grid, room centres (x,z): r0 (-3100,0) r1 (0,0) r2 (3100,0) r3 (6200,0) | r4 (3100,-3100) | r6 (-3100,-6200) r7 (0,-6200) r8 (3100,-6200) r9 (6200,-6200) | r10 (-3100,-9300) r11 (0,-9300) | r13 (0,-12400). (Positions are the raw stage.dzs/room.dzr values; the *_report.json copies are shifted by the rip's recentring offset.)",
+  "door_table": [
+   {"pos": [0, 1550], "front": 1, "back": 1, "params": "0x0FFFF0FF", "gate": null, "note": "fake door - north wall of room 1"},
+   {"pos": [0, -1550], "front": 1, "back": 1, "params": "0x0FFFF0FF", "gate": null, "note": "fake door - south wall of room 1"},
+   {"pos": [-1550, 0], "front": 0, "back": 1, "params": "0x0FFFF2C0", "actor": "Zenshut", "gate": "zone switch 192, front side (room 0)", "note": "trap: room 0, six Moblins"},
+   {"pos": [1550, 0], "front": 2, "back": 1, "params": "0x0FFFF0FF", "gate": null, "note": "CORRECT: room 1 -> room 2"},
+   {"pos": [4650, 0], "front": 3, "back": 2, "params": "0x0FFFF2C1", "actor": "Zenshut", "gate": "zone switch 193, front side (room 3)", "note": "trap: room 3, sixteen Bokoblins"},
+   {"pos": [7750, 0], "front": 3, "back": 3, "params": "0x0FFFF0FF", "gate": null, "note": "fake door in room 3"},
+   {"pos": [3100, 1550], "front": 2, "back": 2, "params": "0x0FFFF0FF", "gate": null, "note": "fake door in room 2"},
+   {"pos": [6200, 1550], "front": 3, "back": 3, "params": "0x0FFFF0FF", "gate": null, "note": "fake door in room 3"},
+   {"pos": [6200, -1550], "front": 3, "back": 3, "params": "0x0FFFF0FF", "gate": null, "note": "fake door in room 3"},
+   {"pos": [3100, -1550], "front": 2, "back": 4, "params": "0x0FFFF0FF", "gate": null, "note": "CORRECT: room 2 -> room 4"},
+   {"pos": [1550, -3100], "front": 4, "back": 4, "params": "0x0FFFF0FF", "gate": null, "note": "fake door in room 4"},
+   {"pos": [4650, -3100], "front": 4, "back": 4, "params": "0x0FFFF0FF", "gate": null, "note": "fake door in room 4"},
+   {"pos": [3100, -4650], "front": 4, "back": 8, "params": "0x0FFFF0FF", "gate": null, "note": "CORRECT: room 4 -> room 8"},
+   {"pos": [3100, -7750], "front": 8, "back": 8, "params": "0x0FFFF0FF", "gate": null, "note": "fake door in room 8"},
+   {"pos": [1550, -6200], "front": 8, "back": 7, "params": "0x0FFFF0FF", "gate": null, "note": "CORRECT: room 8 -> room 7"},
+   {"pos": [4650, -6200], "front": 9, "back": 8, "params": "0x0FFFF0C3", "gate": "zone switch 195, front side (room 9)", "note": "trap: room 9, two Moblins + Miniblins; type 0, so AND_SW0 sets 195"},
+   {"pos": [0, -4650], "front": 7, "back": 7, "params": "0x0FFFF0FF", "gate": null, "note": "fake door in room 7"},
+   {"pos": [-1550, -6200], "front": 6, "back": 7, "params": "0x0FFFF2C2", "actor": "Zenshut", "gate": "zone switch 194, front side (room 6)", "note": "trap: room 6, three Darknuts among eleven Hcbh pillars"},
+   {"pos": [0, -7750], "front": 7, "back": 11, "params": "0x0FFFF0FF", "gate": null, "note": "CORRECT: room 7 -> room 11"},
+   {"pos": [-3100, -7750], "front": 6, "back": 10, "params": "0x0FFFF0FF", "gate": null, "note": "room 6 -> room 10, ungated"},
+   {"pos": [-1550, -9300], "front": 10, "back": 11, "params": "0x0FFFF0FF", "gate": null, "note": "room 10 -> room 11, ungated - the way back onto the path from the room-6 trap"},
+   {"pos": [1550, -9300], "front": 11, "back": 11, "params": "0x0FFFF0FF", "gate": null, "note": "fake door in room 11"},
+   {"pos": [0, -10850], "front": 13, "back": 11, "params": "0x0FFFF00A", "gate": "memory switch 10, front side (room 13)", "note": "room 11 -> room 13; barred only on the room-13 side, so it seals behind Link"},
+   {"pos": [-49, -13869], "front": 13, "back": 13, "params": "0x0FFFF001", "gate": "memory switch 1, front side (room 13)", "note": "the way OUT of the maze; switch 1 is the Light Arrow chest's open switch"}
+  ],
+  "correct_route": [1, 2, 4, 8, 7, 11, 13],
+  "sources": [
+   "res/Stage/GanonJ/Stage.arc:stage.dzs TGDR chunk (24 doors)",
+   "res/Stage/GanonJ/Room*.arc:room.dzr ACTR/PLYR chunks",
+   "out/rip/GZLE01/stages/GanonJ/GanonJ_report.json",
+   "src/d/d_door.cpp:16-51",
+   "src/d/actor/d_a_door10.cpp:118-172"
+  ]
+ },
+
+ "_actors": {
+  "Fganon": {
+   "name": "Phantom Ganon",
+   "file": "src/d/actor/d_a_fganon.cpp",
+   "params": "m2BC = params & 0xF (kind), m68F = (params >> 4) & 0xF (only read when kind == 3), m2BD = (params >> 8) & 0xFF (activation radius / 10 * 100 -> the code compares distXZ < m2BD * 10.0f), mSwitchNo = (params >> 16) & 0xFF (raised when he is finished), m2BF = (params >> 24) & 0xFF (cleared when he is finished)",
+   "kinds": {
+    "0": "the real fight - health-based, camera P_Ganon1",
+    "1": "the maze illusion - ONE hit kills him (health forced to 0, action 3), camera P_Ganon2, and he DELETES HIMSELF (pos.y = -20000) the moment Link already owns the Light Arrows",
+    "2": "the Light-Arrow duel - he refuses to appear at all unless Link owns the Light Arrows",
+    "3": "the multi-copy variant (m68F picks the copy)"
+   },
+   "placed_in_GanonJ": "one kind-1 copy in each of the six correct-path rooms 1, 2, 4, 7, 8 and 11 (params 0xFFFFFF01, radius 2550, no switch) and one in room 13 (params 0xFFFFFA01, radius 2500)",
+   "cross_reference": "GanonM Room0.arc places Fganon with params 0xFF006402 - kind 2, radius 1000, mSwitchNo 0 - so the Phantom Ganon of ww_story_ganon.json's chapter literally cannot spawn until the GanonJ maze has handed Link the Light Arrows, and beating him raises MEMORY switch 0 of the STAGE_GT save block.",
+   "sources": [
+    "src/d/actor/d_a_fganon.cpp:2760-2765",
+    "src/d/actor/d_a_fganon.cpp:1063-1075",
+    "src/d/actor/d_a_fganon.cpp:1508-1514",
+    "src/d/actor/d_a_fganon.cpp:1553-1560",
+    "src/d/actor/d_a_fganon.cpp:1916-1921",
+    "res/Stage/GanonJ/Room*.arc:room.dzr",
+    "res/Stage/GanonM/Room0.arc:room.dzr"
+   ]
+  },
+  "ALLdie": {
+   "name": "the invisible 'this room is clear' switch-setter",
+   "file": "src/d/actor/d_a_alldie.cpp",
+   "params": "getSwbit = (params >> 8) & 0xFF",
+   "rule": "while its switch is unset it polls fopAcM_myRoomSearchEnemy(its own room); when nothing is left for 65 frames it raises the switch",
+   "used_here": "GanonL room 0, params 0xFFFF19FF -> switch 0x19 = 25, which is exactly the KGBdor's gate switch",
+   "sources": ["src/d/actor/d_a_alldie.cpp:18-21", "src/d/actor/d_a_alldie.cpp:26-49", "res/Stage/GanonL/Room0.arc:room.dzr"]
+  },
+  "AND_SW0": {
+   "name": "the AND gate over a run of switches",
+   "file": "src/d/actor/d_a_andsw0.cpp",
+   "params": "mNumSwitchesToCheck = params & 0xFF, mBehaviorType = (params >> 8) & 0xFF, mFirstSwitchToCheck = (params >> 16) & 0xFF (0 means mSwitchToSet + 1), mSwitchToSet = (params >> 24) & 0xFF",
+   "used_here": "GanonJ room 9, params 0xC3E00002 -> when zone switches 224 AND 225 are both on, raise zone switch 195. 224 and 225 are the death switches of the two Moblins standing in that room.",
+   "sources": ["src/d/actor/d_a_andsw0.cpp:321-328", "src/d/actor/d_a_andsw0.cpp:38-64", "res/Stage/GanonJ/Room9.arc:room.dzr"]
+  },
+  "mo2": {
+   "name": "Moblin - its death switch is in the placement rotation, not the params",
+   "file": "src/d/actor/d_a_mo2.cpp",
+   "rule": "mDeathSwitch = current.angle.z (rot.z of the placement); 0xFF is normalised to 0 = no switch; on death it calls dComIfGs_onSwitch(mDeathSwitch, room)",
+   "used_here": "GanonJ room 9's two Moblins carry rot.z 224 and 225; GanonJ room 0's six Moblins carry rot.z 255 (no switch) because their door opens on the type-2 'room is empty' rule instead",
+   "sources": ["src/d/actor/d_a_mo2.cpp:4093-4099", "src/d/actor/d_a_mo2.cpp:2406-2410"]
+  },
+  "tbox": {
+   "name": "treasure chest - item and open-switch live in rot.z",
+   "file": "src/d/actor/d_a_tbox.cpp",
+   "rule": "mRoomNo = home.angle.x & 0x3F, getItemNo() = (home.angle.z >> 8) & 0xFF, openSwNo = home.angle.z & 0xFF, getShapeType = (params >> 20) & 0xF",
+   "sources": ["include/d/actor/d_a_tbox.h:37", "src/d/actor/d_a_tbox.cpp:281", "src/d/actor/d_a_tbox.cpp:867"]
+  },
+  "Ygcwp": {
+   "name": "the Ganon's Tower warp pad that catches Link on the way back from a rematch",
+   "file": "src/d/actor/d_a_ygcwp.cpp",
+   "rule": "check_ev() reads the event TMP bit 0x0480 and off_ev() clears it; make_shine() fires ID_AK_SN_GANONCASTLEWARP00",
+   "placed": "GanonA Room1.arc SCOB at (0, 790, -6387), which is GanonA room 1 spawn 5 (0, 789, -6388) - the spawn every Xboss stage's SCLS[0] points at",
+   "sources": ["src/d/actor/d_a_ygcwp.cpp:113-121", "src/d/actor/d_a_ygcwp.cpp:131-133", "res/Stage/GanonA/Room1.arc:room.dzr", "src/d/d_stage.cpp:1181"]
+  },
+  "big_pow": {
+   "name": "Jalhalla - and it is NOT a second actor",
+   "finding": "big_pow is the DZR object name of fpcNm_BPW_e, which is d_a_bpw.cpp, the Earth Temple's Jalhalla. There is exactly ONE OBJNAME row for that profile in the whole table, and both M_DaiB (the Earth Temple boss room) and Xboss2 place it under the name big_pow. 'Bpw' is the ARCHIVE name (res/Object/Bpw.arc, res/Object/Bpw.h), which is why the existing profile in gcrip/data/ww_enemies_boss_jalhalla_molgera.json is keyed 'Bpw'. So the rematch arena needs no new enemy profile - it needs the Bpw one, with the rematch behaviour noted below.",
+   "objname": "src/d/d_stage.cpp:694  OBJNAME(\"big_pow\", fpcNm_BPW_e, 255, 0)",
+   "placement_difference": "M_DaiB places it with params 0xFFFFFFFF; Xboss2 places it with params 0x00E0FFFF. Xboss2 also drops the Earth Temple's 'pow' (Poe) placements entirely and rings the arena with twenty bable (Bubbles) and three LTag1 light-shaft tags at (0,0,-1150), (-1150,0,0) and (1150,0,0) - the mirror-shield beams. What the 0x00E0.... params byte selects inside d_a_bpw.cpp was NOT determined.",
+   "rematch_behaviour": "d_a_bpw.cpp:2151-2157 - when health reaches 0, if the start stage name begins with 'X' it skips the whole death demo (mActionState 0x78, the warp flower, the heart container) and instead raises JALHALLA_TRIALS_CLEAR (0x3210), sets event TMP bit 0x0480 and calls dLib_setNextStageBySclsNum(0, roomNo). Everything else about the fight is unchanged from the profile already mined.",
+   "sources": [
+    "src/d/d_stage.cpp:694",
+    "src/d/actor/d_a_bpw.cpp:1-4",
+    "src/d/actor/d_a_bpw.cpp:2151-2157",
+    "src/d/actor/d_a_bpw.cpp:3428-3440",
+    "res/Stage/Xboss2/Room0.arc:room.dzr",
+    "res/Stage/M_DaiB/Room0.arc:room.dzr",
+    "gcrip/data/ww_enemies_boss_jalhalla_molgera.json"
+   ]
+  }
+ },
+
+ "_bits": {
+  "0x3240": {
+   "dec": 12864,
+   "byte_mask": [50, 64],
+   "meaning": "GOHMA_TRIALS_CLEAR - the Gohma rematch in Xboss0 is beaten. ww_story_ganon.json lists this bit with set_by '(the rematch boss room)'; the exact line is now known.",
+   "set_by": "src/d/actor/d_a_btd.cpp:911 (daBtd end state 0x32, only on the 'X' branch)",
+   "read_by": ["src/d/actor/d_a_obj_vgnfd.cpp:244"],
+   "confidence": "high"
+  },
+  "0x3220": {
+   "dec": 12832,
+   "byte_mask": [50, 32],
+   "meaning": "KALLE_DEMOS_TRIALS_CLEAR - the Kalle Demos rematch in Xboss1 is beaten.",
+   "set_by": "src/d/actor/d_a_bmd.cpp:523 (bmd end(), only on the 'X' branch)",
+   "read_by": ["src/d/actor/d_a_obj_vgnfd.cpp:244"],
+   "confidence": "high"
+  },
+  "0x3210": {
+   "dec": 12816,
+   "byte_mask": [50, 16],
+   "meaning": "JALHALLA_TRIALS_CLEAR - the Jalhalla rematch in Xboss2 is beaten.",
+   "set_by": "src/d/actor/d_a_bpw.cpp:2153 (health <= 0, only on the 'X' branch); a debug duplicate at d_a_bpw.cpp:3436 exists in the DEMO build only",
+   "read_by": ["src/d/actor/d_a_obj_vgnfd.cpp:244"],
+   "confidence": "high"
+  },
+  "0x3208": {
+   "dec": 12808,
+   "byte_mask": [50, 8],
+   "meaning": "MOLGERA_TRIALS_CLEAR - the Molgera rematch in Xboss3 is beaten.",
+   "set_by": "src/d/actor/d_a_bwd.cpp:1026 (bwd state 0, only on the 'X' branch)",
+   "read_by": ["src/d/actor/d_a_obj_vgnfd.cpp:244"],
+   "confidence": "high"
+  },
+  "0x3204": {
+   "dec": 12804,
+   "byte_mask": [50, 4],
+   "meaning": "All four trials are done and the tower's final door has opened. Raised by daObjVgnfd_c::on_fin. Used here as the requirement on GanonN, because the VgnFD actor sits at (-3, 750, -9390) in GanonA room 1 and GanonN's return spawn (GanonA room 1 spawn 6) is at (-1, 750, -8898), directly in front of it.",
+   "set_by": "src/d/actor/d_a_obj_vgnfd.cpp:278 (documented in ww_story_ganon.json)",
+   "read_by": [],
+   "confidence": "high"
+  },
+  "0x1820": {
+   "dec": 6176,
+   "byte_mask": [24, 32],
+   "meaning": "The world has moved on to its late state - the Forsaken Fortress is deserted and its interior loads from ma3room instead of ma2room. This is the single bit that makes the third visit exist. It is also what flips the sea's Forsaken Fortress room to layer 3, changes the day/night handling, and gates a long list of NPC lines.",
+   "set_by": "src/d/actor/d_a_warpdm20.cpp:126 - daWarpdm20_c::CreateInit raises it on create if UNK_2D02 is already set, i.e. the Hyrule warp itself turns it on",
+   "read_by": [
+    "src/d/d_resorce.cpp:708",
+    "src/d/d_com_inf_game.cpp:208",
+    "src/d/actor/d_a_tag_event.cpp:363",
+    "src/d/actor/d_a_lod_bg.cpp:169",
+    "src/d/actor/d_a_ship.cpp:4241",
+    "src/d/actor/d_a_agbsw0.cpp:98",
+    "src/d/actor/d_a_npc_bm1.cpp:1511",
+    "src/d/d_kankyo_dayproc.inc:9"
+   ],
+   "confidence": "high"
+  },
+  "0x2D02": {
+   "dec": 11522,
+   "byte_mask": [45, 2],
+   "meaning": "The precondition daWarpdm20_c tests before raising 0x1820. Read only at that one site in the code paths that matter here; what raises 0x2D02 was NOT determined and belongs to the Hyrule chapter.",
+   "set_by": "(not determined - no setter found in the files read for this chapter)",
+   "read_by": ["src/d/actor/d_a_warpdm20.cpp:125"],
+   "confidence": "low"
+  },
+  "0x3D02": {
+   "dec": 15618,
+   "byte_mask": [61, 2],
+   "meaning": "The Ganon's Tower / Forsaken Fortress warp is active. Repeated here only because a step in this file requires it; the full entry is in ww_story_ganon.json.",
+   "set_by": "src/d/actor/d_a_warpgn.cpp:407",
+   "read_by": ["src/d/actor/d_a_warpgn.cpp:178", "src/d/actor/d_a_warpgn.cpp:190", "src/d/actor/d_a_warpgn.cpp:511"],
+   "confidence": "high"
+  },
+  "TMP:0x0480": {
+   "dec": 1152,
+   "byte_mask": [4, 128],
+   "meaning": "NOT an event bit - a member of the separate event TMP flag array (dSv_event_tmp_flag_c, include/d/d_save_event_tmp_flag.inc:33), which is why it survives a stage change but not a reload. All four rematch bosses raise it as they die; daYgcwp_c in GanonA room 1 reads it to know Link is arriving from a rematch, plays the warp shine, and clears it. Do not confuse it with dSv_event_flag_c::UNK_0480, a different bit in a different array at the same numeric id.",
+   "set_by": "src/d/actor/d_a_btd.cpp:912, src/d/actor/d_a_bmd.cpp:524, src/d/actor/d_a_bpw.cpp:2154, src/d/actor/d_a_bwd.cpp:1027",
+   "read_by": ["src/d/actor/d_a_ygcwp.cpp:115", "src/d/actor/d_a_ygcwp.cpp:120"],
+   "confidence": "high"
+  }
+ },
+
+ "steps": [
+  {
+   "id": "gtj_enter_maze",
+   "stage": "GanonJ",
+   "room": 1,
+   "layer": -1,
+   "trigger": {
+    "kind": "room_enter",
+    "detail": "GanonM Room1.arc SCLS[0] sends Link to GanonJ room 1 spawn 0 - the only way in. GanonJ room 1's PLYR entry (params 0xFFFFF001, spawn id 1 in rot.z) sits at (-1, 500, 0), and a kind-1 Phantom Ganon (Fganon, params 0xFFFFFF01) is waiting at (0, 14, 0) in the middle of the room. GanonJ's stage.dzs EVNT table is one entry long - 'DoorSound' - and no spawn in the stage carries an event index, so nothing here is a cutscene."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/GanonM/Room1.arc:room.dzr SCLS[0]",
+    "res/Stage/GanonJ/Room1.arc:room.dzr",
+    "out/rip/GZLE01/stages/GanonJ/GanonJ_report.json:event_table",
+    "tools/ww_story_mine.py GanonJ"
+   ],
+   "notes": "GanonJ is twelve rooms on a 3100-unit grid; see the _maze block for the full room and door table."
+  },
+  {
+   "id": "gtj_phantom_illusion",
+   "stage": "GanonJ",
+   "room": -1,
+   "layer": -1,
+   "trigger": {
+    "kind": "hit",
+    "detail": "Every Phantom Ganon in the maze is Fganon kind 1 (params & 0xF == 1). daFganon's damage handler special-cases that kind: one hit sets action 3 and forces health to 0, so a single sword blow finishes him and the camera runs 'P_Ganon2' instead of the real fight's 'P_Ganon1'. He also erases himself outright - standby() moves him to y = -20000 - if dComIfGs_checkGetItem(dItemNo_LIGHT_ARROW_e) is already true, so on a second pass through the maze the illusions are simply gone. His activation radius is m2BD * 10 = 2550 for rooms 1, 2, 4, 7, 8 and 11, and 2500 for room 13. mSwitchNo is 0xFF on all seven copies, so hitting him sets NO switch and opens NO door: he is a signpost, not a lock."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_fganon.cpp:2760-2765",
+    "src/d/actor/d_a_fganon.cpp:1063-1075",
+    "src/d/actor/d_a_fganon.cpp:1508-1514",
+    "src/d/actor/d_a_fganon.cpp:1553-1560",
+    "res/Stage/GanonJ/Room1.arc:room.dzr",
+    "res/Stage/GanonJ/Room13.arc:room.dzr"
+   ],
+   "notes": "room is -1 because the same step covers all seven copies (rooms 1, 2, 4, 7, 8, 11, 13)."
+  },
+  {
+   "id": "gtj_doorsound_path",
+   "stage": "GanonJ",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "tag",
+    "detail": "The stage's five TagEv volumes are the only things in GanonJ that order an event, and all five order EVNT entry 0 = 'DoorSound'. Their raw positions are (2000, 0, 0), (3100, 0, -2000), (3100, 0, -5100), (1100, 0, -6200) and (0, 0, -8200), with switches 128, 129, 130, 131, 132 - each one sits a few hundred units PAST a real door, on the far side, inside the room you have just entered correctly. Laid on the room grid they spell out the route exactly: room 1 -> 2 -> 4 -> 8 -> 7 -> 11. None of them carries an event bit gate (rot.z = -1 = 0xFFFF)."
+   },
+   "event": "DoorSound",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/GanonJ/Stage.arc:stage.dzs SCOB TagEv x5",
+    "out/rip/GZLE01/stages/GanonJ/GanonJ_report.json:tags",
+    "src/d/actor/d_a_tag_event.cpp:18-45",
+    "tools/ww_story_mine.py GanonJ"
+   ],
+   "notes": "Nothing in src/ names 'DoorSound', so the five volumes are its entire wiring - the event script itself is in GanonJ's Stage.arc/event_list.dat. The switches are 0x80-0x84, dungeon-temporary (see _switch_numbers), which is the 'this volume has already fired' memory. Reading the name plus the placement, the cue is the sound of the next correct door - which is how the maze tells the player which way Phantom Ganon went - but the CONTENT of the event script was not decoded, so treat the meaning as inference and the wiring as fact."
+  },
+  {
+   "id": "gtj_trap_room_moblins",
+   "stage": "GanonJ",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "defeat",
+    "detail": "Go west out of room 1 and the Zenshut at (-1550, 0) - params 0x0FFFF2C0, front room 0, back room 1, type 2, gate switch 0xC0 = zone switch 192 - drops its bars behind you. Room 0 holds six Moblins (mo2, params 0xFFFFFFFF, rot.z 255 so none of them carries a death switch) plus pots. The door frees itself: daDoor10_c::chkStopOpen sees a type-2 door from the front, waits until fopAcM_myRoomSearchEnemy(room 0) returns NULL for 0x41 frames, then raises switch 192 itself. Zone switches are forgotten when the zone unloads, so the trap re-arms."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/GanonJ/Stage.arc:stage.dzs TGDR Zenshut @(-1550,0,0)",
+    "res/Stage/GanonJ/Room0.arc:room.dzr",
+    "src/d/actor/d_a_door10.cpp:132-160",
+    "src/d/d_save.cpp:1585-1601"
+   ],
+   "notes": "Room 0's only real exit is this door, so clearing it is not optional once you are inside."
+  },
+  {
+   "id": "gtj_trap_room_bokoblins",
+   "stage": "GanonJ",
+   "room": 3,
+   "layer": -1,
+   "trigger": {
+    "kind": "defeat",
+    "detail": "Same rule one room over: the Zenshut at (4650, 0) - params 0x0FFFF2C1, front room 3, back room 2, type 2, gate zone switch 193 - seals room 3, which holds sixteen Bokoblins (Bk: eight with params 0xFFFFFF20 and rot.z 224-231, eight with params 0xE0FFFF60..0xE7FFFF60) and twelve pots. Room 3's other three doors all have front room == back room, so they are fakes; killing everything is the only way out."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/GanonJ/Stage.arc:stage.dzs TGDR Zenshut @(4650,0,0)",
+    "res/Stage/GanonJ/Room3.arc:room.dzr",
+    "src/d/actor/d_a_door10.cpp:132-160",
+    "src/d/actor/d_a_bk.cpp:4759-4770"
+   ],
+   "notes": "The 224-231 numbers on these Bokoblins are read by d_a_bk.cpp:4768-4770 into m02B5/m02B6/m02B7; what each does was NOT determined, and it does not matter for the gate, because the type-2 door opens on 'room is empty' regardless."
+  },
+  {
+   "id": "gtj_trap_room_darknuts",
+   "stage": "GanonJ",
+   "room": 6,
+   "layer": -1,
+   "trigger": {
+    "kind": "defeat",
+    "detail": "West out of room 7: the Zenshut at (-1550, -6200) - params 0x0FFFF2C2, front room 6, back room 7, type 2, gate zone switch 194. Room 6 holds three Darknuts (Tn, params 0x1AFF9654 / 0xFFFFFA54) standing in a ring of eleven Hcbh pillars (the Tower of the Gods 'pillar with the Companion Statue's face' prop, used here as scenery). Kill the three and the bars lift. Room 6 also has an UNGATED door at (-3100, -7750) into room 10, and room 10 has an ungated door into room 11, so a player who fights through room 6 rejoins the correct route without ever going back through the Zenshut."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/GanonJ/Stage.arc:stage.dzs TGDR Zenshut @(-1550,0,-6200)",
+    "res/Stage/GanonJ/Room6.arc:room.dzr",
+    "res/Stage/GanonJ/Room10.arc:room.dzr",
+    "src/d/actor/d_a_tn.cpp:1-4",
+    "src/d/actor/d_a_obj_hcbh.cpp:1-4",
+    "src/d/actor/d_a_door10.cpp:132-160"
+   ],
+   "notes": "Room 10 itself is ungated - one Bokoblin (Bk, params 0xFFFF3263) and a heap of pots."
+  },
+  {
+   "id": "gtj_trap_room_moblin_pair",
+   "stage": "GanonJ",
+   "room": 9,
+   "layer": -1,
+   "trigger": {
+    "kind": "defeat",
+    "detail": "The fourth trap is wired differently. The door at (4650, -6200) is a plain door10 with params 0x0FFFF0C3 - front room 9, back room 8, TYPE 0, gate zone switch 195 - so it does NOT free itself on 'room is empty'. Instead room 9 carries an AND_SW0 at (7793, 562, -6193) with params 0xC3E00002: check 2 switches starting at 224, and when both are on raise 195. Switches 224 and 225 are the mDeathSwitch values of the room's two Moblins (mo2, rot.z 224 and 225). So only those two matter - the fifteen Odokuro skull piles, the six Miniblins (Puti) and everything else can be left alive."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/GanonJ/Stage.arc:stage.dzs TGDR door10 @(4650,0,-6200)",
+    "res/Stage/GanonJ/Room9.arc:room.dzr",
+    "src/d/actor/d_a_andsw0.cpp:321-328",
+    "src/d/actor/d_a_andsw0.cpp:38-64",
+    "src/d/actor/d_a_mo2.cpp:4093-4099",
+    "src/d/actor/d_a_mo2.cpp:2406-2410",
+    "src/d/actor/d_a_door10.cpp:165-170"
+   ],
+   "notes": "Odokuro is fpcNm_TSUBO_e (d_stage.cpp:524) - carriable skull props, not an enemy. Puti is fpcNm_PT_e, the Miniblin."
+  },
+  {
+   "id": "gtj_seal_room13",
+   "stage": "GanonJ",
+   "room": 13,
+   "layer": -1,
+   "trigger": {
+    "kind": "object",
+    "detail": "The last door of the route, at (0, -10850), is door10 params 0x0FFFF00A - front room 13, back room 11, type 0, gate MEMORY switch 10 (STAGE_GT save block, slot 8). getSwbit2 is 0xFF, so the room-11 side is never barred: Link walks in freely and the bars come down behind him on the room-13 side."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "res/Stage/GanonJ/Stage.arc:stage.dzs TGDR door10 @(0,0,-10850)",
+    "src/d/d_door.cpp:16-28",
+    "src/d/actor/d_a_door10.cpp:64-83",
+    "src/d/d_save.cpp:1585-1601",
+    "gcrip/data/ww_dungeons.json"
+   ],
+   "notes": "NOT DETERMINED: nothing found in the placement data or in src/ raises memory switch 10 of the STAGE_GT block, so as read it is a permanent one-way seal. Marked medium because the reading of the door is certain but the absence of a setter is an absence-of-evidence argument."
+  },
+  {
+   "id": "gtj_light_arrow_chest",
+   "stage": "GanonJ",
+   "room": 13,
+   "layer": -1,
+   "trigger": {
+    "kind": "chest",
+    "detail": "GanonJ's single TRES entry, takara8 at (-30, 0, -12350), params 0xFF2E8002, rot (13, 0, 13825). Decoded with the tbox accessors: room = 13 & 0x3F = 13, item = (13825 >> 8) & 0xFF = 0x36 = dItemNo_LIGHT_ARROW_e, open switch = 13825 & 0xFF = 1 (memory switch 1 of the STAGE_GT block), shape type = (params >> 20) & 0xF = 2. This is what the whole maze is for."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "LIGHT_ARROW",
+   "confidence": "high",
+   "sources": [
+    "res/Stage/GanonJ/Stage.arc:stage.dzs TRES takara8",
+    "include/d/actor/d_a_tbox.h:37",
+    "src/d/actor/d_a_tbox.cpp:281",
+    "src/d/actor/d_a_tbox.cpp:867",
+    "include/d/d_item_data.h:61",
+    "src/d/d_stage.cpp:490"
+   ],
+   "notes": "The chest closes the loop on the whole chapter: d_a_fganon.cpp:1067-1074 makes the maze's kind-1 illusions delete themselves once this item is owned, and makes GanonM's kind-2 Phantom Ganon refuse to appear until it is."
+  },
+  {
+   "id": "gtj_maze_exit",
+   "stage": "GanonJ",
+   "room": 13,
+   "layer": -1,
+   "trigger": {
+    "kind": "object",
+    "detail": "The door out of room 13, at (-49, -13869), is door10 params 0x0FFFF001 - front room 13, back room 13 (it leads nowhere but the room it is in, geometrically), type 0, gate MEMORY switch 1. Switch 1 is the chest's open switch, so opening the chest unbars this door. Behind it, GanonJ Room13.arc SCLS[0] sends Link to GanonM room 0 spawn 3. Every other maze room that has an SCLS entry (rooms 1, 2, 4, 7, 8, 11) points at GanonM room 0 spawn 2 instead, and the stage-level SCLS[0] at GanonM room 0 spawn 4."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/GanonJ/Stage.arc:stage.dzs TGDR door10 @(-49,0,-13869)",
+    "res/Stage/GanonJ/Room13.arc:room.dzr SCLS[0]",
+    "res/Stage/GanonJ/Room1.arc:room.dzr SCLS[0]",
+    "src/d/actor/d_a_door10.cpp:165-170"
+   ],
+   "notes": "The two different GanonM spawns (3 from room 13, 2 from every other maze room) are how the game knows whether Link left the maze finished or unfinished. What GanonM does with them was not mined here - it belongs to ww_story_ganon.json's chapter."
+  },
+  {
+   "id": "gtn_stairs_to_the_hub",
+   "stage": "GanonN",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "room_enter",
+    "detail": "GanonA Room1.arc SCLS[4] -> GanonN room 0 spawn 0. GanonN is the plainest stage in the tower: one room, an empty EVNT table, no TagEv or AttTag volumes at all, two spawns, one door20 (params 0x0FFFF1FF - gate switch 0xFF, i.e. NO gate), two pairs of bonbori lamps and five Keese (Puti). Nothing in it is gated by anything."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": ["0x3204"],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "res/Stage/GanonA/Room1.arc:room.dzr SCLS[4]",
+    "res/Stage/GanonN/Room0.arc:room.dzr",
+    "res/Stage/GanonN/Stage.arc:stage.dzs",
+    "out/rip/GZLE01/stages/GanonN/GanonN_report.json",
+    "tools/ww_story_mine.py GanonN"
+   ],
+   "notes": "The 0x3204 requirement is INFERRED from placement geometry, not from a gate in GanonN: GanonA room 1's VgnFD (the four-trial door object) stands at (-3, 750, -9390) and GanonA room 1 spawn 6 - where GanonN Room0 SCLS[0] returns Link - is at (-1, 750, -8898), ~490 units in front of it, and no other door actor is anywhere near. ww_story_ganon.json's gt_four_doors_open raises 0x3204 when the last trial is finished. Confidence medium because the requirement rests on that adjacency."
+  },
+  {
+   "id": "gtn_top_of_stairs",
+   "stage": "GanonN",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "object",
+    "detail": "GanonN Room0.arc SCLS[1] -> GanonM room 0 spawn 0. The door20 at (-11, 1771, -15062) sits exactly on GanonN's second spawn (params 0xFFFF6000, at (-12, 1771, -15062)), which is the arrival point coming back down."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/GanonN/Room0.arc:room.dzr SCLS[1]",
+    "res/Stage/GanonN/Stage.arc:stage.dzs TGDR door20",
+    "out/rip/GZLE01/stages/GanonN/GanonN_report.json:exits"
+   ],
+   "notes": "GanonN is a two-way link between GanonA room 1 (SCLS[0], back to spawn 6) and GanonM room 0 (SCLS[1], up to spawn 0)."
+  },
+  {
+   "id": "gtl_stairs_to_puppet_ganon",
+   "stage": "GanonL",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "room_enter",
+    "detail": "GanonM Room0.arc SCLS[1] -> GanonL room 0 spawn 0, at (0, 1772, -18800). GanonL is one long room that climbs from y 1772 to y 5852. Its EVNT table is EMPTY and it has no TagEv or AttTag volumes at all, so nothing in it is an event."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/GanonM/Room0.arc:room.dzr SCLS[1]",
+    "res/Stage/GanonL/Room0.arc:room.dzr",
+    "out/rip/GZLE01/stages/GanonL/GanonL_report.json",
+    "tools/ww_story_mine.py GanonL"
+   ],
+   "notes": null
+  },
+  {
+   "id": "gtl_clear_the_stairs",
+   "stage": "GanonL",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "defeat",
+    "detail": "The whole of GanonL is one gate. An ALLdie actor at (-1500, 3923, -21600) with params 0xFFFF19FF resolves to switch (params >> 8) & 0xFF = 0x19 = 25; it polls fopAcM_myRoomSearchEnemy(room 0) and, once nothing is left for 65 frames, raises switch 25. The KGBdor at the top, (0, 5852, -37474), carries params 0x0FFFF119 - gate switch params & 0xFF = 0x19 = 25. Same number, so: kill everything on the staircase and the door to Puppet Ganon opens. The garrison is three Moblins (mo2, params 0x1A005001 / 0x1A025001 / 0x1A013201, at y 2792, 4833 and 4833) and three Darknuts (Tn, params 0x1AFF9654 x2 at the top and 0x1AFF5054 halfway up)."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/GanonL/Room0.arc:room.dzr ACTR ALLdie, ACTR mo2 x3, ACTR Tn x3, TGOB KGBdor",
+    "src/d/actor/d_a_alldie.cpp:18-21",
+    "src/d/actor/d_a_alldie.cpp:26-49",
+    "src/d/d_door.cpp:16-19",
+    "src/d/d_stage.cpp:944"
+   ],
+   "notes": "Switch 25 is below 0x80, so it lives in the STAGE_GT memory block and is remembered permanently - clear the stairs once and they stay clear. Room 0 also carries two SW_C00 (params 0x0000FF1A and 0x0000191A) near the bottom; both mention 0x1A = 26, a switch nothing else in the stage references. What they do was NOT determined."
+  },
+  {
+   "id": "gtl_to_puppet_ganon",
+   "stage": "GanonL",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "object",
+    "detail": "Through the KGBdor, GanonL Room0.arc SCLS[1] -> GanonK room 0 spawn 0 - Puppet Ganon, whose kugutu_ganon cutscene is already mined in ww_story_ganon.json (step gt_puppet_ganon). GanonK Room0.arc SCLS[0] comes back to GanonL room 0 spawn 1, at (0, 5852, -37200), i.e. the top of the stairs. GanonL Room0.arc SCLS[0] goes back down to GanonM room 0 spawn 1."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/GanonL/Room0.arc:room.dzr SCLS[0] and SCLS[1]",
+    "res/Stage/GanonK/Room0.arc:room.dzr SCLS[0]",
+    "gcrip/data/ww_story_ganon.json"
+   ],
+   "notes": null
+  },
+  {
+   "id": "gtx_rematch_gohma",
+   "stage": "Xboss0",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "defeat",
+    "detail": "GanonB Room0.arc SCLS[1] -> Xboss0 room 0 spawn 0, fade 2 (GanonB is ww_story_ganon.json's gt_trial_gohma approach). Xboss0 is a copy of the Dragon Roost boss room, complete with Btd (Gohma), Dr2 (Valoo's body/tail plus the lava pit and ceiling rock) and seven Bita wooden platforms, and it drops the dungeon's own arrival cutscene entirely: the EVNT table is EMPTY, the single spawn carries no event index, and there are no TagEv or AttTag volumes. The rematch rule is inside the boss: daBtd state 0x32 checks dComIfGp_getStartStageName()[0] == 'X' and, if so, skips the whole death sequence - no BOSS_CLEAR stream, no heart container, no warp flower - and instead raises GOHMA_TRIALS_CLEAR, sets event TMP bit 0x0480, plays JA_SE_LK_B_BOSS_WARP and calls dLib_setNextStageBySclsNum(0, roomNo)."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": ["0x3240"],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/GanonB/Room0.arc:room.dzr SCLS[1]",
+    "res/Stage/Xboss0/Room0.arc:room.dzr",
+    "src/d/actor/d_a_btd.cpp:909-913",
+    "src/d/d_lib.cpp:236-255",
+    "out/rip/GZLE01/stages/Xboss0/Xboss0_report.json",
+    "tools/ww_story_mine.py Xboss0"
+   ],
+   "notes": "Xboss0's only story-looking event scripts are AHEAHE (the shared boss-defeat event every boss stage carries), WARP_WIND and WARP_WIND_AFTER - and WARP_WIND/WARP_WIND_AFTER belong to daWarpf (src/d/actor/d_a_warpf.cpp:273-275), the warp flower, which the 'X' branch never creates. So none of the four arenas' scripts is reachable in the rematch. Xboss0 also carries thirty TagHt hint volumes and a ky_tag0/ky_tag2 environment pair, both inherited from M_DragB."
+  },
+  {
+   "id": "gtx_rematch_kalle_demos",
+   "stage": "Xboss1",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "defeat",
+    "detail": "GanonD Room0.arc SCLS[1] -> Xboss1 room 0 spawn 0, fade 2. Xboss1 places one Bkm (Kalle Demos) at (-106, 0, 63) and twenty-eight kusax1 grass tufts, nothing else - no EVNT table, no trigger volumes. bmd end() case 0 runs the same 'X' test and raises KALLE_DEMOS_TRIALS_CLEAR + TMP 0x0480, then SCLS[0]."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": ["0x3220"],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/GanonD/Room0.arc:room.dzr SCLS[1]",
+    "res/Stage/Xboss1/Room0.arc:room.dzr",
+    "src/d/actor/d_a_bmd.cpp:518-525",
+    "tools/ww_story_mine.py Xboss1"
+   ],
+   "notes": "Xboss1's event script list also carries 'cb_rescue' - that is Makar's rescue, referenced by d_a_npc_cb1.cpp:2905,2962 - inherited from kinBOSS. No spawn or volume in Xboss1 orders it, and the stage places no Cb1, so it is dead weight in the arena copy."
+  },
+  {
+   "id": "gtx_rematch_jalhalla",
+   "stage": "Xboss2",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "defeat",
+    "detail": "GanonE Room0.arc SCLS[1] -> Xboss2 room 0 spawn 0, fade 2. Xboss2 places big_pow (= the Earth Temple's Jalhalla actor, fpcNm_BPW_e / d_a_bpw.cpp) at the origin with params 0x00E0FFFF, twenty bable (Bubbles) around it, and three LTag1 light tags at (0, 0, -1150), (-1150, 0, 0) and (1150, 0, 0) with params 0x00FF4381 / 0x00FF4385 / 0x00FF4389 - the mirror-shield beams the fight needs. d_a_bpw.cpp:2151-2157: when health hits 0 and the start stage begins with 'X', it raises JALHALLA_TRIALS_CLEAR + TMP 0x0480 and takes SCLS[0] instead of running the death state 0x78."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": ["0x3210"],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/GanonE/Room0.arc:room.dzr SCLS[1]",
+    "res/Stage/Xboss2/Room0.arc:room.dzr",
+    "src/d/actor/d_a_bpw.cpp:2151-2157",
+    "src/d/d_stage.cpp:694",
+    "gcrip/data/ww_enemies_boss_jalhalla_molgera.json"
+   ],
+   "notes": "See _actors.big_pow: big_pow and Bpw are the same actor - big_pow is the DZR object name, Bpw is the archive name - so this arena reuses the existing Bpw enemy profile. Unlike the Earth Temple, Xboss2 places NO 'pow' (Poe) actors of its own; d_a_bpw.cpp:2005-2056 spawns them as children when Jalhalla takes a damaging landing."
+  },
+  {
+   "id": "gtx_rematch_molgera",
+   "stage": "Xboss3",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "defeat",
+    "detail": "GanonC Room0.arc SCLS[1] -> Xboss3 room 0 spawn 0, fade 2. Xboss3 is the emptiest stage in the file: one Bwd (Molgera) at (0, -506, 0), one door12, one ky_tag0, two spawns, no EVNT table, no volumes. d_a_bwd.cpp:1021-1028 runs the same 'X' branch: MOLGERA_TRIALS_CLEAR + TMP 0x0480 + SCLS[0], skipping the BWD_CLEAR stream and the death animation."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": ["0x3208"],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/GanonC/Room0.arc:room.dzr SCLS[1]",
+    "res/Stage/Xboss3/Room0.arc:room.dzr",
+    "src/d/actor/d_a_bwd.cpp:1021-1028",
+    "tools/ww_story_mine.py Xboss3"
+   ],
+   "notes": "Note the mapping of approach stage to arena is NOT in index order: GanonB->Xboss0 (Gohma), GanonD->Xboss1 (Kalle Demos), GanonE->Xboss2 (Jalhalla), GanonC->Xboss3 (Molgera). That matches ww_story_ganon.json's trial steps (GanonB/GanonD/GanonE/GanonC = indices 0/1/2/3) and is confirmed independently here by the SCLS tables."
+  },
+  {
+   "id": "gtx_return_to_the_trial_hall",
+   "stage": "GanonA",
+   "room": 1,
+   "layer": -1,
+   "trigger": {
+    "kind": "warp",
+    "detail": "All four arenas share one exit. dLib_setNextStageBySclsNum(0, roomNo) reads the ROOM's SCLS table, and Xboss0..Xboss3 Room0.arc SCLS[0] are identical: GanonA, room 1, spawn 5, fade 2. GanonA room 1 spawn 5 is at (0, 789, -6388), and a Ygcwp warp pad stands at (0, 790, -6387) - the same spot. daYgcwp_c::check_ev() reads event TMP bit 0x0480, which the boss set as it died, plays the ID_AK_SN_GANONCASTLEWARP00 shine, and off_ev() clears it. Note the STAGE-level SCLS[0] of every Xboss stage points somewhere else (GanonA room 0 spawn 0) and is not what the bosses use."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/Xboss0/Room0.arc:room.dzr SCLS[0]",
+    "res/Stage/Xboss3/Room0.arc:room.dzr SCLS[0]",
+    "res/Stage/GanonA/Room1.arc:room.dzr PLYR spawn 5, SCOB Ygcwp",
+    "src/d/d_lib.cpp:236-255",
+    "src/d/actor/d_a_ygcwp.cpp:113-121",
+    "src/d/actor/d_a_ygcwp.cpp:131-133"
+   ],
+   "notes": "GanonA room 1's seven spawns (id in rot.z & 0xFF): 0 (-5,1150,-3499) from GanonA room 0; 1 (-2157,848,-4177) back from GanonB; 2 (2157,848,-4177) back from GanonC; 3 (-2163,848,-8489) back from GanonD; 4 (2159,848,-8493) back from GanonE; 5 (0,789,-6388) the rematch warp pad; 6 (-1,750,-8898) back from GanonN."
+  },
+  {
+   "id": "ff3_third_visit_swap",
+   "stage": "ma3room",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "bits",
+    "detail": "ma3room is never a destination. Nothing in any stage's SCLS table anywhere on the disc points at it - every door into the Forsaken Fortress interior points at ma2room. dRes_control_c::setStageRes builds the resource path as '/res/Stage/%s/' where %s is 'ma3room' if the start stage name is exactly \"ma2room\" AND event bit 0x1820 is set, otherwise the start stage name itself. So the third visit is a resource substitution: the game still believes it is in ma2room - dComIfGp_getStartStageName() still returns \"ma2room\", so the save slot is still STAGE_FF (2) and every stage-name comparison in the code behaves as ma2room - while the Stage.arc and Room*.arc come from ma3room."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": ["0x1820"],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/d_resorce.cpp:705-709",
+    "src/d/actor/d_a_warpdm20.cpp:114-128",
+    "gcrip/data/ww_dungeons.json",
+    "tools/ww_story_mine.py ma3room"
+   ],
+   "notes": "This is the single most important fact about ma3room for a remake: do not look for a warp or a trigger, look for the flag. The sea also switches the Forsaken Fortress island to layer 3 on the same bit (src/d/d_com_inf_game.cpp:207-208)."
+  },
+  {
+   "id": "ff3_enter_the_cells",
+   "stage": "ma3room",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "sea Room1.arc SCLS[0..15] are the doors of the Forsaken Fortress island, all pointing at ma2room (and therefore, with 0x1820 set, at ma3room's rooms). ma3room rooms 0 spawns 0, 1 and 18 all sit at (6733, 2214, 6046) and all carry EVNT index 0 = 'kankin1' in params >> 24, so arriving in the cell block auto-plays it, exactly as majroom does on the first visit. Room 3 spawn 10 at (-7168, 2083, -5069) carries index 2 = 'Go_01'. ma3room's EVNT table is the FIRST-visit table - kankin1, Go_00, Go_01, Go_02, FIRST_HINT2, FIRST_HINT3, DoorLook1, DoorLook2, moro_cam - not ma2room's, which begins with 'kankin2' and adds a tenth entry 'moro_cam2'."
+   },
+   "event": "kankin1",
+   "stb": null,
+   "requires_bits": ["0x1820"],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/sea/Room1.arc:room.dzr SCLS[0..15]",
+    "res/Stage/ma3room/Room0.arc:room.dzr PLYR",
+    "res/Stage/ma3room/Stage.arc:stage.dzs EVNT",
+    "res/Stage/ma2room/Stage.arc:stage.dzs EVNT",
+    "out/rip/GZLE01/stages/ma3room/ma3room_report.json",
+    "tools/ww_story_mine.py ma3room"
+   ],
+   "notes": "'kankin' is imprisonment - the cells. Same event name and same spawn wiring as ww_story_fortress.json's ff_interior_cells step in majroom; the geometry is the same building, re-dressed."
+  },
+  {
+   "id": "ff3_deserted_fortress",
+   "stage": "ma3room",
+   "room": -1,
+   "layer": -1,
+   "trigger": {
+    "kind": "room_enter",
+    "detail": "What makes the third visit a story beat is what is NOT placed. Counting ACTR/SCOB/TGOB entries across all five rooms: majroom (1st visit) has 7 mo2 Moblins, 5 Puti, 3 nezumi rats and 2 keeth; ma2room (2nd visit) has 8 mo2, 2 Bk Bokoblins, 7 Puti, plus Fmastr2 and 19 Shmrgrd; ma3room has NO mo2, NO Bk, NO Puti and NO Fmastr2 at all - just 21 keeth (Keese) and 4 nezuana rat holes. The garrison is gone. ma3room also drops ma2room's SW_C00, its agbMARK/agbF bombable-wall markers (7 down to 1) and its second moro_cam volume."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": ["0x1820"],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/ma3room/Room0.arc:room.dzr",
+    "res/Stage/ma3room/Room1.arc:room.dzr",
+    "res/Stage/ma3room/Room2.arc:room.dzr",
+    "res/Stage/ma3room/Room3.arc:room.dzr",
+    "res/Stage/ma3room/Room4.arc:room.dzr",
+    "res/Stage/ma2room/Room0.arc:room.dzr",
+    "res/Stage/majroom/Room0.arc:room.dzr",
+    "src/d/d_stage.cpp:779"
+   ],
+   "notes": "room is -1 because the comparison is across the whole stage. keeth is fpcNm_KI_e (d_stage.cpp:779); nezuana is fpcNm_NZG_e, the rat hole (d_stage.cpp:669)."
+  },
+  {
+   "id": "ff3_moro_cam",
+   "stage": "ma3room",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "tag",
+    "detail": "ma3room's ONE TagEv volume, at (2811, 728, 3788) in stage.dzs with params 0x080506FF, orders EVNT entry 8 = 'moro_cam' (switch 6, switch2 5, no event-bit gate). ma2room has two TagEv volumes - the same one plus a second at (6440, 2072, 6225), params 0x09E112FF, ordering its tenth entry 'moro_cam2'. There are no AttTag volumes in ma3room at all (majroom has four)."
+   },
+   "event": "moro_cam",
+   "stb": null,
+   "requires_bits": ["0x1820"],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "res/Stage/ma3room/Stage.arc:stage.dzs SCOB TagEv",
+    "res/Stage/ma2room/Stage.arc:stage.dzs SCOB TagEv",
+    "out/rip/GZLE01/stages/ma3room/ma3room_report.json:tags",
+    "src/d/actor/d_a_tag_event.cpp:18-45",
+    "tools/ww_story_mine.py ma3room"
+   ],
+   "notes": "'moro' is the Moblin (mo2), so this is the Moblin-patrol camera from the first visit, still placed even though ma3room places no Moblins for it to look at. The stage also carries a MOZO_CAM script that no EVNT entry names, exactly as majroom does (ww_story_fortress.json, ff_moblin_patrol)."
+  },
+  {
+   "id": "ff3_chests",
+   "stage": "ma3room",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "chest",
+    "detail": "Four TRES entries in stage.dzs, byte-identical to ma2room's: takara at (3095, 1703, 4345) rot (0, 16201, 19711) -> room 0, item (19711 >> 8) & 0xFF = 0x4C = dItemNo_MAP_e, open switch 255; takara at (6336, 1714, -2013) rot (1, -11832, 19967) -> room 1, item 0x4D = dItemNo_COMPASS_e; takara2 at (-3684, 820, 3350) rot (4, 28216, 1023) -> room 4, item 0x03 = yellow rupee; takara3 at (1349, 728, 4211) rot (0, -31493, 2047) -> room 0, item 0x07 = heart piece. Every one has open switch 0xFF, i.e. no switch of its own - the chest's opened state is remembered in the STAGE_FF block's chest bits instead."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": ["0x1820"],
+   "sets_bits": [],
+   "gives_item": "HEART_PIECE",
+   "confidence": "high",
+   "sources": [
+    "res/Stage/ma3room/Stage.arc:stage.dzs TRES",
+    "res/Stage/ma2room/Stage.arc:stage.dzs TRES",
+    "include/d/actor/d_a_tbox.h:37",
+    "src/d/actor/d_a_tbox.cpp:867",
+    "include/d/d_item_data.h:14,22,83-84"
+   ],
+   "notes": "gives_item names only the heart piece because the schema has one slot; the map, compass and rupee are in the trigger detail. Since the chests are identical between ma2room and ma3room and the save slot is the same (STAGE_FF, 2), a chest opened on the second visit stays open on the third."
+  },
+  {
+   "id": "ff3_warp_to_ganons_tower",
+   "stage": "ma3room",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "warp",
+    "detail": "The reason to come back at all. sea Room1.arc - the Forsaken Fortress island - carries an eighteenth exit, SCLS[17] -> GanonM room 2 spawn 1, fade 1. GanonM room 2's PLYR at (-2700, -37, 0) has params 0x02FF2002, so params >> 24 = 2 = GanonM's EVNT entry 2 = 'GANON_ARRIVE': arriving at the tower auto-plays it. That is the far end of ww_story_ganon.json's gt_warp_appears / daWarpgn_c TO_MAJYUU_WARP pair."
+   },
+   "event": "GANON_ARRIVE",
+   "stb": null,
+   "requires_bits": ["0x3D02"],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "res/Stage/sea/Room1.arc:room.dzr SCLS[17]",
+    "res/Stage/GanonM/Room2.arc:room.dzr PLYR",
+    "res/Stage/GanonM/Stage.arc:stage.dzs EVNT",
+    "gcrip/data/ww_story_ganon.json",
+    "src/d/actor/d_a_warpgn.cpp:130-131"
+   ],
+   "notes": "CROSS-REFERENCE / refinement of ww_story_ganon.json's gt_phantom_ganon step, which reads the same GanonM room 2 spawn as Phantom Ganon's arrival. The SCLS table shows what that spawn actually is: the landing point of the Forsaken Fortress warp. GanonM room 2 has no SCLS of its own; Link walks internally to GanonM room 0, whose SCLS[0] goes down to GanonN and SCLS[1] up to GanonL, and to GanonM room 1, whose SCLS[0] is the maze. The 0x3D02 requirement is taken from ww_story_ganon.json (daWarpgn_c raises it once the warp has appeared), not re-derived; medium confidence because nothing on the sea side of the exit tests it."
+  }
+ ]
+}

@@ -1,0 +1,1825 @@
+{
+ "_source": "Wind Waker (GZLE01) sound-effect system, mined 2026-08-21 from the zeldaret/tww decompilation at Z:/memRip/sources/tww (read-only) and from the ripped disc at Z:/3d ripper/out/rip/GZLE01. This is a SYSTEM REFERENCE for the remake, not an asset dump: it says where SE data lives, how the game triggers a sound, how a sound id decodes, and - the valuable part - how a DZB polygon's material sound id picks a footstep sample. Reading order: _status (does the audio library survive?) -> _data (banks/waves on disc) -> _ids (the id space) -> _trigger_api (how game code fires one) -> _footsteps (surface -> sample) -> _implementation (what a Godot version needs) -> _gaps (what could NOT be determined). Every factual claim carries `file` (a decomp path relative to Z:/memRip/sources/tww, or a ripped/disc path) with a line number where it comes from source, and `confidence`: high = read straight out of decompiled C++ or measured from the disc bytes; medium = inferred by cross-checking code against disc data; low = guess, flagged as such. No id, offset or struct field in this file was invented - each was read from the header/struct cited.",
+ "_status": {
+  "audio_library_survives": true,
+  "summary": "YES - unlike many GameCube decomps, tww ships the whole Nintendo audio stack. src/JSystem/JAudio has 62 translation units (JAISeMgr, JAISoundTable, JAIAnimation, JASWSParser, JASBNKParser, JASSeqParser, ...) and src/JAZelAudio has the 8 Zelda-specific ones (JAIZelBasic, JAIZelAnime, JAIZelSound, JAIZelScene, JAIZelInst, JAIZelParam, JAIZelAtmos, JAIZelCharVoiceTable). The complete sound-id enum survives as a header: include/JAZelAudio/JAZelAudio_SE.h, 2016 named JA_SE_* constants. The Twilight-Princess names the brief suggested (Z2SoundMgr, Z2Audience, Z2SeMgr) do NOT exist in this codebase - Wind Waker predates Z2; its layer is JAIZel* / mDoAud_*.",
+  "caveats": [
+   {
+    "claim": "171 functions across src/JSystem/JAudio and src/JAZelAudio are marked /* Nonmatching */ (body not recovered). The single most important one for SE is JAIZelBasic::seStart, which is an empty stub - only its two OSReport strings survive. So the exact runtime path from an SE id to a bank/program/key is NOT readable from source.",
+    "file": "src/JAZelAudio/JAIZelBasic.cpp:708-714",
+    "confidence": "high"
+   },
+   {
+    "claim": "JAInter::SeMgr::checkNextFrameSe / checkPlayingSe and JAIAnimeSound::startAnimSound are likewise Nonmatching, so SE voice allocation and the anime-sound -> seStart bridge are stubs too.",
+    "file": "src/JSystem/JAudio/JAISeMgr.cpp:117-124, src/JAZelAudio/JAIZelAnime.cpp:22-24",
+    "confidence": "high"
+   },
+   {
+    "claim": "Where the code is silent this file falls back to what the DATA proves. The banks, the wave tables and the per-polygon material ids are all on the disc and were parsed and decoded with gcrip's existing aaf/ibnk/wsys code during this investigation.",
+    "confidence": "high"
+   }
+  ]
+ },
+ "_data": {
+  "root": "Audiores/ on the GZLE01 disc (239 files). NOTE the rip does not extract this tree to out/rip/GZLE01 - gcrip.music reads it straight out of the ISO through gcrip.stage._Disc. A copy of the index file exists at out/tmp_music/JaiInit.aaf.",
+  "index_file": {
+   "path": "Audiores/JaiInit.aaf",
+   "size_bytes": 540416,
+   "role": "the whole JAudio init blob: instrument banks (IBNK), wave banks (WSYS), the stream list and the sound table are all chunks INSIDE this one file. Already parsed by gcrip/formats/aaf.py.",
+   "chunks_measured": {
+    "1 sound_table": [
+     1648,
+     38080
+    ],
+    "5 stream_list": [
+     536400,
+     3616
+    ],
+    "6 scene_table": [
+     540016,
+     64
+    ],
+    "7 fx_scene_table": [
+     540080,
+     320
+    ]
+   },
+   "note": "chunk offsets/sizes measured by running gcrip.formats.aaf.parse on the file; chunk semantics from src/JSystem/JAudio/JAIInitData.cpp via the docstring at gcrip/formats/aaf.py:1-26",
+   "confidence": "high"
+  },
+  "counts_measured": {
+   "ibnk_banks": 65,
+   "wsys_wave_banks": 65,
+   "streams": 75,
+   "sequences": 97,
+   "se_sound_table_entries": 2202
+  },
+  "sample_data": {
+   "path": "Audiores/Banks/<name>_0.aw",
+   "format": "headerless raw sample data; the WSYS table inside JaiInit.aaf is the only description of it. Wave formats: 0 = ADPCM4 (AFC codec, 9-byte / 16-sample frames), 1 = ADPCM2, 2 = PCM8, 3 = PCM16.",
+   "file": "gcrip/formats/wsys.py:1-24",
+   "confidence": "high"
+  },
+  "se_banks": {
+   "note": "WSYS/IBNK indices 0-8 are the sound-effect banks; 9-64 are per-area music banks. `virtual_id` is the bank number a sequence selects with register 0x20 (gcrip/formats/aaf.py:16-18). `waves` and `programs` were counted by parsing the file.",
+   "confidence_structure": "high",
+   "confidence_roles": "medium",
+   "banks": [
+    {
+     "index": 0,
+     "aw": "n_zelda_0.aw",
+     "virtual_id": 0,
+     "waves": 51,
+     "programs": 36,
+     "role": "music (bank 0)"
+    },
+    {
+     "index": 1,
+     "aw": "w_zelda_0.aw",
+     "virtual_id": 1,
+     "waves": 60,
+     "programs": 11,
+     "role": "music (bank 1)"
+    },
+    {
+     "index": 2,
+     "aw": "SystemSE_0.aw",
+     "virtual_id": 128,
+     "waves": 67,
+     "programs": 57,
+     "role": "UI / menu / message blips - the JA_SE category 0 sounds"
+    },
+    {
+     "index": 3,
+     "aw": "voice_0.aw",
+     "virtual_id": 130,
+     "waves": 106,
+     "programs": 8,
+     "role": "Link's voice (grunts, yells) - mDoAud_linkVoiceStart"
+    },
+    {
+     "index": 4,
+     "aw": "LinkMotion_0.aw",
+     "virtual_id": 129,
+     "waves": 92,
+     "programs": 60,
+     "role": "Link's action sounds: sword swings, item use, cloth, rolls"
+    },
+    {
+     "index": 5,
+     "aw": "Footnote_0.aw",
+     "virtual_id": 131,
+     "waves": 114,
+     "programs": 22,
+     "role": "FOOTSTEPS - every character's footfall/landing, keyed by ground material. See _footsteps."
+    },
+    {
+     "index": 6,
+     "aw": "Atmos_0.aw",
+     "virtual_id": 140,
+     "waves": 56,
+     "programs": 33,
+     "role": "ambience: wind, waves, rivers, birds (the JA_SE_ATM_* ids)"
+    },
+    {
+     "index": 7,
+     "aw": "CharVoice_0.aw",
+     "virtual_id": 135,
+     "waves": 160,
+     "programs": 31,
+     "role": "NPC + enemy voices (the JA_SE_CV_* ids, category 4)"
+    },
+    {
+     "index": 8,
+     "aw": "objSE_0.aw",
+     "virtual_id": 132,
+     "waves": 182,
+     "programs": 113,
+     "role": "world objects: doors, chests, switches, pots (the JA_SE_OBJ_* ids)"
+    }
+   ]
+  },
+  "se_sequence": {
+   "claim": "All sound effects are voiced by ONE always-running BMS sequence. JAInter::SeMgr::startSeSequence starts sound id 0x80000800 - the top bits 0x80000000 mean 'sequence', so category 16, entry 0x800 & 0x3FF = 0. Sound-table sequence entry 0 has mOffsetNo = 5, i.e. file index 5 inside Audiores/Seqs/JaiSeqs.arc.",
+   "file": "src/JSystem/JAudio/JAISeMgr.cpp:107-111 (the 0x80000800); src/JSystem/JAudio/JAISoundTable.cpp:37-64 (id decode); measured: gcrip aaf.sequence_file_index(0) == 5",
+   "confidence": "high",
+   "almost_certainly": "Audiores/Seqs/JaiSeqs.arc/bms/defaultse.bms (115456 bytes - by far the largest .bms on the disc and the only one named for SE). That file index 5 == defaultse.bms was NOT verified; see _gaps.",
+   "why_it_matters": "SE SoundInfo records all have mOffsetNo = 0xFFFF (measured across all 65 category-3 entries), so a SE id is NOT a file offset. The id is handed to the running SE sequence, which picks a bank, a program and a note key. That dispatch lives in the sequence bytecode plus the Nonmatching seStart, and is the one link in the chain this investigation could not read."
+  },
+  "streams": {
+   "path": "Audiores/Stream/*.afc",
+   "count": 76,
+   "role": "streamed music and a few long cinematic beds - NOT sound effects. Already ripped to out/rip/GZLE01/audio/streams/ with an index at audio/streams.md.",
+   "confidence": "high"
+  },
+  "already_ripped_but_not_SE": {
+   "path": "out/rip/GZLE01/audio/music/defaultse.wav",
+   "note": "gcrip.music already renders defaultse.bms as if it were a song. That is NOT the sound effects: bms.py reads every game<->song port as 0 (gcrip/formats/bms.py:29-32), so the SE dispatch takes whatever branch a zero id selects. Treat that wav as an artefact, not as SE audio."
+  }
+ },
+ "_ids": {
+  "header": {
+   "file": "include/JAZelAudio/JAZelAudio_SE.h",
+   "lines": "1-2217",
+   "shape": "one flat anonymous C enum, `JA_SE_<NAME> = 0x....`, 2016 entries, no nesting and no sub-enums, sorted by value. This is the whole SE id space of the game.",
+   "confidence": "high"
+  },
+  "decode": {
+   "rule": "category = (id >> 12) & 0xFF ; entry = id & 0x3FF. Bits 10-11 (mask 0xC00) are FLAGS, not index bits: 1769 of the 2016 ids have bit 0x800 set and 247 have neither; bit 0x400 is never set in the enum. The sound TYPE lives in the top two bits of the full 32-bit id: 0x00000000 = SE, 0x80000000 = sequence (category 16), 0xC0000000 = stream (category 17).",
+   "file": "src/JSystem/JAudio/JAISoundTable.cpp:37-64 (getInfoPointer); include/JSystem/JAudio/JAISound.h:242-247 (type mask and the 0x800 macro)",
+   "verified": "decoding all 2016 enum names with this rule produces ZERO collisions inside a category, and the per-category maxima line up with the counts in the disc's own sound table (below).",
+   "confidence": "high"
+  },
+  "categories": {
+   "note": "counts measured two ways. `table` = the u16 at sound-table +6+4*cat, the game's own number (src/JSystem/JAudio/JAISoundTable.cpp:27-29). `enum` = names in JAZelAudio_SE.h. Categories 8-15 are empty; 16 and 17 are sequences and streams, not SE. The `role` strings are read off the dominant name prefix in each category and are inference, not source.",
+   "confidence_counts": "high",
+   "confidence_roles": "medium",
+   "table": [
+    {
+     "category": 0,
+     "table": 271,
+     "enum": 271,
+     "id_range": "0x0008-0x08FE",
+     "role": "UI, menus, message windows, Wind Waker baton, item-get jingles (prefixes ITM / TAKT / TALK / MSEL / ME)"
+    },
+    {
+     "category": 1,
+     "table": 167,
+     "enum": 159,
+     "id_range": "0x1xxx",
+     "role": "Link long/looping actions plus some ambience (LK, ATM)"
+    },
+    {
+     "category": 2,
+     "table": 166,
+     "enum": 168,
+     "id_range": "0x2xxx",
+     "role": "Link one-shot actions: sword, shield, items (LK)"
+    },
+    {
+     "category": 3,
+     "table": 65,
+     "enum": 65,
+     "id_range": "0x3xxx",
+     "role": "FOOTSTEPS, landings, swim, ladders, plus a few looping object/atmos sounds (LK_FT / FT / CMN_S / MO_FT)"
+    },
+    {
+     "category": 4,
+     "table": 404,
+     "enum": 404,
+     "id_range": "0x4xxx",
+     "role": "character voices - every JA_SE_CV_* id"
+    },
+    {
+     "category": 5,
+     "table": 419,
+     "enum": 420,
+     "id_range": "0x5xxx",
+     "role": "enemies and creatures - JA_SE_CM_*"
+    },
+    {
+     "category": 6,
+     "table": 599,
+     "enum": 416,
+     "id_range": "0x6xxx",
+     "role": "world objects - JA_SE_OBJ_*"
+    },
+    {
+     "category": 7,
+     "table": 111,
+     "enum": 113,
+     "id_range": "0x7xxx",
+     "role": "more objects, sea and magma ambience"
+    }
+   ],
+   "discrepancy": "enum and table counts differ by a few in categories 1, 2, 5, 6 and 7, and in those the highest enum index sits 1-2 above the table count. Most likely the header was reconstructed against a slightly different build than the US retail sound table. Do not treat the last one or two ids of those categories as certainly valid."
+  },
+  "sound_info_record": {
+   "struct": "SoundInfo, 0x10 bytes: u32 mFlag, u8 mPriority, u8 _05, u16 mOffsetNo, u32 mPitch (f32 bits), u32 mVolume (byte view). Records start at sound-table +0x50; category c's first record index is the u16 at +8+4*c and its count the u16 at +6+4*c.",
+   "file": "include/JSystem/JAudio/JAISoundTable.h:6-16, src/JSystem/JAudio/JAISoundTable.cpp:20-35",
+   "measured_example": "JA_SE_LK_FT_WALK (category 3, entry 0): mFlag = 0x00080040, priority = 122, mOffsetNo = 0xFFFF, pitch = 1.0f, volume byte 0x5A (90).",
+   "confidence": "high"
+  },
+  "representative_ids": {
+   "note": "`line` is the line in include/JAZelAudio/JAZelAudio_SE.h; `category`/`index` are the decode above.",
+   "confidence": "high",
+   "entries": {
+    "JA_SE_LK_FT_WALK": {
+     "id": "0x3800",
+     "category": 3,
+     "index": 0,
+     "line": 627
+    },
+    "JA_SE_LK_FT_JUMP": {
+     "id": "0x3801",
+     "category": 3,
+     "index": 1,
+     "line": 628
+    },
+    "JA_SE_LK_FT_BOUND": {
+     "id": "0x3802",
+     "category": 3,
+     "index": 2,
+     "line": 629
+    },
+    "JA_SE_LK_HD_NORMAL": {
+     "id": "0x3803",
+     "category": 3,
+     "index": 3,
+     "line": 630
+    },
+    "JA_SE_LK_FALL_DOWN": {
+     "id": "0x3811",
+     "category": 3,
+     "index": 17,
+     "line": 641
+    },
+    "JA_SE_LK_SWIM": {
+     "id": "0x3807",
+     "category": 3,
+     "index": 7,
+     "line": 631
+    },
+    "JA_SE_LK_INTO_WATER": {
+     "id": "0x3808",
+     "category": 3,
+     "index": 8,
+     "line": 632
+    },
+    "JA_SE_FT_LADDER_CLIMB": {
+     "id": "0x3815",
+     "category": 3,
+     "index": 21,
+     "line": 645
+    },
+    "JA_SE_FT_ROPE_UP": {
+     "id": "0x3816",
+     "category": 3,
+     "index": 22,
+     "line": 646
+    },
+    "JA_SE_LK_WALK_IN_WATER": {
+     "id": "0x2840",
+     "category": 2,
+     "index": 64,
+     "line": 523
+    },
+    "JA_SE_LK_SW_KAZEKIRI_S": {
+     "id": "0x2800",
+     "category": 2,
+     "index": 0,
+     "line": 467
+    },
+    "JA_SE_LK_SW_KAZEKIRI_L": {
+     "id": "0x2801",
+     "category": 2,
+     "index": 1,
+     "line": 468
+    },
+    "JA_SE_LK_SW_HIT_S": {
+     "id": "0x2803",
+     "category": 2,
+     "index": 3,
+     "line": 470
+    },
+    "JA_SE_LK_SW_PULLOUT_S": {
+     "id": "0x2807",
+     "category": 2,
+     "index": 7,
+     "line": 474
+    },
+    "JA_SE_LK_SW_PUTIN_S": {
+     "id": "0x280A",
+     "category": 2,
+     "index": 10,
+     "line": 477
+    },
+    "JA_SE_TALK_START": {
+     "id": "0x080A",
+     "category": 0,
+     "index": 10,
+     "line": 21
+    },
+    "JA_SE_TALK_NEXT": {
+     "id": "0x080B",
+     "category": 0,
+     "index": 11,
+     "line": 22
+    },
+    "JA_SE_TALK_END": {
+     "id": "0x0825",
+     "category": 0,
+     "index": 37,
+     "line": 46
+    },
+    "JA_SE_TALK_WIN_OPEN": {
+     "id": "0x080C",
+     "category": 0,
+     "index": 12,
+     "line": 23
+    },
+    "JA_SE_TALK_WIN_CLOSE": {
+     "id": "0x080D",
+     "category": 0,
+     "index": 13,
+     "line": 24
+    },
+    "JA_SE_TALK_CURSOR": {
+     "id": "0x083D",
+     "category": 0,
+     "index": 61,
+     "line": 70
+    },
+    "JA_SE_ITM_MENU_CURSOR": {
+     "id": "0x080E",
+     "category": 0,
+     "index": 14,
+     "line": 25
+    },
+    "JA_SE_CURSOR_MOVE_1": {
+     "id": "0x0800",
+     "category": 0,
+     "index": 0,
+     "line": 12
+    },
+    "JA_SE_OK_1": {
+     "id": "0x0801",
+     "category": 0,
+     "index": 1,
+     "line": 13
+    },
+    "JA_SE_CANCEL_1": {
+     "id": "0x0802",
+     "category": 0,
+     "index": 2,
+     "line": 14
+    },
+    "JA_SE_LUPY_GET": {
+     "id": "0x0826",
+     "category": 0,
+     "index": 38,
+     "line": 47
+    },
+    "JA_SE_CONSUMP_ITEM_GET": {
+     "id": "0x0827",
+     "category": 0,
+     "index": 39,
+     "line": 48
+    },
+    "JA_SE_ME_ITEM_GET_S": {
+     "id": "0x08F5",
+     "category": 0,
+     "index": 245,
+     "line": 250
+    },
+    "JA_SE_HEART_PIECE": {
+     "id": "0x0821",
+     "category": 0,
+     "index": 33,
+     "line": 42
+    },
+    "JA_SE_OBJ_DOOR_N_OPEN": {
+     "id": "0x696E",
+     "category": 6,
+     "index": 366,
+     "line": 1892
+    },
+    "JA_SE_OBJ_DOOR_N_CLOSE_1": {
+     "id": "0x696F",
+     "category": 6,
+     "index": 367,
+     "line": 1893
+    },
+    "JA_SE_L_FOCUS_SET": {
+     "id": "0x0804",
+     "category": 0,
+     "index": 4,
+     "line": 16
+    },
+    "JA_SE_LK_BOTTLE_OPEN": {
+     "id": "0x2861",
+     "category": 2,
+     "index": 97,
+     "line": 546
+    },
+    "JA_SE_WINDTAKT_PLAY": {
+     "id": "0x001E",
+     "category": 0,
+     "index": 30,
+     "line": 7
+    },
+    "JA_SE_LK_FT_WALK_SHIP": {
+     "id": "0x3839",
+     "category": 3,
+     "index": 57,
+     "line": 675
+    },
+    "JA_SE_MO_FT_WALK": {
+     "id": "0x380A",
+     "category": 3,
+     "index": 10,
+     "line": 634
+    },
+    "JA_SE_CV_MO_DAMAGE": {
+     "id": "0x4809",
+     "category": 4,
+     "index": 9,
+     "line": 689
+    },
+    "JA_SE_CV_NULL": {
+     "id": "0x4800",
+     "category": 4,
+     "index": 0,
+     "line": 680
+    },
+    "JA_SE_CM_GM_LANDING": {
+     "id": "0x58AA",
+     "category": 5,
+     "index": 170,
+     "line": 1283
+    }
+   }
+  }
+ },
+ "_trigger_api": {
+  "entry_point": {
+   "signature": "JAISound** JAIZelBasic::seStart(u32 seNum, Vec* pos = NULL, u32 param2 = 0, s8 reverb = 0, f32 = 1.0f, f32 = 1.0f, f32 = -1.0f, f32 = -1.0f, u8 = 0)",
+   "file": "include/JAZelAudio/JAIZelBasic.h:63",
+   "confidence": "high",
+   "body": "STUB - src/JAZelAudio/JAIZelBasic.cpp:708-714 is /* Nonmatching */."
+  },
+  "game_facing_wrappers": [
+   {
+    "call": "mDoAud_seStart(seNum, pos, param2, reverb)",
+    "file": "include/m_Do/m_Do_audio.h:149-151",
+    "note": "the full form; three shorter overloads at :153, :157 and :161 default param2 / reverb to 0",
+    "confidence": "high"
+   },
+   {
+    "call": "fopAcM_seStart(actor, seNum, param2)",
+    "file": "include/f_op/f_op_actor_mng.h:682-684",
+    "note": "positions the sound at actor->eyePos and fills reverb from dComIfGp_getReverb(room). THE most common form in actor code - hundreds of call sites across src/d/actor/.",
+    "confidence": "high"
+   },
+   {
+    "call": "fopAcM_seStartCurrent(actor, seNum, param2)",
+    "file": "include/f_op/f_op_actor_mng.h:678-680",
+    "note": "same but positioned at actor->current.pos (feet rather than eyes)",
+    "confidence": "high"
+   },
+   {
+    "call": "daPy_lk_c::seStartMapInfo(seNum)",
+    "file": "src/d/actor/d_a_player_main.cpp:158-160",
+    "note": "THE surface-aware one: mDoAud_seStart(seNum, &current.pos, mMtrlSndId, mReverb) - passes the ground material sound id as param2. Used for JA_SE_LK_FALL_DOWN (landing, :7901/:7906/:8352), JA_SE_LK_RUN_SLIP (:6641), JA_SE_LK_SLIP_SUS (:3066/:6712/:6746), JA_SE_LK_FALL_MAGMA (:8131) and ~10 more across the d_a_player_*.inc files.",
+    "confidence": "high"
+   },
+   {
+    "call": "daPy_lk_c::seStartOnlyReverb(seNum)",
+    "file": "src/d/actor/d_a_player_main.cpp:153-155",
+    "note": "param2 = 0",
+    "confidence": "high"
+   },
+   {
+    "call": "daPy_lk_c::seStartSwordCut(seNum)",
+    "file": "src/d/actor/d_a_player_main.cpp:163-165",
+    "note": "positioned at mSwordTopPos, not the body",
+    "confidence": "high"
+   },
+   {
+    "call": "mDoAud_seStop(seNum, fadeFrames) / mDoAud_seStopActor(pos) / mDoAud_seDeleteObject(pos)",
+    "file": "include/m_Do/m_Do_audio.h:173-190",
+    "note": "stopping is BY SOUND ID, not by handle - seStop scans the live-SE array for a matching id. That function DID survive (src/JAZelAudio/JAIZelBasic.cpp:716-731), and it shows the runtime keeps parallel arrays mSeNum[] / mpSeSound[] of size MAX_CONCURRENT_SE_NUM.",
+    "confidence": "high"
+   },
+   {
+    "call": "JAIZelBasic::checkSePlaying(seNum)",
+    "file": "src/JAZelAudio/JAIZelBasic.cpp:735-742",
+    "note": "'is this id currently sounding' - the guard the game uses to avoid restacking loops",
+    "confidence": "high"
+   },
+   {
+    "call": "mDoAud_messageSePlay(seNum, pos, reverb)",
+    "file": "include/m_Do/m_Do_audio.h:165-167",
+    "note": "text-window sounds",
+    "confidence": "high"
+   },
+   {
+    "call": "daPy_lk_c::voiceStart(id) -> mDoAud_linkVoiceStart(id, &eyePos, mDoAud_getLinkVoiceVowel(id), reverb)",
+    "file": "src/d/actor/d_a_player_main.cpp:168-171",
+    "note": "Link's voice; the vowel is derived from the id itself",
+    "confidence": "high"
+   },
+   {
+    "call": "JAIZelBasic::monsSeStart / kuroboMotionPlay / kuroboVoicePlay / charVoicePlay / setLevObjSE / shipCruiseSePlay",
+    "file": "include/JAZelAudio/JAIZelBasic.h:70-79",
+    "note": "separate paths for monster voices, NPC voice tables and looping level-object SE. The seStart stub even OSReports \"Kurobo voices should be played in monsSeStart!\" (src/JAZelAudio/JAIZelBasic.cpp:711).",
+    "confidence": "high"
+   }
+  ],
+  "what_param2_is": {
+   "claim": "param2 is a per-sound SUB-SELECTOR, not a volume and not a flag word. For anything that touches the ground it is the DZB polygon's material sound id from dBgS::GetMtrlSndId. For impact sounds it is a material-of-the-thing-you-hit index chosen by the actor: d_a_am.cpp:185 fires JA_SE_LK_SW_HIT_S with 0x42, d_a_cc.cpp:1931 with 13, d_a_fm.cpp:818 with 0x20, d_a_bpw.cpp:458 with 0x44.",
+   "file": "src/d/d_bg_s.cpp:101-104 (GetMtrlSndId); src/d/actor/d_a_hookshot.cpp:258,276; src/d/actor/d_a_cc.cpp:801,1096,1660; src/d/actor/d_a_boomerang.cpp:469; src/d/actor/d_a_arrow.cpp:814; src/d/actor/d_a_bomb2.cpp:778",
+   "confidence": "high",
+   "helper": "u32 dBgS_GetGndMtrlSndId_Func(cXyz pos, f32 yOffset) raycasts down and returns the material sound id of the floor under a point, 0 if there is no floor - src/d/d_bg_s_func.cpp:77-86, declared include/d/d_bg_s_func.h:12."
+  },
+  "animation_driven_se": {
+   "claim": "MOST character SE - all footsteps included - are NOT fired by explicit seStart calls. They are key-framed into the animation. Grepping the entire decomp for JA_SE_LK_FT_WALK finds zero call sites.",
+   "confidence": "high",
+   "bas_format": {
+    "struct": "JAIAnimeSoundData header: u16 datas (entry count), u16 field_0x02, void* field_0x04, then `datas` x JAIAnimeFrameSoundData of 0x20 bytes: u32 mSoundID, f32 mStartFrame, f32 mEndFrame, f32 mPitch, u32 mPlayFlags, u8 mVolume, s8 mPitchFactor, u8 mLoopCount, u8 mPanning, s8 mVolumeFactor, then padding to 0x20.",
+    "file": "include/JSystem/JAudio/JAIAnimation.h:14-36",
+    "verified_on_disc": "res/Object/Mo2.arc/archive/bas/adotsuki.bas: datas = 1, field_0x02 = 0x0C00, entry soundID = 0x2801 (JA_SE_LK_SW_KAZEKIRI_L), start = end = 0.0, pitch = 0.60, volume = 90, pan = 64. Layout matches the struct byte for byte.",
+    "where": "338 standalone .bas files across 30 res/Object/*.arc archives (Mo2 52, Tn 32, Bk 31, Gnd 26, Ji 26, Bdk 19, Am 13, Bb 13, ...), each named after the .bck it belongs to.",
+    "confidence": "high"
+   },
+   "bck_embedded_variant": {
+    "claim": "Link's animations do not use .bas files. The sound table is APPENDED TO THE .bck and pointed at by a u32 at +0x1C of the J3D file header (a field that is normally padding). daPy_lk_c copies fileHeader->mSeAnmOffset .. mFileSize into a 0x200-byte buffer and hands it to JAIAnimeSound::initActorAnimSound.",
+    "file": "include/JSystem/JUtility/JUTDataHeader.h:13-21 (mSeAnmOffset at +0x1C); src/d/actor/d_a_player_main.cpp:12671-12695 (the copy), :12038 (the 0x200 buffer)",
+    "verified_on_disc": "res/Object/LkAnm.arc holds Link's 322 animations, each Yaz0-compressed inside the RARC; 89 of them carry an embedded sound table at +0x1C. Most common ids there: 0x3800 x98, 0x3802 x28, 0x3803 x13, 0x3801 x12, 0x3839 x6.",
+    "confidence": "high"
+   },
+   "playback": {
+    "claim": "Every frame the actor calls setAnimSound(pos, frame, rate, mtrlSndId, reverb), which packs (mtrlSndId & 0x00FFFFFF) | (reverb << 24) into JAInter::Actor::field_0xc and walks the table, firing each entry whose [mStartFrame, mEndFrame) window the playhead crossed. So the SE id comes from the ANIMATION and the material comes from the GROUND, and they meet right here.",
+    "file": "src/JAZelAudio/JAIZelAnime.cpp:10-20 (the packing); src/JSystem/JAudio/JAIAnimation.cpp:76-120 (setAnimSoundVec / setAnimSoundActor); include/JSystem/JAudio/JAIConst.h:14-30 (JAInter::Actor's four fields); src/d/actor/d_a_player_main.cpp:11511-11514 (the player's per-frame call)",
+    "confidence": "high"
+   }
+  }
+ },
+ "_footsteps": {
+  "why": "The single most audible missing effect, and the whole chain is already in the build: the remake already parses DZB polygon properties (gcrip/formats/dzb.py:109 decodes sound_id) and already decodes JAudio waves (gcrip/formats/wsys.py decode).",
+  "chain": [
+   {
+    "step": 1,
+    "what": "The ANIMATION says which footstep sound. Link's walk.bck (in res/Object/LkAnm.arc, Yaz0 inside the RARC) carries an embedded sound table with 4 entries: 0x3800 JA_SE_LK_FT_WALK at frame 3, 0x3802 JA_SE_LK_FT_BOUND at frame 8, 0x3800 at frame 19, 0x3802 at frame 24 - all volume 40. dash.bck has the identical 4 entries at volume 50. So 0x3800 is the footfall and 0x3802 the heel-off a few frames later; twice per cycle = left foot + right foot.",
+    "source": "measured off the disc during this investigation",
+    "confidence": "high"
+   },
+   {
+    "step": 2,
+    "what": "The GROUND says which material. Every frame daPy_lk_c sets mMtrlSndId = dComIfG_Bgsp()->GetMtrlSndId(mAcch.m_gnd) while standing on a polygon; 0 when airborne, 0 when flag daPyFlg0_UNK80000000 is set, and hard-coded 9 during the ship get-on / get-off procs.",
+    "file": "src/d/actor/d_a_player_main.cpp:11487-11507",
+    "confidence": "high"
+   },
+   {
+    "step": 3,
+    "what": "GetMtrlSndId reads bits 8-12 of the polygon property word inf0 - GetPolyId0(bg, poly, default 0, mask 0x00001F00, shift 8) - a 5-bit field, 0-31, authored per triangle in the .dzb. gcrip already decodes it as PolyProperty.sound_id.",
+    "file": "src/d/d_bg_s.cpp:101-104; gcrip/formats/dzb.py:109; Z:/memRip/knowledge/gamecube/dzb-polygon-attributes.md (inf0 table)",
+    "confidence": "high"
+   },
+   {
+    "step": 4,
+    "what": "They meet: mJAIZelAnime.setAnimSound(&current.pos, frame, rate, mMtrlSndId, mReverb) packs the material into the actor parameter the SE is started with.",
+    "file": "src/d/actor/d_a_player_main.cpp:11511-11514, src/JAZelAudio/JAIZelAnime.cpp:10-20",
+    "confidence": "high"
+   },
+   {
+    "step": 5,
+    "what": "The SE sequence plays IBNK bank 131 (samples from Footnote_0.aw) at a note key derived from the material. The exact arithmetic lives inside the Nonmatching seStart / the SE sequence bytecode, but the bank DATA makes the mapping unambiguous - see key_mapping.",
+    "confidence": "medium"
+   }
+  ],
+  "key_mapping": {
+   "rule": "key = 12 + 2*mtrl_snd_id for the first footfall; key = 13 + 2*mtrl_snd_id for the alternate (other foot). mtrl_snd_id runs 0..27, so keys 12..67.",
+   "confidence": "medium",
+   "evidence": [
+    "IBNK bank index 5 / virtual id 131 (Footnote_0.aw) programs 0, 1 and 2 each have exactly 56 key regions whose upper bounds are 12,13,14,15,...,66,127 - 28 slots of two adjacent keys.",
+    "In 26 of those 28 slots the two keys resolve to CONSECUTIVE wave ids (17/18, 45/46, 0/1, 12/13, 37/38, 51/52, 34/35, 9/10, 42/43, 24/25, 48/49, 15/16, 30/31 ...). Pairs starting on an ODD key would break that alignment everywhere. Only slot 11 (keys 34/35 -> waves 24/38) and the two degenerate tail slots differ.",
+    "Programs 20, 21, 22 and 80 of the same bank have 28 regions ending at 13,15,17,...,65 - one wave per slot, the same grid. Programs 40, 41 (32 regions) and 60, 61, 62 (19 regions) merge neighbouring slots but every boundary still lands on that grid.",
+    "Independent check from the disc geometry: parsing room.dzb out of all 497 res/Stage/*/Room*.arc archives and histogramming PolyProperty.sound_id yields exactly the values 0..27 (with 5, 14, 15 and 16 unused) - 28 slots, the same 28 the bank has."
+   ],
+   "not_proven": "No decompiled line states this formula; JAIZelBasic::seStart is a stub. Treat 12 + 2*m as a very strong inference and sanity-check the first exported sounds by ear."
+  },
+  "material_table": {
+   "note": "One row per material sound id. `guessed_material` and `dzb_attribute_codes_seen` come from cross-tabulating PolyProperty.sound_id against PolyProperty.attribute_code over every room .dzb on the disc (~2.6M triangle samples). The attribute code has NAMED values in the decomp (enum dBgS_AttributeCode, include/d/d_bg_s.h:28-60) so the correlation names the sound slot; `pct` is the share of that sound id's triangles carrying that attribute. `polygons_on_disc` is the raw triangle count, i.e. how much it matters. `wave_ids` index Footnote_0.aw through the WSYS at wave-bank index 5, and `aw_byte_range` is [offset, size] inside Audiores/Banks/Footnote_0.aw. All these waves are format 0 (ADPCM4 / AFC) and gcrip.formats.wsys.decode reads them today - verified: wave 0 decodes to 6131 samples, peak amplitude 32646.",
+   "confidence_structure": "high",
+   "confidence_names": "medium",
+   "program_used": "IBNK virtual bank 131, program 0 - the pair-style footfall program, almost certainly the one JA_SE_LK_FT_WALK selects. WHICH of programs 0 / 1 / 2 is walk vs jump vs bound is a guess (confidence low); all three have the identical region shape.",
+   "rows": [
+    {
+     "mtrl_snd_id": 0,
+     "keys": [
+      12,
+      13
+     ],
+     "guessed_material": "normal (default / untagged floor)",
+     "dzb_attribute_codes_seen": [
+      {
+       "attr": "attr 0 NORMAL",
+       "pct": 79
+      },
+      {
+       "attr": "attr 3 STONE",
+       "pct": 16
+      }
+     ],
+     "polygons_on_disc": 64140,
+     "wave_ids": [
+      17,
+      18
+     ],
+     "wave_rate_hz": [
+      28000,
+      28000
+     ],
+     "wave_samples": [
+      8169,
+      7681
+     ],
+     "aw_byte_range": [
+      [
+       115520,
+       4599
+      ],
+      [
+       120128,
+       4329
+      ]
+     ]
+    },
+    {
+     "mtrl_snd_id": 1,
+     "keys": [
+      14,
+      15
+     ],
+     "guessed_material": "dirt",
+     "dzb_attribute_codes_seen": [
+      {
+       "attr": "attr 1 DIRT",
+       "pct": 95
+      },
+      {
+       "attr": "attr 7 DIRT",
+       "pct": 4
+      }
+     ],
+     "polygons_on_disc": 17630,
+     "wave_ids": [
+      17,
+      18
+     ],
+     "wave_rate_hz": [
+      28000,
+      28000
+     ],
+     "wave_samples": [
+      8169,
+      7681
+     ],
+     "aw_byte_range": [
+      [
+       115520,
+       4599
+      ],
+      [
+       120128,
+       4329
+      ]
+     ]
+    },
+    {
+     "mtrl_snd_id": 2,
+     "keys": [
+      16,
+      17
+     ],
+     "guessed_material": "stone (hard, most common outdoors)",
+     "dzb_attribute_codes_seen": [
+      {
+       "attr": "attr 3 STONE",
+       "pct": 74
+      },
+      {
+       "attr": "attr 7 DIRT",
+       "pct": 20
+      }
+     ],
+     "polygons_on_disc": 119877,
+     "wave_ids": [
+      45,
+      46
+     ],
+     "wave_rate_hz": [
+      22050,
+      22050
+     ],
+     "wave_samples": [
+      4399,
+      4415
+     ],
+     "aw_byte_range": [
+      [
+       226752,
+       2475
+      ],
+      [
+       229248,
+       2484
+      ]
+     ]
+    },
+    {
+     "mtrl_snd_id": 3,
+     "keys": [
+      18,
+      19
+     ],
+     "guessed_material": "grass",
+     "dzb_attribute_codes_seen": [
+      {
+       "attr": "attr 4 GRASS",
+       "pct": 86
+      },
+      {
+       "attr": "attr 16 WOOD",
+       "pct": 10
+      }
+     ],
+     "polygons_on_disc": 10853,
+     "wave_ids": [
+      17,
+      18
+     ],
+     "wave_rate_hz": [
+      28000,
+      28000
+     ],
+     "wave_samples": [
+      8169,
+      7681
+     ],
+     "aw_byte_range": [
+      [
+       115520,
+       4599
+      ],
+      [
+       120128,
+       4329
+      ]
+     ]
+    },
+    {
+     "mtrl_snd_id": 4,
+     "keys": [
+      20,
+      21
+     ],
+     "guessed_material": "carpet / rug",
+     "dzb_attribute_codes_seen": [
+      {
+       "attr": "attr 10 CARPET",
+       "pct": 97
+      }
+     ],
+     "polygons_on_disc": 668,
+     "wave_ids": [
+      0,
+      1
+     ],
+     "wave_rate_hz": [
+      16000,
+      16000
+     ],
+     "wave_samples": [
+      6131,
+      6665
+     ],
+     "aw_byte_range": [
+      [
+       0,
+       3456
+      ],
+      [
+       3456,
+       3753
+      ]
+     ]
+    },
+    {
+     "mtrl_snd_id": 5,
+     "keys": [
+      22,
+      23
+     ],
+     "guessed_material": "unused on the retail disc (no polygon carries it)",
+     "dzb_attribute_codes_seen": [],
+     "polygons_on_disc": 0,
+     "wave_ids": [
+      17,
+      18
+     ],
+     "wave_rate_hz": [
+      28000,
+      28000
+     ],
+     "wave_samples": [
+      8169,
+      7681
+     ],
+     "aw_byte_range": [
+      [
+       115520,
+       4599
+      ],
+      [
+       120128,
+       4329
+      ]
+     ]
+    },
+    {
+     "mtrl_snd_id": 6,
+     "keys": [
+      24,
+      25
+     ],
+     "guessed_material": "wood (attr 0x0C, GanonD/kindan/sea)",
+     "dzb_attribute_codes_seen": [
+      {
+       "attr": "attr 12 WOOD",
+       "pct": 93
+      },
+      {
+       "attr": "attr 4 GRASS",
+       "pct": 7
+      }
+     ],
+     "polygons_on_disc": 648,
+     "wave_ids": [
+      12,
+      13
+     ],
+     "wave_rate_hz": [
+      22050,
+      22050
+     ],
+     "wave_samples": [
+      8063,
+      11647
+     ],
+     "aw_byte_range": [
+      [
+       73440,
+       4536
+      ],
+      [
+       77984,
+       6552
+      ]
+     ]
+    },
+    {
+     "mtrl_snd_id": 7,
+     "keys": [
+      26,
+      27
+     ],
+     "guessed_material": "wood (attr 0x0D, planks)",
+     "dzb_attribute_codes_seen": [
+      {
+       "attr": "attr 13 WOOD",
+       "pct": 71
+      },
+      {
+       "attr": "attr 2 WOOD",
+       "pct": 27
+      }
+     ],
+     "polygons_on_disc": 32025,
+     "wave_ids": [
+      37,
+      38
+     ],
+     "wave_rate_hz": [
+      22050,
+      22050
+     ],
+     "wave_samples": [
+      3911,
+      5145
+     ],
+     "aw_byte_range": [
+      [
+       207840,
+       2205
+      ],
+      [
+       210048,
+       2898
+      ]
+     ]
+    },
+    {
+     "mtrl_snd_id": 8,
+     "keys": [
+      28,
+      29
+     ],
+     "guessed_material": "wood (attr 0x0E, hollow)",
+     "dzb_attribute_codes_seen": [
+      {
+       "attr": "attr 14 WOOD",
+       "pct": 88
+      }
+     ],
+     "polygons_on_disc": 4583,
+     "wave_ids": [
+      51,
+      52
+     ],
+     "wave_rate_hz": [
+      16000,
+      16000
+     ],
+     "wave_samples": [
+      1254,
+      961
+     ],
+     "aw_byte_range": [
+      [
+       240384,
+       711
+      ],
+      [
+       241120,
+       549
+      ]
+     ]
+    },
+    {
+     "mtrl_snd_id": 9,
+     "keys": [
+      30,
+      31
+     ],
+     "guessed_material": "wood (attr 0x02/0x10)",
+     "dzb_attribute_codes_seen": [
+      {
+       "attr": "attr 2 WOOD",
+       "pct": 64
+      },
+      {
+       "attr": "attr 16 WOOD",
+       "pct": 18
+      }
+     ],
+     "polygons_on_disc": 8409,
+     "wave_ids": [
+      34,
+      35
+     ],
+     "wave_rate_hz": [
+      16000,
+      16000
+     ],
+     "wave_samples": [
+      4394,
+      3797
+     ],
+     "aw_byte_range": [
+      [
+       200704,
+       2475
+      ],
+      [
+       203200,
+       2142
+      ]
+     ]
+    },
+    {
+     "mtrl_snd_id": 10,
+     "keys": [
+      32,
+      33
+     ],
+     "guessed_material": "ice",
+     "dzb_attribute_codes_seen": [
+      {
+       "attr": "attr 15 ICE",
+       "pct": 99
+      }
+     ],
+     "polygons_on_disc": 2564,
+     "wave_ids": [
+      9,
+      10
+     ],
+     "wave_rate_hz": [
+      22050,
+      22050
+     ],
+     "wave_samples": [
+      6452,
+      7358
+     ],
+     "aw_byte_range": [
+      [
+       61760,
+       3636
+      ],
+      [
+       65408,
+       4140
+      ]
+     ]
+    },
+    {
+     "mtrl_snd_id": 11,
+     "keys": [
+      34,
+      35
+     ],
+     "guessed_material": "wood (attr 0x02, decks)",
+     "dzb_attribute_codes_seen": [
+      {
+       "attr": "attr 2 WOOD",
+       "pct": 90
+      }
+     ],
+     "polygons_on_disc": 33624,
+     "wave_ids": [
+      24,
+      38
+     ],
+     "wave_rate_hz": [
+      22050,
+      22050
+     ],
+     "wave_samples": [
+      4058,
+      5145
+     ],
+     "aw_byte_range": [
+      [
+       148384,
+       2286
+      ],
+      [
+       210048,
+       2898
+      ]
+     ]
+    },
+    {
+     "mtrl_snd_id": 12,
+     "keys": [
+      36,
+      37
+     ],
+     "guessed_material": "wood (attr 0x02, Xboss1/kinBOSS only)",
+     "dzb_attribute_codes_seen": [
+      {
+       "attr": "attr 2 WOOD",
+       "pct": 100
+      }
+     ],
+     "polygons_on_disc": 208,
+     "wave_ids": [
+      42,
+      43
+     ],
+     "wave_rate_hz": [
+      16000,
+      16000
+     ],
+     "wave_samples": [
+      3861,
+      3936
+     ],
+     "aw_byte_range": [
+      [
+       220064,
+       2178
+      ],
+      [
+       222272,
+       2214
+      ]
+     ]
+    },
+    {
+     "mtrl_snd_id": 13,
+     "keys": [
+      38,
+      39
+     ],
+     "guessed_material": "stone (attr 0x03, the dominant stone)",
+     "dzb_attribute_codes_seen": [
+      {
+       "attr": "attr 3 STONE",
+       "pct": 97
+      }
+     ],
+     "polygons_on_disc": 144180,
+     "wave_ids": [
+      24,
+      25
+     ],
+     "wave_rate_hz": [
+      22050,
+      22050
+     ],
+     "wave_samples": [
+      4058,
+      4234
+     ],
+     "aw_byte_range": [
+      [
+       148384,
+       2286
+      ],
+      [
+       150688,
+       2385
+      ]
+     ]
+    },
+    {
+     "mtrl_snd_id": 14,
+     "keys": [
+      40,
+      41
+     ],
+     "guessed_material": "unused on the retail disc (no polygon carries it)",
+     "dzb_attribute_codes_seen": [],
+     "polygons_on_disc": 0,
+     "wave_ids": [
+      51,
+      52
+     ],
+     "wave_rate_hz": [
+      16000,
+      16000
+     ],
+     "wave_samples": [
+      1254,
+      961
+     ],
+     "aw_byte_range": [
+      [
+       240384,
+       711
+      ],
+      [
+       241120,
+       549
+      ]
+     ]
+    },
+    {
+     "mtrl_snd_id": 15,
+     "keys": [
+      42,
+      43
+     ],
+     "guessed_material": "unused on the retail disc (no polygon carries it)",
+     "dzb_attribute_codes_seen": [],
+     "polygons_on_disc": 0,
+     "wave_ids": [
+      34,
+      35
+     ],
+     "wave_rate_hz": [
+      16000,
+      16000
+     ],
+     "wave_samples": [
+      4394,
+      3797
+     ],
+     "aw_byte_range": [
+      [
+       200704,
+       2475
+      ],
+      [
+       203200,
+       2142
+      ]
+     ]
+    },
+    {
+     "mtrl_snd_id": 16,
+     "keys": [
+      44,
+      45
+     ],
+     "guessed_material": "unused on the retail disc (no polygon carries it)",
+     "dzb_attribute_codes_seen": [],
+     "polygons_on_disc": 0,
+     "wave_ids": [
+      34,
+      35
+     ],
+     "wave_rate_hz": [
+      16000,
+      16000
+     ],
+     "wave_samples": [
+      4394,
+      3797
+     ],
+     "aw_byte_range": [
+      [
+       200704,
+       2475
+      ],
+      [
+       203200,
+       2142
+      ]
+     ]
+    },
+    {
+     "mtrl_snd_id": 17,
+     "keys": [
+      46,
+      47
+     ],
+     "guessed_material": "metal (attr 0x14)",
+     "dzb_attribute_codes_seen": [
+      {
+       "attr": "attr 20 METAL",
+       "pct": 92
+      },
+      {
+       "attr": "attr 9 DAMAGE",
+       "pct": 5
+      }
+     ],
+     "polygons_on_disc": 45442,
+     "wave_ids": [
+      37,
+      38
+     ],
+     "wave_rate_hz": [
+      22050,
+      22050
+     ],
+     "wave_samples": [
+      3911,
+      5145
+     ],
+     "aw_byte_range": [
+      [
+       207840,
+       2205
+      ],
+      [
+       210048,
+       2898
+      ]
+     ]
+    },
+    {
+     "mtrl_snd_id": 18,
+     "keys": [
+      48,
+      49
+     ],
+     "guessed_material": "metal (attr 0x11)",
+     "dzb_attribute_codes_seen": [
+      {
+       "attr": "attr 17 METAL",
+       "pct": 72
+      }
+     ],
+     "polygons_on_disc": 6475,
+     "wave_ids": [
+      48,
+      49
+     ],
+     "wave_rate_hz": [
+      16000,
+      16000
+     ],
+     "wave_samples": [
+      3669,
+      3344
+     ],
+     "aw_byte_range": [
+      [
+       234048,
+       2070
+      ],
+      [
+       236128,
+       1881
+      ]
+     ]
+    },
+    {
+     "mtrl_snd_id": 19,
+     "keys": [
+      50,
+      51
+     ],
+     "guessed_material": "water (shallow, attr 0x13)",
+     "dzb_attribute_codes_seen": [
+      {
+       "attr": "attr 19 WATER",
+       "pct": 64
+      }
+     ],
+     "polygons_on_disc": 2091,
+     "wave_ids": [
+      17,
+      18
+     ],
+     "wave_rate_hz": [
+      28000,
+      28000
+     ],
+     "wave_samples": [
+      8169,
+      7681
+     ],
+     "aw_byte_range": [
+      [
+       115520,
+       4599
+      ],
+      [
+       120128,
+       4329
+      ]
+     ]
+    },
+    {
+     "mtrl_snd_id": 20,
+     "keys": [
+      52,
+      53
+     ],
+     "guessed_material": "stone/dirt (sea platforms, M_NewD2 - Tower of the Gods)",
+     "dzb_attribute_codes_seen": [
+      {
+       "attr": "attr 3 STONE",
+       "pct": 73
+      },
+      {
+       "attr": "attr 18 DIRT",
+       "pct": 20
+      }
+     ],
+     "polygons_on_disc": 1668,
+     "wave_ids": [
+      15,
+      16
+     ],
+     "wave_rate_hz": [
+      22050,
+      22050
+     ],
+     "wave_samples": [
+      21503,
+      20863
+     ],
+     "aw_byte_range": [
+      [
+       91680,
+       12096
+      ],
+      [
+       103776,
+       11736
+      ]
+     ]
+    },
+    {
+     "mtrl_snd_id": 21,
+     "keys": [
+      54,
+      55
+     ],
+     "guessed_material": "sand",
+     "dzb_attribute_codes_seen": [
+      {
+       "attr": "attr 11 SAND",
+       "pct": 98
+      }
+     ],
+     "polygons_on_disc": 2580,
+     "wave_ids": [
+      30,
+      31
+     ],
+     "wave_rate_hz": [
+      28000,
+      28000
+     ],
+     "wave_samples": [
+      10268,
+      8438
+     ],
+     "aw_byte_range": [
+      [
+       174240,
+       5778
+      ],
+      [
+       180032,
+       4752
+      ]
+     ]
+    },
+    {
+     "mtrl_snd_id": 22,
+     "keys": [
+      56,
+      57
+     ],
+     "guessed_material": "water (attr 0x13, sea/Outset shore)",
+     "dzb_attribute_codes_seen": [
+      {
+       "attr": "attr 19 WATER",
+       "pct": 100
+      }
+     ],
+     "polygons_on_disc": 639,
+     "wave_ids": [
+      30,
+      31
+     ],
+     "wave_rate_hz": [
+      28000,
+      28000
+     ],
+     "wave_samples": [
+      10268,
+      8438
+     ],
+     "aw_byte_range": [
+      [
+       174240,
+       5778
+      ],
+      [
+       180032,
+       4752
+      ]
+     ]
+    },
+    {
+     "mtrl_snd_id": 23,
+     "keys": [
+      58,
+      59
+     ],
+     "guessed_material": "lava (attr 0x06)",
+     "dzb_attribute_codes_seen": [
+      {
+       "attr": "attr 6 LAVA",
+       "pct": 100
+      }
+     ],
+     "polygons_on_disc": 1103,
+     "wave_ids": [
+      17,
+      18
+     ],
+     "wave_rate_hz": [
+      28000,
+      28000
+     ],
+     "wave_samples": [
+      8169,
+      7681
+     ],
+     "aw_byte_range": [
+      [
+       115520,
+       4599
+      ],
+      [
+       120128,
+       4329
+      ]
+     ]
+    },
+    {
+     "mtrl_snd_id": 24,
+     "keys": [
+      60,
+      61
+     ],
+     "guessed_material": "water/dirt (Omori, sea)",
+     "dzb_attribute_codes_seen": [
+      {
+       "attr": "attr 19 WATER",
+       "pct": 68
+      },
+      {
+       "attr": "attr 18 DIRT",
+       "pct": 20
+      }
+     ],
+     "polygons_on_disc": 405,
+     "wave_ids": [
+      17,
+      18
+     ],
+     "wave_rate_hz": [
+      28000,
+      28000
+     ],
+     "wave_samples": [
+      8169,
+      7681
+     ],
+     "aw_byte_range": [
+      [
+       115520,
+       4599
+      ],
+      [
+       120128,
+       4329
+      ]
+     ]
+    },
+    {
+     "mtrl_snd_id": 25,
+     "keys": [
+      62,
+      63
+     ],
+     "guessed_material": "metal (attr 0x18, Nintendo Gallery / Siren)",
+     "dzb_attribute_codes_seen": [
+      {
+       "attr": "attr 24 METAL",
+       "pct": 87
+      }
+     ],
+     "polygons_on_disc": 365,
+     "wave_ids": [
+      24,
+      25
+     ],
+     "wave_rate_hz": [
+      22050,
+      22050
+     ],
+     "wave_samples": [
+      4058,
+      4234
+     ],
+     "aw_byte_range": [
+      [
+       148384,
+       2286
+      ],
+      [
+       150688,
+       2385
+      ]
+     ]
+    },
+    {
+     "mtrl_snd_id": 26,
+     "keys": [
+      64,
+      65
+     ],
+     "guessed_material": "carpet (attr 0x19)",
+     "dzb_attribute_codes_seen": [
+      {
+       "attr": "attr 25 CARPET",
+       "pct": 81
+      }
+     ],
+     "polygons_on_disc": 1784,
+     "wave_ids": [
+      8,
+      8
+     ],
+     "wave_rate_hz": [
+      22050,
+      22050
+     ],
+     "wave_samples": [
+      11167,
+      11167
+     ],
+     "aw_byte_range": [
+      [
+       55456,
+       6282
+      ],
+      [
+       55456,
+       6282
+      ]
+     ]
+    },
+    {
+     "mtrl_snd_id": 27,
+     "keys": [
+      66,
+      67
+     ],
+     "guessed_material": "wood (Ojhous - Orca/Sturgeon house tatami)",
+     "dzb_attribute_codes_seen": [
+      {
+       "attr": "attr 2 WOOD",
+       "pct": 88
+      }
+     ],
+     "polygons_on_disc": 104,
+     "wave_ids": [
+      6,
+      6
+     ],
+     "wave_rate_hz": [
+      16000,
+      16000
+     ],
+     "wave_samples": [
+      1928,
+      1928
+     ],
+     "aw_byte_range": [
+      [
+       46400,
+       1089
+      ],
+      [
+       46400,
+       1089
+      ]
+     ]
+    }
+   ]
+  },
+  "other_footstep_ids": {
+   "note": "same category 3, same material mechanism, different animation slots",
+   "confidence": "high",
+   "entries": {
+    "JA_SE_LK_FT_WALK": "0x3800 - the footfall",
+    "JA_SE_LK_FT_JUMP": "0x3801 - take-off",
+    "JA_SE_LK_FT_BOUND": "0x3802 - the heel-off / roll that follows a footfall",
+    "JA_SE_LK_HD_NORMAL": "0x3803",
+    "JA_SE_LK_FALL_DOWN": "0x3811 - landing thud; fired by seStartMapInfo at d_a_player_main.cpp:7901, 7906, 8352",
+    "JA_SE_FT_ADD_GRASS": "0x3814 - extra grass rustle layered over a footstep",
+    "JA_SE_FT_LADDER_CLIMB": "0x3815, JA_SE_FT_LADDER_CLIMB_D 0x3818",
+    "JA_SE_FT_ROPE_UP": "0x3816, JA_SE_FT_ROPE_DOWN 0x3817",
+    "JA_SE_FT_SUSBRIDGE_C": "0x3812, JA_SE_FT_SUSBRIDGE_R 0x3813 - rope-bridge planks",
+    "JA_SE_LK_FT_WALK_SHIP": "0x3839, JA_SE_LK_FT_JUMP_SHIP 0x3838 - on the King of Red Lions",
+    "JA_SE_LK_WALK_HEAVY": "0x382F, JA_SE_LK_JUMP_HEAVY 0x3830 - carrying something heavy",
+    "JA_SE_LK_FT_SW_SHIELD": "0x3831 - sword/shield rattle that rides along with a step",
+    "JA_SE_LK_WALK_IN_WATER": "0x2840 (category 2, not 3)",
+    "JA_SE_LK_SWIM": "0x3807, JA_SE_LK_INTO_WATER 0x3808, JA_SE_LK_OUTOF_WATER 0x3809",
+    "other characters": "JA_SE_MO_FT_WALK 0x380A (Moblin), JA_SE_CMN_S_FT_WALK 0x3826 (generic small NPC), JA_SE_MAKORE_FT_WALK 0x382B, JA_SE_KOLOG_FT_WALK 0x382D, JA_SE_ST_WALK 0x3832, JA_SE_TN_WALK 0x3836"
+   }
+  },
+  "group_sound_id": {
+   "claim": "Separate from the per-polygon material there is a per-GROUP sound id: dBgS::GetGrpSoundId returns (group attribute >> 11) & 0xFF and the player feeds it to mDoAud_setLinkGroupInfo every frame. That is the room/area acoustic grouping (reverb / ambience class), NOT the footstep material.",
+   "file": "src/d/d_bg_s.cpp:143-149; src/d/actor/d_a_player_main.cpp:11524-11525; include/JAZelAudio/JAIZelBasic.h:93",
+   "confidence": "high"
+  },
+  "not_the_ground_code": {
+   "claim": "The brief guessed the footstep came off the DZB *ground code*. It does not. The ground code (inf1 bits 21-25, dBgS::GetGroundCode) is gameplay-only in the player: 8 = stairs-like (slope handling off), 4 = abyss. The footstep material is a DIFFERENT field, inf0 bits 8-12. The attribute code (inf1 bits 16-20) is a third field, used for lava / void / water tests and particles - and it is what lets us NAME the material slots, since it has an enum and the material sound id does not.",
+   "file": "src/d/d_bg_s.cpp:236-239 (GetGroundCode) vs :101-104 (GetMtrlSndId); src/d/actor/d_a_player_main.cpp:11450-11455 (all three read together in one block)",
+   "confidence": "high"
+  }
+ },
+ "_implementation": {
+  "verdict": "The sample data is fully reachable with gcrip's EXISTING parsers. No new binary-format work is needed to get footsteps, nor for any SE whose bank / program / key can be pinned down. What is missing is the id -> (bank, program, key) DISPATCH, which lives in sequence bytecode gcrip does not interpret. Recommended shape: bypass the sequencer entirely and bake WAVs.",
+  "already_works": [
+   {
+    "what": "read JaiInit.aaf, enumerate 65 IBNK + 65 WSYS + the sound table",
+    "code": "gcrip/formats/aaf.py parse"
+   },
+   {
+    "what": "WSYS -> per-wave format / rate / loop / offset / size, and .aw -> int16 PCM",
+    "code": "gcrip/formats/wsys.py parse + decode",
+    "verified": "decoded Footnote waves 0-3 to non-silent PCM during this investigation"
+   },
+   {
+    "what": "IBNK -> per-program key/velocity regions -> wave id",
+    "code": "gcrip/formats/ibnk.py parse, Instrument.region(key, vel)"
+   },
+   {
+    "what": "DZB polygon -> sound_id (the footstep material)",
+    "code": "gcrip/formats/dzb.py:109, PolyProperty.sound_id"
+   },
+   {
+    "what": "read a .aw straight out of the ISO",
+    "code": "gcrip.stage._Disc plus the pattern in JAudioBanks._read / .lookup, gcrip/music.py:50-84"
+   }
+  ],
+  "needs_new_code": [
+   {
+    "what": "A .bas / embedded-BCK sound-table parser. Trivial: u16 count at +0, entries of 0x20 bytes at +8; for a .bck read the u32 at +0x1C of the J3D header and start there (remember the files are Yaz0-compressed inside the RARC). This hands you the exact frame numbers to fire footsteps on, per animation, from the game's own data - far better than eyeballing them in Godot.",
+    "effort": "small"
+   },
+   {
+    "what": "A bake step: for each material 0..27 and each of keys 12+2m / 13+2m, look up bank 131 program 0 region -> wave id -> WSYS wave -> decode -> write out/rip/GZLE01/audio/se/footstep_<material>_<a|b>.wav. The material_table rows in this file already list the wave ids and .aw byte ranges, so the bake can be checked against them. The same loop generalises to any (bank, program, key) triple.",
+    "effort": "small"
+   },
+   {
+    "what": "Godot side: an AudioStreamPlayer3D pool on the player, an animation callback (or a frame->time table built from the .bas data) that calls play_footstep(), and a downward ray that reads the collision triangle's material id. The remake already keeps DZB polygon attributes, so the material sound id must be carried through the collision export as a per-face attribute if it is not already - see _gaps.",
+    "effort": "medium"
+   }
+  ],
+  "not_worth_doing_yet": [
+   {
+    "what": "Reimplementing the SE sequencer (the SE .bms + JAISeMgr voice allocation + JAIZelBasic::seStart). The seStart body does not exist in the decomp, so it would have to be reverse-engineered from bytecode. Baked WAVs get ~95% of the audible result."
+   },
+   {
+    "what": "Envelope / oscillator accuracy. IBNK regions carry per-region volume and pitch scalars and the instruments carry ADSR oscillators (gcrip/formats/ibnk.py:1-27). For one-shot SE these matter far less than for held music notes; start by ignoring them and apply the region volume scalar plus the .bas entry's mVolume (0-127) only if footsteps sound wrong."
+   }
+  ],
+  "pitch_note": {
+   "claim": "Waves in Footnote_0.aw carry base key 48 and native rates of 16000 / 22050 / 28000 Hz. Playing a sample back at its own rate gives the sound as authored; the sequencer's note key selects WHICH region, and any pitch shift on top comes from the region / instrument pitch scalar and the JAIAnimeFrameSoundData mPitch field (0.60 in the Mo2 example, 1.0 in Link's walk entries). So for footsteps straight playback should be right.",
+   "confidence": "medium"
+  },
+  "priority_order_for_the_remake": [
+   "1. footsteps + landing (this file has everything: 28 materials x 2 waves, bank 131 prog 0)",
+   "2. UI / message blips - SystemSE_0.aw, 67 waves, only 57 programs: small enough to map by ear",
+   "3. sword swing / hit - LinkMotion_0.aw and category 2 ids, which the animations already key-frame",
+   "4. object sounds (doors, chests, switches) - objSE_0.aw, and these DO have explicit fopAcM_seStart call sites in the actor code, so the ids are greppable per actor",
+   "5. voices and ambience last - largest banks, least well mapped"
+  ]
+ },
+ "_gaps": [
+  {
+   "item": "The exact SE id -> (bank, program, key) dispatch.",
+   "why": "JAIZelBasic::seStart is /* Nonmatching */ (src/JAZelAudio/JAIZelBasic.cpp:708-714) and the rest lives in the SE sequence bytecode. Outside footsteps, nothing in this file names a proven bank/program for a given id."
+  },
+  {
+   "item": "That sequence file index 5 really is defaultse.bms.",
+   "why": "The sound table says sequence entry 0 has mOffsetNo = 5; mapping that index to a name needs the JaiSeqs.arc file ORDER, which was not cross-checked. defaultse.bms is the obvious candidate by name and by being the largest .bms on the disc (115456 bytes)."
+  },
+  {
+   "item": "Which of Footnote programs 0, 1, 2 is WALK vs JUMP vs BOUND.",
+   "why": "all three have the identical 56-region shape; only a listen test or the sequence dispatch settles it."
+  },
+  {
+   "item": "Names for material sound ids 5, 14, 15 and 16.",
+   "why": "no polygon on the retail disc carries them, so the attribute correlation has nothing to correlate. Their bank slots do hold waves."
+  },
+  {
+   "item": "The meaning of SoundInfo.mFlag bits (e.g. 0x00080040 on JA_SE_LK_FT_WALK) and of the 0x400/0x800 bits inside an id.",
+   "why": "IsJAISoundIDInUse tests 0x800 (include/JSystem/JAudio/JAISound.h:242) and JAIAnimeSound tests 0xC00 (src/JSystem/JAudio/JAIAnimation.cpp:66, 110), but the code that assigns them meaning is in the stubbed functions."
+  },
+  {
+   "item": "Ambience (JA_SE_ATM_*) placement in the world.",
+   "why": "dEnvSe_c exists but its class body in include/d/d_envse.h:6-13 is two unnamed u32s; the environment-SE actor was not investigated. Atmos_0.aw (56 waves, bank 140) is the data."
+  },
+  {
+   "item": "NPC / enemy voice id tables.",
+   "why": "src/JAZelAudio/JAIZelCharVoiceTable.cpp is 6 lines - effectively empty. The 404 JA_SE_CV_* ids and CharVoice_0.aw (160 waves) exist, but nothing links a specific NPC to an id range."
+  },
+  {
+   "item": "Whether the remake's collision export already carries the per-face material sound id into Godot.",
+   "why": "gcrip/formats/dzb.py decodes it, but gcrip/stage.py _build_collision (around :558-590) was only skimmed - it splits meshes by surface class and tags wall codes; a per-face sound_id attribute may need adding before Godot can pick the right footstep."
+  },
+  {
+   "item": "Reverb. seStart takes an s8 reverb from dComIfGp_getReverb(room) and there is a per-group sound id feeding setLinkGroupInfo, but the actual reverb parameters were not traced.",
+   "why": "out of scope for this pass; JAIFx.cpp and JAIZelParam.cpp are where to look next."
+  }
+ ]
+}

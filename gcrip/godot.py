@@ -3133,6 +3133,9 @@ var doors_report: Array = []
 # --models: load every animated actor model and report the ones with no mesh, no clips, or a
 # head model that does not resolve.  --cutscenes: play every baked .stb through to its end.
 var models_test: bool = "--models" in OS.get_cmdline_user_args()
+# --hit: raise the waiting hit step's bits before the stage loads, then break its object
+var hit_test: bool = "--hit" in OS.get_cmdline_user_args()
+var hit_struck := 0
 # --clock: step the clock through a whole in-game day headlessly, reporting the hour,
 # `night` and the placement layer a handful of stages pick; then nightStop and a rollover.
 var clock_test: bool = "--clock" in OS.get_cmdline_user_args()
@@ -3312,6 +3315,8 @@ func _ready() -> void:
             door_test = true
             if a.begins_with("--door="):
                 door_want = a.substr(7)
+    if hit_test:
+        _hit_prepare.call_deferred()
     if start_stage != "":
         go_to_stage.call_deferred(start_stage, start_spawn)
     # pad mappings at boot (was only done on a menu warp: a shortcut launch ran the pad raw)
@@ -3778,6 +3783,100 @@ func _opening_start(step: Dictionary, arrived := false) -> void:
             else:
                 story_event_done(id if ev == "" else ev)
 
+func _hit_prepare() -> void:
+    # the wall only exists on the endless-night layers, so its bits have to be up before the
+    # stage picks a layer - this runs deferred ahead of the --stage warp
+    for st in story.get("steps", []):
+        if not (st.get("hit") is Dictionary) or story_done(str(st.get("id", ""))):
+            continue
+        for b in st.get("requires_bits", []):
+            var bid := _bit_value(b)
+            if bid != 0 and not event_bit(bid):
+                set_event_bit(bid)
+                print("gcrip hit: raised ", b, " for ", st.get("id", "?"))
+        _hit_prepare_layer(st)
+
+func _hit_prepare_layer(step: Dictionary) -> void:
+    # A step's requires_bits are what the STEP waits on.  Which story layer the object stands
+    # on is decided separately (d_com_inf_game.cpp getLayerNo), and real play satisfies that
+    # rule chapters earlier - Outset room 44 needs 0x0520, set when Link is launched at the
+    # Forsaken Fortress.  Find the rule that yields a layer this actor is actually placed on
+    # and raise its bits, so the harness stands in the story state the placement belongs to.
+    var hit: Dictionary = step.get("hit", {})
+    var who := str(hit.get("actor", ""))
+    var base := sfield(step, "stage")
+    if who == "" or base == "":
+        return
+    var want: Dictionary = {}       # layers this actor is placed on, in this stage
+    var room := -1
+    for key in [base, "%s_r%d" % [base, int(hit.get("room", -1))]]:
+        for rec in (stage_data.get(key, {}) as Dictionary).get("logic", []):
+            if str(rec.get("actor", "")) != who:
+                continue
+            if hit.get("room") != null and int(rec.get("room", -1)) != int(hit["room"]):
+                continue
+            want[int(rec.get("layer", -1))] = true
+            room = int(rec.get("room", -1))
+    if want.is_empty() or want.has(-1):
+        return                      # placed unconditionally, or not placed at all
+    for rule in layers.get("rules", []):
+        if str(rule.get("stage", "")) != base:
+            continue
+        var r = rule.get("room")
+        if r != null and room >= 0 and int(r) != room:
+            continue
+        if not want.has(int(rule.get("layer_night" if night else "layer_day", -99))):
+            continue
+        for t in rule.get("tests", []):
+            if bool(t[1]) and not event_bit(int(t[0])):
+                set_event_bit(int(t[0]))
+                print("gcrip hit: raised 0x%04X for the layer rule that places %s"
+                    % [int(t[0]), who])
+        return
+    print("gcrip hit: no layer rule for ", base, " room ", room, " yields ", want.keys(),
+        " (night=", night, ")")
+
+func _hit_objects() -> Array:
+    var out: Array = []
+    var cs := get_tree().current_scene
+    if cs == null:
+        return out
+    for n in cs.get_children():
+        if n is StaticBody3D and n.has_method("take_hit") and n.has_method("setup_hit"):
+            out.append(n)
+    return out
+
+func _hit_tick() -> void:
+    var objs := _hit_objects()
+    if event_frames == 40:
+        print("gcrip hit: ", objs.size(), " breakable story objects placed in ",
+            current_stage_key(), " (layer ", story_layer(current_stage_key(), 44), ")")
+        for o in objs:
+            print("gcrip hit:   ", o.name, " at ", (o as Node3D).global_position.round(),
+                " events ", o.get("events"), " min_damage ", o.get("min_damage"))
+        if objs.is_empty():
+            print("gcrip hit: nothing to strike")
+            get_tree().quit()
+            return
+    var standing := 0
+    for o in objs:
+        if bool(o.get("broken")):
+            continue
+        standing += 1
+        var dmg := maxi(int(o.get("min_damage")), 1)
+        var lk := player()
+        if lk:
+            lk.global_position = (o as Node3D).global_position + Vector3(0, 5, 300)
+        o.take_hit(dmg, lk.global_position if lk else Vector3.ZERO)
+        hit_struck += 1
+        print("gcrip hit: struck ", o.name, " for ", dmg, " (blow ", hit_struck, ", stage ",
+            o.get("stage_i"), ")")
+    if standing == 0:
+        var done: Array = (save.get("story_done", {}) as Dictionary).keys()
+        print("gcrip hit: all broken after ", hit_struck, " blows; story done ", done,
+            " hit_log ", hit_log)
+        get_tree().quit()
+
 func _object_tick() -> bool:
     # the harness for a step a placed object orders itself: raise its bits, stand Link where the
     # predicate wants him, hand him what it wants, then poll once.  False = try again later
@@ -3949,6 +4048,14 @@ func _process(delta: float) -> void:
                   " ", after.slice(maxi(after.size() - 3, 0)))
             print("gcrip defeat: boss_dead ", save.get("boss_dead", {}))
         elif event_frames > 300:
+            get_tree().quit()
+    if hit_test:
+        event_frames += 1
+        if event_frames >= 40 and event_frames % 40 == 0 and not event_running \
+                and not cutscene_running() and not dialog_open:
+            _hit_tick()
+        if event_frames > 2400:
+            print("gcrip hit: done (timeout)")
             get_tree().quit()
     if models_test:
         _models_report()
@@ -4973,7 +5080,7 @@ func burst(pos: Vector3, color: Color) -> void:
 
 func scripted() -> bool:
     # any headless harness run: nobody is holding the pad, so "press any key" waits must pass
-    return conduct_test or selftest or story_test or newgame_test or dialogue_test or door_test         or talk_test != "" or event_test != "" or shot_actor != "" or scope_test or near_test or defeat_test != "" or opening_test or sweep_test or doors_test \
+    return conduct_test or selftest or story_test or newgame_test or dialogue_test or door_test         or talk_test != "" or event_test != "" or shot_actor != "" or scope_test or near_test or defeat_test != "" or hit_test or opening_test or sweep_test or doors_test \
         or models_test or cuts_test or object_test or clock_test
 
 func stage_boss_dead(stage := "") -> bool:
@@ -7378,18 +7485,43 @@ func _spawn_hit_objects() -> void:
     # moment a placement does show up, SCRIPTS wraps it in _wrap_actors instead and this
     # loop skips it.
     var n := 0
+    var info: Dictionary = Game.stage_data.get(name, {})
     for step in Game.story_hit_steps():
         var hit: Dictionary = step.get("hit", {})
         var who := str(hit.get("actor", ""))
         if who != "" and Game._find_actor(who) != null:
             continue
         var pos = hit.get("pos")
+        var rot_y := float(hit.get("rot_y_deg", 0.0))
+        if not (pos is Array) or (pos as Array).size() < 3:
+            # model-less actors come through as "logic" records; the wall is one of them, on
+            # the story layers of the endless night.  Placement coordinates are world space,
+            # the scene is recentred, hence the offset
+            for rec in info.get("logic", []):
+                if str(rec.get("actor", "")) != who:
+                    continue
+                var lay := int(rec.get("layer", -1))
+                var rm := int(rec.get("room", -1))
+                if lay >= 0 and lay != Game.story_layer(name, rm):
+                    continue
+                if hit.get("room") != null and rm != int(hit["room"]):
+                    continue
+                var rp: Array = rec.get("pos", [])
+                if rp.size() >= 3:
+                    pos = [float(rp[0]) - Game.world_offset.x, float(rp[1]) - Game.world_offset.y,
+                        float(rp[2]) - Game.world_offset.z]
+                    rot_y = float(rec.get("rot_y_deg", rot_y))
+                    if hit.get("params") == null:
+                        hit = hit.duplicate()
+                        hit["params"] = int(rec.get("params", 0))
+                        step = step.duplicate()
+                        step["hit"] = hit
+                    break
         if not (pos is Array) or (pos as Array).size() < 3:
             print("gcrip hit: ", Game.sfield(step, "id"), " (", who,
-                ") is not in the ripped placement data - nothing spawned")
+                ") is not placed on this stage's current story layer - nothing spawned")
             continue
-        spawn_hit_object(step, Vector3(float(pos[0]), float(pos[1]), float(pos[2])),
-            float(hit.get("rot_y_deg", 0.0)))
+        spawn_hit_object(step, Vector3(float(pos[0]), float(pos[1]), float(pos[2])), rot_y)
         n += 1
     if n > 0:
         print("gcrip: ", n, " breakable story objects in ", name)
@@ -8268,13 +8400,10 @@ _STORY_NPC_TAG = {
 # Objects the player breaks by hitting them: one event name per damage stage, in order, plus
 # the damage a hit has to carry (bomb Atp 4, so a sword swing does nothing).
 #
-# "pos" is None because the Ajav wall is NOT in the ripped sea placement data: the exporter
-# dropped it, so nothing is spawned and this step cannot fire yet.  What is missing is only
-# the placement - "Ajav" does not appear anywhere in out/.../sea_report.json, not even in its
-# unresolved_names, while the whirlpool it stands over (Auzu, sea room 44 layer 5) came
-# through at (-193022.8, 1.0, 329245.2).  Recover the Ajav ACTR from that same room 44
-# layer 5 DZR and fill in "pos" (and "switch" = params & 0xFF, the bit on_sw() raises) here;
-# its six models are already known to the ripper as ajava..ajavf.bdl in data/ww_actors.py.
+# "pos" is None on purpose: the Ajav wall is a model-less "logic" placement (sea room 44,
+# layers 5 and 7 - the endless night - params 28, at (-192902.5, 0, 324297.3)), and stage.gd
+# resolves it from the stage's logic records at runtime, so it follows the story layer and
+# the recentring offset without a copied coordinate.  Its six models are ajava..ajavf.bdl.
 _STORY_HIT = {
     "jab_blow_open_the_cave": {
         "actor": "Ajav",
@@ -8455,6 +8584,7 @@ _STORY_CHAPTERS = [
     "temples",
     "fortress2",
     "ganon",
+    "ganontower",
 ]
 
 

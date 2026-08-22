@@ -14,7 +14,9 @@ What doesn't end up in the level (all counted in <stage>_report.json):
     the rest (switches, salvage points, Ajav...), same fields either way
   - vegetation (grass/flowers/trees) and some effects - drawn from display lists
     embedded in the game executable, not from any archive
-  - actors whose name we can't map to an archive yet (logged with counts)
+  - actors whose name we still can't map to an archive: counted in "unresolved" and
+    listed in "unresolved_names", AND kept in "logic" with "unresolved": true, so a
+    placement on the disc can never disappear just because we don't know the name
 """
 
 from __future__ import annotations
@@ -30,9 +32,12 @@ from pathlib import Path
 from gcrip.data.ww_actors import (
     CHEST_MODELS,
     CHEST_PREFIXES,
+    CODE_DRAWN_NAMES,
     CODE_DRAWN_PREFIXES,
     KNOB_PAIR,
+    NO_MODEL_NAMES,
     NO_MODEL_PREFIXES,
+    STAGE_LOCAL_MODELS,
     WW_ACTORS,
 )
 from gcrip.disc.fst import parse_fst, parse_header
@@ -193,6 +198,12 @@ def _find_iso(rip_dir: Path, iso: Path | None) -> Path:
 
 
 def _classify(name: str) -> str | None:
+    # exact names first: a prefix test would let short ones swallow their neighbours
+    # ("sea" would eat "Search"), and these were each traced to a specific actor.
+    if name in NO_MODEL_NAMES:
+        return "logic"
+    if name in CODE_DRAWN_NAMES:
+        return "code_drawn"
     low = name.lower()
     if low.startswith(NO_MODEL_PREFIXES):
         return "logic"
@@ -379,10 +390,29 @@ def _build(
             if target:
                 break
         if target is None:  # doors/props shipped inside this stage's own Stage.arc
-            target = index.find_stage_local(stage_name, p.name)
+            target = index.find_stage_local(
+                stage_name, STAGE_LOCAL_MODELS.get(p.name, p.name)
+            )
         if target is None:
             counts["unresolved"] += 1
             unresolved[p.name] += 1
+            # we don't know what model this name wants - but the placement is still the
+            # only record that something stands HERE.  Keep it beside the other
+            # model-less actors, flagged, instead of dropping it on the floor.
+            logic_recs.append(
+                {
+                    "actor": p.name,
+                    "chunk": p.chunk,
+                    "params": p.params,
+                    "rot": list(p.rot),
+                    "room": room_no,
+                    "layer": p.layer,
+                    "pos": list(p.pos),
+                    "rot_y_deg": round(p.rot_y_deg, 2),
+                    "scale": list(p.scale),
+                    "unresolved": True,
+                }
+            )
             continue
 
         group = f"Room{room_no}_actors" if room_no is not None else "Stage_actors"
@@ -463,8 +493,9 @@ def _build(
             {**t, "pos": [t["pos"][0] - offset[0], t["pos"][1], t["pos"][2] - offset[2]]}
             for t in tag_recs
         ],
-        # model-less actors that aren't triggers: salvage points, switches, Ajav.  Kept
-        # out of "actors" on purpose - stage.gd resolves a mesh for everything in there.
+        # model-less actors that aren't triggers: salvage points, switches, Ajav, plus
+        # any still-unmapped name (those carry "unresolved": true).  Kept out of
+        # "actors" on purpose - stage.gd resolves a mesh for everything in there.
         "logic": [
             {**t, "pos": [t["pos"][0] - offset[0], t["pos"][1], t["pos"][2] - offset[2]]}
             for t in logic_recs
@@ -495,7 +526,8 @@ def _build(
             f"({builder.stats.models} unique models, {builder.stats.triangles:,} tris) "
             f"in {seconds}s\n"
             f"  skipped: {counts['logic']} logic, {counts['code_drawn']} vegetation/effects, "
-            f"{counts['layered_skipped']} on conditional layers, {counts['unresolved']} unresolved"
+            f"{counts['layered_skipped']} on conditional layers, "
+            f"{counts['unresolved']} unresolved (kept in 'logic')"
         )
         if unresolved:
             top = ", ".join(f"{n} x{c}" for n, c in unresolved.most_common(8))

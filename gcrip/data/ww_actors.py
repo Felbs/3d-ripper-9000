@@ -371,6 +371,57 @@ WW_ACTORS: dict[str, list[tuple[str, str | None]]] = {
     'zouK2': [('VzouK', 'bdl/vzouk.bdl')],
     'zouK3': [('VzouK', 'bdl/vzouk.bdl')],
     'zouK4': [('VzouK', 'bdl/vzouk.bdl')],
+
+    # --- resolved from d_stage.cpp's OBJNAME table (name -> fpcNm_* profile), then
+    # --- c_dylink.cpp (profile -> d_a_*.cpp) -> the archive that actor loads.
+    # Obj_Mtest: char* Act_c::M_arcname[Type_Max] (d_a_obj_mtest.cpp:14-23); the
+    # OBJNAME sub-type picks cube vs cylinder (d_stage.cpp:895-902).
+    'Mcube': [('Mtest', 'bmdc/mcube.bmd')],
+    'Mcube10': [('Mtest', 'bmdc/mcube.bmd')],
+    'MygnSB': [('Mtest', 'bmdc/mcube.bmd')],
+    'Mcyln': [('Mtest', 'bmdc/mcyln.bmd')],
+    'Mcyln10': [('Mtest', 'bmdc/mcyln.bmd')],
+    'VmcBS': [('Vmc', 'bdl/vmcbs.bdl')],           # d_a_obj_vmc.cpp -> res/Object/Vmc.h
+    'SieFlag': [('Eshata', 'bdl/eshata.bdl')],     # d_a_sie_flag.cpp:61 M_arcname (pole;
+                                                   # the banner itself is Cloth, tex only)
+    'Mori1': [('Mdoor', 'bdl/mori1.bdl')],         # fpcNm_MDOOR_e, d_stage.cpp:459
+    'MkieBA': [('MkieB', 'bdl/mkieb.bdl')],        # d_a_obj_mkie.cpp:11 M_arcname
+    'MkieBAB': [('MkieB', 'bdl/mkieb.bdl')],
+    'SWtact': [('Itact', 'bdl/itact.bdl')],        # d_a_swtact.cpp -> res/Object/Itact.h
+    'SWtactB': [('Itact', 'bdl/itact.bdl')],
+    'keyS12': [('door12', None)],                  # fpcNm_DOOR12_e, d_stage.cpp:479-480
+    'ZenS12': [('door12', None)],
+    'doorKD': [('DoorBs', 'bdl/doorkd.bdl')],      # fpcNm_KDDOOR_e, d_stage.cpp:460-464
+    'doorSH': [('DoorBs', 'bdl/doorkd.bdl')],
+    'Fmaster': [('fm', 'bdl/fm.bdl')],             # fpcNm_FM_e, d_stage.cpp:801
+    'Warpf': [('Ysbwp00', 'bdlm/ysbwp00.bdl'), ('Gtfglow', 'bdlm/gtfglow00.bdl')],
+    'Warpgn': [('Gmjwp', 'bdlm/gmjwp00.bdl')],     # d_a_warpgn.cpp -> res/Object/Gmjwp.h
+    'Gnbtaki': [('Gnnbtltaki', 'bdlm/gnn_btl_taki.bdl')],
+    'Gntakis': [('Gnndemotakis', 'bdlm/gnn_demo_taki_s.bdl')],
+    'Gntakie': [('Gnndemotakie', 'bdlm/gnn_demo_taki_e.bdl')],
+    'Yfrlt00': [('frLt', 'bdlm/yfrlt00.bdl')],     # fpcNm_Komore_e (light shaft)
+    'Ygush01': [('Ygush00', 'bdlm/ygush00.bdl')],  # fpcNm_Obj_Ygush00_e, d_stage.cpp:1163
+    'Ygush02': [('Ygush00', 'bdlm/ygush00.bdl')],
+    'Xfuta': [('X_futa', 'bdl/x_futa.bdl')],
+    'MtryBCr': [('MtryB', 'bdl/mtryb.bdl')],       # fpcNm_Obj_Tribox_e sub 1 (sub 0 = MtryB)
+    'Nh': [('Always', 'bdlm/nh.bdl')],             # d_a_nh.cpp:113 getObjectRes("Always", NH)
+    'Rforce': [('StpTetu', 'bdl/stptetu.bdl')],    # d_a_obj_rforce.cpp:21
+    'Hfbot1A': [('Hfbot', 'bdlm/hfbot1.bdl')],     # Obj_Swflat sub 0; 1/2 = Hfbot1B/C
+    'Hsen2': [('Hsen1', 'bdlm/hsen1.bdl')],        # d_a_fan.cpp:17 m_arcname[3]
+    'MsuSW': [('Mmirror', 'bdlm/msusw.bdl')],      # d_a_obj_swlight.cpp -> res/Object/Mmirror.h
+    'Hmon1': [('Hseki', 'bdlm/hmon1.bdl')],        # fpcNm_Obj_Try_e; cf. Hmon1d/Hmon2d
+    'Hmon2': [('Hseki', 'bdlm/hmon2.bdl')],
+    'Tide3': [('Gmtw', 'bdlm/gmtw00.bdl'), ('Humi', None)],  # d_a_obj_tide.cpp:19-20
+    'MegamiD': [('Doguu', 'bdlm/vgshd.bdl')],      # Obj_Doguu subs 1/2/3, d_stage.cpp:968-970
+    'MegamiF': [('Doguu', 'bdlm/vgshf.bdl')],
+    'MegamiN': [('Doguu', 'bdlm/vgshn.bdl')],
+    'KGBdor': [('Gbdoor', 'bdl/v_gbdfu.bdl')],     # d_a_mbdoor.cpp:47-49 (sub 1 -> Gbdoor)
+    'Ypit00': [('Aana', 'bdl/aana.bdl')],          # d_a_obj_hole.cpp:21 m_arc_name
+    'HamiY': [('Hami1', 'bdl/hami1.bdl')],         # d_a_amiprop.cpp -> res/Object/Hami1.h
+    'Auction': [('Pspl', 'bdl/pspl.bdl')],         # d_a_auction.cpp resLoad("Pspl")
+    'Throck': [('Aisi', 'bdlm/aisi.bdl')],         # d_throwstone.cpp:15,25 M_arcname
+    'GBoard': [('Kaisen', 'bdl/akbod.bdl')],       # d_a_mgameboard.h -> d_seafightgame.h
+    'DmKmm2': [('Demo_Kmm', 'bmd/ka.bmd')],        # fpcNm_DEMO_KMM_e sub 1 (sub 0 = DmKmm)
 }
 # fmt: on
 
@@ -380,6 +431,11 @@ CODE_DRAWN_PREFIXES = (
     "kusa", "flwr", "pflwr", "flower", "pflower", "swood", "woodb",
     "bonbori", "zenfire", "zenshut", "salvag", "salvfm", "swslvg", "pitfall",
     "fire", "magma", "akabe", "kuro_", "ykgr", "ygstp", "mwtrsb", "mtflag", "quake",
+    # LOD01..LOD49: the ocean's distant-island stand-ins.  d_a_lod_bg.cpp:160 streams
+    # "/lod%02d/bdl/model.bdl" out of res/Stage/sea/LODALL.arc at run time, keyed on the
+    # placement's param - not an Object archive, and the real island rooms are placed
+    # anyway, so these would only double up on the geometry we already have.
+    "lod",
 )
 
 # Invisible logic actors: triggers, switches, tags, Tingle Tuner (agb) hooks, cameras.
@@ -388,6 +444,59 @@ NO_MODEL_PREFIXES = (
     "windtag", "alldie", "com_", "attag", "evt", "evsw", "gyctrl", "ky00you",
     "camera", "arrow", "ajav",
 )
+
+# Names placed on the disc that d_stage.cpp's OBJNAME table (l_objectName) does not
+# list at all.  dStage_searchName() returns NULL and dStage_actorCreate() frees the
+# request without spawning anything (d_stage.cpp:1266-1307), so the retail game simply
+# ignores them: editor leftovers and test junk.  Krock00 is the old name for the
+# falling rock that ships as "frock" (d_a_fallrock.cpp:56 loads Always/krock_00).
+DEAD_NAMES = (
+    "Krock00", "Stgate", "Sttoge", "Stdoorl", "Stdoorr", "TestPo", "speakun",
+)
+
+# Model-less actors matched by exact name rather than prefix.  Each was traced from
+# d_stage.cpp's OBJNAME entry through c_dylink.cpp to its d_a_*.cpp: no J3DModel, and
+# where an archive is loaded at all it holds only collision or a texture.
+NO_MODEL_NAMES = frozenset(
+    (
+        "ITat00",                            # fpcNm_SW_ITEM_e - "item taken" switch
+        "Ystm0", "Ystm1",                    # fpcNm_SteamTag_e - steam vent triggers
+        "NBOX", "NBOX10",                    # fpcNm_Obj_Akabe_e - NBOX.arc is one .dzb
+        "CmTrap", "TnTrap", "FgTrap",        # fpcNm_Obj_TnTrap_e - TnTrap.arc is one .dzb
+        "Owater", "Astop",                   # fpcNm_Obj_Mtest_e 6/7 - .dzb-only archives
+        "ReTag0",                            # fpcNm_Tag_Ret_e
+        "PScnChg",                           # fpcNm_TAG_GSHIP_e - ghost-ship scene change
+        "ObjTime",                           # fpcNm_Obj_Timer_e
+        "Warpfo",                            # fpcNm_WARPFOUT_e - warp-out trigger
+        "VolTag",                            # fpcNm_Tag_Volcano_e
+        "WLvTag",                            # fpcNm_Tag_Waterlevel_e
+        "SWat00",                            # fpcNm_SW_ATTACK_e
+        "frock",                             # fpcNm_TagRock_e - spawns falling rocks
+        "BLK_CR", "CrTrS3", "CrTrS4", "CrTrS5", "CrTrM1", "CrTrM2",  # fpcNm_Obj_Correct_e
+        "Mmusic",                            # fpcNm_Mmusic_e - music region
+        "spotbx1",                           # fpcNm_SPOTBOX_e
+        "Tpota",                             # fpcNm_Tpota_e
+    )
+    + DEAD_NAMES
+)
+
+# Placed, but never drawn from an archive this ripper can reach.  The flags are cloth
+# simulated in code over a single .bti (Cloth/Matif/Vsvfg/Xhcf/Gflag hold no model at
+# all), and "sea" is the procedural ocean mesh d_a_sea.cpp builds from Always textures.
+CODE_DRAWN_NAMES = frozenset(
+    (
+        "MjFlag", "HcFlag",                  # fpcNm_MAJUU_FLAG_e, d_a_majuu_flag.cpp:818-833
+        "Gflag",                             # fpcNm_Goal_Flag_e, d_a_goal_flag.cpp:30-33
+        "sea",                               # fpcNm_SEA_e, d_a_sea.cpp:195-215
+    )
+)
+
+# Actors whose model ships in the stage's own Stage.arc under a different name than the
+# placement uses.  "keyshut" is a fpcNm_DOOR10_e locked door (d_stage.cpp:456) and every
+# dungeon Stage.arc carries it as stage/bdl/key10.bdl next to door10/door20/stop10.
+STAGE_LOCAL_MODELS = {
+    "keyshut": "key10",
+}
 
 # Treasure chests: model chosen from Object/Dalways.arc by (params >> 20) & 0xF.
 CHEST_PREFIXES = ("takara", "tkr")

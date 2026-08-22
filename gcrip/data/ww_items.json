@@ -1,0 +1,999 @@
+{
+  "_source": {
+    "system": "Link's inventory - the item id space, where inventory state lives in the save, what each item does, and how an item is granted.",
+    "decomp": "zeldaret/tww at Z:/memRip/sources/tww; every file:line below is relative to that root and was read directly.",
+    "extends": "Z:/memRip/knowledge/gamecube/projectile-items.md, which already covers Bow/arrows, Boomerang, Grappling Hook, Hookshot and Bombs in flight detail. This file does NOT repeat their physics; it covers ids, storage, the grant path, and the items that file does not cover.",
+    "units": "Frames are 30 fps. s16 angles: 0x10000 = 360 deg (0x4000 = 90 deg). Game-time is a f32 0..360 where 15.0 = 1 hour (d_kankyo.cpp:474).",
+    "structure": {
+      "_id_space": "where the dItemNo enum lives and how ids are grouped",
+      "_id_table": "the complete dItemNo enum, id -> name, verbatim from the header",
+      "_storage": "the save-data layout: which struct/field holds which piece of inventory state",
+      "_item_get": "how an item is granted and how the item-get cutscene works",
+      "_wind_waker": "the six songs: ids, conducting patterns, tempo, and exactly what each one changes",
+      "items": "per-item detail keyed by dItemNo name",
+      "_not_determined": "things I looked for and could NOT establish"
+    },
+    "confidence_scale": {
+      "high": "read directly from decompiled C++ that is real code",
+      "medium": "inferred from real code plus naming, or read from code whose surrounding context I did not fully verify",
+      "low": "guessed, or read from a /* Nonmatching */ stub"
+    },
+    "stub_warning": "`/* Nonmatching */` in this repo has TWO meanings and you must look at the body to tell them apart. (a) The marker followed by an EMPTY body = the function is genuinely not decompiled; nothing near it is trustworthy. Verified example: src/d/d_menu_fmap.cpp:11-12 and every other function in that file. (b) The marker followed by a FULL body = decompiled but not byte-matching the original object; the code and its constants are real. Verified example: daShip_c::execute() at src/d/actor/d_a_ship.cpp:3545, whose ~1300-line body starts at :3546. See _stubbed_files for the audit."
+  },
+
+  "_id_space": {
+    "enum": "ItemTable",
+    "file": "include/d/d_item_data.h:6-263",
+    "note": "The enum is written as a single `enum ItemTable { ... }` with one entry per id 0x00..0xFF and an explicit /* 0xNN */ comment on every line; 0xFF is dItemNo_NONE_e (d_item_data.h:262). Ids are dense - there is no gap, unused slots are named dItemNo_NOENTRY_nn_e.",
+    "groups": {
+      "0x00-0x1F": "pickups / consumables (hearts, rupees, ammo, keys, fairy, Joy Pendant)",
+      "0x20-0x34": "the X/Y/Z inventory items (telescope .. Deku Leaf)",
+      "0x35-0x36": "bow upgrades (Fire/Ice arrows, Light arrows) - they overwrite the BOW inventory slot",
+      "0x38-0x3E": "swords and shields (equipment, not inventory slots)",
+      "0x42-0x4B": "charms and monster spoils",
+      "0x4C-0x4E": "dungeon items (map, compass, Big Key)",
+      "0x50-0x60": "bottles and bottle contents (0x5A-0x60 unused)",
+      "0x61-0x6C": "Triforce shards, Goddess Pearls",
+      "0x6D-0x72": "the six Wind Waker songs",
+      "0x78": "the Sail",
+      "0x79-0x80": "Triforce Charts 1-8",
+      "0x82-0x8A": "bait / feed",
+      "0x8C-0x9E": "Delivery-Bag reserve items: flowers, flags, idols, letters, deeds",
+      "0x9F-0xA8": "salvage / Tingle statues",
+      "0xAA-0xB8": "Hurricane Spin, capacity upgrades, magic, Tingle rupees",
+      "0xBF-0xFE": "Treasure Charts / Sea Charts, numbered BACKWARDS: dItemNo_COLLECT_MAP_01_e is 0xFE and COLLECT_MAP_64_e is 0xBF"
+    },
+    "resource_table": {
+      "struct": "dItem_data_item_resource, include/d/d_item_data.h:14-40 (size 0x24)",
+      "table": "dItem_data::item_resource[0x100], src/d/d_item_data.cpp:589",
+      "arc_names": "dItem_data::item_arcname_tbl[0x70], src/d/d_item_data.cpp:119-232 - the .arc each item's get-model lives in",
+      "fields": "mArcname, mTexture (icon file in files/res/Msg/itemicon.arc), mBmdIdx, mSrtIdx/2 (BTK), mTevIdx/2 (BRK), mBckIdx, mTevFrm, mItemMesgNum (the item's NAME message), mHeapSize",
+      "warning": "mItemMesgNum is the item's *name* string; it is NOT the item-get message. The item-get message is MSG_NO_FOR_ITEM(itemNo) = itemNo + 101 (d_item_data.h:11)."
+    },
+    "confidence": "high"
+  },
+
+  "_id_table": {
+    "_note": "Verbatim from include/d/d_item_data.h:7-262. Entries commented 'Unused' in the header are marked with a leading '*'.",
+    "0x00": "HEART", "0x01": "GREEN_RUPEE", "0x02": "BLUE_RUPEE", "0x03": "YELLOW_RUPEE",
+    "0x04": "RED_RUPEE", "0x05": "PURPLE_RUPEE", "0x06": "ORANGE_RUPEE", "0x07": "HEART_PIECE",
+    "0x08": "HEART_CONTAINER", "0x09": "SMALL_MAGIC", "0x0A": "LARGE_MAGIC", "0x0B": "BOMB_5",
+    "0x0C": "BOMB_10", "0x0D": "BOMB_20", "0x0E": "BOMB_30", "0x0F": "SILVER_RUPEE",
+    "0x10": "ARROW_10", "0x11": "ARROW_20", "0x12": "ARROW_30", "0x13": "*NOENTRY_19",
+    "0x14": "*NOENTRY_20", "0x15": "SMALL_KEY", "0x16": "RECOVER_FAIRY",
+    "0x17": "HEART_PIECE_2 (msg only)", "0x18": "HEART_PIECE_3 (msg only)", "0x19": "HEART_PIECE_4 (msg only)",
+    "0x1A": "SUB_DUN_RUPEE (JPN only)", "0x1B": "*NOENTRY_27", "0x1C": "*NOENTRY_28", "0x1D": "*NOENTRY_29",
+    "0x1E": "TRIPLE_HEART", "0x1F": "JOY_PENDANT",
+    "0x20": "TELESCOPE", "0x21": "TINGLE_TUNER", "0x22": "WIND_WAKER", "0x23": "PICTO_BOX",
+    "0x24": "SPOILS_BAG", "0x25": "GRAPPLING_HOOK", "0x26": "DELUXE_PICTO_BOX", "0x27": "BOW",
+    "0x28": "POWER_BRACELETS", "0x29": "IRON_BOOTS", "0x2A": "MAGIC_ARMOR", "0x2B": "*WATER_BOOTS",
+    "0x2C": "BAIT_BAG", "0x2D": "BOOMERANG", "0x2E": "*BARE_HAND", "0x2F": "HOOKSHOT",
+    "0x30": "DELIVERY_BAG", "0x31": "BOMB_BAG", "0x32": "FUKU", "0x33": "SKULL_HAMMER",
+    "0x34": "DEKU_LEAF", "0x35": "MAGIC_ARROW", "0x36": "LIGHT_ARROW", "0x37": "*NEW_FUKU",
+    "0x38": "SWORD", "0x39": "MASTER_SWORD_1", "0x3A": "MASTER_SWORD_2", "0x3B": "SHIELD",
+    "0x3C": "MIRROR_SHIELD", "0x3D": "DROPPED_SWORD", "0x3E": "MASTER_SWORD_3", "0x3F": "HEART_PIECE_ALT",
+    "0x40": "*NOENTRY_64", "0x41": "*NOENTRY_65", "0x42": "PIRATES_CHARM", "0x43": "HEROS_CHARM",
+    "0x44": "*GRASS_BALL", "0x45": "SKULL_NECKLACE", "0x46": "BOKOBABA_SEED", "0x47": "GOLDEN_FEATHER",
+    "0x48": "KNIGHTS_CREST", "0x49": "RED_JELLY", "0x4A": "GREEN_JELLY", "0x4B": "BLUE_JELLY",
+    "0x4C": "MAP", "0x4D": "COMPASS", "0x4E": "BOSS_KEY", "0x4F": "*EMPTY_BSHIP",
+    "0x50": "EMPTY_BOTTLE", "0x51": "RED_POTION", "0x52": "GREEN_POTION", "0x53": "BLUE_POTION",
+    "0x54": "HALF_SOUP_BOTTLE", "0x55": "SOUP_BOTTLE", "0x56": "WATER_BOTTLE", "0x57": "FAIRY_BOTTLE",
+    "0x58": "FIREFLY_BOTTLE", "0x59": "FOREST_WATER", "0x5A-0x60": "*UNK_BOTTLE_5A..60",
+    "0x61-0x68": "TRIFORCE1..TRIFORCE8",
+    "0x69": "PEARL_NAYRU", "0x6A": "PEARL_DIN", "0x6B": "PEARL_FARORE", "0x6C": "*KNOWLEDGE_TF",
+    "0x6D": "WINDS_REQUIEM", "0x6E": "BALLAD_OF_GALES", "0x6F": "COMMAND_MELODY",
+    "0x70": "EARTH_GODS_LYRIC", "0x71": "WIND_GODS_ARIA", "0x72": "SONG_OF_PASSING",
+    "0x73-0x77": "*NOENTRY_115..119", "0x78": "SAIL", "0x79-0x80": "TRIFORCE_MAP_1..8",
+    "0x81": "*NOENTRY_129", "0x82": "BIRD_BAIT_5", "0x83": "HYOI_PEAR", "0x84-0x88": "*ESA_1..5",
+    "0x89": "*MAGIC_BEAN", "0x8A": "*BIRD_ESA_10", "0x8B": "*NOENTRY_139",
+    "0x8C": "TOWN_FLOWER", "0x8D": "SEA_FLOWER", "0x8E": "EXOTIC_FLOWER", "0x8F": "HEROS_FLAG",
+    "0x90": "BIG_CATCH_FLAG", "0x91": "BIG_SALE_FLAG", "0x92": "PINWHEEL", "0x93": "SICKLE_MOON_FLAG",
+    "0x94": "SKULL_TOWER_IDOL", "0x95": "FOUNTAIN_IDOL", "0x96": "POSTMAN_STATUE", "0x97": "SHOP_GURU_STATUE",
+    "0x98": "FATHER_LETTER", "0x99": "NOTE_TO_MOM", "0x9A": "MAGGIES_LETTER", "0x9B": "MOBLINS_LETTER",
+    "0x9C": "CABANA_DEED", "0x9D": "COMPLIMENTARY_ID", "0x9E": "FILL_UP_COUPON",
+    "0x9F": "LEGENDARY_PICTOGRAPH (was 'salvage item 1', repurposed)", "0xA0": "*SALVAGE_ITEM_2",
+    "0xA1": "*SALVAGE_ITEM_3", "0xA2": "*XXX_039", "0xA3-0xA7": "TINGLE_STATUE_1..5",
+    "0xA8": "*TINGLE_STATUE_6", "0xA9": "*NOENTRY_169", "0xAA": "HURRICANE_SPIN",
+    "0xAB": "MAX_RUPEE_UP1", "0xAC": "MAX_RUPEE_UP2", "0xAD": "MAX_BOMB_UP1", "0xAE": "MAX_BOMB_UP2",
+    "0xAF": "MAX_ARROW_UP1", "0xB0": "MAX_ARROW_UP2", "0xB1": "MAGIC_POWER", "0xB2": "MAX_MP_UP1",
+    "0xB3-0xB8": "TINGLE_RUPEE_1..6", "0xB9-0xBE": "*LITHOGRAPH_1..6",
+    "0xBF-0xFE": "COLLECT_MAP_64 down to COLLECT_MAP_01 (descending: 0xBF=map64 ... 0xFE=map01)",
+    "0xFF": "NONE"
+  },
+
+  "_storage": {
+    "root": {
+      "global": "g_dComIfG_gameInfo.save (a dSv_info_c), accessed everywhere through dComIfGs_* inlines in include/d/d_com_inf_game.h",
+      "dSv_info_c": "include/d/d_save.h:916-984, size 0x12A0",
+      "dSv_save_c": "include/d/d_save.h:864-914, size 0x778: mPlayer @0x000, mMemory[16 stages] @0x380, mOcean @0x5C0, mEvent @0x624, mReserve @0x724",
+      "dSv_player_c": "include/d/d_save.h:533-626, size 0x380 - this is the whole of Link's inventory"
+    },
+    "dSv_player_c_layout": {
+      "file": "include/d/d_save.h:604-623",
+      "0x000": "dSv_player_status_a_c mPlayerStatusA (hearts, rupees, magic, X/Y/Z assignment, equipment)",
+      "0x018": "dSv_player_status_b_c mPlayerStatusB (date, time-of-day, TACT WIND DIRECTION)",
+      "0x030": "dSv_player_return_place_c mReturnPlace",
+      "0x03C": "dSv_player_item_c mPlayerItem (THE 21 INVENTORY SLOTS)",
+      "0x051": "dSv_player_get_item_c mGetItem (have-ever-owned flags, per slot)",
+      "0x066": "dSv_player_item_record_c mItemRecord (arrow/bomb/pictograph counts + forest-water timer)",
+      "0x06E": "dSv_player_item_max_c mItemMax (arrow/bomb capacity)",
+      "0x076": "dSv_player_bag_item_c mBagItem (Spoils/Bait/Delivery bag contents)",
+      "0x090": "dSv_player_get_bag_item_c mGetBagItem",
+      "0x09C": "dSv_player_bag_item_record_c mBagItemRecord (per-slot counts)",
+      "0x0B4": "dSv_player_collect_c mCollect (sword/shield/bracelet level, SONGS, Triforce, pearls)",
+      "0x0C4": "dSv_player_map_c mMap (charts and sea-chart bits)",
+      "0x148": "dSv_player_info_c mInfo",
+      "0x1A4": "dSv_player_config_c mConfig",
+      "0x1AC": "dSv_player_priest_c mPriest",
+      "0x1BC": "dSv_player_status_c_c mStatusC[4] - four FULL SNAPSHOTS of status A + item + record + max + bag + collect, used to save/restore Link's kit while you are playing as somebody else (see include/d/d_save.h:518-531)"
+    },
+    "inventory_slots": {
+      "struct": "dSv_player_item_c { u8 mItems[21]; }",
+      "file": "include/d/d_save.h:101-120",
+      "meaning": "mItems[slot] holds the dItemNo currently in that slot, or 0xFF for empty. The slot index is FIXED per item - the Deku Leaf is always slot 6 - so an item you do not have is simply 0xFF in its own slot.",
+      "slot_enum": "dInventorySlot_e, include/d/d_com_inf_game.h:1058-1093",
+      "slots": {
+        "0": "TELESCOPE", "1": "SAIL", "2": "WIND_WAKER", "3": "GRAPPLING_HOOK",
+        "4": "SPOILS_BAG", "5": "BOOMERANG", "6": "DEKU_LEAF", "7": "TINGLE_TUNER",
+        "8": "CAMERA (Picto Box or Deluxe Picto Box)", "9": "IRON_BOOTS", "10": "MAGIC_ARMOR",
+        "11": "BAIT_BAG", "12": "BOW (also holds MAGIC_ARROW / LIGHT_ARROW once upgraded)",
+        "13": "BOMB (holds dItemNo_BOMB_BAG_e)", "14": "BOTTLE0", "15": "BOTTLE1",
+        "16": "BOTTLE2", "17": "BOTTLE3", "18": "DELIVERY_BAG", "19": "HOOKSHOT",
+        "20": "SKULL_HAMMER", "21": "ItemLast (end marker)"
+      },
+      "virtual_slots": "dComIfGs_getItem()/setItem() also accept 24..31 (Spoils Bag contents), 36..43 (Bait Bag), 48..55 (Delivery Bag reserve), routing them into dSv_player_bag_item_c. Indices in the gaps return 0xFF. include/d/d_com_inf_game.h:1110-1152.",
+      "confidence": "high"
+    },
+    "button_assignment": {
+      "struct": "dSv_player_status_a_c, include/d/d_save.h:8-55 (size 0x18)",
+      "fields": {
+        "0x00 mMaxLife / 0x02 mLife": "u16, quarter-hearts. init() sets both to 12 = 3 hearts (src/d/d_save.cpp:26-27)",
+        "0x04 mRupee": "u16",
+        "0x09 mSelectItem[5]": "the X/Y/Z button assignment - see below",
+        "0x0E mSelectEquip[4]": "index 0 = sword itemNo, 1 = shield itemNo, 2 = bracelet itemNo, 3 = unused/unknown (comment in header says 'Sword, Shield, Bracelet, ?')",
+        "0x12 mWalletSize": "0/1/2 -> rupee cap 200 / 1000 / 5000 (include/d/d_save.h:20-30)",
+        "0x13 mMaxMagic / 0x14 mMagic": "u8"
+      },
+      "CRITICAL": "mSelectItem[btn] stores the INVENTORY SLOT INDEX, not the item number. dComIfGs_getSelectItem(btn) returns the slot; dComIfGp_getSelectItem(btn) returns the item number from a play-side cache that dComIfGp_setSelectItem(btn) refreshes from the slot (include/d/d_com_inf_game.h:1848-1864, 2868-2893). If the slot has become empty, setSelectItem writes 0xFF back into mSelectItem.",
+      "buttons": "dItemButton_e { X=0, Y=1, Z=2, NONE=3, COUNT=3 } - include/d/d_com_inf_game.h:1096-1102. The array is 5 wide but only 3 are buttons.",
+      "init": "all five entries set to 0xFF at src/d/d_save.cpp:30-33",
+      "confidence": "high"
+    },
+    "have_ever_flags": {
+      "struct": "dSv_player_get_item_c { u8 mItemFlags[21]; }",
+      "file": "include/d/d_save.h:122-134",
+      "meaning": "mItemFlags[inventorySlot] is a bit set. onItem(field, bit) sets bit `bit` of mItemFlags[field] (src/d/d_save.cpp:204-208). Bit 0 = 'you have the base item for this slot'; higher bits are UPGRADES for that slot.",
+      "known_bits": {
+        "slot 8 (CAMERA) bit 0": "Picto Box (src/d/d_item.cpp:711)",
+        "slot 8 (CAMERA) bit 1": "Deluxe Picto Box (src/d/d_item.cpp:729)",
+        "slot 12 (BOW) bit 0": "Hero's Bow (src/d/d_item.cpp:735)",
+        "slot 12 (BOW) bit 1": "Fire/Ice Arrows (src/d/d_item.cpp:818)",
+        "slot 12 (BOW) bit 2": "Light Arrows (src/d/d_item.cpp:835)",
+        "slot 2 (WIND_WAKER) bit 0": "the Wind Waker (src/d/d_item.cpp:705). Note d_kankyo.cpp:519 gates the whole day/night clock on dComIfGs_isGetItem(2, 0) - time only passes once you own the baton."
+      },
+      "bottle_overload": "The SAME array doubles as the 'have I ever held this bottle content' log, via onBottleItem()/isBottleItem() (src/d/d_save.cpp:224-328). It deliberately uses bits 1..7 of fields 0,1,2 so it never collides with the bit-0 slot flags of slots 0/1/2: EMPTY_BSHIP=[0]&0x02, EMPTY_BOTTLE=[0]&0x04, RED_POTION=[0]&0x08, GREEN_POTION=[0]&0x10, BLUE_POTION=[0]&0x20, HALF_SOUP=[0]&0x40, SOUP=[0]&0x80, WATER=[1]&0x02, FAIRY=[1]&0x04, FIREFLY=[1]&0x08, FOREST_WATER=[1]&0x10, then the unused 0x5A..0x60 in [1]&0x20..0x80 and [2]&0x02..0x10.",
+      "confidence": "high"
+    },
+    "counts": {
+      "struct": "dSv_player_item_record_c, include/d/d_save.h:150-169 (size 8)",
+      "0x0 mTimer": "u16 - the FOREST WATER expiry timer. resetTimer() also calls dComIfGs_stopFwaterTimer(); decTimer() only ticks while dComIfGs_checkFwaterTimer()==1 (src/d/d_save.cpp:340-362).",
+      "0x2 mItemRecord2": "dSv_player_item_record2_c { u8 mPictureNum; u8 mArrowNum; u8 mBombNum; } (include/d/d_save.h:136-148)",
+      "0x5 mBottleNum[3]": "three bytes, zeroed at init (src/d/d_save.cpp:326). Purpose not established.",
+      "max": "dSv_player_item_max_c wraps dSv_player_item_max2_c { u8 mReserved1Num; u8 mArrowNum; u8 mBombNum; } plus 5 unused bytes (include/d/d_save.h:171-198). Bow grant sets arrows 30/30 (d_item.cpp:736-737); Bomb Bag grant sets bombs 30/30 (d_item.cpp:795-796).",
+      "confidence": "high"
+    },
+    "bags": {
+      "struct": "dSv_player_bag_item_c { u8 mBeast[8]; u8 mBait[8]; u8 mReserve[8]; } - include/d/d_save.h:200-233 (size 0x18)",
+      "mBeast": "Spoils Bag: 8 slots, each holding a dItemNo or 0xFF. Index enum dBeastIdx_e (include/d/d_com_inf_game.h:1277-1285): 0 SKULL_NECKLACE, 1 BOKOBABA_SEED, 2 GOLDEN_FEATHER, 3 KNIGHTS_CREST, 4 RED_JELLY, 5 GREEN_JELLY, 6 BLUE_JELLY, 7 JOY_PENDANT.",
+      "mBait": "Bait Bag: 8 slots (All-Purpose Bait, Hyoi Pear...).",
+      "mReserve": "Delivery Bag: 8 slots (letters, flowers, deeds, statues...).",
+      "counts": "dSv_player_bag_item_record_c { u8 mBeastNum[8]; u8 mBaitNum[8]; u8 mReserveNum[8]; } - include/d/d_save.h:254-270",
+      "have_ever": "dSv_player_get_bag_item_c { u32 mReserveFlags; u8 mBeastFlags; u8 mBaitFlags; } - include/d/d_save.h:235-252. Beast/Bait are 8 bits each; Reserve gets a full 32 bits.",
+      "confidence": "high"
+    },
+    "collect": {
+      "struct": "dSv_player_collect_c { u8 mCollect[8]; u8 field_0x8; u8 mTact; u8 mTriforce; u8 mSymbol; u8 field_0xc; } - include/d/d_save.h:272-299 (size 0xD)",
+      "mCollect_indices": {
+        "0": "sword: bit0 Hero's Sword, bit1 Master Sword, bit2 Master Sword (half power), bit3 Master Sword (full power) - src/d/d_item.cpp:849,855,861,885 and src/d/d_com_inf_game.cpp:1786-1802",
+        "1": "shield: bit0 Hero's Shield, bit1 Mirror Shield - src/d/d_item.cpp:867,873",
+        "2": "bit0 Power Bracelets - src/d/d_item.cpp:742",
+        "3": "bit0 Pirate's Charm - src/d/d_item.cpp:891",
+        "4": "bit0 Hero's Charm owned (src/d/d_item.cpp:896); bit1 Hero's Charm EQUIPPED - toggled with A on the quest-status screen (src/d/d_menu_collect.cpp:1285-1293) and read by daPy_lk_c::checkMaskDraw() (src/d/actor/d_a_player_main.cpp:5671-5677)"
+      },
+      "mTact": "one bit per learned Wind Waker song, bits 0..5 - see _wind_waker.songs. onTact/isTact at src/d/d_save.cpp:763-778.",
+      "mTriforce": "one bit per Triforce shard 0..7 (src/d/d_save.cpp:780-795); getTriforceNum() counts them (814-825).",
+      "mSymbol": "one bit per Goddess Pearl (src/d/d_save.cpp:797-812).",
+      "confidence": "high"
+    },
+    "charts_and_maps": {
+      "struct": "dSv_player_map_c, include/d/d_save.h:410-439 (size 0x84)",
+      "field_0x0": "u32 [4][4] = four 128-bit maps indexed by chart number 0..127: row 1 = HAVE the chart (onGetMap/isGetMap, src/d/d_save.cpp:852-862), row 2 = chart is OPENED/deciphered (onOpenMap, 864-880), row 3 = chart is COMPLETED/treasure claimed (onCompleteMap, 882-898). Row 0 is written by init() but I found no accessor for it.",
+      "bit_math": "field_0x0[row][no >> 5] |= 1 << (no & 0x1F)",
+      "field_0x81": "u8 - Triforce Chart deciphered bits 0..7 (dSv_player_map_c::onTriforce, src/d/d_save.cpp:900-916). This is separate from dSv_player_collect_c::mTriforce, which is the SHARDS.",
+      "mFmapBits": "u8 [49], one byte per island (dIslandIndex_e, include/d/d_save.h:356-408). Bit 0 = you have sailed to that grid square (onSaveArriveGrid, src/d/d_save.cpp:942-950); bit 1 = same for the GBA/Tingle link (onSaveArriveGridForAgb, 954-962). init() pre-sets bits 0|1 for Forsaken Fortress, Outset Island and Windfall Island (src/d/d_save.cpp:843-845).",
+      "getCollectMapNum": "counts charts 1..61 excluding 35, 36 and anything >= 52 (src/d/d_save.cpp:918-928).",
+      "island_enums": "dIslandRoomNo_e (room number on the Great Sea, 1..49) and dIslandIndex_e (0..48) - include/d/d_save.h:301-408. RoomNo = Index + 1; room 0 is the sea floor.",
+      "confidence": "high"
+    },
+    "dungeon_items": {
+      "struct": "dSv_memBit_c, include/d/d_save.h:628-683 - one per stage, dSv_save_c::mMemory[16]",
+      "mDungeonItem": "u8 bitfield with named bits MAP=0, COMPASS=1, BOSS_KEY=2, STAGE_BOSS_ENEMY=3, STAGE_LIFE=4, STAGE_BOSS_DEMO=5 (include/d/d_save.h:630-637)",
+      "mKeyNum": "u8 small-key count for that stage",
+      "note": "So the Map / Compass / Big Key are NOT in the 21 inventory slots at all - they are per-stage bits. item_func_map() etc. just call dComIfGs_onDungeonItemMap() (src/d/d_item.cpp:953-967).",
+      "confidence": "high"
+    },
+    "wind_and_time": {
+      "struct": "dSv_player_status_b_c, include/d/d_save.h:57-81 (size 0x18)",
+      "0x00 mDateIPL": "u64 console clock at file creation",
+      "0x0C mTime": "f32 time of day, 0..360; 15.0 units = 1 hour (src/d/d_kankyo.cpp:474). init() = 165.0 = 11:00 (src/d/d_save.cpp:54). Rolls over at 360 and bumps mDate (src/d/d_kankyo.cpp:526-530).",
+      "0x10 mDate": "u16 day counter",
+      "0x12 mTactWindAngleX / 0x14 mTactWindAngleY": "s16 - THE WIND DIRECTION set by the Wind's Requiem. init() = -1/-1 meaning 'never set' (src/d/d_save.cpp:52-53); d_kankyo_wether.cpp:967-974 treats -1/-1 as 'use 0,0 and clear the tact flag'.",
+      "wind_vector": "wind = (cos(X)*cos(Y), sin(X), cos(X)*sin(Y)) - src/d/d_kankyo_wether.cpp:1018-1020",
+      "wind_strength": "per-room GlobalWindLevel 0/1/2 -> 0.3 / 0.6 / 0.9, anything else 0.0 (src/d/d_kankyo_wether.cpp:1027-1039)",
+      "setter": "dKyw_tact_wind_set(s16 x, s16 y) writes both the env-light copy and the save (src/d/d_kankyo_wether.cpp:1329-1344)",
+      "confidence": "high"
+    }
+  },
+
+  "_item_get": {
+    "summary": "Granting an item is always: (1) spawn a spinning item model actor tied to the demo, (2) play Link's ITEMGET animation and the get jingle, (3) show message 101 + itemNo, (4) when the item actor is deleted, its Delete() calls execItemGet(itemNo), which is the ONLY thing that actually writes the save.",
+    "grant_function": {
+      "name": "execItemGet(u8 itemNo)",
+      "file": "src/d/d_item.cpp:533-536",
+      "body": "item_func_ptr[itemNo]() - a 256-entry table of void() functions, src/d/d_item.cpp:15-271",
+      "shape": "Each item_func_* is tiny and does exactly the save writes for that item. Canonical form for an inventory item: `dComIfGs_onGetItem(slot, bit); dComIfGs_setItem(slot, itemNo);` e.g. item_func_telescope (src/d/d_item.cpp:691-695).",
+      "companion": "checkItemGet(itemNo, defaultVal) -> item_getcheck_func_ptr[itemNo]() (src/d/d_item.cpp:539-546); returns -1 for 'no opinion', in which case defaultVal is used. Used by shops/NPCs to ask 'does Link already have this?'"
+    },
+    "spawn": {
+      "fopAcM_createItemForPresentDemo": "src/f_op/f_op_actor_mng.cpp:780-790 - asserts 0 <= itemNo < 256, records dComIfGp_event_setGtItm(itemNo), then fopAcM_createDemoItem(). Returns fpcM_ERROR_PROCESS_ID_e for itemNo 0xFF.",
+      "fopAcM_createItemForTrBoxDemo": "src/f_op/f_op_actor_mng.cpp:793-803 - the treasure-chest variant, identical but argFlag 0.",
+      "actor": "daDitem_c (fpcNm_Demo_Item_e), src/d/actor/d_a_demo_item.cpp. It looks up its model from dItem_data::item_resource[itemNo] (create(), d_a_demo_item.cpp:452-462), spins at +0x0111/frame around Y and billboards toward the camera unless FLAG_UNK02/04/08 is set (set_mtx(), 407-425).",
+      "the_write": "daDitem_c::Delete() calls execItemGet(m_itemNo) UNLESS chkArgFlag(FLAG_UNK01) - src/d/actor/d_a_demo_item.cpp:437-441. FLAG_UNK01 therefore means 'display only, do not grant'; the Present demo (an NPC handing something over) uses it because the NPC's own script grants the item.",
+      "field_pickups": "daItem_c (fpcNm_ITEM_e) in src/d/actor/d_a_item.cpp calls execItemGet(m_itemNo) directly at pickup (many sites, e.g. 591-763)."
+    },
+    "link_side": {
+      "proc": "daPyProc_DEMO_GET_ITEM_e = 0xAE (include/d/actor/d_a_player_main.h:590)",
+      "init": "daPy_lk_c::dProcGetItem_init(), src/d/actor/d_a_player_dproc.inc:653-712. Plays ANM_ITEMGET (or first unequips whatever is in hand, mProcVar6=1). Spawns the item actor from mDemo.getParam0(); a param of 0x100 means 'use dComIfGp_event_getGtItm()' i.e. whatever the last createItemForPresentDemo announced (683-690). Calls dKy_Itemgetcol_chg_on() for the item-get lighting.",
+      "run": "daPy_lk_c::dProcGetItem(), src/d/actor/d_a_player_dproc.inc:715-816. Timeline: frame < 10 keep re-reading the camera yaw; frame >= 11 start the jingle (setGetItemSound) and interpolate Link's facing to the camera over frames 10..17; when the animation ends, show() the item and open message MSG_NO_FOR_ITEM(itemNo); when the message closes, spin Link 180 degrees, cutEnd, item->dead().",
+      "heart_piece_special": "itemNo 0x07 with (maxLife % 4) != 0 uses message HEART_PIECE_2/3/4 (0x17/0x18/0x19) instead, i.e. 'you have 2/3/4 pieces' - src/d/actor/d_a_player_dproc.inc:619-624 and the equivalent inline 0x7b + (maxLife%4) at 793-795.",
+      "jingle": "daPy_lk_c::setGetItemSound(itemNo, isSmall), src/d/actor/d_a_player_dproc.inc:556-580. Rupees -> SE JA_SE_ME_ITEM_GET_S. Heart Container, or the 4th Heart Piece -> JA_BGM_GET_HEART. Heart Piece / Joy Pendant / Small Key / silver+orange rupee -> JA_BGM_ITEM_GET_S. Everything else -> the full JA_BGM_ITEM_GET fanfare.",
+      "present_variant": "daPyProc_DEMO_PRESENT_e = 0xC3; dProcPresent_init_sub() (d_a_player_dproc.inc:1606-1625) plays ANM_PRESENTATIONA and spawns the item with FLAG_UNK01|FLAG_UNK02 so it is shown but not granted. Bottled items are skipped entirely (checkBottleItem)."
+    },
+    "cutscene_variant": {
+      "file": "src/d/actor/d_a_demo00.cpp:714-736",
+      "how": "STB cutscene command 5 carries a one-byte index into a static table `l_itemNo[]` and calls execItemGet(l_itemNo[argID]) directly - no item actor, no message.",
+      "table": ["MASTER_SWORD_1", "MASTER_SWORD_2", "MASTER_SWORD_3", "PEARL_DIN", "PEARL_FARORE", "PEARL_NAYRU", "DELIVERY_BAG", "SHIELD", "MAGIC_ARROW", "NONE"],
+      "note": "Index 9 is dItemNo_NONE_e and grants nothing - the cutscene can say 'no item' without a separate opcode."
+    },
+    "message_ids": {
+      "get_message": "MSG_NO_FOR_ITEM(itemNo) = itemNo + 101 (include/d/d_item_data.h:11)",
+      "name_message": "dItem_data::item_resource[itemNo].mItemMesgNum - a completely different id, e.g. Telescope 0x0191 (src/d/d_item_data.cpp:1126)",
+      "song_message": "0x5AD + songIndex, opened by procTactPlay_init (src/d/actor/d_a_player_tact.inc:497)"
+    },
+    "confidence": "high"
+  },
+
+  "_wind_waker": {
+    "item": "dItemNo_WIND_WAKER_e = 0x22, inventory slot 2, model VTACT/vtact.bdl (src/d/d_item_data.cpp:1147-1160)",
+    "player_code": "src/d/actor/d_a_player_tact.inc (854 lines, fully decompiled, no stubs) - #included into d_a_player_main.cpp",
+    "procs": {
+      "daPyProc_TACT_WAIT_e = 0x9A": "holding the baton, conducting; reads the sticks each frame and judges the beat",
+      "daPyProc_TACT_PLAY_e = 0x9B": "a song was recognised - play the flourish animation and the melody",
+      "daPyProc_TACT_PLAY_END_e = 0x9C": "apply the song's effect",
+      "daPyProc_TACT_PLAY_ORIGINAL_e = 0x9D": "scripted free-form conducting during cutscenes (event supplies each stick pose)",
+      "source": "include/d/actor/d_a_player_main.h:570-573"
+    },
+    "conducting": {
+      "controls": "MAIN STICK = tempo/time signature, C-STICK = the note. mDoAud_getTactDirection(stick, prev) maps a stick to 0 neutral / 1 up / 2 right / 3 down / 4 left, with hysteresis: entering a direction needs |angle| > 0x6000 (up) or >= 0x2000 (right), leaving it needs > 0x7000 / 0x3000..0x5000, and the D-pad is accepted for the main stick when the stick is under 0.9 deflection (src/m_Do/m_Do_audio.cpp:204-256).",
+      "beat_from_main_stick": "JAIZelInst::setBeat(dir): neutral(0) -> 3 beats @ 60 BPM, right(2) -> 6 beats @ 80 BPM, left(4) -> 4 beats @ 70 BPM. Anything else is ignored. (src/JAZelAudio/JAIZelInst.cpp:178-217)",
+      "beat_frames": "mBeatFrames = 30.0 / 25.714 / 22.5 frames per beat for 3 / 4 / 6 (src/JAZelAudio/JAIZelInst.cpp:200-217)",
+      "note_frames": "JAIZelInst::getMelodyGFrames: 30.0 / 25.714 / 22.5 frames per note, same scaling (src/JAZelAudio/JAIZelInst.cpp:456-470)",
+      "judging": "daPy_lk_c::procTactWait counts m35A0 up to mDoAud_tact_getBeatFrames(), fires the metronome, waits 3 more frames (mProcVar0.m34D0 = 3) and then calls mDoAud_tact_judge(beatIndex, cStickDir) which appends the C-stick direction to a 6-entry ring and matches it against mMelodyPattern (src/d/actor/d_a_player_tact.inc:412-462; JAIZelInst::judge, src/JAZelAudio/JAIZelInst.cpp:299-395).",
+      "success": "On a match the song must also be one you have learned - `dComIfGs_isTact(songIdx)` - and then a 30-frame delay (mProcVar1.m34D2 = 30) leads into procTactPlay_init (src/d/actor/d_a_player_tact.inc:463-469).",
+      "timeout": "m35AC counts down one per frame from 900 frames (30 s), or 600 frames (20 s) for songs 6 and 7; hitting 0 cancels the baton (src/d/actor/d_a_player_tact.inc:283-287, 328-330).",
+      "arm_anims": "right arm = the beat (ACTIONTAKTRUP / WAITTAKTRHANDL / ACTIONTAKTRDW / WAITTAKTRHANDR for dir 1/2/3/4), left arm = the note (WAITTAKTLHANDU/L/D/R). src/d/actor/d_a_player_tact.inc:64-88.",
+      "baton_tip": "l_tact_top = (38.0, 7.5, 12.5) in the baton model's space; getTactTopPos() transforms it (src/d/actor/d_a_player_main_data.inc:27, d_a_player_tact.inc:128-136). The BRK on the baton is snapped to its last frame on every beat and back to 0 otherwise, which is the tip flash (d_a_player_tact.inc:427-437).",
+      "particles": "ID_AK_JN_TAKT00 while conducting, ID_AK_JN_TAKT01 on a successful song (d_a_player_tact.inc:270, 519)"
+    },
+    "pattern_table": {
+      "source": "JAIZelInst::mMelodyPattern[8][7], src/JAZelAudio/JAIZelInst.cpp:50-59",
+      "encoding": "[0] = number of beats, [1..] = the C-stick direction for each beat, 0xFF = end. Directions: 0 = centre/neutral, 1 = up, 2 = right, 3 = down, 4 = left.",
+      "cross_check": "d_msg.cpp:59 has the same beat counts as `const u8 mBeatNum[] = {3,4,4,6,6,3,3,4}` for the on-screen note guide.",
+      "raw": {
+        "0": [3, 1, 4, 2],
+        "1": [4, 3, 2, 4, 1],
+        "2": [4, 4, 0, 2, 0],
+        "3": [6, 3, 3, 0, 2, 4, 0],
+        "4": [6, 1, 1, 3, 2, 4, 2],
+        "5": [3, 2, 4, 3],
+        "6": [3, 1, 3, 2],
+        "7": [4, 1, 2, 4, 3]
+      }
+    },
+    "songs": [
+      {
+        "index": 0,
+        "dItemNo": "dItemNo_WINDS_REQUIEM_e",
+        "id": "0x6D",
+        "name": "Wind's Requiem",
+        "save_bit": "dSv_player_collect_c::mTact bit 0 (src/d/d_item.cpp:1091, src/d/d_com_inf_game.cpp:903-907)",
+        "time_signature": "3 beats, 60 BPM, 30 frames/beat (main stick NEUTRAL)",
+        "pattern": ["up", "left", "right"],
+        "link_anim": "ANM_TAKTKAZE (src/d/actor/d_a_player_tact.inc:508)",
+        "effect": "Changes the global wind direction. procTactPlay checks dKyw_gbwind_use_check() - true only when the room's FILI GlobalWindLevel is <= 2 and no wind override is active (src/d/d_kankyo_wether.cpp:1406-1420). If allowed -> procTactPlayEnd_init(0), which ends the event camera and spawns fpcNm_WBIRD_e (src/d/actor/d_a_player_tact.inc:626-631, 682-684). Otherwise it prints message 0x14A5 ('the wind will not obey here').",
+        "wind_picker": "daWbird_c (src/d/actor/d_a_wbird.cpp) runs event 'TACT_WINDOW', calls dComIfGp_setOperateWindOn() to raise the 8-direction wheel, and on confirm flies off along the new wind; at its internal timer == 70 it calls dKyw_tact_wind_set_go() to commit the direction, and below 15 it zeroes the wind power for the gust (src/d/actor/d_a_wbird.cpp:104-113, 118-135). The wheel quantises to 45-degree steps: dOperate_wind_c::dOw_angleRegular returns 0/45/90/135/180/225/270/315 (src/d/d_operate_wind.cpp:57-79).",
+        "storage": "the chosen direction ends up in dSv_player_status_b_c::mTactWindAngleX/Y via dKyw_tact_wind_set (src/d/d_kankyo_wether.cpp:1329-1344)",
+        "confidence": "high"
+      },
+      {
+        "index": 1,
+        "dItemNo": "dItemNo_BALLAD_OF_GALES_e",
+        "id": "0x6E",
+        "name": "Ballad of Gales",
+        "save_bit": "mTact bit 1",
+        "time_signature": "4 beats, 70 BPM, 25.71 frames/beat (main stick LEFT)",
+        "pattern": ["down", "right", "left", "up"],
+        "link_anim": "ANM_TAKTSIPPU",
+        "effect": "Summons a cyclone that warps the ship. procTactPlay_init, if Link is on the ship AND the stage type is dStageType_SEA_e AND this is a normal (non-scripted) play, creates fpcNm_TORNADO_e with param 1 at Link's position and hands its id to the ship via ship->setTactWarpID() (src/d/actor/d_a_player_tact.inc:521-531). procTactPlay then only proceeds if that warp actor exists, otherwise message 0x14A6 (src/d/actor/d_a_player_tact.inc:632-638). procTactPlayEnd opens the sea chart with dComIfGp_fmapOpenOn() so you can pick a destination; if the ship reports getTactWarpPosNum() >= 0 it calls ship->setTactWarp(), else it cancels and deletes the tornado (src/d/actor/d_a_player_tact.inc:752-773).",
+        "warp": "daShip_c::procTactWarp lifts the ship up the tornado's joints and, once it is 5000 units above its start height, calls dStage_changeScene(mTactWarpPosNum + 0xC5, 0.0f, 0, 0xFF) - i.e. the cyclone destinations are spawn points 0xC5 + n (src/d/actor/d_a_ship.cpp:2847-2851).",
+        "confidence": "high"
+      },
+      {
+        "index": 2,
+        "dItemNo": "dItemNo_COMMAND_MELODY_e",
+        "id": "0x6F",
+        "name": "Command Melody",
+        "save_bit": "mTact bit 2",
+        "time_signature": "4 beats, 70 BPM (main stick LEFT)",
+        "pattern": ["left", "centre", "right", "centre"],
+        "link_anim": "ANM_TAKTAYATSURI",
+        "effect": "Take control of the partner NPC (Makar / Medli), or of a scripted object. procTactPlay requires checkNpcStatus() - a 'cb1' partner exists, has not refused (checkNpcNotChange), and is IN THE SAME ROOM as Link - and that Link is not on the ship; otherwise message 0x14A8 (src/d/actor/d_a_player_tact.inc:639-644; checkNpcStatus at 53-61). procTactPlayEnd_init(2) sets the talk partner to dComIfGp_getCb1Player() and orders event 'OPTION_CHAR_START' with SE JA_SE_CTRL_LINK_TO_NPC; when that event ends, changePlayer(cb1) actually swaps who you control (src/d/actor/d_a_player_tact.inc:686-691, 745-751).",
+        "event_label": "l_tact_event_label = \"OPTION_CHAR_START\" (src/d/actor/d_a_player_main_data.inc:8)",
+        "other_use": "d_door.cpp:797 gates a door on dComIfGs_isTact(2), so the melody is also a plain 'do you know it' key.",
+        "confidence": "high"
+      },
+      {
+        "index": 3,
+        "dItemNo": "dItemNo_EARTH_GODS_LYRIC_e",
+        "id": "0x70",
+        "name": "Earth God's Lyric",
+        "save_bit": "mTact bit 3",
+        "time_signature": "6 beats, 80 BPM, 22.5 frames/beat (main stick RIGHT)",
+        "pattern": ["down", "down", "centre", "right", "left", "centre"],
+        "link_anim": "ANM_TAKTCHISIN (the fall-through branch, src/d/actor/d_a_player_tact.inc:518)",
+        "effect": "A DUET. It has no effect of its own in procTactPlay - it falls into the generic `else` that prints message 0x14A9 (src/d/actor/d_a_player_tact.inc:648-650). It only does something when an NPC has registered itself as the duet partner beforehand with daPy_lk_c::setTactZev(partnerId, expectedSongIndex, eventName) (src/d/actor/d_a_player_tact.inc:115-127). procTactPlay then checks mTactZevPartnerId != ERROR && m34CC == the song just played, and hands off to procTactPlayEnd_init(-1) which orders the partner's own event (src/d/actor/d_a_player_tact.inc:605-620, 674-679).",
+        "in_game_meaning": "sung with Medli to wake the Earth Sage; d_a_ship.cpp:463 also uses isTact(3)||isTact(4) as a story gate.",
+        "confidence": "high"
+      },
+      {
+        "index": 4,
+        "dItemNo": "dItemNo_WIND_GODS_ARIA_e",
+        "id": "0x71",
+        "name": "Wind God's Aria",
+        "save_bit": "mTact bit 4",
+        "time_signature": "6 beats, 80 BPM (main stick RIGHT)",
+        "pattern": ["up", "up", "down", "right", "left", "right"],
+        "link_anim": "ANM_TAKTFUJIN",
+        "effect": "The other DUET - identical mechanism to the Earth God's Lyric (setTactZev partner path, generic message 0x14A9 otherwise). Sung with Makar to wake the Wind Sage. d_a_ship.cpp:450 checks isTact(4) as a story gate.",
+        "confidence": "high"
+      },
+      {
+        "index": 5,
+        "dItemNo": "dItemNo_SONG_OF_PASSING_e",
+        "id": "0x72",
+        "name": "Song of Passing",
+        "save_bit": "mTact bit 5",
+        "time_signature": "3 beats, 60 BPM (main stick NEUTRAL)",
+        "pattern": ["right", "left", "down"],
+        "link_anim": "ANM_TAKTCHUYA",
+        "effect": "Flips day and night. procTactPlay first checks dKy_daynighttact_stop_chk() (an event has pinned the time, or mbDayNightTactStop) -> message 0x14A7; else if the room's FILI says dStage_FileList_dt_GetSongOk() it prints 0x14AA ('nothing happens here'); else procTactPlayEnd_init(5), which orders event 'TIMEWARP' (src/d/actor/d_a_player_tact.inc:645-655, 692-695).",
+        "the_flip": "When the TIMEWARP event ends, Link saves a turn-restart record (position, angle, room, getDayNightParamData(), plus the ship's position/angle and whether a ship exists) and calls dStage_turnRestart() (src/d/actor/d_a_player_tact.inc:713-741). dStage_turnRestart (src/d/d_stage.cpp:2375-2393) XORs the stage LAYER by 1, re-enters the same stage with start code -3, sets the next time to 0.0 (midnight) if it was daytime (hour 6..17) or 180.0 (noon) if it was night, and if the hour was 6..23 it advances the date and runs dKy_DayProc().",
+        "daynight_definition": "dKy_daynight_check(): hour 6..17 = day, else night (src/d/d_kankyo.cpp:625-629)",
+        "event_label": "l_tact_night_event_label = \"TIMEWARP\" (src/d/actor/d_a_player_main_data.inc:9)",
+        "confidence": "high"
+      },
+      {
+        "index": 6,
+        "dItemNo": null,
+        "name": "unnamed melody 6",
+        "time_signature": "3 beats",
+        "pattern": ["up", "down", "right"],
+        "effect": "Not a learnable song - the judge explicitly excludes 6 and 7 from the isTact() check (src/d/actor/d_a_player_tact.inc:465), and its baton timeout is 600 frames instead of 900 (d_a_player_tact.inc:283-287). Used only when an event forces a specific song index. Which cutscene uses it: NOT DETERMINED.",
+        "confidence": "medium"
+      },
+      {
+        "index": 7,
+        "dItemNo": null,
+        "name": "unnamed melody 7",
+        "time_signature": "4 beats",
+        "pattern": ["up", "right", "left", "down"],
+        "effect": "same as melody 6 - event-only. NOT DETERMINED which one.",
+        "confidence": "medium"
+      }
+    ],
+    "free_play": {
+      "what": "Playing the baton without a song menu also runs a second, independent recogniser on the raw stick poses.",
+      "table": "JAIZelInst::m_note_pattern[6][6], src/JAZelAudio/JAIZelInst.cpp:13-20 - six entries, each a list of u16 notes packed as (note << 8) | duration, terminated by 0xFFFF.",
+      "note_lookup": "JAIZelInst::m_stick_to_note_table[25] (src/JAZelAudio/JAIZelInst.cpp:22-48) indexed by (mainStick * 5 + cStick); the resulting MIDI-ish note is 0x2F + table value (setStickPos, 130-133).",
+      "matcher": "JAIZelInst::setStickPos keeps the last 5 notes and returns the index of a matching m_note_pattern entry, or -1 (src/JAZelAudio/JAIZelInst.cpp:128-163).",
+      "caution": "I did NOT establish whether the six m_note_pattern entries line up 1:1 with songs 0..5, or what consumes setStickPos's return value in gameplay. Do not assume they are the same six songs.",
+      "confidence": "medium"
+    },
+    "godot_plan": {
+      "state_machine": "TACT_WAIT -> (match) -> TACT_PLAY -> TACT_PLAY_END; cancel/timeout returns to normal.",
+      "constants": "BEATS = {3:60bpm/30f, 4:70bpm/25.714f, 6:80bpm/22.5f}; JUDGE_DELAY = 3 frames after the beat; SUCCESS_DELAY = 30 frames; TIMEOUT = 900 frames (600 for songs 6/7); DIR_ENTER = 0x6000 up / 0x2000 side; DIR_EXIT = 0x7000 / 0x3000..0x5000; STICK_DEADZONE = 0.9.",
+      "data": "copy _wind_waker.pattern_table.raw verbatim; direction codes 0 centre / 1 up / 2 right / 3 down / 4 left."
+    }
+  },
+
+  "items": {
+    "TELESCOPE": {
+      "id": "0x20", "name": "Telescope", "kind": "equipment",
+      "slot": 0,
+      "file": "src/d/d_item.cpp:691-695 (grant); src/d/actor/d_a_player_main.cpp:3707-3709 (setScopeModel); src/d/d_scope.cpp (the view)",
+      "behaviour": "Grant is `onGetItem(slot 0, bit 0); setItem(slot 0, 0x20)`. Taking it out only builds the model (dRes_INDEX_LINK_BDL_TELESCOPE_e); the actual first-person view is daPyProc_SCOPE_e = 0x00.",
+      "constants": {"arc": {"value": "tele_00", "file": "src/d/d_item_data.cpp:1116 via item_arcname_tbl[ARCNAME_IDX_TELE_00]"}, "bdl": {"value": "dRes_INDEX_TELE_00_BDL_VTELE_e", "file": "src/d/d_item_data.cpp:1118"}, "name_msg": {"value": "0x0191", "file": "src/d/d_item_data.cpp:1126"}},
+      "implementation_note": "Already implemented in the remake.",
+      "confidence": "high",
+      "sources": ["src/d/d_item.cpp:691", "src/d/d_item_data.cpp:1114-1129"]
+    },
+
+    "TINGLE_TUNER": {
+      "id": "0x21", "name": "Tingle Tuner", "kind": "equipment",
+      "slot": 7,
+      "file": "src/d/d_item.cpp:697-701 (grant); src/d/actor/d_a_agb.cpp; src/d/actor/d_a_agbsw0.cpp; src/d/actor/d_a_player_main.cpp:3713-3715, 3799",
+      "behaviour": "Selecting it does NOT take out an item - checkNewItemChange routes it to `fopAcM_orderTalkEvent(this, dComIfGp_getAgb())`, i.e. it starts a conversation with the AGB (GBA-link) actor (src/d/actor/d_a_player_main.cpp:3798-3799). Link's own state is daPyProc_DEMO_AGB_USE_e = 0xCA (include/d/actor/d_a_player_main.h:619).",
+      "implementing_files": "ALL REAL, zero empty stubs: src/d/actor/d_a_agb.cpp (1877 lines, header comment 'Tingle Tuner Cursor / AGB Cursor', profile g_profile_AGB / fpcNm_AGB_e at :1866) is the on-screen Tingle cursor; src/d/actor/d_a_agbsw0.cpp (2600 lines) is the hint / bomb-spawning / statue / item-buy logic; src/m_Do/m_Do_gba_com.cpp (722 lines) is the GC-to-GBA link layer; src/JSystem/JUtility/JUTGba.cpp (404 lines) is the JUTGba manager; src/dolphin/gba/*.c (GBA.c, GBAJoyBoot.c, GBARead.c, GBAWrite.c, GBAXfer.c, GBAGetProcessStatus.c) is the SDK transport.",
+      "boot_flow": "d_a_agb.cpp:599-616 uploadFuncTable[] = uploadInitCheck, uploadPortCheckWait, uploadSelect, uploadJoyboot1, uploadJoyboot2, uploadConnect, uploadMessageLoad, uploadMessageLoad2, uploadMessageSend, [uploadRetryWait on non-JP], uploadMsgEndWait, uploadMsgEndTimer, driven by modeLoad() (:625-636). The GBA client binary is DVD-loaded per region as /res/Gba/client_u.bin (USA) or client_<lang>.bin (PAL) (:400-409). uploadJoyboot1 calls JUTGba::doJoyBoot(port, 3, -1, program, size-4, NULL, NULL) with a 450-frame timeout (:424-436); uploadJoyboot2 polls resultJoyBoot and on failure shows message 7 'An error has occurred.' (:439-505). The actor is created once per scene at src/d/d_stage.cpp:1497-1498, object name 'Agb' (:1237).",
+      "reads_links_progress": "d_a_agb.cpp:1209 reads dComIfGs_isTact(0); d_a_agbsw0.cpp:1017-1022 reads isCollect(2,0) / isTact(1); :908-916 gates hints on checkGetItem(BAIT_BAG) and checkBaitItem(HYOI_PEAR); :2247 reads checkGetItem(IRON_BOOTS). It can also GIVE things: d_a_agb.cpp:1102 calls dComIfGs_setBaitItem(dItemNo_BIRD_BAIT_5_e).",
+      "constants": {"joyboot_timeout_frames": {"value": 450, "file": "src/d/actor/d_a_agb.cpp:424-436"}, "client_binary": {"value": "/res/Gba/client_u.bin (USA)", "file": "src/d/actor/d_a_agb.cpp:400-409"}, "arc": {"value": "Vchin", "file": "src/d/d_item_data.cpp:1133"}, "name_msg": {"value": "0x019C", "file": "src/d/d_item_data.cpp:1142"}},
+      "implementation_note": "The whole point of the item is a second screen driven by a second player. For a remake the honest options are to cut it, or to reimplement its effects (bombs, rupees, hints, Tingle statues) as an in-game menu. The GAMEPLAY side is fully recoverable - d_a_agbsw0.cpp is 2600 lines of real code - but the GBA transport is not worth porting. This pass established only the entry point and the boot flow.",
+      "confidence": "high",
+      "sources": ["src/d/d_item.cpp:697", "src/d/actor/d_a_player_main.cpp:3798-3799", "src/d/actor/d_a_agb.cpp:1-4, 400-505, 599-636, 1102, 1209, 1866", "src/d/d_stage.cpp:1237, 1497-1498"]
+    },
+
+    "WIND_WAKER": {
+      "id": "0x22", "name": "Wind Waker (Tact)", "kind": "equipment",
+      "slot": 2,
+      "file": "src/d/actor/d_a_player_tact.inc; src/JAZelAudio/JAIZelInst.cpp; src/d/d_metronome.cpp (the on-screen beat guide); src/d/d_msg.cpp (the note guide)",
+      "behaviour": "See the whole _wind_waker section. Take-out is special: setTactModel() clears mEquipItem first (src/d/actor/d_a_player_main.cpp:3719-3722) and loads dRes_INDEX_LINK_BDL_TAKT_e plus BRK TTAKT for the tip flash (d_a_player_tact.inc:33-49). Conducting sets daPyStts1_WIND_WAKER_CONDUCT_e (d_a_player_tact.inc:255).",
+      "constants": {
+        "songs": {"value": 6, "file": "src/d/d_com_inf_game.cpp:903-931"},
+        "baton_tip_offset": {"value": [38.0, 7.5, 12.5], "file": "src/d/actor/d_a_player_main_data.inc:27"},
+        "timeout_frames": {"value": 900, "file": "src/d/actor/d_a_player_tact.inc:284"},
+        "timeout_frames_song6_7": {"value": 600, "file": "src/d/actor/d_a_player_tact.inc:283"},
+        "success_delay_frames": {"value": 30, "file": "src/d/actor/d_a_player_tact.inc:467"},
+        "judge_delay_frames": {"value": 3, "file": "src/d/actor/d_a_player_tact.inc:430"},
+        "beat_frames_3_4_6": {"value": [30.0, 25.714, 22.5], "file": "src/JAZelAudio/JAIZelInst.cpp:200-217"},
+        "bpm_3_4_6": {"value": [60, 70, 80], "file": "src/JAZelAudio/JAIZelInst.cpp:203, 208, 213"}
+      },
+      "implementation_note": "Not yet in the remake. Build it as: an input reader mapping both sticks to 0..4 with the hysteresis constants; a metronome ticking at beat_frames; a ring buffer of C-stick directions judged 3 frames after each beat; a table lookup against pattern_table.raw gated by the learned-song bits; then a per-song effect handler. The wind, the day/night flip and the cyclone warp are all just save writes plus a scene reload, so they are cheap; Command Melody needs a partner-NPC swap.",
+      "confidence": "high",
+      "sources": ["src/d/actor/d_a_player_tact.inc:1-854", "src/JAZelAudio/JAIZelInst.cpp:13-470"]
+    },
+
+    "PICTO_BOX": {
+      "id": "0x23", "name": "Picto Box", "kind": "equipment",
+      "slot": 8,
+      "file": "src/d/d_item.cpp:709-713 (grant); src/d/actor/d_a_player_main.cpp:3751-3762 (setPhotoBoxModel); src/d/d_picture_box.cpp; src/d/d_snap.cpp",
+      "behaviour": "Grant is onGetItem(slot 8, bit 0) + setItem(slot 8, 0x23). The Picto Box and the Deluxe share slot 8 and the same model - setPhotoBoxModel() loads dRes_INDEX_LINK_BDL_CAMERA_e and HIDES the joint CAMERA_JNT_FRASH_e for the plain box, SHOWS it for the Deluxe (src/d/actor/d_a_player_main.cpp:3747-3761). daPy_lk_c::checkPhotoBoxItem(itemNo) is simply `itemNo == PICTO_BOX || itemNo == DELUXE_PICTO_BOX` (src/d/actor/d_a_player_main.cpp:5647-5649). Held pictograph count lives in dSv_player_item_record2_c::mPictureNum (include/d/d_save.h:145).",
+      "aiming": "It reuses the TELESCOPE proc. Pressing R with it equipped calls procScope_init(mEquipItem) -> daPyProc_SCOPE_e = 0x00 (src/d/actor/d_a_player_main.cpp:4085-4086, 4247-4248), which sets daPyStts1_PICTO_BOX_AIM_e (0x00000008) rather than daPyStts0_TELESCOPE_LOOK_e (:5904-5917; flag include/d/d_com_inf_game.h:83). The camera mirrors it with dCamAttnStts_PICTO_BOX_AIM_e = 0x40 (include/d/d_com_inf_game.h:109; src/d/d_camera.cpp:3976, 4000, 4173). Cancelling raises daPyFlg0_PHOTO_BOX_CANCEL = 0x00080000 (include/d/actor/d_a_player.h:184).",
+      "capacity": "THREE pictographs, hard-coded as `< 3` at three sites: the shutter is only allowed when mDoGph_getCaptureStep()==0 && getPictureNum() < 3 (src/d/d_picture_box.cpp:650), the 'take photo' prompt is only shown while < 3 (:1020-1025), and Lenzo refuses the Legendary Pictograph unless < 3 (src/d/actor/d_a_npc_photo.cpp:1743, 2141). In memory it is card_pictdata* mPhotoBuffer[4] - 'three saved slots plus one import/get temporary slot' (include/d/d_picture_box.h:166).",
+      "capture": "dJle_Pb_c::cameraMode(), src/d/d_picture_box.cpp:653-660: the PLAIN Picto Box captures GX_TF_I8 (8-bit intensity = black and white), the DELUXE captures GX_TF_RGB565 (colour); both are then re-encoded to GX_TF_CMPR for storage, and the chosen format is saved per photo in card_pictdata::capture_format (:610) and restored on browse (:826). Resolution 152 x 104 (src/m_Do/m_Do_graphic.cpp:838-839); the saved blob is a 0x2000-byte card_pictdata with u8 tex_buffer[0x1EE0] holding one 152x104 CMPR texture (include/m_Do/m_Do_MemCardRWmng.h:19-27).",
+      "judging": "src/d/d_snap.cpp (2257 lines, fully real). dSnap_packet::m_judge_tbl has 11 entries (:16-31): JudgePost, JudgeBikutsuki, JudgeCoupleLook, JudgeGF, JudgeGenzo, JudgeObasan4/JudgeGene (version-dependent), JudgeGene x3, JudgeTestM. Per-subject framing rules are in `static const CharaData l_CharaData[]` (struct :34-44, table from :45) with fields offset / radius / height / minRatio / cullAngle / minPixels / figRoom; entry 0 is offset (0,10,0), radius 25, height 80, minRatio 500, cullAngle 0x2000, minPixels 5000, figRoom 0x03 (:46-56).",
+      "constants": {
+        "max_photos": {"value": 3, "file": "src/d/d_picture_box.cpp:650"},
+        "capture_size": {"value": [152, 104], "file": "src/m_Do/m_Do_graphic.cpp:838-839"},
+        "capture_format_plain": {"value": "GX_TF_I8", "file": "src/d/d_picture_box.cpp:655"},
+        "capture_format_deluxe": {"value": "GX_TF_RGB565", "file": "src/d/d_picture_box.cpp:656"},
+        "storage_format": {"value": "GX_TF_CMPR", "file": "src/d/d_picture_box.cpp:658"},
+        "blob_size": {"value": "0x2000 (tex_buffer 0x1EE0)", "file": "include/m_Do/m_Do_MemCardRWmng.h:19-27"},
+        "arc": {"value": "VboxN", "file": "src/d/d_item_data.cpp:1165"},
+        "name_msg": {"value": "0x01A2", "file": "src/d/d_item_data.cpp:1174"}
+      },
+      "implementation_note": "Render-to-texture into a 152x104 buffer, three save slots, greyscale for the plain box and colour for the Deluxe, plus a judging pass that scores the framing of a tagged subject (distance, on-screen pixel count, view angle). Note the annotated RETAIL BUG: dPb_erasePicture() decrements the count and sets an event-reg bit but never clears the picture flags, so deleted photos are never removed from the memory card (fixed for PAL) - src/d/d_picture_box.cpp:44-59.",
+      "confidence": "high",
+      "sources": ["src/d/d_item.cpp:709", "src/d/actor/d_a_player_main.cpp:3747-3761, 4085-4086, 5647-5649, 5904-5917", "src/d/d_picture_box.cpp:44-59, 610, 650-660, 1020-1025", "src/d/d_snap.cpp:16-56", "src/m_Do/m_Do_graphic.cpp:838-839", "include/m_Do/m_Do_MemCardRWmng.h:19-27"]
+    },
+
+    "DELUXE_PICTO_BOX": {
+      "id": "0x26", "name": "Deluxe Picto Box", "kind": "equipment",
+      "slot": 8,
+      "file": "src/d/d_item.cpp:727-731",
+      "behaviour": "Grant is `onGetItem(slot 8, bit 1); setItem(slot 8, 0x26)` - it REPLACES the Picto Box in the same slot but sets a second bit so the save still knows you once had the plain one. Two mechanical differences: the model's flash joint CAMERA_JNT_FRASH_e is SHOWN (src/d/actor/d_a_player_main.cpp:3747-3756), and cameraMode() captures GX_TF_RGB565 instead of GX_TF_I8 - i.e. colour instead of black and white (src/d/d_picture_box.cpp:653-660).",
+      "how_obtained": "Give Lenzo the Firefly bottle once his event register is >= 6 and you do not already have it: he empties the bottle and awards dItemNo_DELUXE_PICTO_BOX_e (src/d/actor/d_a_npc_photo.cpp:1749-1755). Handing him the Deluxe box back while temp bit UNK_0302 is set buys a LEGENDARY_PICTOGRAPH if getPictureNum() < 3, else message 0x3787 (:1742-1748).",
+      "constants": {"arc": {"value": "VboxA", "file": "src/d/d_item_data.cpp:1213"}, "bdl": {"value": "dRes_INDEX_VBOXA_BDL_VBOXP_e", "file": "src/d/d_item_data.cpp:1215"}, "name_msg": {"value": "0x01A4", "file": "src/d/d_item_data.cpp:1222"}, "legendary_pictographs": {"value": ["/res/Photo/KOKUOU.DDS", "GANONDROF.DDS", "DAIYOUSEI.DDS", "JAV.DDS", "CHOUYOUSEI.DDS", "KAZEKENJA.DDS", "TIKENJA.DDS"], "file": "src/d/d_picture_box.cpp:24-41 with photo_idx {0x88, 0xce, 0x85, 0x53, 0x86, 0xa9, 0x9b}; loaded at :1908"}},
+      "implementation_note": "Same system as the Picto Box with colour output. The 7 Legendary Pictographs are pre-authored images shipped on the disc, imported as CMPR into a photo slot - not something the camera takes.",
+      "confidence": "high",
+      "sources": ["src/d/d_item.cpp:727", "src/d/d_item_data.cpp:1211-1226", "src/d/actor/d_a_npc_photo.cpp:1742-1755", "src/d/d_picture_box.cpp:24-41, 653-660"]
+    },
+
+    "SPOILS_BAG": {
+      "id": "0x24", "name": "Spoils Bag", "kind": "bag",
+      "slot": 4,
+      "file": "src/d/d_item.cpp:715-719 (grant); src/d/d_save.cpp:390-430 (contents)",
+      "behaviour": "Grant is onGetItem(slot 4, bit 0) + setItem(slot 4, 0x24). Contents live in dSv_player_bag_item_c::mBeast[8] with counts in mBagItemRecord.mBeastNum[8] and a have-ever bitmask in mGetBagItem.mBeastFlags. Each spoil has a fixed index (dBeastIdx_e, include/d/d_com_inf_game.h:1277-1285) and its item_func is the same three lines every time, e.g. item_func_skull_necklace: setBeastItem(0x45); onGetItemBeast(0); setItemBeastNumCount(0, 1) (src/d/d_item.cpp:904-909).",
+      "contents": {"0x45": "Skull Necklace", "0x46": "Boko Baba Seed", "0x47": "Golden Feather", "0x48": "Knight's Crest", "0x49": "Red Chu Jelly", "0x4A": "Green Chu Jelly", "0x4B": "Blue Chu Jelly", "0x1F": "Joy Pendant"},
+      "constants": {"slots": {"value": 8, "file": "include/d/d_save.h:228"}, "arc": {"value": "VbagE", "file": "src/d/d_item_data.cpp:1181"}, "name_msg": {"value": "0x01A3", "file": "src/d/d_item_data.cpp:1190"}},
+      "implementation_note": "A simple 8-slot counted inventory. The per-slot maximum is NOT stated in the save code (mBeastNum is a plain u8); see _not_determined.",
+      "confidence": "high",
+      "sources": ["src/d/d_item.cpp:715, 684-689, 904-951", "src/d/d_save.cpp:390-430"]
+    },
+
+    "BAIT_BAG": {
+      "id": "0x2C", "name": "Bait Bag", "kind": "bag",
+      "slot": 11,
+      "file": "src/d/d_item.cpp:763-767 (grant); src/d/d_save.cpp:432-582 (contents)",
+      "behaviour": "Grant is onGetItem(slot 11, bit 0) + setItem(slot 11, 0x2C). Contents in mBagItem.mBait[8]. USING a bait does not equip a model - checkNewItemChange sends `isEsa(itemNo)` straight into a player proc: dItemNo_HYOI_PEAR_e (0x83) -> procFoodSet_init() (daPyProc_FOOD_SET_e = 0xA8), any other bait -> procFoodThrow_init() (daPyProc_FOOD_THROW_e = 0xA7). Both require Link to be on the ground and not flying (src/d/actor/d_a_player_main.cpp:3785-3797).",
+      "contents": {"0x82": "BIRD_BAIT_5 (All-Purpose Bait, 5)", "0x83": "HYOI_PEAR (Hyoi Pear)"},
+      "constants": {"arc": {"value": "VbagF", "file": "src/d/d_item_data.cpp:1309"}, "name_msg": {"value": "0x01AA", "file": "src/d/d_item_data.cpp:1318"}},
+      "implementation_note": "Two distinct verbs: throw (feed a fish) and set-on-head (Hyoi Pear -> a seagull carries the camera). Both start from the item menu, not from a held item.",
+      "confidence": "high",
+      "sources": ["src/d/d_item.cpp:763", "src/d/actor/d_a_player_main.cpp:3785-3797"]
+    },
+
+    "DELIVERY_BAG": {
+      "id": "0x30", "name": "Delivery Bag", "kind": "bag",
+      "slot": 18,
+      "file": "src/d/d_item.cpp:786-790 (grant); src/d/d_save.cpp:583-667 (contents)",
+      "behaviour": "Grant is onGetItem(slot 18, bit 0) + setItem(slot 18, 0x30). Contents live in mBagItem.mReserve[8] with counts mReserveNum[8] and a 32-bit have-ever mask mGetBagItem.mReserveFlags (the only bag with 32 bits, because it holds far more than 8 distinct item types over a playthrough). Reserve is the only bag with an `offReserve` - items are consumed when delivered (src/d/d_save.cpp:705-710). Selecting a reserve item (ids 0x98 FATHER_LETTER .. 0x9E FILL_UP_COUPON) goes through checkNewItemChange to procNotUse_init(itemNo) unless something else claims it (src/d/actor/d_a_player_main.cpp:3788, 3818-3821).",
+      "contents": {"0x8C-0x93": "flowers and flags", "0x94-0x97": "idols/statues", "0x98": "Father's Letter", "0x99": "Note to Mom", "0x9A": "Maggie's Letter", "0x9B": "Moblin's Letter", "0x9C": "Cabana Deed", "0x9D": "Complimentary ID", "0x9E": "Fill-Up Coupon"},
+      "constants": {"arc": {"value": "VbagH", "file": "src/d/d_item_data.cpp:1373"}, "name_msg": {"value": "0x01AD", "file": "src/d/d_item_data.cpp:1382"}, "reserve_flag_bits": {"value": 32, "file": "include/d/d_save.h:246"}},
+      "implementation_note": "Delivery is driven by the receiving NPCs (they check dComIfGs_checkReserveItem and call offReserve), not by the bag. d_a_dai.cpp:123 shows the pattern: `if (!checkItemGet(dItemNo_DELIVERY_BAG_e, TRUE))`.",
+      "confidence": "high",
+      "sources": ["src/d/d_item.cpp:786", "src/d/d_save.cpp:583-667, 700-716"]
+    },
+
+    "POWER_BRACELETS": {
+      "id": "0x28", "name": "Power Bracelets", "kind": "equipment",
+      "slot": null,
+      "file": "src/d/d_item.cpp:741-745",
+      "behaviour": "NOT an inventory slot. Grant is `dComIfGs_onCollect(2, 0); dComIfGs_setSelectEquip(2, 0x28)` - it sets bit 0 of dSv_player_collect_c::mCollect[2] and writes the item number into dSv_player_status_a_c::mSelectEquip[2]. Possession is tested with dComIfGs_isCollect(0x2, 0) (src/d/d_item.cpp:2186). Once owned it is always on; there is no equip/unequip.",
+      "constants": {"collect_index": {"value": 2, "file": "src/d/d_item.cpp:742"}, "arc": {"value": "Vpowr", "file": "src/d/d_item_data.cpp:1245"}, "name_msg": {"value": "0x01A6", "file": "src/d/d_item_data.cpp:1246"}},
+      "implementation_note": "Model it as a boolean capability flag consulted by liftable objects, not an item. dItemNo_BARE_HAND_e (0x2E) writes the same mSelectEquip[2] slot with a 'no bracelet' value (src/d/d_item.cpp:775-778), so the game can take them away.",
+      "confidence": "high",
+      "sources": ["src/d/d_item.cpp:741-745, 775-778, 2186", "src/d/d_com_inf_game.cpp:1813-1818"]
+    },
+
+    "IRON_BOOTS": {
+      "id": "0x29", "name": "Iron Boots", "kind": "equipment",
+      "slot": 9,
+      "file": "src/d/d_item.cpp:747-751 (grant); src/d/actor/d_a_player_main.cpp:3785-3792, 3869-3873, 11228-11234",
+      "behaviour": "Grant is onGetItem(slot 9, bit 0) + setItem(slot 9, 0x29). Selecting them from a button does NOT take out an item: checkNewItemChange requires Link to be ON THE GROUND and not flying, then calls procBootsEquip_init(itemNo) - daPyProc_BOOTS_EQUIP_e = 0xA1 (src/d/actor/d_a_player_main.cpp:3790-3791; include/d/actor/d_a_player_main.h:577). They are a toggle: pressing the same button again while checkEquipHeavyBoots() is true re-enters procBootsEquip_init to take them off (src/d/actor/d_a_player_main.cpp:3871-3872). The worn state is the player flag daPyFlg0_EQUIP_HEAVY_BOOTS, NOT the inventory slot; checkEquipHeavyBoots() = checkNoResetFlg0(daPyFlg0_EQUIP_HEAVY_BOOTS) (include/d/actor/d_a_player.h:539). The flag actually flips at ANIMATION FRAME 11.0 of ANM_SETBOOTS (src/d/actor/d_a_player_main.cpp:8468-8474), with a rumble StartShock(5, -0x31, (0,1,0)) at frame 15.0 (:8499-8501). Safety nets: the flag is cleared every frame if no X/Y/Z button still holds the Iron Boots (:11229-11234), and UNCONDITIONALLY on entering water (src/d/actor/d_a_player_swim.inc:129).",
+      "effects": {
+        "gravity": "checkHeavyStateOn() -> speed.y += gravity * 2.25 and the fall-speed floor becomes maxFallSpeed * 1.5 (src/d/actor/d_a_player_main.cpp:2464-2472)",
+        "movement": "mStickDistance is halved (*0.5) at src/d/actor/d_a_player_main.cpp:10636, so top speed, acceleration (:2816) and the DoStatus threshold (:2182) all scale by 0.5, while the turn rate is scaled by 1/(0.5*0.5) = 4x (:2757). Rolls are also *0.5 (:6810, :6818, :6954).",
+        "animation": "swaps to ANM_WALKHBOOTS / ANM_WALKHBOOTSKAZE (leaning into wind) with anim rate 0.85 and blend 0.7 (src/d/actor/d_a_player_main.cpp:2983-3010)",
+        "wind": "THE HEADLINE MECHANIC. setWindAtPower() zeroes the positional wind push while heavy: `m3730.x = m3730.z = 0.0f` (src/d/actor/d_a_player_main.cpp:11128-11133). m3730 is what actually displaces Link (:2589-2590). The lean accumulator m373C still builds, so Link still leans - he just does not slide. Un-booted, the wind push magnitude is clamped to 27.0 (or 30.0 for non-special wind) (:11099-11112).",
+        "deku_leaf": "heavy state blocks gliding entirely - no magic spent, no glide, and the glide gravity override is skipped (src/d/actor/d_a_player_fan.inc:357-359, 385-395, 411, 444, 482-484)",
+        "water": "THERE IS NO SINKING. Unlike Ocarina of Time, the boots are simply removed on water entry (src/d/actor/d_a_player_swim.inc:129).",
+        "objects": "read by heavy floor switches and pushable/jumpable objects via checkEquipHeavyBoots(): src/d/actor/d_a_floor.cpp:21,23; d_a_obj_swheavy.cpp:211; d_a_obj_swpush.cpp:369; d_a_obj_jump.cpp:255; d_a_obj_homen.cpp:519, 806"
+      },
+      "constants": {
+        "gravity_multiplier": {"value": 2.25, "file": "src/d/actor/d_a_player_main.cpp:2465"},
+        "fall_speed_multiplier": {"value": 1.5, "file": "src/d/actor/d_a_player_main.cpp:2466-2467"},
+        "stick_multiplier": {"value": 0.5, "file": "src/d/actor/d_a_player_HIO_data.inc:8-12 (daPy_HIO_move_c0 field_0x80), applied src/d/actor/d_a_player_main.cpp:10636"},
+        "walk_anim_rate": {"value": 0.85, "file": "src/d/actor/d_a_player_main.cpp:2983"},
+        "walk_anim_blend": {"value": 0.7, "file": "src/d/actor/d_a_player_main.cpp:2984"},
+        "flag_flip_frame": {"value": 11.0, "file": "src/d/actor/d_a_player_main.cpp:8468-8474"},
+        "rumble_frame": {"value": 15.0, "file": "src/d/actor/d_a_player_main.cpp:8499-8501"},
+        "equip_anim_hio": {"value": [19, 150, 1.0, 0.0, 19.0, 5.0], "file": "src/d/actor/d_a_player_HIO_data.inc:271-273 (daPy_HIO_boots_c0::m); used as setSingleMoveAnime(ANM_SETBOOTS, 1.0, 0.0, 19, 5.0) at src/d/actor/d_a_player_main.cpp:8454-8460, and 19.0 is the frame after which checkNextMode(1) may interrupt (:8486)"},
+        "wind_push_clamp": {"value": [27.0, 30.0], "file": "src/d/actor/d_a_player_main.cpp:11099-11112"},
+        "arc": {"value": "Vboot", "file": "src/d/d_item_data.cpp:1261"},
+        "name_msg": {"value": "0x01A7", "file": "src/d/d_item_data.cpp:1262"},
+        "walk_anims": {"value": "ANM_WALKHBOOTS = 0x04, ANM_WALKHBOOTSKAZE = 0x05", "file": "include/d/actor/d_a_player_main.h:641-642"}
+      },
+      "implementation_note": "A toggled movement mode: halve stick magnitude, quadruple turn rate, 2.25x gravity with a 1.5x terminal, immunity to wind displacement, no gliding, swap the walk animation, and set a 'heavy' collision tag that heavy floor switches look for. Toggle only on the ground; force off on water entry and whenever the item leaves the buttons.",
+      "confidence": "high",
+      "sources": ["src/d/d_item.cpp:747-751", "src/d/actor/d_a_player_main.cpp:2464-2472, 2983-3010, 3790-3791, 8450-8505, 10636, 11079-11135, 11229-11234", "src/d/actor/d_a_player_swim.inc:129", "src/d/actor/d_a_player_fan.inc:357-484"]
+    },
+
+    "MAGIC_ARMOR": {
+      "id": "0x2A", "name": "Magic Armor", "kind": "equipment",
+      "slot": 10,
+      "file": "src/d/d_item.cpp:753-757 (grant); src/d/actor/d_a_player_main.cpp:3782-3784, 3868-3870, 11235-11241",
+      "behaviour": "Grant is onGetItem(slot 10, bit 0) + setItem(slot 10, 0x2A). Selecting it is handled BEFORE the ground check, at the very top of checkNewItemChange: `if (itemNo == dItemNo_MAGIC_ARMOR_e) return changeDragonShield(1);` (src/d/actor/d_a_player_main.cpp:3782-3783) - so unlike the Iron Boots it can be switched on IN MID-AIR. Its state is the player flag daPyFlg1_EQUIP_DRAGON_SHIELD ('dragon shield' is the internal name; the get-model archive is VmagS); checkEquipDragonShield() = checkNoResetFlg1(daPyFlg1_EQUIP_DRAGON_SHIELD) (include/d/actor/d_a_player.h:550). Pressing the button again clears the flag (src/d/actor/d_a_player_main.cpp:3868-3869); it is also cleared if no button holds it (:11235-11240) and on entering water (src/d/actor/d_a_player_swim.inc:130). It survives a scene load via bit 0x8000 of lastMode (src/d/d_com_inf_game.cpp:673-675).",
+      "magic_drain": {
+        "activation": "changeDragonShield() refuses with SE JA_SE_ITEM_TARGET_OUT if magic is 0; otherwise it sets the flag, seeds the countdown m3548 = 60, and spends 1 MP immediately (src/d/actor/d_a_player_main.cpp:3765-3771)",
+        "per_frame": "m3548 -= 1 each frame but NOT while an event is running; at 0 it spends another 1 MP and reloads 60, and if magic has run out it clears the flag instead (src/d/actor/d_a_player_particle.inc:500-515)",
+        "rate": "1 MP on activation, then 1 MP every 60 frames"
+      },
+      "damage_nullification": {
+        "predicate": "checkNoDamageMode() = checkEquipDragonShield() || checkTinkleShield() (include/d/actor/d_a_player_main.h:1832)",
+        "effect": "setDamagePoint() takes the else branch: dComIfGp_setItemLifeCount is never called and SE JA_SE_LK_MGC_SHIELD_DEF plays instead - damage is FULLY nullified, not reduced (src/d/actor/d_a_player_main.cpp:4982-4999). Because the offNoResetFlg1(daPyFlg1_SOUP_POWER_UP) lines live in the damaging branch, the armour also protects the Soup buff.",
+        "other_sites": "fatal-damage check (:5006), drowning (:5171), ship ride (:5200), ReDead grab (src/d/actor/d_a_rd.cpp:1115), src/d/actor/d_a_ship.cpp:1202"
+      },
+      "constants": {
+        "drain_period_frames": {"value": 60, "file": "src/d/actor/d_a_player_HIO_data.inc:289-291 (daPy_HIO_magicShield_c0::m = {60, 0}); consumed at src/d/actor/d_a_player_particle.inc:500-515"},
+        "activation_cost_mp": {"value": 1, "file": "src/d/actor/d_a_player_main.cpp:3770"},
+        "aura_brk": {"value": "BRK_YAURA00_R / BRK_YMGCS00_MS (red; the green pair is the Tingle Shield)", "file": "src/d/actor/d_a_player_particle.inc:516-531"},
+        "arc": {"value": "VmagS", "file": "src/d/d_item_data.cpp:1277"},
+        "name_msg": {"value": "0x01A8", "file": "src/d/d_item_data.cpp:1278"}
+      },
+      "implementation_note": "A toggle with a 60-frame MP tick and a boolean 'ignore all damage' predicate consulted at the top of the damage path. Toggleable in mid-air; must auto-disable at 0 magic and be force-disabled on water entry. Add a red aura and a magic-meter flash (src/d/d_meter.cpp:4326).",
+      "confidence": "high",
+      "sources": ["src/d/d_item.cpp:753-757", "src/d/actor/d_a_player_main.cpp:3759-3783, 3868-3869, 4982-4999, 11235-11240", "src/d/actor/d_a_player_particle.inc:500-531", "src/d/actor/d_a_player_swim.inc:130"]
+    },
+
+    "SKULL_HAMMER": {
+      "id": "0x33", "name": "Skull Hammer", "kind": "weapon",
+      "slot": 20,
+      "file": "src/d/d_item.cpp:804-808 (grant); src/d/actor/d_a_player_hammer.inc (411 lines, fully decompiled); src/d/actor/d_a_obj_swhammer.cpp (the hammer pegs)",
+      "behaviour": "Grant is onGetItem(slot 20, bit 0) + setItem(slot 20, 0x33). Unlike every other item it behaves as a WEAPON, with four procs: daPyProc_HAMMER_SIDE_SWING_e = 0x51, HAMMER_FRONT_SWING_READY_e = 0x52, HAMMER_FRONT_SWING_e = 0x53, HAMMER_FRONT_SWING_END_e = 0x54 (include/d/actor/d_a_player_main.h:497-500; proc table src/d/actor/d_a_player_main_data.inc:304-307, all four flagged ModeFlg_00000400 | ModeFlg_08000000). Take-out uses the TWO-HANDED draw anim dRes_INDEX_LKANM_BCK_TAKEBOTH_e (src/d/actor/d_a_player_main.cpp:4232-4239); setHammerModel() loads dRes_INDEX_LINK_BDL_HAMMER_e plus a 2 * 0x300 Vec blur buffer (src/d/actor/d_a_player_hammer.inc:20-31). It is NOT cancelled by guarding (src/d/actor/d_a_player_main.cpp:1306 excludes it).",
+      "which_swing": "src/d/actor/d_a_player_main.cpp:4239-4245: if mStickDistance > 0.05 and the facing direction is LEFT or RIGHT -> procHammerSideSwing_init(); otherwise -> procHammerFrontSwingReady_init(), which chains FrontSwingReady -> FrontSwing -> FrontSwingEnd (src/d/actor/d_a_player_hammer.inc:267, 320).",
+      "damage": {
+        "call": "setAtParam(AT_TYPE_SKULL_HAMMER, 4, dCcG_At_Spl_UNK0, dCcG_SE_METAL, dCcG_AtHitMark_Nrm_e, CUT_TYPE_HAMMER_SIDESWING/FRONTSWING, 50.0f) - identical for both swings (src/d/actor/d_a_player_hammer.inc:183, 255)",
+        "atp": 4,
+        "radius": 50.0,
+        "at_type": "AT_TYPE_SKULL_HAMMER = 1 << 16 = 0x00010000 (include/d/d_cc_d.h:27)",
+        "no_soup_bonus": "setAtParam only doubles Atp for AT_TYPE_SWORD under the Soup buff (src/d/actor/d_a_player_main.cpp:9594-9596), so the hammer does NOT benefit from Soup.",
+        "ice": "an ice block hit by the hammer gets mFreezeTimer = -2 ('Shattered by Skull Hammer') rather than -1 for bomb/fire arrow (src/c/c_damagereaction.cpp:309-312)"
+      },
+      "constants": {
+        "atp": {"value": 4, "file": "src/d/actor/d_a_player_hammer.inc:183"},
+        "attack_radius": {"value": 50.0, "file": "src/d/actor/d_a_player_hammer.inc:183"},
+        "side_swing_hitbox_window_frames": {"value": [25.0, 36.0], "file": "src/d/actor/d_a_player_hammer.inc:226-234 (HIO fields 0x18/0x1C)"},
+        "side_swing_cancel_frame": {"value": 55.0, "file": "src/d/actor/d_a_player_hammer.inc:198"},
+        "side_swing_rate_and_start": {"value": [1.2, 4.0], "file": "src/d/actor/d_a_player_hammer.inc:173-174"},
+        "front_end_cancel_frame": {"value": 10.0, "file": "src/d/actor/d_a_player_hammer.inc:406"},
+        "front_swing_halt_hold_frames": {"value": 10, "file": "src/d/actor/d_a_player_hammer.inc:328, 359"},
+        "hio_table": {"value": [60, 28, 35, 12, 1.2, 4.0, 55.0, 2.0, 25.0, 36.0, 1.0, 2.0, 3.0, 1.0, 0.0, 0.9, 5.0, 10.0, 0.0], "file": "src/d/actor/d_a_player_HIO_data.inc:266-269 (daPy_HIO_ham_c0::m; layout include/d/actor/d_a_player_HIO.h:1530-1551)"},
+        "ground_slam_rumble": {"value": "StartShock(6, -0x31)", "file": "src/d/actor/d_a_player_hammer.inc:48"},
+        "ground_slam_noise_radius": {"value": 500, "file": "src/d/actor/d_a_player_hammer.inc:127"},
+        "peg_push_depth": {"value": -60.0, "file": "src/d/actor/d_a_obj_swhammer.cpp:301, 154"},
+        "peg_grid_push_depth": {"value": -85.0, "file": "src/d/actor/d_a_obj_shmrgrd.cpp:236, 469"},
+        "peg_cylinder_h": {"value": [112.5, 52.5], "file": "src/d/actor/d_a_obj_swhammer.cpp:332-333 (up) and 373-374 (down)"},
+        "peg_squash": {"value": {"scaleY": 0.2, "crush_frames": 18, "uncrush_spring": 0.8, "uncrush_decay": 0.45}, "file": "src/d/actor/d_a_obj_swhammer.cpp:252-269, 27-38"},
+        "arc": {"value": "Vhamm", "file": "src/d/d_item_data.cpp:1421"},
+        "name_msg": {"value": "0x01AE", "file": "src/d/d_item_data.cpp:1428"}
+      },
+      "pegs": "Only a FRONT swing or a jump-cut presses a hammer peg: daObj_swhammer checks the cut type and sets M_damage = 1 (press) for CUT_TYPE_HAMMER_FRONTSWING / CUT_TYPE_JUMPCUT_HAMMER, but M_damage = 2 (wobble only) for CUT_TYPE_HAMMER_SIDESWING (src/d/actor/d_a_obj_swhammer.cpp:214-220, 347-350). The grid variant d_a_obj_shmrgrd.cpp gates identically at :388-392.",
+      "implementation_note": "Two swings. Side swing (stick held sideways) has an active hitbox only between anim frames 25 and 36 and can be cancelled after frame 55. Front swing is Ready -> Swing -> End with a ground-slam shockwave, and is the ONLY thing that drives pegs down (60 units, or 85 for the grid variant). Atp 4, radius 50, no Soup bonus.",
+      "confidence": "high",
+      "sources": ["src/d/d_item.cpp:804-808", "src/d/actor/d_a_player_hammer.inc:20-411", "src/d/actor/d_a_player_main.cpp:1306, 4232-4245", "src/d/actor/d_a_obj_swhammer.cpp:27-374", "src/d/actor/d_a_obj_shmrgrd.cpp:236, 388-392, 469", "src/d/actor/d_a_player_HIO_data.inc:266-269", "include/d/d_cc_d.h:27"]
+    },
+
+    "SAIL": {
+      "id": "0x78", "name": "Sail", "kind": "equipment",
+      "slot": 1,
+      "file": "src/d/d_item.cpp:1119-1123 (grant); src/d/actor/d_a_ship.cpp (the King of Red Lions - THIS is the gameplay sail); src/d/actor/d_a_player_ship.inc:341-347",
+      "WARNING": "src/d/actor/d_a_sail.cpp is NOT Link's sail. Its profile is fpcNm_SAIL_e (src/d/actor/d_a_sail.cpp:666), it is created as a child of daObjPirateship::Act_c (:637) and it loads the `Kaizokusen` (pirate ship) archive (:188, :583). It is a pure cloth-simulation RENDERER for Tetra's pirate ship with zero gameplay effect - its wind coupling is cosmetic vertex deformation of a 12x7 grid (sail_pos_move, :342-455). Do not mine it for boat physics.",
+      "behaviour": "Grant is `setItem(slot 1, 0x78); onGetItem(slot 1, bit 0)` - note the reversed order compared to every other item_func, harmless. On land, selecting the Sail falls through checkNewItemChange to procNotUse_init (a 'can't use this here' presentation, src/d/actor/d_a_player_main.cpp:3785, 3810). On the King of Red Lions it triggers `procShipSteer_init()` (daPyProc_SHIP_STEER_e = 0x88) via checkSetItemTrigger(dItemNo_SAIL_e, 1) (src/d/actor/d_a_player_ship.inc:341-347; proc table src/d/actor/d_a_player_main_data.inc:359). The boat raises the sail flag daSFLG_SAIL_ON_e once anim FN_MAST_ON2 reaches frame 7.0 (src/d/actor/d_a_ship.cpp:1631) and lowers it at :1360; the player status bit daPyStts1_SAIL_e is set/cleared at :4342, :4346, :4383.",
+      "wind_physics": {
+        "where": "daShip_c::procSteerMove(), src/d/actor/d_a_ship.cpp:1621-1719 (this function is matching real code; only daShip_c::execute() carries a Nonmatching marker, and it has a full body)",
+        "formula": "windPower = |wind| / 0.5, clamped to 1.0; angleDiff = |windAngle - ship yaw|; windFactor = (angleDiff < 0x4000) ? 1.0 - angleDiff/0x10000 : (angleDiff <= 0x6000) ? 0.75 - (angleDiff-0x4000)*5.493164e-05 : max(0, 0.3 - (angleDiff-0x6000)*0.00032967035); then windPower *= windFactor * 55.0 (src/d/actor/d_a_ship.cpp:1634-1653)",
+        "curve": "dead-on tailwind factor 1.0; 90 deg off (0x4000) 0.75; 135 deg (0x6000) 0.30; ~157.5 deg and beyond 0.0",
+        "max_speed": "55.0 units/frame (src/d/actor/d_a_ship.cpp:1653; matches daShip_HIO_c0::wind_inc_speed = 55.0f at :77)",
+        "ramp_up": "on the frame the sail catches (7.0) speedF snaps to windPower * 2.0 clamped to 80.0 (:1656-1659); afterwards cLib_addCalc(&speedF, windPower, 0.1, 0.5, 0.1) (:1677), or decrementShipSpeed() if already faster (:1675)",
+        "no_sail": "with the sail down, speed chases mStickMVal * 10.0 * cos(mStickMAng) (:1673)",
+        "jump": "the wave-ramp jump needs mFwdVel > 16.5 and windPower >= 11.0; R sets speed.y = windPower clamped to [15.0, 40.0] and mJumpRate = (speed.y - 11.0) * 0.014545455 (:1686-1699)",
+        "boom_angle": "setSailAngle() targets +/-0x1555 (~30 deg) by the sign of windAngle - ship yaw with a +/-0x800 deadzone, eased with cLib_addCalcAngleS(..., 0x10, 0x800, 0x20) (src/d/actor/d_a_ship.cpp:758-794, applied :116-117)"
+      },
+      "constants": {
+        "wind_divisor": {"value": 0.5, "file": "src/d/actor/d_a_ship.cpp:1635 (= daShip_HIO_c0::wind_rate at :81)"},
+        "max_sail_speed": {"value": 55.0, "file": "src/d/actor/d_a_ship.cpp:1653"},
+        "catch_speed_clamp": {"value": 80.0, "file": "src/d/actor/d_a_ship.cpp:1656-1659"},
+        "jump_min_fwd_vel": {"value": 16.5, "file": "src/d/actor/d_a_ship.cpp:1686"},
+        "jump_min_wind": {"value": 11.0, "file": "src/d/actor/d_a_ship.cpp:1687"},
+        "jump_speed_y_clamp": {"value": [15.0, 40.0], "file": "src/d/actor/d_a_ship.cpp:1691-1696"},
+        "boom_angle": {"value": "0x1555", "file": "src/d/actor/d_a_ship.cpp:767-781"},
+        "arc": {"value": "Vho", "file": "src/d/d_item_data.cpp:2524"},
+        "name_msg": {"value": "0x01CF", "file": "src/d/d_item_data.cpp:2532"}
+      },
+      "implementation_note": "The remake already sails. Two things to get right: (1) sail thrust must read the SAME wind vector that the Wind's Requiem writes, so changing the wind actually changes sailing; (2) copy the three-segment windFactor curve verbatim - the 1.0 / 0.75 / 0.30 / 0.0 breakpoints at 0, 90, 135 and ~157 degrees are what makes tacking feel right.",
+      "confidence": "high",
+      "sources": ["src/d/d_item.cpp:1119-1123", "src/d/actor/d_a_player_ship.inc:341-347", "src/d/actor/d_a_ship.cpp:77-81, 116-117, 758-794, 1360, 1621-1719, 1631, 4342-4383", "src/d/actor/d_a_sail.cpp:188, 342-455, 637, 666"]
+    },
+
+    "EMPTY_BOTTLE": {
+      "id": "0x50", "name": "Empty Bottle", "kind": "bottle",
+      "slot": "14..17 (any of BOTTLE0..BOTTLE3)",
+      "file": "src/d/d_item.cpp:973-977 (grant); src/d/d_save.cpp:86-195 (bottle slot management); src/d/actor/d_a_player_bottle.inc (576 lines, fully decompiled)",
+      "behaviour": "Grant is `dComIfGs_setEmptyBottle(); dComIfGs_onGetBottleItem(0x50)`. setEmptyBottle() walks BOTTLE0..BOTTLE3 and drops the bottle into the FIRST slot that is 0xFF (src/d/d_save.cpp:106-115) - so bottles fill up left to right and you can hold four. Selecting an empty bottle -> procBottleSwing_init(1) i.e. the scoop swing (daPyProc_BOTTLE_SWING_e = 0xA5, src/d/actor/d_a_player_main.cpp:3814-3815). An empty bottle is the ONE item in the take-out list that is still allowed when Link is not on the ground (src/d/actor/d_a_player_main.cpp:3823-3825).",
+      "bottle_api": {
+        "setBottleItemIn(prev, new)": "find the first bottle slot holding `prev` and replace it with `new`, then refresh any X/Y/Z button pointing at that slot (src/d/d_save.cpp:86-99)",
+        "setEmptyBottleItemIn(itemNo)": "setBottleItemIn(EMPTY_BOTTLE, itemNo) - fill an empty bottle (src/d/d_save.cpp:101-104)",
+        "setEquipBottleItemIn(btn, itemNo)": "change the contents of the bottle currently on that button, refusing if the button does not point into 14..17 (src/d/d_save.cpp:117-130)",
+        "setEquipBottleItemEmpty()": "the no-argument form resolves the button from dComIfGp_event_getTalkXYBtn(), i.e. 'the bottle the NPC just took' (src/d/d_save.cpp:137-169)",
+        "checkBottle(itemNo)": "how many bottles currently hold that content (src/d/d_save.cpp:171-182)",
+        "checkEmptyBottle()": "how many are empty (src/d/d_save.cpp:184-195)"
+      },
+      "constants": {"bottle_count": {"value": 4, "file": "include/d/d_com_inf_game.h:1076-1079"}, "arc": {"value": "Bin", "file": "src/d/d_item_data.cpp:1885"}, "name_msg": {"value": "0x01BE", "file": "src/d/d_item_data.cpp:1891"}},
+      "implementation_note": "Four bottle slots, each an item id. All the 'give the shopkeeper your bottle' plumbing is in d_save.cpp and is worth copying wholesale - it is only ~110 lines.",
+      "confidence": "high",
+      "sources": ["src/d/d_save.cpp:86-195", "src/d/d_item.cpp:973-1029"]
+    },
+
+    "BOTTLE_CONTENTS": {
+      "id": "0x51-0x59", "name": "bottle contents", "kind": "bottle",
+      "file": "src/d/d_item.cpp:979-1025; src/d/actor/d_a_player_bottle.inc",
+      "behaviour": "Each content is a separate dItemNo sitting in a bottle slot. Grants split into two shapes: something you are HANDED already bottled (`setEmptyBottleItemIn(x); onGetBottleItem(x)` - red/green/blue potion, d_item.cpp:979-995) and something you SCOOP yourself, where the item_func only records the collection flag because the bottle slot was already written by the scooping code (`onGetBottleItem(x)` alone - soup, water, fairy, firefly, forest water, d_item.cpp:997-1025).",
+      "use": "checkNewItemChange sorts them: checkDrinkBottleItem -> procBottleDrink_init (daPyProc_BOTTLE_DRINK_e = 0xA3), checkOpenBottleItem -> procBottleOpen_init (daPyProc_BOTTLE_OPEN_e = 0xA4), EMPTY_BOTTLE -> procBottleSwing_init (0xA5). There is also daPyProc_BOTTLE_GET_e = 0xA6 for the scoop-succeeded pose and daPyProc_DEMO_BOTTLE_OPEN_FAIRY_e = 0xD1 for the auto-revive. (src/d/actor/d_a_player_main.cpp:3800-3806; include/d/actor/d_a_player_main.h:579-582, 626). Classification helpers: checkBottleItem = 0x50..0x60 (src/d/actor/d_a_player_main.cpp:5625-5627), checkDrinkBottleItem = RED/GREEN/BLUE/SOUP/HALF_SOUP (:5631-5633), checkOpenBottleItem = FIREFLY/WATER/FOREST_WATER/FAIRY (:5637-5639).",
+      "what_each_restores": {
+        "code": "procBottleDrink(), src/d/actor/d_a_player_bottle.inc:139-147: `if (item != GREEN_POTION) setItemLifeCount(getMaxLife()); if (item != RED_POTION) setItemMagicCount(getMaxMagic()); if (SOUP || HALF_SOUP) onNoResetFlg1(daPyFlg1_SOUP_POWER_UP); resetCurse();`",
+        "Red Potion (0x51)": "full hearts only",
+        "Green Potion (0x52)": "full magic only",
+        "Blue Potion (0x53)": "full hearts AND full magic",
+        "Soup (0x55) / Half Soup (0x54)": "full hearts, full magic, AND the daPyFlg1_SOUP_POWER_UP double-damage sword buff",
+        "all of them": "clear the Curse status (resetCurse())",
+        "soup_is_two_uses": "drinking SOUP_BOTTLE leaves HALF_SOUP_BOTTLE (src/d/actor/d_a_player_bottle.inc:168-170); everything else empties the bottle (:172-173)",
+        "soup_buff": "SOUP_POWER_UP doubles Atp only for AT_TYPE_SWORD (src/d/actor/d_a_player_main.cpp:9594) and is cleared by taking damage (:4977, :4986) - but NOT while the Magic Armor is nullifying that damage",
+        "heart_unit": "1 heart = 4.0f in setItemLifeCount (src/d/d_item.cpp:548-550)"
+      },
+      "fairy_auto_revive": {
+        "where": "daPy_lk_c::changeDeadProc(), src/d/actor/d_a_player_main.cpp:5535-5553",
+        "how": "when life hits 0 outside a damage/event/demo state, if checkBottle(FAIRY_BOTTLE) then makeFairy(&current.pos, daNpc_Fa1_c::Type_LINK_DOWN_e /* 5 */), setBottleItemIn(FAIRY_BOTTLE, EMPTY_BOTTLE), and return false - the death is cancelled outright",
+        "heal": "the fairy actor calls execItemGet(dItemNo_RECOVER_FAIRY_e) as soon as it appears in LINK_DOWN mode (src/d/actor/d_a_npc_fa1.cpp:612-618), and item_func_recover_faily() is setItemLifeCount(40.0f) = 10 HEARTS (src/d/d_item.cpp:670-672)"
+      },
+      "releasing": {
+        "water": "poured at anim frame 9.0 with SE JA_SE_LK_SPRINKLE_WATER and an AT_TYPE_WATER attack of radius 5.0; Forest Water additionally sets daPyFlg1_FOREST_WATER_USE and m3554 = 3 (src/d/actor/d_a_player_bottle.inc:364-374)",
+        "fairy": "makeFairy(&mLeftHandPos, 2) creates fpcNm_NPC_FA1_e with daNpc_Fa1_c::Type_LINK_e and sets daPyRFlg0_FAIRY_USE (src/d/actor/d_a_player_bottle.inc:88-92, 394)",
+        "firefly": "fopAcM_create(fpcNm_NH_e, 1, ...) (src/d/actor/d_a_player_bottle.inc:396)"
+      },
+      "model": "setBottleModel() picks the liquid colour by BRK FRAME: Red 0.0, Green 1.0, Blue 2.0, Water/Forest Water 3.0, Soup/Half-Soup 4.0 (src/d/actor/d_a_player_bottle.inc:53-63). Half Soup uses a different BDL, LINK_BDL_BINLIQUIDH (:45). Forest Water spawns ID_AK_JN_FORESTWATER00 (:83).",
+      "auto_fairy": "A one-button shortcut exists outside the item menu: checkSetItemTrigger(dItemNo_FAIRY_BOTTLE_e, 0) -> procBottleOpen_init(FAIRY_BOTTLE) (src/d/actor/d_a_player_main.cpp:3874-3875).",
+      "forest_water": {
+        "what": "dItemNo_FOREST_WATER_e (0x59) SPOILS. Scooping it calls dComIfGs_getpItemRecord()->resetTimer(36000) (src/d/actor/d_a_player_bottle.inc:486) = 36000 ticks. The message code formats it as getFwaterTimer()/1800 minutes and %1800/30 seconds (src/f_op/f_op_msg_mng.cpp:2478, 2484), so 30 ticks = 1 second and 36000 = 20 MINUTES of ticking time.",
+        "only_at_omori": "the scoop only yields Forest Water when the current stage name is 'Omori' (the Forest Haven); anywhere else the same scoop gives a plain WATER_BOTTLE (src/d/actor/d_a_player_bottle.inc:477-494). Trying to scoop a second one shows message 0x14a2 (:482, :513).",
+        "when_it_ticks": "decTimer() is called once per frame from src/d/d_menu_window.cpp:1448, and only while dComIfGs_checkFwaterTimer()==1. That enable flag is set by Link when he lands / swims / rides the ship (src/d/actor/d_a_player_main.cpp:10785), so the clock effectively runs while Link is grounded, not during menus or events.",
+        "expiry": "Every frame d_a_player_main.cpp:11198-11212 checks `if (dComIfGs_checkBottle(FOREST_WATER) && dComIfGs_getFwaterTimer() == 0)` and converts it with `dComIfGs_setBottleItemIn(FOREST_WATER, WATER_BOTTLE)` inside a compulsory event - so it visibly turns into ordinary water.",
+        "ticking": "dSv_player_item_record_c::decTimer() only runs while dComIfGs_checkFwaterTimer()==1; startFwaterTimer() sets that to 1 (include/d/d_com_inf_game.h:649). Called from d_a_player_main.cpp:10785 and d_menu_window.cpp:1537."
+      },
+      "constants": {
+        "forest_water_frames": {"value": 36000, "file": "src/d/actor/d_a_player_bottle.inc:486"},
+        "arcs": {"value": {"0x51 Red Potion": "Med_r", "0x52 Green Potion": "Med_g", "0x53 Blue Potion": "Med_b", "0x54 Half Soup": "VbinS", "0x55 Soup": "VbinS", "0x56 Water": "VbinW", "0x57 Fairy": "VBinY", "0x58 Firefly": "VbinH", "0x59 Forest Water": "FwBin"}, "file": "src/d/d_item_data.cpp:1883-1965"},
+        "name_msgs": {"value": {"0x50": "0x01BE", "0x51": "0x01BF", "0x52": "0x01C0", "0x53": "0x01C1", "0x54": "0x01F0", "0x55": "0x01EE", "0x56": "0x01C2", "0x57": "0x01EF", "0x58": "0x01EC", "0x59": "0x01ED"}, "file": "src/d/d_item_data.cpp:1883-1965"}
+      },
+      "implementation_note": "Four verbs: drink (restore per the table above), open/pour (water, fairy, firefly), swing/scoop (empty bottle), and the automatic fairy revive. The scoop is only allowed on anim frames 1.0-4.0 (src/d/actor/d_a_player_bottle.inc:497-502).",
+      "confidence": "high",
+      "sources": ["src/d/d_item.cpp:979-1029", "src/d/actor/d_a_player_main.cpp:3805-3816, 11198-11212", "src/d/actor/d_a_player_bottle.inc:486"]
+    },
+
+    "MAP": {
+      "id": "0x4C", "name": "Dungeon Map", "kind": "dungeon",
+      "slot": null,
+      "file": "src/d/d_item.cpp:953-956",
+      "behaviour": "Grant is exactly `dComIfGs_onDungeonItemMap()` - bit 0 of dSv_memBit_c::mDungeonItem for the CURRENT stage. Nothing touches the inventory.",
+      "constants": {"bit": {"value": 0, "file": "include/d/d_save.h:631"}, "arc": {"value": "VdunM", "file": "src/d/d_item_data.cpp:1820"}, "name_msg": {"value": "0x0197", "file": "src/d/d_item_data.cpp:1821"}},
+      "implementation_note": "Per-dungeon boolean, saved with the stage, not with Link.",
+      "confidence": "high",
+      "sources": ["src/d/d_item.cpp:953-956", "include/d/d_save.h:628-683"]
+    },
+    "COMPASS": {
+      "id": "0x4D", "name": "Compass", "kind": "dungeon", "slot": null,
+      "file": "src/d/d_item.cpp:958-961",
+      "behaviour": "dComIfGs_onDungeonItemCompass() - mDungeonItem bit 1.",
+      "constants": {"bit": {"value": 1, "file": "include/d/d_save.h:632"}, "arc": {"value": "VdunC", "file": "src/d/d_item_data.cpp:1823"}, "name_msg": {"value": "0x0198", "file": "src/d/d_item_data.cpp:1824"}},
+      "implementation_note": "Per-dungeon boolean.", "confidence": "high",
+      "sources": ["src/d/d_item.cpp:958-961"]
+    },
+    "BOSS_KEY": {
+      "id": "0x4E", "name": "Big Key", "kind": "dungeon", "slot": null,
+      "file": "src/d/d_item.cpp:963-966",
+      "behaviour": "dComIfGs_onDungeonItemBossKey() - mDungeonItem bit 2.",
+      "constants": {"bit": {"value": 2, "file": "include/d/d_save.h:633"}, "arc": {"value": "key_01", "file": "src/d/d_item_data.cpp:1826"}, "name_msg": {"value": "0x0199", "file": "src/d/d_item_data.cpp:1827"}},
+      "implementation_note": "Per-dungeon boolean.", "confidence": "high",
+      "sources": ["src/d/d_item.cpp:963-966"]
+    },
+    "SMALL_KEY": {
+      "id": "0x15", "name": "Small Key", "kind": "dungeon", "slot": null,
+      "file": "src/d/d_item.cpp:665-668",
+      "behaviour": "Increments dSv_memBit_c::mKeyNum for the current stage (getKeyNum/setKeyNum, include/d/d_save.h:654-655).",
+      "constants": {},
+      "implementation_note": "Per-dungeon counter.", "confidence": "medium",
+      "sources": ["src/d/d_item.cpp:665-668", "include/d/d_save.h:654-655, 679"]
+    },
+
+    "SWORD": {
+      "id": "0x38", "name": "Hero's Sword", "kind": "equipment", "slot": null,
+      "file": "src/d/d_item.cpp:848-852",
+      "behaviour": "`onCollect(0, 0); setSelectEquip(0, 0x38)`. The sword LEVEL is bits 0..3 of mCollect[0]: 0 Hero's Sword, 1 Master Sword, 2 Master Sword (half power), 3 Master Sword (full power). dComIfGs_setSelectEquip() itself re-derives the bit from the item number (src/d/d_com_inf_game.cpp:1786-1802), so writing mSelectEquip[0] is enough. dItemNo_DROPPED_SWORD_e (0x3D) grants exactly the same as SWORD (src/d/d_item.cpp:878-882).",
+      "constants": {"collect_index": {"value": 0, "file": "src/d/d_item.cpp:849"}, "arc": {"value": "VswoN", "file": "src/d/d_item_data.cpp:1500 (0x38 entry)"}},
+      "implementation_note": "One integer 'sword level' plus a 'currently equipped sword itemNo'.",
+      "confidence": "high",
+      "sources": ["src/d/d_item.cpp:848-889", "src/d/d_com_inf_game.cpp:1786-1802"]
+    },
+    "SHIELD": {
+      "id": "0x3B", "name": "Hero's Shield", "kind": "equipment", "slot": null,
+      "file": "src/d/d_item.cpp:866-876",
+      "behaviour": "`onCollect(1, 0); setSelectEquip(1, 0x3B)`; the Mirror Shield (0x3C) is `onCollect(1, 1)`. mSelectEquip[1] holds the equipped shield.",
+      "constants": {"collect_index": {"value": 1, "file": "src/d/d_item.cpp:867"}},
+      "implementation_note": "Same shape as the sword.", "confidence": "high",
+      "sources": ["src/d/d_item.cpp:866-876"]
+    },
+    "PIRATES_CHARM": {
+      "id": "0x42", "name": "Pirate's Charm", "kind": "quest", "slot": null,
+      "file": "src/d/d_item.cpp:890-893",
+      "behaviour": "`onCollect(3, 0)` only. Read back via dComIfGs_isCollect(3, 0) (src/d/d_com_inf_game.cpp:989, 1113).",
+      "constants": {"collect_index": {"value": 3, "file": "src/d/d_item.cpp:891"}},
+      "implementation_note": "A pure story flag; the KoRL/Tetra communicator.", "confidence": "high",
+      "sources": ["src/d/d_item.cpp:890-893"]
+    },
+    "HEROS_CHARM": {
+      "id": "0x43", "name": "Hero's Charm", "kind": "quest", "slot": null,
+      "file": "src/d/d_item.cpp:895-898; src/d/d_menu_collect.cpp:1285-1293; src/d/actor/d_a_player_main.cpp:5671-5677",
+      "behaviour": "`onCollect(4, 0)` grants it. It is then TOGGLED on and off with A on the quest-status screen, which sets/clears mCollect[4] bit 1 with SE JA_SE_ITEM_EQUIP_ON/OFF (src/d/d_menu_collect.cpp:1285-1293). daPy_lk_c::checkMaskDraw() returns true when bit 1 is set and Link is not a demo actor - that is what turns on the enemy-HP display.",
+      "constants": {"collect_index": {"value": 4, "file": "src/d/d_item.cpp:896"}, "equipped_bit": {"value": 1, "file": "src/d/d_menu_collect.cpp:1288"}, "menu_item_index": {"value": "0x12", "file": "src/d/d_menu_collect.cpp:1286"}},
+      "implementation_note": "The only 'wearable' quest item - owned and equipped are two different bits in the same byte.",
+      "confidence": "high",
+      "sources": ["src/d/d_item.cpp:895-898", "src/d/d_menu_collect.cpp:1285-1293", "src/d/actor/d_a_player_main.cpp:5671-5677"]
+    },
+
+    "MAGIC_ARROW": {
+      "id": "0x35", "name": "Fire & Ice Arrows", "kind": "upgrade", "slot": 12,
+      "file": "src/d/d_item.cpp:817-828",
+      "behaviour": "Overwrites the BOW slot: `onGetItem(12, 1); setItem(12, 0x35)`. Post-JPN builds then walk the three item buttons and re-run dComIfGp_setSelectItem for any button showing the plain bow, so the icon updates immediately.",
+      "constants": {"arc": {"value": "Varfi", "file": "src/d/d_item_data.cpp:1436 region"}, "name_msg": {"value": "0x01B0", "file": "src/d/d_item_data.cpp (0x35 entry)"}},
+      "implementation_note": "Bow upgrades are a slot overwrite plus an extra have-ever bit - the bow itself is not a separate item.",
+      "confidence": "high", "sources": ["src/d/d_item.cpp:817-828"]
+    },
+    "LIGHT_ARROW": {
+      "id": "0x36", "name": "Light Arrows", "kind": "upgrade", "slot": 12,
+      "file": "src/d/d_item.cpp:834-845",
+      "behaviour": "`onGetItem(12, 2); setItem(12, 0x36)`, same button refresh but matching dItemNo_MAGIC_ARROW_e.",
+      "constants": {}, "implementation_note": "See MAGIC_ARROW.", "confidence": "high",
+      "sources": ["src/d/d_item.cpp:834-845"]
+    },
+
+    "DEKU_LEAF": {
+      "id": "0x34", "name": "Deku Leaf", "kind": "equipment", "slot": 6,
+      "file": "src/d/d_item.cpp:810-815",
+      "behaviour": "`onGetItem(6,0); setItem(6, 0x34); setItemMaxMagicCount(16); setItemMagicCount(16)` - THE DEKU LEAF IS WHAT GIVES LINK HIS MAGIC METER, and it gives 16 units (8 pips at 2 each in the HUD). Take-out is setSmallFanModel() (src/d/actor/d_a_player_main.cpp:3716-3718); procs daPyProc_FAN_SWING_e = 0x92 and FAN_GLIDE_e = 0x93.",
+      "constants": {"magic_granted": {"value": 16, "file": "src/d/d_item.cpp:813-814"}, "arc": {"value": "Vleaf", "file": "src/d/d_item_data.cpp:1437"}, "name_msg": {"value": "0x01AF", "file": "src/d/d_item_data.cpp:1444"}},
+      "implementation_note": "Already implemented in the remake; the magic grant is the detail worth copying.",
+      "confidence": "high", "sources": ["src/d/d_item.cpp:810-815"]
+    },
+    "BOW": {
+      "id": "0x27", "name": "Hero's Bow", "kind": "weapon", "slot": 12,
+      "file": "src/d/d_item.cpp:733-739",
+      "behaviour": "`onGetItem(12,0); setItem(12, 0x27); setArrowNum(30); setArrowMax(30)`. Flight behaviour is already documented in projectile-items.md.",
+      "constants": {"start_arrows": {"value": 30, "file": "src/d/d_item.cpp:736-737"}, "arc": {"value": "Vbow", "file": "src/d/d_item_data.cpp:1228"}},
+      "implementation_note": "Implemented.", "confidence": "high", "sources": ["src/d/d_item.cpp:733-739"]
+    },
+    "BOMB_BAG": {
+      "id": "0x31", "name": "Bomb Bag", "kind": "weapon", "slot": 13,
+      "file": "src/d/d_item.cpp:792-798",
+      "behaviour": "`onGetItem(13,0); setItem(13, 0x31); setBombNum(30); setBombMax(30)`. Selecting it spawns a BOMB actor into mActorKeepGrab instead of an equip model, refuses at 3 live bombs or 0 in the bag, and decrements the count immediately (src/d/actor/d_a_player_main.cpp:3692-3702, 3826-3831).",
+      "constants": {"start_bombs": {"value": 30, "file": "src/d/d_item.cpp:795-796"}, "max_live": {"value": 3, "file": "src/d/actor/d_a_player_main.cpp:3827"}, "arc": {"value": "Bomb_00", "file": "src/d/d_item_data.cpp:1405"}},
+      "implementation_note": "Implemented.", "confidence": "high", "sources": ["src/d/d_item.cpp:792-798"]
+    },
+    "BOOMERANG": {
+      "id": "0x2D", "name": "Boomerang", "kind": "weapon", "slot": 5,
+      "file": "src/d/d_item.cpp:769-773",
+      "behaviour": "`onGetItem(5,0); setItem(5, 0x2D)`. Flight in projectile-items.md.",
+      "constants": {"arc": {"value": "Boom", "file": "src/d/d_item_data.cpp:1325"}},
+      "implementation_note": "Implemented.", "confidence": "high", "sources": ["src/d/d_item.cpp:769-773"]
+    },
+    "GRAPPLING_HOOK": {
+      "id": "0x25", "name": "Grappling Hook", "kind": "weapon", "slot": 3,
+      "file": "src/d/d_item.cpp:721-725",
+      "behaviour": "`onGetItem(3,0); setItem(3, 0x25)`. Flight/swing in projectile-items.md.",
+      "constants": {"arc": {"value": "Vrope", "file": "src/d/d_item_data.cpp:1197"}, "name_msg": {"value": "0x0192", "file": "src/d/d_item_data.cpp:1204"}},
+      "implementation_note": "Implemented.", "confidence": "high", "sources": ["src/d/d_item.cpp:721-725"]
+    },
+    "HOOKSHOT": {
+      "id": "0x2F", "name": "Hookshot", "kind": "weapon", "slot": 19,
+      "file": "src/d/d_item.cpp:780-784",
+      "behaviour": "`onGetItem(19,0); setItem(19, 0x2F)`. Flight in projectile-items.md.",
+      "constants": {"arc": {"value": "Vhook", "file": "src/d/d_item_data.cpp:1341"}},
+      "implementation_note": "Implemented.", "confidence": "high", "sources": ["src/d/d_item.cpp:780-784"]
+    },
+
+    "TRIFORCE_SHARD": {
+      "id": "0x61-0x68", "name": "Triforce Shard 1-8", "kind": "quest", "slot": null,
+      "file": "src/d/d_item.cpp:1031-1070",
+      "behaviour": "Each item_func_triforceN is `dComIfGs_onTriforce(N-1)` - a bit in dSv_player_collect_c::mTriforce. getTriforceNum() counts them (src/d/d_save.cpp:814-825). All eight share one name message 0x01C3 but have eight distinct models Vtri1..Vtri8.",
+      "constants": {"count": {"value": 8, "file": "src/d/d_save.cpp:816"}, "name_msg": {"value": "0x01C3", "file": "src/d/d_item_data.cpp (0x61-0x68 entries)"}},
+      "implementation_note": "One byte of flags. Do not confuse with dSv_player_map_c::field_0x81, which is the CHARTS being deciphered.",
+      "confidence": "high", "sources": ["src/d/d_item.cpp:1031-1070", "src/d/d_save.cpp:780-825"]
+    },
+    "TRIFORCE_CHART": {
+      "id": "0x79-0x80", "name": "Triforce Chart 1-8", "kind": "chart", "slot": null,
+      "file": "src/d/d_item.cpp:1126-1157",
+      "behaviour": "WARNING: every item_func_triforce_mapN is an EMPTY FUNCTION (src/d/d_item.cpp:1126-1157). Getting a Triforce Chart writes nothing through the item table - the chart bits (dSv_player_map_c::onGetMap / onTriforce) must be set by whatever spawned it. This is real decompiled code, not a stub; the functions genuinely have no body.",
+      "constants": {"map_triforce_field": {"value": "dSv_player_map_c::field_0x81", "file": "src/d/d_save.cpp:900-916"}},
+      "implementation_note": "Do not model charts through the item-grant path. Treat 'have chart', 'chart deciphered' and 'treasure claimed' as three separate bit arrays keyed by chart number (see _storage.charts_and_maps).",
+      "confidence": "high", "sources": ["src/d/d_item.cpp:1126-1157"]
+    },
+    "TREASURE_CHART": {
+      "id": "0xBF-0xFE", "name": "Treasure / Sea Charts (COLLECT_MAP_64 .. COLLECT_MAP_01)", "kind": "chart", "slot": null,
+      "file": "src/d/d_item.cpp:1461-1750+ (item_func_collectmapNN)",
+      "behaviour": "Numbered in DESCENDING id order: dItemNo_COLLECT_MAP_01_e is 0xFE and COLLECT_MAP_64_e is 0xBF (include/d/d_item_data.h:198-261). The first three (64/63/62, ids 0xBF-0xC1) are marked Unused. Each item_func_collectmapNN is a handful of lines around dComIfGs_onGetCollectMap; I read the enum and the function names but not every body.",
+      "constants": {"chart_bit_layout": {"value": "field_0x0[1][no>>5] |= 1 << (no & 0x1F)", "file": "src/d/d_save.cpp:853-856"}},
+      "implementation_note": "61 real charts. dComIfGs_isGetCollectMap(n) is isGetMap(n-1), so the API is 1-based while the storage is 0-based (include/d/d_com_inf_game.h:1188-1190).",
+      "confidence": "medium", "sources": ["include/d/d_item_data.h:198-261", "src/d/d_save.cpp:852-928"]
+    },
+
+    "HYOI_PEAR": {
+      "id": "0x83", "name": "Hyoi Pear", "kind": "bait", "slot": "Bait Bag",
+      "file": "src/d/actor/d_a_player_main.cpp:3792-3796",
+      "behaviour": "The only bait that uses procFoodSet_init() (daPyProc_FOOD_SET_e = 0xA8) instead of procFoodThrow_init() - Link puts it on his head and a seagull takes it, handing the camera to the bird.",
+      "constants": {}, "implementation_note": "A camera-possession mode, not an item in hand.",
+      "confidence": "high", "sources": ["src/d/actor/d_a_player_main.cpp:3792-3796", "include/d/actor/d_a_player_main.h:584-585"]
+    },
+    "BIRD_BAIT_5": {
+      "id": "0x82", "name": "All-Purpose Bait (x5)", "kind": "bait", "slot": "Bait Bag",
+      "file": "src/d/d_item.cpp:1158-1163 (item_func_bird_esa_5)",
+      "behaviour": "Goes into mBagItem.mBait with a count; using it runs procFoodThrow_init() (daPyProc_FOOD_THROW_e = 0xA7).",
+      "constants": {}, "implementation_note": "Thrown consumable.", "confidence": "medium",
+      "sources": ["src/d/d_item.cpp:1158-1163", "src/d/actor/d_a_player_main.cpp:3792-3796"]
+    },
+    "FATHER_LETTER": {
+      "id": "0x98", "name": "Father's Letter", "kind": "reserve", "slot": "Delivery Bag",
+      "file": "src/d/d_item.cpp:1270-1275 (item_func_letter00)",
+      "behaviour": "A Delivery Bag reserve item (mBagItem.mReserve). It is inside the range checkNewItemChange treats as 'usable from the menu without taking out a model': `itemNo >= dItemNo_FATHER_LETTER_e && itemNo <= dItemNo_FILL_UP_COUPON_e` i.e. 0x98..0x9E (src/d/actor/d_a_player_main.cpp:3788). Reading a letter uses daPyProc_DEMO_LETTER_OPEN_e = 0xCC / DEMO_LETTER_READ_e = 0xCD.",
+      "constants": {"reserve_range": {"value": "0x98..0x9E", "file": "src/d/actor/d_a_player_main.cpp:3788"}},
+      "implementation_note": "Letters are a display-a-page verb; d_letter.cpp / d_message_paper.cpp render them.",
+      "confidence": "high", "sources": ["src/d/actor/d_a_player_main.cpp:3788", "include/d/actor/d_a_player_main.h:621-622"]
+    },
+    "HURRICANE_SPIN": {
+      "id": "0xAA", "name": "Hurricane Spin", "kind": "upgrade", "slot": null,
+      "file": "src/d/d_item.cpp:186 (table entry); src/d/actor/d_a_player_sword.inc:277-282, 1512-1736",
+      "behaviour": "It is an ITEM NUMBER FOR THE GET-CUTSCENE ONLY and is never stored anywhere. Its item_func_ptr entry is item_func_noentry (src/d/d_item.cpp:186), whose body is empty (:2026-2027), and its get-check is item_getcheck_func_noentry (:445). Orca hands it over at src/d/actor/d_a_npc_ji1.cpp:1415-1416; the get-model is VSWON (src/d/d_item_data.cpp:3322-3337) and there is no field-item or demo-item data for it.",
+      "real_gate": "The ability is a SAVE EVENT FLAG, not an item: src/d/actor/d_a_player_sword.inc:1701-1707 checks dSv_event_flag_c::UNK_0B20 (defined include/d/d_save_event_flag.inc:84, set by Orca at src/d/actor/d_a_npc_ji1.cpp:3042) or the temporary bit dSv_event_tmp_flag_c::UNK_0402 (the in-minigame grant).",
+      "charge_and_release": "procCutTurn_init (the spin-attack hold) starts a charge only if that flag is set AND mEquipItem is the sword AND magic >= 2 AND it is not Orca's minigame AND miniGameType != 6; it then sets mProcVar0.m34D0 = 47 and spawns ID_AK_JN_CHARGEPOWER00/01 on CL_JNT_CL_LHANDA_e (src/d/actor/d_a_player_sword.inc:1709-1718). The counter ticks down with SE JA_SE_LK_SWORD_CHARGE (:1728-1736); at 0 it sets daPyStts1_UNK20000_e and releasing goes to procCutRoll_init (:1804-1805). Procs daPyProc_CUT_ROLL_e = 0x56 / CUT_ROLL_END_e = 0x57; cut type CUT_TYPE_CUT_ROLL = 0x09, commented 'Hurricane Spin' (include/d/actor/d_a_player.h:454).",
+      "constants": {
+        "charge_frames": {"value": 47, "file": "src/d/actor/d_a_player_sword.inc:1717"},
+        "magic_cost": {"value": 2, "file": "src/d/actor/d_a_player_sword.inc:1523"},
+        "atp": {"value": {"sword": 2, "master_sword": 4, "with_soup": "doubled -> 4 / 8"}, "file": "src/d/actor/d_a_player_sword.inc:1528-1548"},
+        "attack_radius": {"value": {"sword": 90.0, "master_sword": 115.0}, "file": "src/d/actor/d_a_player_sword.inc:1550 - cylinder radius is m35A4 * 0.5 where m35A4 is 180.0 or 230.0"},
+        "spin_duration_frames": {"value": 90, "file": "src/d/actor/d_a_player_sword.inc:1551 (HIO field_0x2)"},
+        "spin_yaw_per_frame": {"value": 14000, "file": "src/d/actor/d_a_player_sword.inc:1605, 1621 (HIO field_0x4) - about 77 degrees/frame"},
+        "spin_move_speed": {"value": 30.0, "file": "src/d/actor/d_a_player_sword.inc:1604 (HIO field_0x14)"},
+        "hio_table": {"value": [6, 90, 14000, 60, 1.2, 4.0, 1.0, 30.0, 1.0, 1.5, 180.0, 230.0], "file": "src/d/actor/d_a_player_HIO_data.inc:77-79 (daPy_HIO_cutRoll_c0::m; layout include/d/actor/d_a_player_HIO.h:415-429)"}
+      },
+      "implementation_note": "Not an inventory item at all - a story flag that unlocks a charged variant of the spin attack. 47-frame charge, 2 MP, 90-frame spin at ~77 deg/frame while moving forward at 30 u/f, hitbox radius 90 (Hero's Sword) or 115 (Master Sword), Atp 2/4 doubled by Soup.",
+      "confidence": "high",
+      "sources": ["src/d/d_item.cpp:186, 445, 2026-2027", "src/d/actor/d_a_player_sword.inc:277-282, 1512-1557, 1701-1736, 1804-1805", "src/d/actor/d_a_npc_ji1.cpp:1415-1416, 3042", "include/d/actor/d_a_player.h:454"]
+    },
+    "MAX_UPGRADES": {
+      "id": "0xAB-0xB2", "name": "wallet / bomb / quiver / magic upgrades", "kind": "upgrade", "slot": null,
+      "file": "src/d/d_item.cpp:1358-1400",
+      "behaviour": "MAX_RUPEE_UP1/2 raise dSv_player_status_a_c::mWalletSize (caps 200/1000/5000, include/d/d_save.h:20-30). MAX_BOMB_UP1/2 and MAX_ARROW_UP1/2 raise the bomb/arrow max to 60 then 99 (src/d/d_item.cpp:1368-1391). MAGIC_POWER / MAX_MP_UP1 raise the magic meter.",
+      "constants": {"wallet_caps": {"value": [200, 1000, 5000], "file": "include/d/d_save.h:20-30"}, "ammo_upgrades": {"value": [60, 99], "file": "src/d/d_item.cpp:1368-1391"}},
+      "implementation_note": "Straight capacity bumps.", "confidence": "medium",
+      "sources": ["src/d/d_item.cpp:1358-1400", "include/d/d_save.h:20-30"]
+    }
+  },
+
+  "_not_determined": [
+    "Iron Boots physics. I established the equip/unequip path and the walk animations but NOT the numbers: no gravity multiplier, sink rate, wind resistance or floor-switch weight was read. Look inside d_a_player_*.inc for daPyFlg0_EQUIP_HEAVY_BOOTS / checkEquipHeavyBoots.",
+    "Magic Armor. I established the toggle flag daPyFlg1_EQUIP_DRAGON_SHIELD and where it is set/cleared, but NOT the magic drain rate per frame nor the damage-nullification hook. daPy_lk_c::changeDragonShield (src/d/actor/d_a_player_main.cpp:3763-3776) was located but not read in full.",
+    "Skull Hammer numbers. The four hammer procs and the file d_a_player_hammer.inc (411 lines, real code) were identified but no swing timings, AT type or Atp were extracted, and d_a_obj_swhammer.cpp's peg-depth constants were not read.",
+    "Bottle restore amounts. How many hearts a Red Potion gives, how much magic a Green Potion gives, what Blue Potion and Soup restore, and how the fairy auto-revive works, are all inside d_a_player_bottle.inc's drink/open procs and were NOT read. Only the Forest Water timer (36000 frames) was confirmed.",
+    "Picto Box capacity. mPictureNum exists in the save (include/d/d_save.h:145) but I did not find the constant that caps it, nor the colour/black-and-white switch inside d_picture_box.cpp / d_snap.cpp.",
+    "Per-slot maximum for bag items. mBeastNum[8] / mBaitNum[8] / mReserveNum[8] are plain u8 arrays and d_save.cpp does not clamp them; a cap (if any) must be in the setItemBeastNumCount / dComIfGp_setItem*NumCount helpers, which I did not read.",
+    "Melodies 6 and 7. They have real conducting patterns (up/down/right and up/right/left/down) and a shorter 600-frame timeout, but they are excluded from the isTact() learned-song check, so they are event-only. Which cutscenes drive them is unknown.",
+    "The free-play recogniser. JAIZelInst::m_note_pattern[6][6] and m_stick_to_note_table[25] are real data, but I could not establish what consumes setStickPos()'s return value in gameplay, so do NOT assume those six entries are the six songs.",
+    "Ballad of Gales destinations. dStage_changeScene(mTactWarpPosNum + 0xC5, ...) is real, but NOTHING in the decompiled source ever calls setTactWarpPosNum - the caller is in src/d/d_menu_fmap.cpp, which is 131 /* Nonmatching */ stubs in 669 lines, i.e. essentially entirely undecompiled. The mapping from a cyclone icon on the sea chart to a spawn-point index is therefore not recoverable from this decomp.",
+    "The wind-direction wheel. dOperate_wind_c::windSet(), arrowDirection(), initialize(), _create() and 19 other functions in src/d/d_operate_wind.cpp are /* Nonmatching */ (23 of ~25 functions). Only dOw_angleRegular (8 directions at 45 degrees, src/d/d_operate_wind.cpp:57-79) and dOw_stickControl are real. The exact s16 angle written for each of the 8 compass directions was NOT recovered; dKyw_tact_wind_set(x, y) is the setter to feed.",
+    "Tingle Tuner gameplay. d_a_agb.cpp (1877 lines) and d_a_agbsw0.cpp are real decompiled code, so its features ARE recoverable, but mining them was out of scope here. All I established is the entry point (orderTalkEvent with the AGB actor) and the state daPyProc_DEMO_AGB_USE_e.",
+    "Hurricane Spin (0xAA): id only; no behaviour established.",
+    "dSv_player_item_record_c::mBottleNum[3] and dSv_player_status_a_c::mSelectEquip[3]: both exist and are initialised, but I found no reader for either.",
+    "dSv_player_map_c::field_0x0[0] - one of the four 128-bit chart maps is written by init() but has no accessor I could find; rows 1/2/3 are get/open/complete."
+  ],
+
+  "_stubbed_files": {
+    "_note": "Files audited with `grep -c Nonmatching`. A high count means the file's behaviour is NOT recoverable.",
+    "src/d/d_operate_wind.cpp": "23 nonmatching in 306 lines - the wind-direction wheel UI is effectively undecompiled",
+    "src/d/d_menu_fmap.cpp": "131 nonmatching in 669 lines - the sea chart, including cyclone-warp destination selection",
+    "src/d/d_menu_fmap2.cpp": "113 nonmatching in 572 lines",
+    "src/d/d_menu_collect.cpp": "2 nonmatching in 4811 lines - essentially complete",
+    "src/d/d_picture_box.cpp": "1 nonmatching in 2457 lines - essentially complete",
+    "fully_real": [
+      "src/d/actor/d_a_player_tact.inc (854 lines, 0 stubs)",
+      "src/d/actor/d_a_player_bottle.inc (576 lines, 0 stubs)",
+      "src/d/actor/d_a_player_hammer.inc (411 lines, 0 stubs)",
+      "src/d/d_item.cpp (2998 lines, 0 stubs)",
+      "src/d/d_save.cpp (2021 lines, 0 stubs)",
+      "src/d/d_snap.cpp (2257 lines, 0 stubs)",
+      "src/d/actor/d_a_agb.cpp (1877 lines, 0 stubs)",
+      "src/d/actor/d_a_sail.cpp (677 lines, 0 stubs)",
+      "src/d/actor/d_a_obj_swhammer.cpp (491 lines, 0 stubs)",
+      "src/d/d_metronome.cpp (615 lines, 0 stubs)",
+      "src/d/actor/d_a_wbird.cpp (240 lines, 0 stubs)",
+      "src/d/actor/d_a_tornado.cpp (363 lines, 0 stubs)",
+      "src/JAZelAudio/JAIZelInst.cpp (0 stubs in the tact code)"
+    ]
+  }
+}

@@ -1,0 +1,822 @@
+{
+  "_source": "gcrip/data/ww_world_actors.json - a reference table of Wind Waker world actors that the remake places as inert scenery but that actually DO something in the original game. Mined by reading the zeldaret/tww decompilation at Z:/memRip/sources/tww (read-only) against the ripped placement records in out/rip/GZLE01/godot/stage_data.json. Every claim carries a `file:line` that was actually read, or a real ripped-data path. STRUCTURE: `_ranking` lists the unwrapped actors by placement count so you can see what was skipped; `_conventions` holds the decoding rules that apply to every entry; `_unrecoverable` lists what could not be determined; `actors` is a dict keyed by the PLACED name (the ACTR/SCOB/TGOB name in the .dzs, which is what stage_data.json records). Each actor entry has: name, file (path relative to Z:/memRip/sources/tww), profile (the fpcNm_* from the OBJNAME table in src/d/d_stage.cpp), aliases (other placed names that run the same code, if any), stub (false = the C++ body is real, \"partial\" = some functions are /* Nonmatching */, true = the body is a generated stub and nothing is minable), placements (count + top stages, read from stage_data.json), params (a decode table: field -> {bits, meaning, proof}), rot_scale (how the placement rot and scale fields are consumed - several actors use rot.x/rot.z as EXTRA PARAMETER WORDS, not as rotations), behaviour, activates_on, effect, implementation_note, confidence, sources.",
+
+  "_conventions": {
+    "PrmAbstract": "Most modern actors decode params with `daObj::PrmAbstract(this, PRM_X_W, PRM_X_S)`, which is exactly `(params >> S) & ((1 << W) - 1)` (include/d/d_a_obj.h:10-17). The PRM_*_W / PRM_*_S enums live in the actor's header. Older actors decode inline with explicit shifts and masks; those are quoted verbatim in the entries.",
+    "GetParamBit": "`fopAcM_GetParamBit(param, shift, bitcount)` is `(param >> shift) & ((1 << bitcount) - 1)` (include/f_op/f_op_actor_mng.h:134-136).",
+    "OBJNAME_argument_is_NOT_params": "src/d/d_stage.cpp's OBJNAME table has a third column that dStage_actorCreate copies into `fopAcM_prm_class::argument` (d_stage.cpp:1298-1310), NOT into params. Actors that key off a numeric subtype (tsubo, movebox, swpush, cc, stone2, ...) read that subtype out of their PARAMS instead, and the OBJNAME argument only exists so dStage_getName can turn a (profile, subtype) pair back into a name. In every case checked against the rip, the params subtype and the placed name agree - but it is a level-design convention, not something the engine enforces.",
+    "switch_numbers": "fopAcM_isSwitch / onSwitch / offSwitch / revSwitch(actor, n) read and write the save's switch bits, resolved against the actor's HOME room. 0xFF (and -1) mean 'no switch' and are a no-op. This is the same 256-bit space the remake already uses.",
+    "collision_templates": "A `static const dCcD_Src*` block at the top of a .cpp is often a PLACEHOLDER that create() resizes at runtime. Entries below say explicitly when a quoted radius is a real runtime value and when it is a template that could not be verified because the resize sits inside a /* Nonmatching */ stub.",
+    "scale_bytes": "The exporter's `scale` field is already actor->scale, i.e. the placement's raw byte times 0.1 (src/f_op/f_op_actor.cpp:278). Actors that use scale as data (HyoiKam, swpush) multiply it further; see the entries.",
+    "already_known": "Not re-derived here: TagEv params (d_a_tag_event.cpp:18-45), AttTag/AttTagB (d_a_tag_attention.h:55-72), a chest's item id in the high byte of rot.z, and the shared event-bit/register array (d_save.cpp:1201-1210)."
+  },
+
+  "_ranking": {
+    "_note": "unwrapped actors by placement count across all 161 ripped stages (chests and everything in stage.gd's SCRIPTS dict excluded). Format: name|count|top stages. Entries present in `actors` below are marked MINED.",
+    "rows": [
+      "Odokuro|346|M_Dai:123,sea:51,PShip:24,SubD45:24  MINED",
+      "Ospbox|160|Asoko:70,SubD44:49,SubD51:22  MINED",
+      "door10|159|TF_06:32,GanonJ:21,ma2room:17,ma3room:17  MINED",
+      "s_turu|139|kindan:68,Cave03:50,sea:21  MINED",
+      "Ocanon|139|sea:138  MINED",
+      "Figure|135|figureB:27,figureA:24,figureE:19  (Nintendo Gallery figurines - display-case only, deliberately skipped)",
+      "lwood|106|sea:25,A_mori:21,Omori:11  MINED",
+      "BFlower|105|sea:45,Cave10:14,Cave09:9  MINED",
+      "bable|105|M_DaiB:19,Xboss2:19,M_Dai:10  MINED (stub)",
+      "c_green|93|kindan:37,Cave10:18,TyuTyu:12  MINED",
+      "MKanok2|93|GanonE:36,M_Dai:22,SubD45:14  MINED (stub)",
+      "Oyashi|91|sea:53,DmSpot0:11,sea_r44:10  MINED",
+      "c_red|85|I_SubAN:20,Cave10:10,Hyrule:10  MINED",
+      "osiBLK0|76|SubD51:44,I_TestR:13,M_NewD2:12  MINED",
+      "KNOB00|75|sea:14,ma2room:10,ma3room:10  MINED",
+      "MKoppu|58|majroom:17,ma2room:11,Opub:8  (tableware, Obj_Mshokki - not mined)",
+      "Kmtub|58|M_NewD2:33,GanonB:12  MINED (tsubo type 2)",
+      "Ostool|58|majroom:11,ma2room:10  MINED (tsubo type 4)",
+      "Fdai|58|sea:16,Orichh:11,TEST:10  (fpcNm_DAI_e - not mined)",
+      "Bdkobj|56|M2tower:28,Mjtower:28  (fpcNm_BDKOBJ_e, Forsaken Fortress - not mined)",
+      "Ikari|55|M2ganon:11,M2tower:11,MajyuE:11,Mjtower:11,sea:11  MINED",
+      "Oship|55|sea:55  MINED",
+      "door12|52|M_Dai:16,Cave08:14,kaze:13  MINED",
+      "Hcbh|51|GanonJ:11,Siren:10,TF_01:8,TF_02:8  MINED",
+      "HyoiKam|51|sea:48  MINED",
+      "KNOB00D|49|sea:12,majroom:10  MINED (alias of KNOB00)",
+      "Kbota_A|48|KATA_RM:8,sea:7,Asoko:4  MINED",
+      "Ktarur|47|Ocean:38,sea:8  MINED",
+      "c_kiiro|46|Siren:21,Cave10:10  MINED",
+      "Kmi02|46|kindan:23,Cave03:9,GanonD:6  MINED (tsubo type 13)",
+      "Ysdls00|45|one or two in nearly every Cave  MINED",
+      "Otana|43|Ojhous:13,Ojhous2:13  (shelf, Obj_Shelf - not mined)",
+      "Hfuck1|42|kaze:18,Cave08:13  MINED",
+      "Sss|41|kaze:30,kindan:7,Cave08:4  MINED",
+      "MOsara|40|majroom:16,ma3room:11  (tableware - not mined)",
+      "bridge|40|sea:11,sea_r44:11,M_NewD2:6  MINED",
+      "Paper|40|Ojhous:10,Ojhous2:10  (wall paper/poster - not mined)",
+      "RopeR|38|Asoko:20,I_TestR:6  (fpcNm_HIMO3_e rope - not mined)",
+      "Sitem|38|kindan:26,GanonD:8  MINED as a NEGATIVE result (nothing is recoverable)",
+      "bbaba|37|kindan:11,Cave10:8,sea:7  (fpcNm_BO_e Boko Baba - enemy, belongs in enemies.json)",
+      "Kbota_B|35  MINED",
+      "MhmrSW0|26  MINED",
+      "Ebrock/Ekao/Ebrock2|56 combined  MINED",
+      "osiBLK1|24  MINED",
+      "Mhsg4h|17  MINED",
+      "Hmlif|20  MINED",
+      "Aygr|28|sea:28  MINED as a NEGATIVE result",
+      "Hjump2|12  MINED",
+      "Hfbot1C|12  MINED as a NEGATIVE result",
+      "Ygush00|8  MINED"
+    ]
+  },
+
+  "_unrecoverable": [
+    "bable (fpcNm_BL_e, 105 placements) - every one of the 29 functions in src/d/actor/d_a_bl.cpp is a /* Nonmatching */ stub and include/d/actor/d_a_bl.h has an empty class. No param layout, no HP, no speeds. Only the resource/function NAMES survive.",
+    "MKanok2 (fpcNm_Obj_Kanoke_e, 93 placements) - include/d/actor/d_a_obj_kanoke.h:8-10 declares `enum Prm_e { }` with an EMPTY body, and all 24 functions are stubs. Five param fields are known BY NAME (type, search, yure, swNo, swNo2) but not by bit position.",
+    "Hfbot1C (fpcNm_Obj_Swflat_e, 12 placements) - all functions Nonmatching; the three getters prmGetSwNo / prmGetSwNo2 / prmGetType exist as empty bodies, so the fields exist but their widths and shifts do not.",
+    "Sitem (fpcNm_SITEM_e, 38 placements) - a fully generated dtk shell, 16/16 functions Nonmatching, header class has no members. Even what the actor IS is inference from function names.",
+    "Aygr (fpcNm_Obj_Aygr_e, 28 placements) - all 9 functions Nonmatching. `prm_get_mdl()` proves params pick a model but not which bits.",
+    "s_turu collision radius - the 15.0f body cylinder sits inside daSsk_Create, which is marked /* Nonmatching */ even though the surrounding body is written out. Treat as probable, not certain.",
+    "Ktarur / Kbota / Hfbot1C / MKanok2 static dCcD_Src radii - flagged individually in each entry; the barrel one IS overridden at runtime and the template value (r 50 / h 100) is wrong.",
+    "Not attempted at all (frequent but lower gameplay value): Figure (135), MKoppu (58), Fdai (58), Bdkobj (56), Otana (43), MOsara (40), Paper (40), RopeR (38), bbaba (37, an enemy that belongs in enemies.json), Fmastr2, Homen2, Htoge1, magtail, pow, gmos, Rdead1, amos, kani, Tpost, MPot, Ksaku, Ikada, Lamp, nezuana, Oqw, Ikori, Search, nezumi, OtbleL, Mkdan1, Shmrgrd, jbaba, ho.",
+    "RECOVERED DESPITE BEING STUBS - three actors whose C++ is entirely /* Nonmatching */ were decoded anyway by disassembling their compiled .rel out of the user's own ISO and matching it against config/GZLE01/rels/<name>/symbols.txt: Ysdls00 (d_a_warpls, confidence high - every field cross-checked against all 65 placements), Hcbh (d_a_obj_hcbh, medium) and Sss (d_a_sss, medium). Their `proof` strings cite .text offsets in the .rel, NOT decomp line numbers - a different and weaker class of evidence than the rest of this file, so they carry an explicit `evidence_note`.",
+    "Still open on actors that ARE mined: bridge's params bits 8-15 (m02D9) have no established role; s_turu's exact body-cylinder radius; Hcbh's and MKanok2's collision capsule sizes; whether Aygr's model bit is bit 0."
+  ],
+
+  "actors": {
+
+    "Odokuro": {
+      "name": "Odokuro",
+      "file": "src/d/actor/d_a_tsubo.cpp",
+      "profile": "fpcNm_TSUBO_e",
+      "stub": false,
+      "aliases": ["kotubo", "ootubo1", "Kmtub", "Ktaru", "Ostool", "Odokuro", "Okioke", "Kmi02", "Ptubo", "KkibaB", "Kmi00", "Hbox2S"],
+      "placements": "Odokuro 346 (M_Dai 123, sea 51, PShip 24, SubD45 24, kaze 23, M_NewD2 17); the same actor also covers Ktaru 270, Ostool 58, Kmtub 58, Kmi02 46, Ptubo 12 on top of the already-wrapped kotubo 654 / ootubo1 594",
+      "params": {
+        "type": {"bits": "(params >> 24) & 0xF", "meaning": "index into Act_c::M_arcname[16] and Act_c::M_data[16]; picks model, gravity, throw arc, collision size and break effect. Verified against every tsubo placement in the rip: kotubo=0, ootubo1=1, Kmtub=2, Ktaru=3, Ostool=4, Odokuro=5, Kmi02=13, Ptubo=14 - one nibble value per placed name with no exceptions.", "proof": "include/d/actor/d_a_tsubo.h:39-40 (PRM_TYPE_W=4, PRM_TYPE_S=24), :159; src/d/actor/d_a_tsubo.cpp:1281, :43-59 (M_arcname), :92 (M_data)"},
+        "itemNo": {"bits": "params & 0x3F", "meaning": "what the pot drops when it breaks. 0x3F = nothing. 0x20..0x3E = index (itemNo-0x20) into the game's random drop tables; sub-indices 1..4 are auto-picked from Link's remaining life and 0x0B..0x14 spawn a whole 16-entry burst. Anything else is a literal dItemNo_*.", "proof": "include/d/actor/d_a_tsubo.h:28-29, :191; src/d/actor/d_a_tsubo.cpp:2209-2212; src/f_op/f_op_actor_mng.cpp:806-899"},
+        "spec": {"bits": "(params >> 8) & 0x3F", "meaning": "special contents. 0x3F = plain pot. 0 = the pot is HIDDEN until its switch turns on. 1/2/3 = that many Bokoblins (fpcNm_BOKO_e, daBoko_c::Type_BOKO_STICK_e) are created and hide with it. 4 = starts in the appear animation. 5 = if the switch is off, moveBg is forced on.", "proof": "include/d/actor/d_a_tsubo.h:31-32, :194, :217; src/d/actor/d_a_tsubo.cpp:1432-1460 (spec_init), :1421-1429 (spec_make_boko), :1322-1323, :1347-1352"},
+        "itemSave": {"bits": "(params >> 16) & 0x7F", "meaning": "save-flag (itemBitNo) for the drop so a unique item is only collectable once. 0x7F = do not save.", "proof": "include/d/actor/d_a_tsubo.h:34-35, :192; src/d/actor/d_a_tsubo.cpp:2210-2212"},
+        "moveBg": {"bits": "((params >> 14) & 3) == 1", "meaning": "the pot rides moving BG. The actor force-sets bits 14-15 itself (|= 0xC000) when it lands on non-DA moving ground.", "proof": "include/d/actor/d_a_tsubo.h:37-38, :193; src/d/actor/d_a_tsubo.cpp:1316, :1324, :2582"},
+        "cull": {"bits": "(params >> 28) & 7", "meaning": "cull-distance class; cleared to 0 when a Bokoblin is inside so the pot is never culled away.", "proof": "include/d/actor/d_a_tsubo.h:42-43, :189, :212"},
+        "stick": {"bits": "(params >> 31) & 1", "meaning": "only read for type 7 (the spine ball) - keeps the 'stuck' attribute instead of 0.", "proof": "include/d/actor/d_a_tsubo.h:45-46, :195; src/d/actor/d_a_tsubo.cpp:1339-1343, :1906"}
+      },
+      "rot_scale": "rot.z is NOT a rotation. prmZ_init() copies home.angle.z into mPrmZ then zeroes home/current/shape angle.z; the low byte mPrmZ & 0xFF is a SWITCH NUMBER (prmZ_get_swSave / is_switch). rot.y is the real facing and is also handed to the dropped item. scale is not read.",
+      "behaviour": "The universal small carriable prop - pots, barrels, stools, skulls, pails, seed pods. Link lifts it, carries it and throws it; it tumbles, breaks on impact, on a sword hit, or on a fall over 200 units, sinks in water and burns in lava. Odokuro (type 5) is the bone skull used all over the dungeons and the Great Sea platforms; mechanically identical to kotubo, only its numbers, model and break effect differ (eff_break_skull).",
+      "activates_on": "Link's lift button when in range (attention ACTION_CARRY, range data().mAttnDist), or any attack on its cylinder. A spec==0 pot with its switch off does not exist yet and pops in when the switch turns on (mode_hide -> mode_appear_init).",
+      "effect": "Drops the itemNo/itemSave item on break; spec 1..3 releases hiding Bokoblins. Sets no flags itself.",
+      "implementation_note": "THE cheapest big win in the rip. This is the same actor the remake already wraps as res://actors/carriable.gd for kotubo/ootubo1/koisi1/Ktaru - Odokuro (346, the single most common unwrapped actor), Ostool (58), Kmtub (58), Kmi02 (46) and Ptubo (12) are just more rows in that KINDS table. Numbers straight out of M_data[type] as (mGravity, m14 throw-up, m18 throw-forward, mAcchCirRad radius, m70 height, mAttnDist): kotubo[0] -6.0/27/36/30/60/8 - which matches the existing carriable.gd row exactly, so the mapping is verified; Kmtub[2] -6.5/22/43/50/100/11; Ktaru[3] -6.0/27/36/35/70; Ostool[4] -6.0/27/36/40/80/12; Odokuro[5] -6.0/27/36/28/60/8; Kmi02[13] -5.0/25/45/50/100/10; Ptubo[14] -6.5/22/43/50/100/10. Also wire up itemNo/itemSave so pots finally drop something, and rot.z's switch byte.",
+      "confidence": "high",
+      "sources": ["src/d/d_stage.cpp:519-530", "src/d/d_stage.cpp:1298-1310", "include/d/actor/d_a_tsubo.h:26-47", "include/d/actor/d_a_tsubo.h:88-113", "include/d/actor/d_a_tsubo.h:159-219", "src/d/actor/d_a_tsubo.cpp:43-90", "src/d/actor/d_a_tsubo.cpp:92-1141", "src/d/actor/d_a_tsubo.cpp:1180-1190", "src/d/actor/d_a_tsubo.cpp:1237-1251", "src/d/actor/d_a_tsubo.cpp:1277-1360", "src/d/actor/d_a_tsubo.cpp:1421-1460", "src/d/actor/d_a_tsubo.cpp:1698-1703", "src/d/actor/d_a_tsubo.cpp:2205-2245", "src/f_op/f_op_actor_mng.cpp:805-899", "include/d/d_a_obj.h:10-17"]
+    },
+
+    "Ospbox": {
+      "name": "Ospbox",
+      "file": "src/d/actor/d_a_obj_ospbox.cpp",
+      "profile": "fpcNm_Obj_Ospbox_e",
+      "stub": false,
+      "placements": "160 (Asoko 70, SubD44 49, SubD51 22, H_test 8, K_Test5 4, Obombh 4, Atorizk 3)",
+      "params": {
+        "itemNo": {"bits": "params & 0x3F", "meaning": "drop, passed to fopAcM_createItemFromTable with itemBitNo hard-coded to 0x7F (never saved). 0x3F = nothing, which is what 145 of the 160 placements carry.", "proof": "include/d/actor/d_a_obj_ospbox.h:11-12, :17-19; src/d/actor/d_a_obj_ospbox.cpp:140-150"},
+        "spec": {"bits": "(params >> 8) & 7", "meaning": "index into a static 8-entry profile table. 1, 2 and 3 spawn a PIG (fpcNm_KB_e, which OBJNAME maps to the placed name \"Pig\", d_stage.cpp:798) with parameter 0x01FF0000 / 0x01FF0001 / 0x01FF0002 instead of dropping an item. 0 and 4..7 fall through to the item drop. Observed in the rip: 7 (x145), 3, 1, 2, 0.", "proof": "include/d/actor/d_a_obj_ospbox.h:13-14, :20-22; src/d/actor/d_a_obj_ospbox.cpp:122-160; src/d/d_stage.cpp:798"},
+        "unused": {"bits": "bits 3-7 and 11-31", "meaning": "never read - the header declares only these two fields.", "proof": "include/d/actor/d_a_obj_ospbox.h:10-22"}
+      },
+      "rot_scale": "shape_angle builds the model matrix and scale multiplies the model (init_mtx), but neither is decoded into gameplay data. 157 of 160 placements are rot (0,0,0).",
+      "behaviour": "A stone crate that stands as solid MoveBG world collision (its own Ospbox.dzb) and can ONLY be destroyed by a bomb - its Tg mask is exactly AT_TYPE_BOMB and nothing else. Two frames after spawn it locks its BG. When a bomb hits it, it makes its item (or its pig), plays the break particle and sound, and deletes itself.",
+      "activates_on": "a bomb explosion overlapping its cylinder.",
+      "effect": "deletes itself (removing the wall) and either drops an item or spawns a pig. Sets no switch, orders no event.",
+      "implementation_note": "The collision numbers here ARE real: Create() does mCyl.Set(M_cyl_src) with no runtime resize, so radius 75 / height 150 centred on the origin is correct, and the cull box is -76..76 XZ, -1..151 Y. Godot: a StaticBody3D with the baked Ospbox mesh, an Area3D cylinder r=75 h=150 that only listens for bombs, and on hit free the body and spawn the item or pig.",
+      "confidence": "high",
+      "sources": ["src/d/d_stage.cpp:904", "src/d/d_stage.cpp:798", "include/d/actor/d_a_obj_ospbox.h:1-56", "src/d/actor/d_a_obj_ospbox.cpp:16-46", "src/d/actor/d_a_obj_ospbox.cpp:56-95", "src/d/actor/d_a_obj_ospbox.cpp:122-160", "src/d/actor/d_a_obj_ospbox.cpp:212-233"]
+    },
+
+    "s_turu": {
+      "name": "s_turu",
+      "file": "src/d/actor/d_a_ssk.cpp",
+      "profile": "fpcNm_SSK_e",
+      "stub": "partial",
+      "placements": "139 (kindan 68, Cave03 50, sea 21)",
+      "params": {
+        "mode": {"bits": "params & 0xFF", "meaning": "0xFF = permanently grown and hazardous from room load (collision armed immediately, scale 1). 1 = grows when the player is inside the trigger radius and RETRACTS again once he is more than radius+100 away. 0 (and anything else) = grows on approach and then stays grown.", "proof": "src/d/actor/d_a_ssk.cpp:371, :400-421, :148-151"},
+        "radius10": {"bits": "(params >> 8) & 0xFF", "meaning": "trigger radius divided by 10. 0xFF is normalised to 0, and 0 means the default 400.0f. The retract distance is that radius + 100.0f.", "proof": "src/d/actor/d_a_ssk.cpp:372, :376-378, :383-386, :252"},
+        "swSave": {"bits": "(params >> 24) & 0xFF", "meaning": "switch number, 0xFF = none. If the switch is ALREADY on when the room loads, the actor refuses to create (cPhs_ERROR_e). If it turns on later the plant shrinks away and deletes itself.", "proof": "src/d/actor/d_a_ssk.cpp:373, :379-381, :140-144, :153-158"},
+        "bits_16_23": {"bits": "(params >> 16) & 0xFF", "meaning": "not read anywhere in the file.", "proof": "src/d/actor/d_a_ssk.cpp:371-373 - the only three param reads in the translation unit"}
+      },
+      "rot_scale": "rot.y is the facing used for the model matrix. scale is NOT placement data - the actor drives it itself (0 while hidden, lerped to 1 as it grows) and every placement in the rip is 1,1,1.",
+      "behaviour": "The obstructive thorn plant (its sounds are JA_SE_OBJ_JAMA_SHOKU_IN/_OUT, 'obstruction plant'). It lies dormant at zero scale, then a burst of rock and smoke plays and it grows to full size; once grown it sways on a per-joint sine (5 joints, periods 2000/1300/1000 with 20000/12000/15000 phase offsets, amplitudes 2000/2000/4000 in angle units) and its cylinder becomes an AT collider (AT_TYPE_UNK2000, power 1) that hurts Link on contact. The boomerang cannot hit it; most other weapons can.",
+      "activates_on": "fopAcM_searchPlayerDistance() < radius (default 400).",
+      "effect": "damages Link on contact while grown. Sets nothing; it is a pure obstacle whose existence is gated by swSave.",
+      "implementation_note": "Body cylinder radius 15 / height 0 comes from the static body_co_cyl inside daSsk_Create, and daSsk_Create IS marked /* Nonmatching */ (d_a_ssk.cpp:333) even though the surrounding body is written out and calls mCyl.Set(body_co_cyl) with no resize - so treat r=15 as probable, not certain. Godot: an Area3D that arms and disarms with a grow tween (cLib_addCalc2 toward 1.0, rate 0.5, max step 0.3; shrink with cLib_addCalc0 rate 0.5 / step 0.3, scale.y leading x and z) plus a sine sway on the visual.",
+      "confidence": "medium",
+      "sources": ["src/d/d_stage.cpp:793", "include/d/actor/d_a_ssk.h:16-40", "src/d/actor/d_a_ssk.cpp:85-175", "src/d/actor/d_a_ssk.cpp:246-256", "src/d/actor/d_a_ssk.cpp:331-424", "src/d/actor/d_a_ssk.cpp:437-451"]
+    },
+
+    "Ocanon": {
+      "name": "Ocanon",
+      "file": "src/d/actor/d_a_obj_canon.cpp",
+      "profile": "fpcNm_OBJ_CANON_e",
+      "stub": false,
+      "placements": "139, of which 138 are in `sea` (the rest is one test-stage copy)",
+      "params": {
+        "scaleStep": {"bits": "params & 0xFF", "meaning": "0xFF = leave scale alone; otherwise scale is set uniformly to 1.0 + n*0.1. Every placement in the rip uses 0x05, i.e. scale 1.5.", "proof": "src/d/actor/d_a_obj_canon.cpp:570, :574-576"},
+        "swAppear": {"bits": "(params >> 8) & 0xFF", "meaning": "'appear' switch, 0xFF = none. If set and the switch is OFF at create, the cannon starts in mode 3 (modeSwWait) with its map marker cleared, and only appears (mode 4) once the switch turns on.", "proof": "src/d/actor/d_a_obj_canon.cpp:571, :537-543, :404-408"},
+        "pathId": {"bits": "(params >> 16) & 0xFF", "meaning": "dPath room-path index. In the retail build 0xFF makes _create fail outright, so EVERY live Ocanon has a path - and the path is used as a REGION, not a route: modeWait only fires when the player is inside it (dNpc_PathRun_c::chkInside). The path polygon is the cannon's firing zone.", "proof": "src/d/actor/d_a_obj_canon.cpp:572, :587-590, :546, :311-330"},
+        "swDead": {"bits": "(params >> 24) & 0xFF", "meaning": "'destroyed' switch, 0xFF = none. If already ON at create the cannon starts in mode 2 (already blown up); when destroyed, modeDeleteInit turns it ON.", "proof": "src/d/actor/d_a_obj_canon.cpp:573, :536-538, :379-382"}
+      },
+      "rot_scale": "shape_angle drives both the model matrix and the barrel aim (setMtx / lockonCannon work off shape_angle.y and shape_angle.x). Placement scale is overwritten from scaleStep whenever that is not 0xFF.",
+      "behaviour": "The wall-mounted enemy cannon of the Great Sea (archive \"WallBom\", joint WALLBOM_JNT_SHOT). It sits still, tracks the player and lobs a bomb whenever he is inside its path region. It leads the target: aim point = the player's position pushed 150 units back along his facing, plus (distance - 2000) * 0.2 more when he is far, plus a flat 3000 while Link is swimming, plus 200*(6 - shots the boat has fired) as a deliberate miss-bias on the first six shots. 2 HP.",
+      "activates_on": "the player entering the dPath region while the 30-frame reload timer has expired.",
+      "effect": "creates a daBomb actor with 22 frames of no gravity. When destroyed it sets swDead, sprays four particle effects and clears its map marker.",
+      "implementation_note": "Real numbers from the HIO defaults: lead 150, far-aim threshold 2000 with 0.2 gain, swim bonus 3000, reload 30 frames, aim turn 0x3000, bomb no-gravity 22 frames, health 2. Collision: mSph.Set(m_sph_src) with radius 75 and NO runtime resize, so 75 is real. Cull box (-100,-100,-10)..(100,100,150) times scale.x. Implementing this one actor populates the Great Sea with its main hazard.",
+      "confidence": "high",
+      "sources": ["src/d/d_stage.cpp:819", "include/d/actor/d_a_obj_canon.h:13-80", "src/d/actor/d_a_obj_canon.cpp:1-24", "src/d/actor/d_a_obj_canon.cpp:44-78", "src/d/actor/d_a_obj_canon.cpp:181-243", "src/d/actor/d_a_obj_canon.cpp:301-390", "src/d/actor/d_a_obj_canon.cpp:395-418", "src/d/actor/d_a_obj_canon.cpp:535-600"]
+    },
+
+    "door10": {
+      "name": "door10",
+      "file": "src/d/actor/d_a_door10.cpp",
+      "profile": "fpcNm_DOOR10_e",
+      "stub": false,
+      "aliases": ["door10", "door11", "door20", "door21", "Zenshut", "keyshut", "K_Zshut"],
+      "placements": "door10 159 (TF_06 32, GanonJ 21, ma2room 17, ma3room 17, Siren 15, M_NewD2 12) + door20 13 (one per boss room)",
+      "params": {
+        "swbit": {"bits": "params & 0xFF", "meaning": "front-side switch / save-flag index, 0xFF = none. Used three ways depending on type: the lock flag for a key door (if !isSwitch(swbit) the padlock model shows and the door is locked; unlocking calls onSwitch(swbit)), the switch that raises the front stop-bars, or the switch that gets SET when the room is cleared.", "proof": "src/d/d_door.cpp:16-18; src/d/actor/d_a_door10.cpp:28-51, :67-86, :146-148; src/d/d_door.cpp:436-437"},
+        "type": {"bits": "(params >> 8) & 0xF", "meaning": "0 = plain switch/bar door (door10.bdl). 1 = BOSS DOOR: boss-key lock, door20.bdl, attention point +250, drawn with map mode 1 - and every door20 placement in the rip carries type 1. 2 = front-side 'enemy clear' door that opens itself once the front room has no enemies and then SETS swbit. 3 = the small door11.bdl (also uses a much narrower approach box, 15^2 instead of 110^2). 4 and 5 = small-key locked; 5 additionally does the enemy-clear auto-open on the BACK side.", "proof": "src/d/d_door.cpp:26-28; src/d/actor/d_a_door10.cpp:13-25, :76-84, :120-132, :223-249, :275-287, :462-468, :763"},
+        "eventNo": {"bits": "(params >> 12) & 0xFF", "meaning": "event-manager event number; feeds dComIfGp_evmng_getToolId(eventNo, i) for i=0..11, selecting the 12 cutscene variants (STOP_OPEN / SHUTTER_DOOR_F / SHUTTER_DOOR_F_STOP / BS_SHUTTER_F / KNOB_* / HKYO_DOOR / SHUTTER_DROP_CARRY). door10 passes spl=1 so slots 2 and 3 become DEFAULT_SHUTTER_DOOR_10.", "proof": "src/d/d_door.cpp:39-41, :186-223; src/d/actor/d_a_door10.cpp:473"},
+        "swbit2": {"bits": "(params >> 20) & 0xFF", "meaning": "BACK-side stop-bar switch, 0xFF = none. A non-0xFF value is also what makes the stop-bar model get created at all.", "proof": "src/d/d_door.cpp:21-23; src/d/actor/d_a_door10.cpp:54-64, :89-101"},
+        "bits_28_31": {"bits": "(params >> 28) & 0xF", "meaning": "unused by door10 - only knob00 reads this range.", "proof": "src/d/actor/d_a_door10.cpp - no read of >>0x1c anywhere in the file"}
+      },
+      "rot_scale": "rot.x packs BOTH room numbers: frontRoom = rot.x & 0x3F, backRoom = (rot.x >> 6) & 0x3F, 0x3F meaning none. The actor's own room is set from frontRoom and the dBgW is tagged with it; opening does dComIfGp_roomControl_offStatusFlag(toRoom, 0x08) and closing re-ons the fromRoom flag - that IS the room streaming handoff. rot.y is the facing yaw, turned into the front normal (sin y, 0, cos y). rot.z is two fields: shipId = rot.z & 0x3F (if != 0x3F, dStage_setShipPos repositions Link's boat on the far side) and arg1 = (rot.z >> 8) & 0xFF. arg1 values door10 acts on: 1..4 enable the Hkyo 'sealed' overlay; 13 and 14 swap in the DoorBs archive models; 15 skips the 65-frame enemy recheck; 16 with type 1 allows the back-side open; 17 makes the bars use the CAGE_OPEN/CLOSE SE. Scale is not read.",
+      "behaviour": "The classic vertically-sliding dungeon shutter. It is a MOVE_BG collision wall; when Link approaches from the correct side and faces it he gets a door prompt, then it rises 300 units while he is walked through, and slams back down behind him. Optional extras: a small-key or boss-key padlock (dDoor_key2_c), steel stop-bars in front (dDoor_stop_c, model stop10 from the STAGE archive), and a glowing Hkyo seal.",
+      "activates_on": "proximity plus facing: checkArea(getSize2X(), 110^2, 250^2) - Link within 250 units in XZ, inside a narrow box in front, facing within ~0x5000 of the door normal - then dEvtCnd_CANDOOR_e lets A start the door event. A key lock suppresses the offer unless getKeyNum() != 0 or isDungeonItemBossKey(). Stop-bars raise when their switch turns on, or (type 2 front / type 5 back) automatically 65 frames after fopAcM_myRoomSearchEnemy(room) returns NULL.",
+      "effect": "consumes one small key and permanently sets swbit for a locked door; hands the player to the adjacent room via the roomControl 0x08 flag swap (plus dStage_setShipPos if a shipId is set); sets the restart/respawn point 180 units on the far side; a type 2/5 door SETS swbit when the room is cleared.",
+      "implementation_note": "Godot: an AnimatableBody3D wall plus a trigger area. Decode swbit/type/eventNo/swbit2 from params and frontRoom/backRoom from rot.x, arg1/shipId from rot.z. Gate the prompt on the checkArea test (distance 250, in-front box, facing within ~112 degrees) AND on key possession. On open, disable the collider and tween the mesh +300 on Y (open speed ramps 0->30 at +4/frame, close ramps to 60 at +6/frame), walk Link forward, then reverse; set the respawn point on close. Model: type 1 -> door20, type 3 -> door11, else door10, unless arg1 is 13/14. The stop-bars are a separate stop10 model that slides 0->300 on Y independently, driven purely by switch/room-cleared state. Do not hardcode the collision box - it comes from the per-type .dzb in the stage archive.",
+      "confidence": "high",
+      "sources": ["src/d/d_stage.cpp:451-457", "src/d/d_stage.cpp:1298-1310", "src/d/d_door.cpp:16-61", "src/d/d_door.cpp:186-223", "src/d/d_door.cpp:245-269", "src/d/d_door.cpp:271-286", "src/d/d_door.cpp:302-319", "src/d/d_door.cpp:548-625", "include/d/d_door.h:10-160", "include/d/actor/d_a_door10.h:1-59", "src/d/actor/d_a_door10.cpp:13-101", "src/d/actor/d_a_door10.cpp:119-173", "src/d/actor/d_a_door10.cpp:223-249", "src/d/actor/d_a_door10.cpp:454-542", "src/d/actor/d_a_door10.cpp:708-787"]
+    },
+
+    "door12": {
+      "name": "door12",
+      "file": "src/d/actor/d_a_door12.cpp",
+      "profile": "fpcNm_DOOR12_e",
+      "stub": false,
+      "aliases": ["door12", "door12M", "door12B", "door13", "door13M", "door13B", "keyS12", "ZenS12"],
+      "placements": "52 (M_Dai 16, Cave08 14, kaze 13, GanonC/GanonE/kazeB 1 each)",
+      "params": {
+        "swbit": {"bits": "params & 0xFF", "meaning": "front-side switch / lock flag, 0xFF = none. Same triple duty as door10.", "proof": "src/d/d_door.cpp:16-18; src/d/actor/d_a_door12.cpp:52-73, :88-109, :168-170"},
+        "type": {"bits": "(params >> 8) & 0xF", "meaning": "0 = plain switch/bar door. 1 = SMALL-KEY locked. 2 = front-side enemy-clear auto-open. 3 = BOSS DOOR (boss key, map mode 1, forces event slot 6 DEFAULT_BS_SHUTTER_F). NOTE type is writable: create() calls setType(3) when arg1 is 9 or 12, so those shapes are always boss doors regardless of the authored value.", "proof": "src/d/d_door.cpp:26-36; src/d/actor/d_a_door12.cpp:39-49, :96-107, :408-420, :576-578, :777"},
+        "eventNo": {"bits": "(params >> 12) & 0xFF", "meaning": "event number; same 12-slot table as door10 but with spl=2, so slots 2 and 3 become DEFAULT_SHUTTER_DOOR_12.", "proof": "src/d/d_door.cpp:39-41, :186-223; src/d/actor/d_a_door12.cpp:553"},
+        "swbit2": {"bits": "(params >> 20) & 0xFF", "meaning": "back-side stop-bar switch, 0xFF = none; also the trigger for creating the stop-bar model.", "proof": "src/d/d_door.cpp:21-23; src/d/actor/d_a_door12.cpp:76-85, :112-124"}
+      },
+      "rot_scale": "same base layout as door10: rot.x = frontRoom(bits 0-5) | backRoom(bits 6-11), rot.y = facing yaw, rot.z = shipId(bits 0-5) plus arg1 = (rot.z >> 8) & 0xFF. For door12 arg1 is the MODEL SELECTOR: getShapeType() maps 8->1, 9->2, 10->3, 11->4, 12->5, anything else ->0. Shapes 0/1/2 load the door12 archive, 3/4/5 load door13, and the left/right BDL tables are deliberately swapped for 3-5 (a mirrored hinge). Open width also comes from shape: 140 for 3/4, 220 for 5, 200 otherwise. Extra arg1 effects: 9 or 12 force type 3; 8 clears temp flag UNK_0440 at create and SETS it when the bars finish closing (a scripted cage); 8 and 0xB suppress the door SE when the player is not the trigger; 17 switches the bars to the cage SE.",
+      "behaviour": "The double door: two half-models slide apart sideways (each half translates +/- progress*openWide along local X) instead of a shutter sliding up. Otherwise it is the same dDoor_info_c machine as door10 - stop-bars, small/boss key, room handoff, restart point.",
+      "activates_on": "proximity plus facing: checkArea(110^2, 110^2, 250^2), then A. Suppressed while locked unless the key is held. Stop-bars raise on their switch, or (type 2, front only) once the front room has been enemy-free for 65 frames. Special case: if Link is CARRYING something and the shape is 1/2/4/5, event slot 0xB SHUTTER_DROP_CARRY runs instead - the drop-what-you-hold variant.",
+      "effect": "room transition (roomControl 0x08 handoff plus optional dStage_setShipPos), consumes a small key and sets swbit when unlocking, sets the restart room on close. arg1==8 additionally sets temp flag UNK_0440 once its bars have closed.",
+      "implementation_note": "Two mesh halves parented to the door origin, translating +/-(progress * openWide) along local X; progress ramps with speed 0->20 at +2/frame both ways, much softer than door10's shutter. openWide is 140/200/220 by shape. Pick the archive by shape (door12 for 0-2, door13 for 3-5) and remember the L/R model swap for 3-5. Collision comes from the archive dzb (DOOR12_G for shapes 0,3,4; DOOR12_B for 2,5). Reuse door10's room-transition and restart-point path - it is the shared base class.",
+      "confidence": "high",
+      "sources": ["src/d/d_stage.cpp:473-480", "include/d/actor/d_a_door12.h:1-61", "src/d/actor/d_a_door12.cpp:39-124", "src/d/actor/d_a_door12.cpp:232-374", "src/d/actor/d_a_door12.cpp:377-496", "src/d/actor/d_a_door12.cpp:537-599", "src/d/actor/d_a_door12.cpp:602-762", "src/d/d_door.cpp:16-61", "src/d/d_door.cpp:186-223", "src/d/d_door.cpp:245-319", "src/d/d_door.cpp:559-610"]
+    },
+
+    "KNOB00": {
+      "name": "KNOB00",
+      "file": "src/d/actor/d_a_knob00.cpp",
+      "profile": "fpcNm_KNOB00_e",
+      "stub": false,
+      "aliases": ["KNOB00", "KNOB01", "KNOB02", "KNOB03", "KNOB00D", "KNOB01D", "KNOB02D", "KNOB03D"],
+      "placements": "KNOB00 75 + KNOB00D 49 = 124 (sea 26, ma2room/ma3room/majroom 30, Pfigure 7, plus most town interiors)",
+      "params": {
+        "swbit": {"bits": "params & 0xFF", "meaning": "inherited dDoor_info_c switch field. knob00 never gates on it itself - it creates no stop-bars and no key lock.", "proof": "src/d/d_door.cpp:16-18; include/d/actor/d_a_knob00.h:69 (mStopBars declared but dDoor_stop_c::create is never called in d_a_knob00.cpp)"},
+        "type": {"bits": "(params >> 8) & 0xF", "meaning": "copied into mDoorType at CreateInit. 0 = plain knob door, just opens. 1 = ALWAYS shows a message first. 2 = shows the message only AT NIGHT. 3 = only during the DAY. 4 = PASSWORD door: on first entry, if event flag UNK_1910 is unset it runs the password-entry flow; once set (and the Bomb Bag is held) the door goes inert.", "proof": "src/d/d_door.cpp:26-28; src/d/actor/d_a_knob00.cpp:194-207, :354, :693-732"},
+        "eventNo": {"bits": "(params >> 12) & 0xFF", "meaning": "event number into the 12-slot table; knob00 uses slots 7 (KNOB_DOOR_F_OPEN), 8 (KNOB_DOOR_B_OPEN) and 9 (KNOB_TALK).", "proof": "src/d/d_door.cpp:39-41, :186-223; src/d/actor/d_a_knob00.cpp:136-154, :352"},
+        "shapeType": {"bits": "(params >> 20) & 0xFF (getShapeType() is literally getSwbit2())", "meaning": "picks the door leaf model out of the knob archive: 1->DOOR_B, 2->DOOR_C, 3->DOOR_D, 4->DOOR_E, 5->DOOR_F, 6->DOOR_G, 7->DOOR_H, anything else->DOOR_A. Side effects: shape 1 forces the door off the dungeon map; shape 4 with type 1 promotes mDoorType to 5 (the villa door, which spawns a fpcNm_TAG_MK_e actor with param 0xffffff03 and raises the attention point +60); shape 5 lights the leaf as an actor instead of BG0; shape 6 promotes mDoorType to 6 (the figurine-gallery door, which overwrites home.angle.z with message id 0x366A and talks to the 'Mt' NPC).", "proof": "src/d/d_door.cpp:21-23; src/d/actor/d_a_knob00.cpp:66-99, :131-133, :355-365, :767-775, :789-793"},
+        "type2": {"bits": "params >> 0x1C (top 4 bits)", "meaning": "1 = the door is mounted on a MOVING parent: every frame execute() re-runs calcMtx() and mpBgW->Move() so the door and its collision follow current.pos/current.angle. draw() also checks the parent: if it is fpcNm_Obj_Pirateship_e and its m2CC is 0 the door is not drawn. This is the pirate ship's door.", "proof": "src/d/actor/d_a_knob00.cpp:157-159, :778-787, :879-884"}
+      },
+      "rot_scale": "rot.x is the standard packed room pair (frontRoom bits 0-5, backRoom bits 6-11) but knob00 only forces its own room from it when the placement left roomNo == -1. rot.y is the facing yaw - note calcMtx uses current.angle.y, not home.angle.y, because the door can be carried by a moving parent. rot.z is DIFFERENT from door10/door12: knob00 never reads arg1 or shipId; it uses the whole s16 rot.z as a MESSAGE ID passed to dDoor_msg_c::init. chkException() refuses specific message ids unless story flags line up: 0x6A6 (blocked if the Nayru pearl is held or if UNK_2110 is unset), 0x6A7 (needs UNK_0520), 0x6A8 (needs ENDLESS_NIGHT and NOT UNK_2110), 0x6A9 (blocked by UNK_1701), 0x6AA (needs the Din symbol and NOT UNK_1A80). A shape-6 door has rot.z force-overwritten to 0x366A. Scale IS used - the leaf model gets setBaseScale(scale).",
+      "behaviour": "The ordinary hinged/knob door of towns and houses (the file's own comment: 'Object - Regular doors (with knobs, not sliding)'). It is one BCK animation - Link turns the knob, the door swings, he steps through and it shuts - rather than a physically animated slab; the leaf mesh is parented to the DoorDummy joint of the animated frame model. Four animation variants (DOOROPENADOOR / DOOROPENBDOOR / the same two started at frame 34) are selected by cutscene action index 0xC..0xF, and 0xC/0xD additionally fade the screen to white (night) or black (day) at frame 15 - that is the town-house interior transition.",
+      "activates_on": "proximity plus facing, then A: checkArea(80^2, 110^2, 250^2) - a slightly tighter side box than the shutter doors. Slot 7 front, slot 8 back, slot 9 KNOB_TALK for talk/villa/figurine states. A message door (type 1, or 2 at night, or 3 by day) plays the rot.z message first unless chkException() forbids it. The password door opens the software keyboard and compares against fopMsgM_passwordGet.",
+      "effect": "room transition through the shared base with ship=0, so a knob door NEVER repositions the boat; restart point set on close. Story flags it can set: UNK_1910 on a correct password, UNK_3B20 plus a random 0..5 into event register UNK_BA0F when the password is generated.",
+      "implementation_note": "Animation-driven, not transform-driven: play a ~70-frame door-open clip on the frame model and parent the leaf mesh to the DoorDummy bone; Link's movement during it is entirely scripted (SETSTART places him at fixed offsets, ADJUSTMENT lerps him to 70 units in front). Decode shapeType from bits 20-27 to pick door_a..door_h, type from bits 8-11 for the message gating, and treat rot.z as a MESSAGE ID, not as arg1/shipId - getting that wrong is the easy mistake here. Honour type2 by re-syncing transform and collision every frame for ship-mounted doors. The white/black cross-fade at 15/70 of the clip is what sells an interior transition. Only one collision shape exists (KNOB_DZB_DOOR), shared by every shape.",
+      "confidence": "high",
+      "sources": ["src/d/d_stage.cpp:465-472", "include/d/actor/d_a_knob00.h:1-77", "src/d/actor/d_a_knob00.cpp:34-159", "src/d/actor/d_a_knob00.cpp:162-228", "src/d/actor/d_a_knob00.cpp:286-367", "src/d/actor/d_a_knob00.cpp:409-532", "src/d/actor/d_a_knob00.cpp:693-802", "src/d/actor/d_a_knob00.cpp:809-886", "src/d/d_door.cpp:16-61", "src/d/d_door.cpp:186-223", "src/d/d_door.cpp:245-319"]
+    },
+
+    "SMBdor": {
+      "name": "SMBdor",
+      "file": "src/d/actor/d_a_mbdoor.cpp",
+      "profile": "fpcNm_MBDOOR_e",
+      "stub": false,
+      "aliases": ["SMBdor", "KGBdor"],
+      "placements": "21 (sea 6, MajyuE 4, ma2room/ma3room/majroom/Pnezumi, M2tower, Mjtower)",
+      "params": {
+        "swbit": {"bits": "params & 0xFF", "meaning": "switch index, 0xFF = none. For type 0 this is the switch that must be ON for the door to unbar; for type 1 this is the switch the door SETS once the room's enemies are dead.", "proof": "src/d/actor/d_a_mbdoor.cpp:29-31, :220, :233-234, :430-448"},
+        "shapeType": {"bits": "(params & 0x00000F00) >> 8", "meaning": "model set, decoded inline with an explicit mask (not via PrmAbstract). 1 = the Gbdoor archive (Ganon's tower double door: V_GBDFU frame / V_GBD_L / V_GBD_R leaves / V_GBDTO bar; hinge offsets -300 / +300, bar pivot 335). Anything else = the Mbdoor archive (Forsaken Fortress: S_MBDFU / S_MBD_L / S_MBD_R / S_MBDTO; hinge offsets -255 / +277, bar pivot 300).", "proof": "src/d/actor/d_a_mbdoor.cpp:39-41, :44-51, :54-131; src/d/d_stage.cpp:943-944"},
+        "unused": {"bits": "params bits 12-31", "meaning": "never read - the only decoders in the file are &0xFF and &0xF00.", "proof": "src/d/actor/d_a_mbdoor.cpp:29-41"}
+      },
+      "rot_scale": "NOT a dDoor_info_c - daMbdoor_c derives straight from fopAc_ac_c, so it does not inherit the packed room fields and does NO room transition at all. rot.z carries the TYPE: getType() = home.angle.z & 0x3F. Type 0 = switch door (polls isSwitch(swbit)). Type 1 = clear-the-room door (counts down 30 frames of fopAcM_myRoomSearchEnemy(room)==NULL, then SETS swbit and unbars). Type 2 always starts locked and checkUnlock has NO case for it - a type-2 door can only be opened by a cutscene driving it as a dDemo_actor_c. rot.y is the facing yaw (both goal points are derived from it at local z = -150 and -400). rot.x is not read; there is no room-number field. Scale is not read.",
+      "behaviour": "A large double door with a drop-bar. The bar rotates about Z down to -0x3F65 to unbar; each leaf rotates about Y by up to -0x1C71 (~-40 degrees) about its own hinge offset, and only the leaf on the side Link approached from swings. Link is physically pushed with it (setPlayerPosAndAngle to a point 80 units to the side and 75 forward of the hinge) so it reads as him shouldering the door open. Both stages are event-driven: MBDOOR_STOP_OPEN for the bar and MBDOOR_OPEN for the leaf.",
+      "activates_on": "two stages. Unbarring is automatic - actionLockWait polls checkUnlock() and orders MBDOOR_STOP_OPEN by itself with no player input. Pushing it open is player-driven - checkArea() requires local z <= 160, |local x| <= 200 of home.pos, and fopAcM_seenActorAngleY <= 0x2000 (facing within ~45 degrees), then dEvtCnd_CANDOOR_e lets A open it.",
+      "effect": "NO room transition and no restart point, unlike door10/door12/knob00. It sets swbit for a type 1 door once the room is cleared, releases its dBgW collision when it opens, and shows on the dungeon map.",
+      "implementation_note": "Four meshes under one node (frame, left leaf, right leaf, bar). Bar: rotate about local Z around a pivot at (barOffset, 231, 0), accelerating +40/frame up to 400 angle-units/frame until -0x3F65. Leaf: rotate about local Y around a pivot at (+/-hingeOffset, 0, 0), accelerating +50/frame up to 250 until -0x1C71; pick the pivot side from which side of the door's local X Link is on. Drive Link's position from the door transform while it swings. The two archives have DIFFERENT hinge offsets (-255/+277 vs -300/+300) and bar pivots (300 vs 335). The unlock condition comes from rot.z & 0x3F, not from params - the easy thing to get wrong. Type 2 doors never open on their own.",
+      "confidence": "high",
+      "sources": ["src/d/d_stage.cpp:943-944", "include/d/actor/d_a_mbdoor.h:1-62", "src/d/actor/d_a_mbdoor.cpp:16-51", "src/d/actor/d_a_mbdoor.cpp:54-131", "src/d/actor/d_a_mbdoor.cpp:170-290", "src/d/actor/d_a_mbdoor.cpp:293-400", "src/d/actor/d_a_mbdoor.cpp:403-475"]
+    },
+
+    "ATdoor": {
+      "name": "ATdoor",
+      "file": "src/d/actor/d_a_atdoor.cpp",
+      "profile": "fpcNm_ATDOOR_e",
+      "stub": false,
+      "placements": "13 (M2tower, Mjtower, Pnezumi, ma2room, ma3room, majroom)",
+      "params": {
+        "swbit": {"bits": "params & 0xFF", "meaning": "the ONLY field this actor reads. 0xFF = the door is permanently inert and never moves. Otherwise the door MIRRORS the switch: on -> open, off -> closed, rechecked every frame in both directions.", "proof": "src/d/actor/d_a_atdoor.cpp:22-24, :68, :75-82, :115, :137"},
+        "unused": {"bits": "params bits 8-31", "meaning": "not read anywhere - no type, no shape, no event, no swbit2. There is exactly one model (ATDOOR_BDL_SDOOR01) and one collision (ATDOOR_DZB_SDOOR01).", "proof": "src/d/actor/d_a_atdoor.cpp:22-24, :33, :46"}
+      },
+      "rot_scale": "rot.y is the closed-position yaw: calcMtx does YrotM(home.angle.y - openAmount), so the door rotates AWAY from its authored angle. rot.x and rot.z are NOT read - no room numbers, no arg1, no ship id, no event id. Scale is not read. The room used for the switch query is the placement room.",
+      "behaviour": "A one-piece jail/gate door that swings 0x4000 (exactly 90 degrees) about its own origin, purely as a slave to one switch. No cutscene, no key, no message, no room transition, no A prompt beyond its attention point being raised 150 units. It is not something Link opens - it is a gate that a lever, chest or defeated enemy elsewhere opens.",
+      "activates_on": "the switch turning on; fully reversible - it swings shut when the switch goes off. Link cannot interact with it directly.",
+      "effect": "rotates its own collision open (mpBgW->Move() each frame of the swing) so the passage becomes walkable, and plays JA_SE_OBJ_TC_JAIL_DOOR_OP once when it starts opening (there is no close SE). It sets no flags.",
+      "implementation_note": "Trivial: an AnimatableBody3D whose Y rotation is home_yaw - open_amount, where open_amount steps 0x400 per frame (1/16 of the 0x4000 travel, so exactly 16 frames each way). Bind it to a switch signal, move the collider with the mesh each frame, play the SE on the opening edge only, and if swbit == 0xFF spawn it as static geometry.",
+      "confidence": "high",
+      "sources": ["src/d/d_stage.cpp:458", "include/d/actor/d_a_atdoor.h:1-29", "src/d/actor/d_a_atdoor.cpp:11-24", "src/d/actor/d_a_atdoor.cpp:32-141", "src/d/actor/d_a_atdoor.cpp:144-205"]
+    },
+
+    "osiBLK0": {
+      "name": "osiBLK0",
+      "file": "src/d/actor/d_a_obj_movebox.cpp",
+      "profile": "fpcNm_Obj_Movebox_e",
+      "stub": false,
+      "aliases": ["osiBLK0 (type 1)", "osiBLK1 (type 2)", "Kkiba (type 0)", "Hbox2 (type 5)", "Mmrr (type 0xA)", "Ecube (type 0xC)"],
+      "placements": "osiBLK0 76 (SubD51 44, I_TestR 13, M_NewD2 12), osiBLK1 24, Ecube 15, Mmrr 12, Kkiba 10, Hbox2 10 - 147 pushable blocks in total",
+      "params": {
+        "TYPE": {"bits": "(params >> 24) & 0xF", "meaning": "Act_c::Type - selects the M_arcname / M_attr row (model, dzb, gravity, push SE, footprint). Verified against the rip: osiBLK0 = 1 (plain black push block, Osiblk/obm_osihikiblk1, 150 cube, gravity -5.0, rock SE), osiBLK1 = 2 (same but with the statue on top, m68 = 300), Kkiba = 0 (breakable wooden crate, gravity -3.0, wood SE), Hbox2 = 5 (golden breakable crate, gravity -3.0), Mmrr = 0xA (the pushable MIRROR, 300-unit footprint, no model of its own), Ecube = 0xC (mossy black block, lit as background with a real shadow). Every placement of each name carries its own nibble with no exceptions.", "proof": "include/d/actor/d_a_obj_movebox.h:122-137 (Type enum with the actor names in comments), :145-146, :169; src/d/actor/d_a_obj_movebox.cpp:73, :294-307, :341-1004"},
+        "SWSAVE": {"bits": "(params >> 8) & 0xFF", "meaning": "swSave1, dual purpose. If pathId != 0xFF it stores bit 0 of the block's path-point index, i.e. how far it has been pushed, so the position survives a save. If pathId == 0xFF it instead gates whether the block spawns at all, compared against DMY.", "proof": "include/d/actor/d_a_obj_movebox.h:148-149, :170; src/d/actor/d_a_obj_movebox.cpp:1017-1019, :1107-1210, :1470-1484"},
+        "ITEMNO": {"bits": "params & 0x3F", "meaning": "drop-table index when the box is smashed. ACTIVE only for the breakable types 0 (Kkiba) and 5 (Hbox2); unreachable for the others.", "proof": "include/d/actor/d_a_obj_movebox.h:151-152, :191; src/d/actor/d_a_obj_movebox.cpp:1706-1713, :1844-1847"},
+        "ITEMSAVE": {"bits": "(params >> 16) & 0x7F", "meaning": "save bit for that drop, 0x7F = do not save.", "proof": "include/d/actor/d_a_obj_movebox.h:154-155, :192"},
+        "DMY": {"bits": "(params >> 30) & 1", "meaning": "spawn polarity. Set = the block exists only while swSave1 is ON (and rot.z is forced to 0xFFFF, killing the path and swSave2). Clear = it exists only while swSave1 is OFF.", "proof": "include/d/actor/d_a_obj_movebox.h:157-158, :193; src/d/actor/d_a_obj_movebox.cpp:1023-1039, :1470-1484"},
+        "BUOY": {"bits": "(params >> 31) & 1", "meaning": "INVERTED: 0 = also spawn a daObjBuoyflag child (a floating marker parented to the box top at +m68-5), 1 = no buoy. For the mirror type this is what decides whether you get a buoy or the fpcNm_Obj_Mmrr_e mirror child.", "proof": "include/d/actor/d_a_obj_movebox.h:160-161, :194; src/d/actor/d_a_obj_movebox.cpp:1345-1360"}
+      },
+      "rot_scale": "rot.y (home.angle.y) survives and defines the PUSH GRID orientation: the four push directions are home.angle.y + {0x0000, 0x4000, 0x8000, 0xC000} and the block's position is always home.pos rotated by home.angle.y plus integer steps. rot.x and rot.z are NOT rotations - they are extra parameter words. rot.z high byte = swSave2 (bit 1 of the saved path index), rot.z low byte = pathId (a dPath id in the home room); rot.x low byte = evId, consumed only when building the MkieBB child (type 0xB). All three angle fields are zeroed after decode. Placement scale only scales the DRAWN model; the collision footprint and push step come from the per-type Attr_c.",
+      "behaviour": "A dBgS_MoveBgActor with a real DZB collision mesh. Pushing or pulling a face registers through dBgW's PushPull callback, which buckets the direction into one of four sides relative to home.angle.y and counts consecutive frames; once a side reaches 4 frames and a 74-unit forward line check finds no wall, the block slides exactly 75.0 units over 20 frames on a cosine ease, tracking its position as integer grid offsets from home.pos. It falls under gravity (-5.0 or -3.0 by type) with 5-point (or 21-point for the 300-wide mirror) ground sampling, and switches to a buoyant floating mode if it lands in water.",
+      "activates_on": "Link's push/pull held on one face for 4 frames with no wall within 74 units ahead and the block on ground. The mirror (type 0xA) additionally REQUIRES the heavy push (dBgW::PPLABEL_HEAVY) and rejects the normal one. Kkiba and Hbox2 are also destroyed by a bomb blast on their Tg cylinder (r 75, h 150) or by Link's front-roll crash.",
+      "effect": "Writes NO gameplay switch by itself. It only persists its own position: path_save() writes bit 0 of the current path point index into swSave1 and bit 1 into swSave2 (rot.z high byte) each time it comes to rest, and path_init() teleports it back to that point on load. When pathId == 0xFF swSave1 is read-only and just decides whether the block exists. Breakable types additionally spawn their ITEMNO/ITEMSAVE drop and delete themselves.",
+      "implementation_note": "Godot: a static body that snaps to a 75-unit lattice anchored at home.pos and rotated by rot.y - 4-frame push charge, then a 20-frame eased 75-unit slide, then re-check ground. Gravity -5 (blocks) or -3 (crates) per frame, drop when unsupported, float when in water. Persist the position by writing 1-2 switch bits (the path index) rather than raw coordinates, and honour the spawn gate (pathId 0xFF and swSave1 != 0xFF -> exists only when the switch equals DMY). NOTE the 75-unit step is HALF the 150-unit box footprint - that is literally what Attr_c.m0C says - and the wall probe reaches mScaleXZ*0.5 + 74 units ahead (224 for the mirror). The mirror is TWO nodes: an invisible 300-unit push body plus a visible daObjMmrr child teleported to it every frame.",
+      "confidence": "high",
+      "sources": ["src/d/actor/d_a_obj_movebox.cpp:73-97", "src/d/actor/d_a_obj_movebox.cpp:113-338", "src/d/actor/d_a_obj_movebox.cpp:341-1004", "src/d/actor/d_a_obj_movebox.cpp:1017-1210", "src/d/actor/d_a_obj_movebox.cpp:1247-1375", "src/d/actor/d_a_obj_movebox.cpp:1430-1500", "src/d/actor/d_a_obj_movebox.cpp:1556-1740", "src/d/actor/d_a_obj_movebox.cpp:1795-1880", "include/d/actor/d_a_obj_movebox.h:122-251", "src/d/d_com_static.cpp:367-372", "src/d/d_stage.cpp:541-555", "src/d/actor/d_a_player_main.cpp:6890-6896", "include/f_op/f_op_actor_mng.h:365-384"]
+    },
+
+    "Kbota_A": {
+      "name": "Kbota_A",
+      "file": "src/d/actor/d_a_obj_swpush.cpp",
+      "profile": "fpcNm_Obj_Swpush_e",
+      "stub": false,
+      "aliases": ["Kbota_A (type 0, latching)", "Kbota_B (type 1, momentary)", "KbotaC (type 2, inverted)"],
+      "placements": "Kbota_A 48 + Kbota_B 35 = 83, spread thinly over caves, dungeons and sea islands",
+      "params": {
+        "VERSION": {"bits": "(params >> 30) & 1", "meaning": "if >= 1 the actor honours swSave2 packed in rot.z; if 0, swSave2 is forced to 0xFF (disabled).", "proof": "include/d/actor/d_a_obj_swpush.h:64-65, :84, :89"},
+        "TYPE": {"bits": "(params >> 24) & 7", "meaning": "index into M_attr[4]. 0 = latching (FLAG_STAY_PRESSED | FLAG_OBEY_SAVE - stays down when you step off). 1 = momentary (pops straight back up). 2 = inverted (on while up). 3 = the heavy Hhbot variant that needs the Iron Boots, scale 1.5.", "proof": "include/d/actor/d_a_obj_swpush.h:67-68, :88; src/d/actor/d_a_obj_swpush.cpp:17-113, :205"},
+        "MDL": {"bits": "(params >> 16) & 1", "meaning": "selects attr.mModelResIndices[0 or 1]. In the shipped table both entries of every type are identical, so it is a no-op.", "proof": "include/d/actor/d_a_obj_swpush.h:70-71, :86; src/d/actor/d_a_obj_swpush.cpp:29, :54, :78, :101, :148"},
+        "SWSAVE": {"bits": "(params >> 8) & 0xFF", "meaning": "THE switch this button reads and writes. 0xFF = none.", "proof": "include/d/actor/d_a_obj_swpush.h:73-74, :79-82, :87; src/d/actor/d_a_obj_swpush.cpp:538-548, :610-618"},
+        "EVID": {"bits": "params & 0xFF", "meaning": "event id resolved once at create. Whenever the button changes state it requests that event, i.e. plays the 'here is the door that just opened' cutscene. If no event with that id exists the request is skipped.", "proof": "include/d/actor/d_a_obj_swpush.h:76-77, :85; src/d/actor/d_a_obj_swpush.cpp:275, :637-666, :709-715"}
+      },
+      "rot_scale": "rot.y orients the button model and the top-plate quad used by the ride test. rot.z is consumed as mPrmZ and then zeroed: its low byte is swSave2 (only when VERSION >= 1), which is a LOCK, not an output - with the type-1 flag the button refuses to pop back up while swSave2 is ON, and it starts pressed if that bit is already set. Placement scale IS real data here: scale.x and scale.z are multiplied by attr.mScale (1.0 for the Kbota types, 1.5 for Hhbot) and then baked into the model, into the DZB collision vertices at create, and into the cull box - so a scaled placement genuinely resizes both the button and its collision.",
+      "behaviour": "This is a FLOOR BUTTON you stand on, not a push-block - the file's own header says 'Object - Yellow switch (activated by stepping on it)'. Its RideCallback tests each frame whether a riding actor's XZ lies inside the four-vertex top quad inflated by attr.m40/m44, and sets a riding mode; riding for 6 frames sets the pressed flag. It then runs a four-state machine UPPER -> U_L -> LOWER -> L_U, springing between 1 and 0 (spring 0.9, decay 0.6) and physically lowering the four top DZB vertices each frame for a 35.5-unit travel, so anything standing on it descends with it.",
+      "activates_on": "anything standing on the top plate for 6 continuous frames - Link, or a pushed movebox parked on it. Type 0 has no heavy-boots requirement (only type 3 does). It also mirrors external state: FLAG_OBEY_SAVE makes it sink on its own if SWSAVE is set elsewhere and rise if it is cleared.",
+      "effect": "writes SWSAVE in the actor's HOME room: on() at the bottom, off() at the top, plus JA_SE_OBJ_FOOT_SW_ON. Because type 0 is FLAG_STAY_PRESSED it does NOT pop up when you step off - it stays down and the switch stays on, only rising if the switch is cleared externally. Type 1 (Kbota_B) is the hold-down variant: it turns SWSAVE off again the moment nothing is on it, which is the classic 'park a block on it or the door shuts'. Both also fire the EVID event on each state change and grab a short 10-frame event lock on first contact - the little hitch you feel when the switch clicks.",
+      "implementation_note": "Model Kbota_00 (bdl + dzb). Godot: a plate whose top surface sinks 35.5 units on a spring (target 0/1, k 0.9, damping 0.6); require 6 continuous frames of something standing on the yaw-rotated, scale-scaled top quad; on bottoming out set switch SWSAVE, latching for type 0 and momentary for type 1. Make the collision surface really move so riders descend with it. For Kbota_B make sure a resting block keeps the ride flag alive every frame or the switch will chatter, and if VERSION >= 1 with swSave2 set, treat it as latched down while that bit is on.",
+      "confidence": "high",
+      "sources": ["src/d/actor/d_a_obj_swpush.cpp:1-16", "src/d/actor/d_a_obj_swpush.cpp:17-113", "src/d/actor/d_a_obj_swpush.cpp:119-138", "src/d/actor/d_a_obj_swpush.cpp:200-291", "src/d/actor/d_a_obj_swpush.cpp:338-408", "src/d/actor/d_a_obj_swpush.cpp:426-621", "src/d/actor/d_a_obj_swpush.cpp:623-762", "include/d/actor/d_a_obj_swpush.h:12-90", "src/d/d_stage.cpp:564-566"]
+    },
+
+    "MhmrSW0": {
+      "name": "MhmrSW0",
+      "file": "src/d/actor/d_a_obj_swhammer.cpp",
+      "profile": "fpcNm_Obj_Swhammer_e",
+      "stub": false,
+      "placements": "26 (TF_05 9, sea 6, TF_04 4, M_Dai 2, plus singles)",
+      "params": {
+        "SWSAVE": {"bits": "(params >> 8) & 0xFF", "meaning": "the switch this post SETS when pounded, and also READS - if it is turned on elsewhere the post sinks by itself, and if turned off it rises again. 0xFF = none.", "proof": "include/d/actor/d_a_obj_swhammer.h:13-14, :20, :22-23; src/d/actor/d_a_obj_swhammer.cpp:344-352, :359-369, :383-389"},
+        "SWSAVE2": {"bits": "params & 0xFF", "meaning": "a second switch that is CLEARED when the post is driven down by an actual Skull Hammer pound, but NOT when it sinks because SWSAVE was set externally. 0xFF = none.", "proof": "include/d/actor/d_a_obj_swhammer.h:16-17, :21, :24; src/d/actor/d_a_obj_swhammer.cpp:344-348, :359-369"}
+      },
+      "rot_scale": "no parameter packing in rot at all - the full placement rotation is used as shape_angle and applied with ZXYrotM, and placement scale goes straight to setBaseScale. Note the sink, squash and wobble are applied inside a joint callback on MHMRSW_JNT_HIT rather than to the actor transform, so scaling the actor scales the whole animated post.",
+      "behaviour": "The Skull Hammer pound-post. A MoveBG actor (arc MhmrSW) with a Co cylinder Link can stand on and a Tg cylinder that accepts nearly every attack type. set_damage() only counts a hit that carries AT_TYPE_SKULL_HAMMER and comes from the player, then branches on the cut type: a front swing or jump-cut is a real pound, a side swing only makes it wobble. A pound squashes the post to scaleY 0.2 for 18 frames then springs it back, spawns star/shockwave/smoke particles, and drives it 60 units down on a spring.",
+      "activates_on": "being struck by the Skull Hammer with a front swing or a jump attack. It also sinks or rises on its own to follow SWSAVE if that bit changes elsewhere.",
+      "effect": "at the bottom it sets SWSAVE, and if the descent came from an actual pound it additionally CLEARS SWSAVE2. Rising writes nothing. It is a lockable misc target only while up.",
+      "implementation_note": "60-unit vertical travel on a spring (k 0.8, damping 0.55); collision cylinder radius 100 with height 112.5 up and 52.5 down - these come from fully decompiled Create / mode_*_init calls, so they are real, not placeholders. Squash to scaleY 0.2 held 18 frames then spring back (k 0.8, damping 0.45); the side-hit wobble is a damped two-axis tilt (spring 0.99, damping 0.18). Gate the pound on the hammer's front or jump swing specifically, and keep the post following SWSAVE in both directions so a remote reset raises it.",
+      "confidence": "high",
+      "sources": ["src/d/actor/d_a_obj_swhammer.cpp:1-104", "src/d/actor/d_a_obj_swhammer.cpp:112-170", "src/d/actor/d_a_obj_swhammer.cpp:187-268", "src/d/actor/d_a_obj_swhammer.cpp:288-333", "src/d/actor/d_a_obj_swhammer.cpp:335-432", "include/d/actor/d_a_obj_swhammer.h:12-24", "src/d/d_stage.cpp:569", "include/f_op/f_op_actor_mng.h:365-379"]
+    },
+
+    "Hfbot1C": {
+      "name": "Hfbot1C",
+      "file": "src/d/actor/d_a_obj_swflat.cpp",
+      "profile": "fpcNm_Obj_Swflat_e",
+      "stub": true,
+      "placements": "12, all in Siren (Tower of the Gods)",
+      "params": {
+        "swNo": {"bits": "UNRECOVERABLE", "meaning": "primary switch. The header declares `void prmGetSwNo() const {}` with an EMPTY body and there is no Prm_e enum in the header; the symbol map proves a daObjSwflat::Act_c::Prm_e exists (PrmAbstract is instantiated on it) but its widths and shifts live only in the unbuilt binary.", "proof": "include/d/actor/d_a_obj_swflat.h:9; config/GZLE01/rels/d_a_obj_swflat/symbols.txt"},
+        "swNo2": {"bits": "UNRECOVERABLE", "meaning": "second switch (prmGetSwNo2, empty stub).", "proof": "include/d/actor/d_a_obj_swflat.h:10"},
+        "type": {"bits": "UNRECOVERABLE", "meaning": "variant selector (prmGetType, empty stub). The three placed names Hfbot1A/B/C differ only by OBJNAME argument, so the variant most likely rides in this params field.", "proof": "include/d/actor/d_a_obj_swflat.h:11; src/d/d_stage.cpp:960-962"}
+      },
+      "rot_scale": "UNRECOVERABLE - set_mtx and init_mtx are Nonmatching stubs, so whether rot.x/rot.z are repurposed as extra param words (as they are in movebox and swpush) cannot be determined.",
+      "behaviour": "From the file's own header comment: 'Object - Tower of the Gods - Floor switch (requires statues to stay active)' - a flat floor pad that only stays activated while something rests on it. Structurally it is a dBgS_MoveBgActor with a dCcD_Cyl, an Hfbot arc (bdl hfbot1, brk hfbot1 colour animation, dzb hfbot1) and an mDoExt_brkAnm, so the pad glows when active. Everything past that is inference from surviving declarations, not readable code.",
+      "activates_on": "weight resting on the pad - stated by the file comment only; the detection code is a stub.",
+      "effect": "sets/clears its switch and probably a second one; which is written and which is read cannot be determined.",
+      "implementation_note": "Do NOT trust the static template: l_cyl_src declares radius 10 / height 20 but it is non-const and Create(), which is where a resize would live, is a stub - the real trigger volume is gone. For Godot: an Hfbot1 pad with a colour/glow animation that turns a switch on while a statue or Link stands on it and off when the weight leaves; take the actual switch numbers from the room's placement params by observation, and size the trigger to the visible pad.",
+      "confidence": "low",
+      "sources": ["src/d/actor/d_a_obj_swflat.cpp:1-150", "include/d/actor/d_a_obj_swflat.h:1-37", "config/GZLE01/rels/d_a_obj_swflat/symbols.txt", "configure.py:1583", "src/d/d_stage.cpp:960-962"]
+    },
+
+    "BFlower": {
+      "name": "BFlower",
+      "file": "src/d/actor/d_a_bflower.cpp",
+      "profile": "fpcNm_BOMB_FLOWER_e",
+      "stub": false,
+      "placements": "105 (sea 45, Cave10 14, Cave09 9, M_NewD2 8, Abship 7, kindan 4)",
+      "params": {
+        "bits_0_3": {"bits": "params & 0xF", "meaning": "unused - never read.", "proof": "include/d/actor/d_a_bflower.h:62-70"},
+        "kind": {"bits": "(params >> 4) & 0xF", "meaning": "initial State_e written straight into mState: 0 = LIVE (bomb bud present), 1 = DEAD (burnt/spent stalk).", "proof": "include/d/actor/d_a_bflower.h:63-65; src/d/actor/d_a_bflower.cpp:112"},
+        "switchNo": {"bits": "(params >> 8) & 0xFF", "meaning": "save-switch number. At create, if that switch is already ON the flower is forced back to LIVE regardless of `kind`; when a DEAD flower is revived by water it calls onSwitch so the revival persists. NOTE there is no 0xFF 'no switch' guard here - switch 0 is genuinely checked when the field is left at 0.", "proof": "src/d/actor/d_a_bflower.cpp:113-117, :415"},
+        "bits_16_31": {"bits": "params >> 16", "meaning": "unused.", "proof": "include/d/actor/d_a_bflower.h:62-70"}
+      },
+      "rot_scale": "rot.x is a MODE FLAG, not just orientation: `if (current.angle.x == 0) mGrabbable = FALSE; else mGrabbable = TRUE`. Despite the name, mGrabbable==TRUE DISABLES the carry prompt, i.e. a tilted/wall-mounted flower can only be cut, not plucked - and the flag is passed as the 'stick' bool into the spawned Bomb2. rot.y is normal yaw. Scale is real: the stalk uses setBaseScale(scale) and the bomb bud starts at the placement scale and lerps back toward 1.0 at 0.05/frame as it regrows.",
+      "behaviour": "A two-model object (VbakH stalk + VbakM bomb bud). In LIVE it idles, wobbles when Link walks within 50 units, and any real weapon hit or bomb blast on its 30-unit sphere spawns an actual Bomb2 actor at its position while the bud shrinks to zero and regrows over ~20 frames. If Link is close enough to pick it, it hands him a Bomb2 directly. In DEAD it is a bare stalk with a 15-unit sphere plus a 50x10 water-catching cylinder, swaying every 100-200 random frames.",
+      "activates_on": "damage or an explosion on its 30-unit sphere, or Link picking it up. A DEAD one re-activates only on an AT_TYPE_WATER hit to its cylinder.",
+      "effect": "spawns fpcNm_Bomb2_e with prm = start | (stick << 8): Start_UNK0 + true when set off by another bomb, Start_UNK1 + mGrabbable when cut by any other weapon, Start_UNK2 + false when plucked and handed straight to Link. A DEAD flower hit by water plays the recover SE, flips to LIVE, turns its switch on and swaps its sphere back to the big one.",
+      "implementation_note": "No HP, no movement, not an enemy. Collision is set in a fully decompiled CreateInit with no runtime resize, so these numbers are real: water-catch cylinder r=50 h=10 on current.pos; LIVE hit sphere r=30 at local (0,30,0) rotated by the flower's angle; DEAD sphere r=15. Cull box -50..50 XZ, 0..100 Y; lock-on point at local (0,50,0). Regrow lerps the bud scale to 1.0 (rate 0.05, max step 0.1, min 0.05); the proximity wobble triggers at XZ distance < 50 with |dy| < 10. Godot: a {live, dead} state machine with one Area3D sphere that switches between r 30 and r 15, plus a separate r 50 / h 10 area that only listens for water.",
+      "confidence": "high",
+      "sources": ["src/d/d_stage.cpp:945", "include/d/actor/d_a_bflower.h:10-70", "src/d/actor/d_a_bflower.cpp:13-101", "src/d/actor/d_a_bflower.cpp:111-218", "src/d/actor/d_a_bflower.cpp:252-260", "src/d/actor/d_a_bflower.cpp:286-431", "src/d/actor/d_a_bflower.cpp:443-458", "include/d/actor/d_a_bomb2.h:65-77"]
+    },
+
+    "c_green": {
+      "name": "c_green",
+      "file": "src/d/actor/d_a_cc.cpp",
+      "profile": "fpcNm_CC_e",
+      "stub": false,
+      "aliases": ["c_green", "c_red", "c_blue", "c_black", "c_kiiro"],
+      "placements": "c_green 93, c_red 85, c_kiiro 46, c_black 32, c_blue 26 - 282 ChuChus in total (kindan 37, I_SubAN 20, Siren 21, Cave10 28, sea 23, ...)",
+      "params": {
+        "behaviorType": {"bits": "params & 0xFF (0xFF normalised to 0)", "meaning": "0 = ground ChuChu that rises out of the floor. 1 = ceiling ChuChu (shape_angle.x set to -0x8000 so it hangs inverted, then drops with gravity -11 when it wakes). 2 = cutscene ChuChu (gravity 0, position driven by a matrix). 3 = home-tethered wanderer that ignores the player and reuses the switch byte as its drop-item flag. 4 = jar ChuChu that finds an fpcNm_TSUBO_e pot at its exact x/z and hides inside it.", "proof": "src/d/actor/d_a_cc.cpp:2564, :2577-2579, :2649-2651, :2709-2724, :2745-2760"},
+        "colorType": {"bits": "(params >> 8) & 0xFF (0xFF normalised to 0)", "meaning": "0 = green, 1 = red, 2 = blue, 3 = black, 4 = kiiro/yellow - proven by the switch that sets itemTableIdx from the literal strings \"c_green\"/\"c_red\"/\"c_blue\"/\"c_black\"/\"c_kiiro\". Values 10-15 mean 'that colour minus 10, but with the notice range forced to 60000 so it is awake from room load'; the special value 15 additionally makes it die to any non-player actor and forces the colour to red. THE PLACED NAME DOES NOT PICK THE COLOUR - all five OBJNAMEs share subtype 255 and daCC_Create reads the colour purely from params.", "proof": "src/d/actor/d_a_cc.cpp:2565, :2581-2583, :2599-2606, :2615-2642; src/d/d_stage.cpp:681-685"},
+        "noticeRange10": {"bits": "(params >> 16) & 0xFF (0xFF normalised to 0)", "meaning": "wake-up radius divided by 10. 0 means 1000.0 for most types and 1200.0 for the ceiling type; otherwise byte * 10.0.", "proof": "src/d/actor/d_a_cc.cpp:2566, :2585-2598"},
+        "switchNo": {"bits": "(params >> 24) & 0xFF", "meaning": "dual purpose. For behaviorType != 3 it is an ENABLE-spawn switch: if != 0xFF the ChuChu starts inert with colliders off and off the map, and wakes 40 frames after the switch goes true. For behaviorType == 3 it is copied into stealItemBitNo, the save-flag attached to the item it drops.", "proof": "src/d/actor/d_a_cc.cpp:2567, :2735-2751, :1977-1995"}
+      },
+      "rot_scale": "rot.y = initial facing. rot.z is NOT rotation: m340 = current.angle.z * 10.0f clamped to a minimum of 100.0, then angle.z is zeroed - m340 is the leash radius for behaviorType 3 (it walks back toward its spawn point once it strays past it). rot.x is unused as placement data. Placement scale is IGNORED - the cpp never reads scale or calls setBaseScale.",
+      "behaviour": "GREEN is the baseline: it sleeps flat and unhittable until the player comes within the notice range, then rises out of the ground and becomes lock-on-able; thereafter it alternates ~10-25 frames walking upright (speed 2.0) with ~70-85 frames crawling as a flat puddle (speed 1.0), and each time it stands up it attacks instead if the player is within 380 units. Attack: wind-up, 10-frame pause, then a leap at speed 18.0 with speed.y 25.0 and gravity -3.0, its body cylinder switched to an attack collider that a shield can block. RED skips the puddle state entirely and attacks whenever the player is within 380. BLUE is ELECTRIC: its attack collider is permanently live, sparks play every 30-72 frames, and while charged ordinary sword hits are REJECTED outright. BLACK is the Dark ChuChu: every normal weapon is filtered out with a clang, only LIGHT matters - a light beam petrifies it (weight forced immovable) and only the Skull Hammer shatters it; its Tingle hint is literally dItemNo_MIRROR_SHIELD_e. YELLOW is red's aggression plus blue's electricity.",
+      "activates_on": "player distance < notice range (default 1000), plus the optional enable switch. Colour codes 10-14 make the range 60000, i.e. awake immediately.",
+      "effect": "contact/leap damage: power 1 for green and red, power 2 with the shock splash for blue and yellow, power 2 for black. Drops a generic item ball resolved through the per-colour CharTbl row.",
+      "implementation_note": "HP by colour (cc_HP_kind): green 2, red 1, blue 2, black 4, kiiro 1. CAUTION: the static body_co_cyl in daCC_Create is a placeholder (r 15, h 0); the REAL collider is set every frame in daCC_Execute - radius 35.0, height 100.0 standing and 30.0 while flattened as a puddle. Ground-clip capsule 20/30. While flattened its target mask is narrowed to bomb/boomerang/arrow/hookshot/hammer/fire-arrow/ice-arrow/light-arrow/light/grapple only - a sword swing cannot hit a puddle. Speeds 2.0 walk, 1.0 crawl, 18.0 lunge; knockback 60 on a lethal hit, 20 otherwise; gravity -3.0, or -11.0 for the ceiling drop; attack trigger range 380; turn rate 0x400/frame walking, 0x1000 attacking. Black needs a three-state machine (immune -> petrified by light -> shattered by hammer) and has stealItemLeft = 3.",
+      "confidence": "high",
+      "sources": ["src/d/d_stage.cpp:681-685", "src/d/actor/d_a_cc.cpp:368-402", "src/d/actor/d_a_cc.cpp:448-570", "src/d/actor/d_a_cc.cpp:600-757", "src/d/actor/d_a_cc.cpp:857-938", "src/d/actor/d_a_cc.cpp:1042-1128", "src/d/actor/d_a_cc.cpp:1282-1348", "src/d/actor/d_a_cc.cpp:1762-1995", "src/d/actor/d_a_cc.cpp:2092-2335", "src/d/actor/d_a_cc.cpp:2518-2520", "src/d/actor/d_a_cc.cpp:2523-2769", "include/d/actor/d_a_cc.h:14-95"]
+    },
+
+    "bable": {
+      "name": "bable",
+      "file": "src/d/actor/d_a_bl.cpp",
+      "profile": "fpcNm_BL_e",
+      "stub": true,
+      "placements": "105 (M_DaiB 19, Xboss2 19, M_Dai 10, Cave11 9, Cave09 6, SubD45 6, Siren 5)",
+      "params": {
+        "UNRECOVERABLE": {"bits": "?", "meaning": "NOT DECODABLE. Every one of the 29 functions in d_a_bl.cpp is a /* Nonmatching */ stub, including daBL_Create and daBL_Execute, and include/d/actor/d_a_bl.h declares `class bl_class : public fopAc_ac_c {}` with zero members and no Prm_e. There is no fopAcM_GetParam call anywhere in the translation unit to quote.", "proof": "src/d/actor/d_a_bl.cpp:10-186; include/d/actor/d_a_bl.h:6-9"},
+        "variant_evidence": {"bits": "unknown", "meaning": "Two variants definitely exist and are colour-named: the cpp has separate blue_body_atari_check and red_body_atari_check collision handlers, and d_stage.cpp lists two OBJNAMEs `bable` and `bable_r` that BOTH map to fpcNm_BL_e with subtype 255 - so the OBJNAME cannot be what selects the variant, it must come from params exactly as with the ChuChus. Which bits, and which of blue/red is the default `bable`, is unrecoverable.", "proof": "src/d/actor/d_a_bl.cpp:55-63; src/d/d_stage.cpp:686-687"}
+      },
+      "rot_scale": "unrecoverable - daBL_Create is a stub.",
+      "behaviour": "Flying Bubble / fire skull, group fopAc_ENEMY_e. Reconstructing from the reliable function and resource names only: it floats (fuwafuwa_keisan, action_dousa, way_check / Line_check / BG_check / roll_check for path and wall avoidance), spots the player (BCK_HAKKEN), taunts (BCK_WARAU / BCK_OOWARAI / BCK_UCHIWA), dives at him (action_kougeki, BCK_ATACK) and climbs back up (action_sagarimasu). It is blown around by wind (action_kaze_move - Deku Leaf gusts), reacts to being snagged (action_hook_atari), takes shock damage, and has a flame layer that can be lit or put out: the Bl archive holds one model plus BTK_ON and BTK_OFF texture animations, and the cpp has fire_move_set, fire_emitter_clr, fire_kaiten_keisan, smoke_set and a dedicated skull_atari_check for the flameless bare-skull state.",
+      "activates_on": "unrecoverable.",
+      "effect": "the one hard fact available: the static body_co_sph_src inside the stubbed daBL_Create declares SrcObjAt Type = AT_TYPE_FIRE with attack power 1 and a target mask of everything except water/light - i.e. the fire Bubble burns Link on contact and can be hit by almost anything. Because that template sits inside a Nonmatching body, whether create() overrides the type for the blue variant or resizes the sphere is unknowable.",
+      "implementation_note": "HP, speed, patrol radius, wake radius and drop table are ALL UNRECOVERABLE. The 15.0f sphere radius in the template is inside a stub and must be treated as a placeholder. What can safely be ported: a flying enemy with two colour variants, a flame state and a bare-skull state toggled by BTK_ON/BTK_OFF on one model, anims fly/hakken/warau/oowarai/uchiwa/atack/start01/start02, AT_TYPE_FIRE contact damage 1, wind-pushable, hookshot-reactive. Take the numbers from observed play, not from this file.",
+      "confidence": "low",
+      "sources": ["src/d/actor/d_a_bl.cpp:1-211", "include/d/actor/d_a_bl.h:1-11", "src/d/d_stage.cpp:686-687", "assets/GZLE01/res/Object/Bl.h"]
+    },
+
+    "MKanok2": {
+      "name": "MKanok2",
+      "file": "src/d/actor/d_a_obj_kanoke.cpp",
+      "profile": "fpcNm_Obj_Kanoke_e",
+      "stub": true,
+      "placements": "93 (GanonE 36, M_Dai 22, SubD45 14, SubD71 10, PShip2/PShip3 4 each)",
+      "params": {
+        "UNRECOVERABLE": {"bits": "?", "meaning": "NOT DECODABLE. include/d/actor/d_a_obj_kanoke.h:8-10 declares `enum Prm_e { }` with an EMPTY body, so there are no PRM_*_W / PRM_*_S constants to read, and all five getters plus every other function (24 stubs) are /* Nonmatching */.", "proof": "include/d/actor/d_a_obj_kanoke.h:8-10; src/d/actor/d_a_obj_kanoke.cpp:152-175"},
+        "fields_by_name": {"bits": "unknown", "meaning": "Five param fields definitely exist, named by their stubbed accessors: type (almost certainly the Yoko/horizontal vs Tate/vertical opening style, matching the parallel executeYureYoko/executeOpenYoko/executeEffectYoko and ...Tate state sets), search (a detection radius or mode that starts the shake), yure (shake amount/duration), swNo and swNo2 - TWO switch numbers.", "proof": "include/d/actor/d_a_obj_kanoke.h:27-31; src/d/actor/d_a_obj_kanoke.cpp:112-150"},
+        "objname_subtype": {"bits": "n/a", "meaning": "unlike the ChuChus, MKanoke and MKanok2 DO carry distinct OBJNAME arguments (0 and 1), which dStage_actorCreate copies into fopAc_ac_c::argument - so the two placed names are distinguishable at runtime. Which one is horizontal and which upright cannot be proven because _create is a stub.", "proof": "src/d/d_stage.cpp:999-1000; src/d/d_stage.cpp:1298-1310"}
+      },
+      "rot_scale": "unrecoverable - setMtx / setMtxHontai / setMtxHuta are stubs. The names do confirm the body (hontai) and the lid (huta) are transformed independently, with setMtxHuta taking a position offset.",
+      "behaviour": "Earth Temple coffin (the file's own header: 'Object - Earth Temple - Coffin'). YES, IT OPENS: the state machine is executeNormal -> executeYure{Yoko,Tate} (shaking) -> executeOpen{Yoko,Tate} (lid comes off, sideways or upright) -> executeEffect -> executeWait. The Mkanoke archive contains two models, MOKE1 and MOKE2, and crucially a DZB collision mesh for EACH - so both the coffin body and its lid are solid geometry Link can stand on, not decoration.",
+      "activates_on": "unrecoverable in detail. Two readable hints: getPrmSearch() implies a proximity trigger, and the body's static collider declares SrcObjTg Type = AT_TYPE_LIGHT with no At side at all - LIGHT is the only attack type the coffin body can register, which fits the Earth Temple's mirror beams. It also has two switch params.",
+      "effect": "it does NOT spawn an enemy itself - nothing in the file creates an actor. The enemy is placed separately and gated on a switch: daRd_c (ReDead) has MODE_SW_WAIT which idles in the BCK_KANOKEP 'coffin pop' animation until its switch goes on, then holds 90 frames and walks out to a point 150 units forward. So the coffin's job is to open and flip a switch that a separately placed ReDead is watching.",
+      "implementation_note": "Pushable: no evidence - the body collider declares no Co (push) parameters and there is no push routine among the 24 function names; it is static BG geometry via its DZB. The LID is a weapon: its collider declares SrcObjAt Type = AT_TYPE_UNK800 with attack power 1 against all groups while it flies off. COLLISION SIZES ARE SUSPECT - the two static capsules (body axis (0,50,-100)..(0,50,100) radius 100; lid the same axis radius 25) are the classic placeholder pattern and createInit, where a resize would live, is a stub. Godot plan: static body + lid mesh, both with real collision, a shake animation, two opening styles, a damaging lid during the open frames, and an on-open switch flip that a separately placed ReDead listens for.",
+      "confidence": "low",
+      "sources": ["src/d/actor/d_a_obj_kanoke.cpp:1-8", "src/d/actor/d_a_obj_kanoke.cpp:10-190", "src/d/actor/d_a_obj_kanoke.cpp:225-240", "include/d/actor/d_a_obj_kanoke.h:6-38", "src/d/d_stage.cpp:999-1000", "src/d/actor/d_a_rd.cpp:1256-1272", "src/d/actor/d_a_rd.cpp:1891-1896"]
+    },
+
+    "Ygush00": {
+      "name": "Ygush00",
+      "file": "src/d/actor/d_a_obj_Ygush00.cpp",
+      "profile": "fpcNm_Obj_Ygush00_e",
+      "stub": false,
+      "aliases": ["Ygush00", "Ygush01", "Ygstp00", "Ygush02"],
+      "placements": "8 (SCOB records); low count, included because it was an explicit target and the answer is a useful negative",
+      "params": {
+        "type": {"bits": "params & 7", "meaning": "clamped to 0 if outside [0,4). Type 0 = the YGUSH00 model/btk/bck (the tall gushing spout); types 1, 2 and 3 ALL use the YGSTP00 model (the short/steam variant) and differ only in gating. Type 1 is the only one with a runtime link: it searches once for the fpcNm_Obj_Gryw00_e rising-water actor and only plays its spring SE while that water surface is still at or below the spout. Type 2 is ungated. Type 3 plays its BTK+BCK animations only once event bit COLORS_IN_HYRULE (0x3802) is set.", "proof": "include/d/actor/d_a_obj_Ygush00.h:14-19; src/d/actor/d_a_obj_Ygush00.cpp:39-41, :68-73, :117-132; include/d/d_save_event_flag.inc:431"},
+        "bits_3_31": {"bits": "params >> 3", "meaning": "unused - param_get_arg() is the only params read in the file.", "proof": "include/d/actor/d_a_obj_Ygush00.h:19; src/d/actor/d_a_obj_Ygush00.cpp:69"}
+      },
+      "rot_scale": "rot is COMPLETELY IGNORED - _create builds the model matrix with transS(current.pos) only, with no rotation applied anywhere in the file. scale is used twice: setBaseScale(scale) and the custom cull box (-80*sx, 0, -80*sz)..(80*sx, 125*sy, 80*sz), which also tells you the unscaled footprint is about 160x160 wide and 125 tall.",
+      "behaviour": "A purely decorative water spout. Its whole _execute is: play a looping BTK texture scroll and a looping BCK bone animation, and emit JA_SE_OBJ_SPRING.",
+      "activates_on": "nothing switch-driven. There is no isSwitch / onSwitch / offSwitch call in the file at all - it cannot be turned on or off by a switch. The only gates are the two above.",
+      "effect": "visual and audio only. IT DOES NOT PUSH LINK UP and it is not a water/lava volume: the actor registers ZERO collision - no dCcD_* member, no dBgS_* member, no Ccsp()->Set call, no Bgsp usage. Any upward push or water surface at one of these spots comes from a DIFFERENT actor placed at the same point (e.g. Gryw00 for the rising water).",
+      "implementation_note": "Trivial to port: a looping animated mesh with a looping SFX, two model variants, no collider, no interaction. Rotation must be DISCARDED to match the original; scale multiplies the mesh and the cull volume. Wire type 3 to the story-flag system and type 1 to whatever owns the rising water plane.",
+      "confidence": "high",
+      "sources": ["src/d/d_stage.cpp:1162-1165", "include/d/actor/d_a_obj_Ygush00.h:12-35", "src/d/actor/d_a_obj_Ygush00.cpp:17-19", "src/d/actor/d_a_obj_Ygush00.cpp:33-99", "src/d/actor/d_a_obj_Ygush00.cpp:115-145", "src/d/actor/d_a_obj_Ygush00.cpp:189-204", "include/d/d_save_event_flag.inc:431", "include/d/actor/d_a_obj_gryw00.h:12-56"]
+    },
+
+    "Oship": {
+      "name": "Oship",
+      "file": "src/d/actor/d_a_oship.cpp",
+      "profile": "fpcNm_OSHIP_e",
+      "stub": false,
+      "placements": "55, all in `sea`",
+      "params": {
+        "subMode": {"bits": "params & 0xFF", "meaning": "how much the ship moves. 0 = stationary (never calls pathMove and always uses the short 30-frame reload). 1 = moves along its path while at range A and range B. 2 = moves along its path in every mode including search/idle.", "proof": "src/d/actor/d_a_oship.cpp:996, :522, :541, :551, :575, :600"},
+        "triforce": {"bits": "(params >> 8) & 0xF", "meaning": "0xF = always spawn. Otherwise the ship only exists once dComIfGs_isCollectMapTriforce(n+1) is true - these are the guard ships that appear on a Triforce salvage spot after you decode its chart.", "proof": "src/d/actor/d_a_oship.cpp:997, :1029-1036"},
+        "randomSalvagePoint": {"bits": "(params >> 12) & 0xF", "meaning": "0xF = any. Otherwise the ship only exists when dComIfGs_getRandomSalvagePoint() equals this value.", "proof": "src/d/actor/d_a_oship.cpp:998, :1033-1035"},
+        "pathId": {"bits": "(params >> 16) & 0xFF", "meaning": "dPath room path the ship patrols. 0xFF = no path, so it never moves regardless of subMode.", "proof": "src/d/actor/d_a_oship.cpp:999, :941-943, :522"},
+        "swSink": {"bits": "(params >> 24) & 0xFF", "meaning": "switch turned ON when the ship sinks - and if it is already on at create, the ship is not spawned. Sinking also calls daSalvage_c::onSalvageForOship, i.e. this is how a sunken warship reveals its salvage point.", "proof": "src/d/actor/d_a_oship.cpp:1000, :1021-1023, :724-728, :751-757"}
+      },
+      "rot_scale": "rot.x is a SECOND parameter word, not a pitch: swRequired = home.angle.x & 0xFF (the ship is only created if that switch is ON; 0xFF = no requirement) and modelType = (home.angle.x >> 8) & 0xFF (0xFF = the ordinary warship; anything else makes isSpecial() true, which suppresses the Moblin flag child, changes the sinking sequence to the scripted GOLD_SHIP_DELETE event and applies scale 0.75). getArg then zeroes angle.x. rot.y is the initial heading.",
+      "behaviour": "The Great Sea warship, 3 HP. It sits or patrols a path, watches the player's distance and switches between four range modes (2500 / 6000 / 12000 units), turns its cannon and lobs bombs at the King of Red Lions. When killed it lists over, settles 1000 units below the water surface and disappears; a normal ship drops an item ball, a 'special' one plays the GOLD_SHIP_DELETE cutscene and sets event bit UNK_3E80.",
+      "activates_on": "player distance; there is no switch to wake it, only switches that decide whether it exists.",
+      "effect": "sets swSink and opens a salvage point on death; fires bombs at the player.",
+      "implementation_note": "HIO defaults give a full port: ranges 2500/6000/12000, reload 30 frames close and 200 far, path speed 20 units/frame, bomb muzzle offset (450,0,0), bomb speed 85 with acceleration -2 and 35 frames of no gravity, bad-aim lead starting at 3500 with a max error of 0x3000, attention offset +900 Y, wave offset +380 Z, health 3, special-ship scale 0.75.",
+      "confidence": "high",
+      "sources": ["src/d/d_stage.cpp:816", "include/d/actor/d_a_oship.h:42, :84-98", "src/d/actor/d_a_oship.cpp:18, :53-90", "src/d/actor/d_a_oship.cpp:515-610", "src/d/actor/d_a_oship.cpp:700-760", "src/d/actor/d_a_oship.cpp:895-950", "src/d/actor/d_a_oship.cpp:991-1045"]
+    },
+
+    "Ktarur": {
+      "name": "Ktarur",
+      "file": "src/d/actor/d_a_obj_barrel2.cpp",
+      "profile": "fpcNm_Obj_Barrel2_e",
+      "stub": false,
+      "placements": "47 (Ocean 38, sea 8, sea_r44 1)",
+      "params": {
+        "itemNo": {"bits": "params & 0x3F", "meaning": "item held by the barrel, created as a RACE item at spawn - the floating pickup you sail into. 0x3F = nothing.", "proof": "include/d/actor/d_a_obj_barrel2.h:56-57, :99-101; src/d/actor/d_a_obj_barrel2.cpp:273-281"},
+        "buoy": {"bits": "(params >> 8) & 1", "meaning": "0 = ALSO create a daObjBuoyflag marker floating above it; 1 = no flag.", "proof": "include/d/actor/d_a_obj_barrel2.h:59-60, :93-95; src/d/actor/d_a_obj_barrel2.cpp:287-296"},
+        "texture": {"bits": "(params >> 10) & 1", "meaning": "which of the two buoy-flag textures the marker uses.", "proof": "include/d/actor/d_a_obj_barrel2.h:65-66, :105-107"},
+        "itemSave": {"bits": "(params >> 16) & 0x7F", "meaning": "save flag for the held item; 0x7F = not saved.", "proof": "include/d/actor/d_a_obj_barrel2.h:53-54, :102-104"},
+        "type": {"bits": "(params >> 24) & 3", "meaning": "index into M_attr (model, heap, cylinder radius/height, float physics). Types 2 and 3 make the buoy flag a MINE flag instead of a normal one; type 3 additionally disables culling. Observed in the rip: 0, 1, 2.", "proof": "include/d/actor/d_a_obj_barrel2.h:62-63, :108-110; src/d/actor/d_a_obj_barrel2.cpp:216, :232-234, :287-296"},
+        "coming": {"bits": "(params >> 28) & 1", "meaning": "'arriving' barrel - it starts submerged and bobs up much harder (restoring gain 0.02/0.01 with a 0.6 amplitude cap instead of 0.94/0.2), and its race item is created with type 1 instead of 0.", "proof": "include/d/actor/d_a_obj_barrel2.h:68-69, :96-98; src/d/actor/d_a_obj_barrel2.cpp:236-247, :376-396"}
+      },
+      "rot_scale": "home.angle.y is passed to the spawned race item as its facing. Scale is not read (all 47 placements are 1,1,1).",
+      "behaviour": "A barrel floating on the sea holding a pickup, with an optional flag buoy tethered above so you can spot it from a distance. It bobs on the surface, drifts back toward home, and can be hit by nearly everything except the boomerang, water, wind and light.",
+      "activates_on": "sailing into it (the race item is the actual pickup) or attacking it.",
+      "effect": "yields its item; the mine variants mark themselves with the mine flag texture.",
+      "implementation_note": "IMPORTANT collision-template case: the static M_cyl_src at d_a_obj_barrel2.cpp:20-47 declares radius 50 / height 100, but _create immediately OVERRIDES it with mCyl.SetR(attr()->m08) / SetH(attr()->m0C) - for type 0 that is radius 200 / height 300. Quote the M_attr values, not the template.",
+      "confidence": "high",
+      "sources": ["src/d/d_stage.cpp:784", "include/d/actor/d_a_obj_barrel2.h:13-115", "src/d/actor/d_a_obj_barrel2.cpp:18-60", "src/d/actor/d_a_obj_barrel2.cpp:211-300", "src/d/actor/d_a_obj_barrel2.cpp:370-400"]
+    },
+
+    "HyoiKam": {
+      "name": "HyoiKam",
+      "file": "src/d/actor/d_a_npc_kamome.cpp",
+      "profile": "fpcNm_NPC_KAM_e",
+      "stub": false,
+      "placements": "51 (sea 48, K_Teste 2, sea_r44 1)",
+      "params": {
+        "none": {"bits": "-", "meaning": "the actor never calls fopAcM_GetParam anywhere in its 1509 lines, and all 51 placements in the rip carry params 0xFFFFFFFF, consistent with that.", "proof": "src/d/actor/d_a_npc_kamome.cpp (no fopAcM_GetParam in the file)"}
+      },
+      "rot_scale": "SCALE IS THE PARAMETER. daNpc_kam_c multiplies its placement scale by 1000 at init: scale.x becomes the XZ radius of the seagull's roaming circle around home.pos and scale.y becomes its half-height (max = home.y + scale.y, min = home.y - scale.y). Observed placements use (8,6,8) and (13,6,13), i.e. 8000-13000 unit radii and +/-6000 ceilings. rot is (0,0,0) on all 51.",
+      "behaviour": "The Hyoi-pear seagull. It circles its home point; when Link puts a Hyoi Pear on his head the actor raycasts from the pear position (head top + 20) looking for a clear straight line to descend along, then the nearest seagull dives, lands on the pear and the player takes direct control - stick steers, R or START releases. Flying out past scale.x, or the release button, hands control back.",
+      "activates_on": "Link using a Hyoi Pear while inside the seagull's radius. changeAreaCheck also has one hard-coded exception: in stage `sea` room 41 the player must additionally be standing on top of the rock, within 1300 units of (211555, 1000, 191870) and above y = 1000.",
+      "effect": "transfers player control to the bird; used to reach cliff switches, alcoves and the Nintendo Gallery.",
+      "implementation_note": "The roaming volume is trivially recoverable from the ripped SCOB scale bytes - the exporter's scale field already carries actor->scale (raw byte * 0.1, f_op_actor.cpp:278), so multiply by 1000 for world units. Everything else is a camera/control-swap feature.",
+      "confidence": "high",
+      "sources": ["src/d/d_stage.cpp:1170", "src/d/actor/d_a_npc_kamome.cpp:1-4", "src/d/actor/d_a_npc_kamome.cpp:140-170", "src/d/actor/d_a_npc_kamome.cpp:446-460", "src/d/actor/d_a_npc_kamome.cpp:555-600", "src/f_op/f_op_actor.cpp:278"]
+    },
+
+    "Ebrock": {
+      "name": "Ebrock",
+      "file": "src/d/actor/d_a_stone2.cpp",
+      "profile": "fpcNm_Stone2_e",
+      "stub": false,
+      "aliases": ["Ebrock (type 2)", "Ekao (type 3)", "Ebrock2 (type 4)"],
+      "placements": "Ebrock 25 + Ebrock2 20 + Ekao 11 = 56 (sea 32, M_NewD2 7, plus scattered)",
+      "params": {
+        "type": {"bits": "(params >> 24) & 7", "meaning": "index into M_attr[5]. Indices 0 and 1 are empty rows; 2 = \"Ebrock\" (big rock, res 0x8, mass 0x19), 3 = \"Ekao\" (face rock, res 0x7), 4 = \"Ebrock2\" (small rock, res 0x9). Confirmed against the rip - every Ebrock placement carries nibble 2, every Ekao 3, every Ebrock2 4.", "proof": "include/d/actor/d_a_stone2.h:56-57, :76; src/d/actor/d_a_stone2.cpp:46-79 (M_attr), :180"},
+        "swSave": {"bits": "(params >> 8) & 0xFF", "meaning": "destroyed-switch, 0xFF = none. If it is already ON the rock is NOT created (chk_appear -> Mthd_Create returns cPhs_ERROR_e); breaking the rock calls on_switch().", "proof": "include/d/actor/d_a_stone2.h:50-51, :75; src/d/actor/d_a_stone2.cpp:95-113, :171-186"},
+        "itemNo": {"bits": "params & 0x3F", "meaning": "drop, same table semantics as the pots. 0x3F = nothing.", "proof": "include/d/actor/d_a_stone2.h:47-48, :72; src/d/actor/d_a_stone2.cpp:253-254"},
+        "itemSave": {"bits": "(params >> 16) & 0x7F", "meaning": "save flag for the drop; 0x7F = not saved.", "proof": "include/d/actor/d_a_stone2.h:53-54, :73"},
+        "cull": {"bits": "(params >> 28) & 7", "meaning": "cull class.", "proof": "include/d/actor/d_a_stone2.h:59-60, :71"},
+        "shadow": {"bits": "(params >> 31) & 1", "meaning": "draw a simple shadow.", "proof": "include/d/actor/d_a_stone2.h:62-63, :74"}
+      },
+      "rot_scale": "rot.z is not a rotation: prmZ_init copies home.angle.z into mPrmZ and zeroes the angle; the low byte is an EVENT ID, resolved once and then ordered with fopAcM_orderOtherEventId when the rock is blown up. 0xFF = no event, which is what most placements carry; a few in the rip carry real ids (5, 10, 11). rot.y is the facing.",
+      "behaviour": "The bombable boulder. It is solid MoveBG world collision from its own archive dzb, and its target mask is exactly AT_TYPE_BOMB - a sword or arrow does nothing. When a bomb goes off against it, it shatters, optionally drops an item, sets its switch and can order a cutscene.",
+      "activates_on": "a bomb blast.",
+      "effect": "removes its own collision, sets swSave, drops itemNo, orders the rot.z event.",
+      "implementation_note": "Per-type numbers from M_attr (mass, particle ids, break SE 0x696A / 0x6969 / 0x696B, gravity -6.0, throw arc 27/36, effect scale 1.5 / 1.3 / 0.8 for Ebrock / Ekao / Ebrock2). The file is fully decompiled (0 Nonmatching), so the static M_cyl_src (r 30, h 35) is a base template you can safely replace by reading create_init_cc.",
+      "confidence": "high",
+      "sources": ["src/d/d_stage.cpp:654-656", "include/d/actor/d_a_stone2.h:46-77", "src/d/actor/d_a_stone2.cpp:20-79", "src/d/actor/d_a_stone2.cpp:84-113", "src/d/actor/d_a_stone2.cpp:160-196", "src/d/actor/d_a_stone2.cpp:250-256", "src/d/actor/d_a_stone2.cpp:640-680"]
+    },
+
+    "bridge": {
+      "name": "bridge",
+      "file": "src/d/actor/d_a_bridge.cpp",
+      "profile": "fpcNm_BRIDGE_e",
+      "stub": "partial",
+      "placements": "40 (sea 11, sea_r44 11, M_NewD2 6, GanonA 4, DmSpot0 2)",
+      "params": {
+        "typeBits": {"bits": "params & 0xFF (0xFF normalised to 0)", "meaning": "a BITFIELD, not an enum. bit0 changes the plank swing model and raises a distance constant from 200 to 1000; bit1 enables an end-section behaviour whose plank count is clamped by total length and pairs the bridge with a partner actor; bit2 disables neighbour-plank coupling; bit3 changes a per-plank count from 3 to 5 and gates the flame handling. bits 0 and 2 together also scale the plank model by 0.85 instead of 1.0. Observed values in the rip: 0x0A, 0x00, 0x01.", "proof": "src/d/actor/d_a_bridge.cpp:1443-1447, :41, :173-174, :310, :324, :365, :637, :716, :833, :919, :934"},
+        "unk8": {"bits": "(params >> 8) & 0xFF", "meaning": "stored in m02D9; role not established. Every placement in the rip carries 0xFF or 0x00/0x01.", "proof": "src/d/actor/d_a_bridge.cpp:1449"},
+        "pathId": {"bits": "(params >> 16) & 0xFF", "meaning": "REQUIRED - 0xFF makes create fail. Points [0] and [1] of the dPath are the two ENDS of the bridge: home.pos is set to point 0, the far end to point 1, and yaw/pitch are computed from the delta. Plank count = |delta| / ((47 + (|delta| > 1300 ? 3 : 0)) * 1.5); a bridge needing 50 or more planks refuses to spawn.", "proof": "src/d/actor/d_a_bridge.cpp:1450-1479"}
+      },
+      "rot_scale": "The placement rot is OVERWRITTEN - home.angle.y and home.angle.x are recomputed from the path delta at create, and the placement position is replaced by path point 0. A Godot version must read the stage PATH data, not the actor record, to place a bridge.",
+      "behaviour": "The rope-plank bridge: a run of individually simulated planks strung between two path points, which sag and swing under Link's weight and can be set on fire.",
+      "activates_on": "Link walking on it (per-plank load), and fire.",
+      "effect": "walkable, swinging collision. No switch or event.",
+      "implementation_note": "Only 2 of the file's functions are /* Nonmatching */, so the plank physics is readable if you need it, but the important structural fact is that the geometry comes from the path: plank spacing is 70.5 units (47*1.5), or 75 for spans over 1300, built from path point 0 to point 1.",
+      "confidence": "medium",
+      "sources": ["src/d/d_stage.cpp:699", "src/d/actor/d_a_bridge.cpp:41", "src/d/actor/d_a_bridge.cpp:173-174", "src/d/actor/d_a_bridge.cpp:310-370", "src/d/actor/d_a_bridge.cpp:637-663", "src/d/actor/d_a_bridge.cpp:919-934", "src/d/actor/d_a_bridge.cpp:1435-1500"]
+    },
+
+    "lwood": {
+      "name": "lwood",
+      "file": "src/d/actor/d_a_lwood.cpp",
+      "profile": "fpcNm_Lwood_e",
+      "stub": false,
+      "placements": "106 (sea 25, A_mori 21, Omori 11, A_nami 9, morocam 8, Hyrule 6)",
+      "params": {
+        "none": {"bits": "-", "meaning": "the actor never reads params. All 106 placements carry 0xFFFFFFFF.", "proof": "src/d/actor/d_a_lwood.cpp:1-200 - no fopAcM_GetParam in the file"}
+      },
+      "rot_scale": "current.angle is used for the model and the collision matrix; scale multiplies both. Nothing is decoded as data.",
+      "behaviour": "An ordinary tree. Its point is that it carries SOLID COLLISION: CreateHeap does dBgW_NewSet(Lwood.dzb, dBgW::MOVE_BG_e) and registers it with the BG system, so the trunk is a wall - and that collision lives in the OBJECT archive, not in the stage .dzb. Its leaf joint J_Alwd_ha has a node callback that tilts the crown with the wind: rotation = (|sin(t*300)+1| * 250, wind.x * sin(t*300) * 10, wind.z * cos(t*300) * 10) scaled by a per-tree random 0.8..1.2, with t incrementing once per frame from a random start.",
+      "activates_on": "nothing.",
+      "effect": "none.",
+      "implementation_note": "Cheap, high-value: 106 placements currently exported as inert scenery with no collision at all. Adding the Lwood.dzb hull (or a capsule approximating the trunk) plus the wind sway would fix a lot of walk-through trees. Cull box -600..600 XZ, 0..900 Y.",
+      "confidence": "high",
+      "sources": ["src/d/d_stage.cpp:836", "src/d/actor/d_a_lwood.cpp:14-60", "src/d/actor/d_a_lwood.cpp:63-118", "src/d/actor/d_a_lwood.cpp:136-175"]
+    },
+
+    "Oyashi": {
+      "name": "Oyashi",
+      "file": "src/d/actor/d_a_obj_lpalm.cpp",
+      "profile": "fpcNm_Obj_Lpalm_e",
+      "stub": "partial",
+      "placements": "91 (sea 53, DmSpot0 11, sea_r44 10, sea_E 8, sea_T 8)",
+      "params": {
+        "none": {"bits": "-", "meaning": "no params read; the actor's only attribute row is a single hard-coded constant M_attr = {0, 0}. All 91 placements carry 0xFFFFFFFF.", "proof": "src/d/actor/d_a_obj_lpalm.cpp:14; include/d/actor/d_a_obj_lpalm.h:23-24"}
+      },
+      "rot_scale": "current.angle.y is used to rotate the wind vector into local space before the sway is computed; the base transform comes from the model's own matrix.",
+      "behaviour": "The palm tree of the Great Sea islands. Like lwood it registers a MOVE_BG collision hull from Oyashi.dzb, so the trunk is solid. The whole trunk tilts into the wind via a quaternion slerped 0.25 per frame toward an axis-angle of (up x windDir, windPower * 0x600), and two frond joints wave with an angle chased toward min(windPower * 0x180, 0x100) and a phase advanced by windPower * 0x800 plus random jitter.",
+      "activates_on": "nothing.",
+      "effect": "none.",
+      "implementation_note": "Same story as lwood: 91 placements (53 in `sea`) that currently have no collision. _execute is marked /* Nonmatching */ but its body is written out in full and readable; CreateInit is the only genuinely missing piece.",
+      "confidence": "medium",
+      "sources": ["src/d/d_stage.cpp:638", "src/d/actor/d_a_obj_lpalm.cpp:14", "src/d/actor/d_a_obj_lpalm.cpp:40-60", "src/d/actor/d_a_obj_lpalm.cpp:120-175", "include/d/actor/d_a_obj_lpalm.h:23-24"]
+    },
+
+    "Ikari": {
+      "name": "Ikari",
+      "file": "src/d/actor/d_a_ikari.cpp",
+      "profile": "fpcNm_IKARI_e",
+      "stub": false,
+      "placements": "55 (M2ganon 11, M2tower 11, MajyuE 11, Mjtower 11, sea 11)",
+      "params": {
+        "envType": {"bits": "params & 0xFF", "meaning": "0xFF = scale 1.0 and actor-style lighting; 0x01 = scale 1.27 and BG0-style lighting with the actor colour registers copied in. Any other value leaves the placement scale alone.", "proof": "src/d/actor/d_a_ikari.cpp:69, :71-84, :106-120"},
+        "modelType": {"bits": "(params >> 8) & 0xFFFF", "meaning": "which model to load out of the archive; 0xFF is normalised to 0. Observed in the rip: 0, 2, 3, 4.", "proof": "src/d/actor/d_a_ikari.cpp:68, :70-72"}
+      },
+      "rot_scale": "shape_angle.y and current.angle.x are OVERWRITTEN every frame from the wind: shape_angle.y = atan2s(wind.x, wind.z) and current.angle.x = A + A*sin(timer * (REG0 + 500)) where A = windPower * 10000 * mWindPowerScale. The placed rotation is ignored.",
+      "behaviour": "The hanging banners of the Forsaken Fortress. Pure decoration that swings to face the wind and flaps with an amplitude proportional to wind power.",
+      "activates_on": "nothing.",
+      "effect": "none.",
+      "implementation_note": "Included only because 55 placements make it visible; it needs no gameplay code, just the wind-driven yaw and pitch above.",
+      "confidence": "high",
+      "sources": ["src/d/d_stage.cpp:830", "src/d/actor/d_a_ikari.cpp:1-4", "src/d/actor/d_a_ikari.cpp:64-101"]
+    },
+
+    "Sitem": {
+      "name": "Sitem",
+      "file": "src/d/actor/d_a_sitem.cpp",
+      "profile": "fpcNm_SITEM_e",
+      "stub": true,
+      "placements": "38 (kindan 26, GanonD 8, K_Test5 4)",
+      "params": {
+        "UNRECOVERABLE": {"bits": "?", "meaning": "d_a_sitem.cpp is a fully generated dtk shell: all 16 function bodies are /* Nonmatching */ and include/d/actor/d_a_sitem.h declares `class sitem_class : public fopAc_ac_c {}` with no members and no Prm_e. There is not a single fopAcM_GetParam call to read.", "proof": "src/d/actor/d_a_sitem.cpp:1-169; include/d/actor/d_a_sitem.h:1-11"}
+      },
+      "rot_scale": "unknown.",
+      "behaviour": "Unknown in detail. The only evidence is the surviving function names: hand_draw, hand_mtx_set, hand_move, control1/2/3, cut_control1, cut_control2, my_break. 'hand' plus 'cut' plus 'break' reads as something hanging that Link cuts down, which fits its placements (Forbidden Woods 26, GanonD 8). Note the Sitem ARCHIVE is separately known to hold the Kmi seed-pod models - dRes_INDEX_SITEM_BDL_KMI_02_e is what the tsubo actor loads for Kmi02 - so this is probably the hanging seed pod / vine that the Forbidden Woods is full of.",
+      "activates_on": "unknown.",
+      "effect": "unknown.",
+      "implementation_note": "Listed deliberately as a NEGATIVE result: 38 placements, nothing minable. Also note the name collision - d_stage.cpp has TWO OBJNAME rows called \"Sitem\", one at :920 mapping to fpcNm_SITEM_e and one at :1256 mapping to fpcNm_ShopItem_e. dStage_searchName returns the FIRST match, so a placed \"Sitem\" is always fpcNm_SITEM_e and never the shop item.",
+      "confidence": "low",
+      "sources": ["src/d/d_stage.cpp:920", "src/d/d_stage.cpp:1256", "src/d/d_stage.cpp:1265-1277", "src/d/actor/d_a_sitem.cpp:1-169", "include/d/actor/d_a_sitem.h:1-11", "src/d/actor/d_a_tsubo.cpp:944-978"]
+    },
+
+    "Aygr": {
+      "name": "Aygr",
+      "file": "src/d/actor/d_a_obj_aygr.cpp",
+      "profile": "fpcNm_Obj_Aygr_e",
+      "stub": true,
+      "placements": "28, all in `sea`",
+      "params": {
+        "mdl": {"bits": "UNRECOVERABLE (partial)", "meaning": "the header declares `void prm_get_mdl() const {}` - an empty stub whose NAME proves params select a model variant, but the bit positions are gone. All 9 functions in the cpp are /* Nonmatching */. Observed values in the rip are only 0x0 (6) and 0x1 (22), consistent with a one-bit model choice, but that is inference, not proof.", "proof": "include/d/actor/d_a_obj_aygr.h:10; src/d/actor/d_a_obj_aygr.cpp:10-52"}
+      },
+      "rot_scale": "unknown - set_mtx and init_mtx are stubs.",
+      "behaviour": "The Great Sea lookout platform (the file's own header comment: 'Object - Lookout Platform'). It derives from dBgS_MoveBgActor, so it definitely contributes solid, walkable collision from its own archive dzb - that much is structural and survives the stubbing.",
+      "activates_on": "unknown.",
+      "effect": "unknown; almost certainly none beyond being standable geometry.",
+      "implementation_note": "Treat as static collision geometry with a params-selected model until someone matches the functions.",
+      "confidence": "low",
+      "sources": ["src/d/d_stage.cpp:534", "src/d/actor/d_a_obj_aygr.cpp:1-52", "include/d/actor/d_a_obj_aygr.h:1-26"]
+    },
+
+    "Ysdls00": {
+      "name": "Ysdls00",
+      "file": "src/d/actor/d_a_warpls.cpp (class daWarpls_c; header include/d/actor/d_a_warpls.h)",
+      "profile": "fpcNm_WARPLIGHT_e",
+      "stub": true,
+      "evidence_note": "PROVENANCE: all 15 functions in d_a_warpls.cpp are /* Nonmatching */ stubs and the header has no members, so this decode does NOT come from readable C++. It was recovered by decompressing and disassembling files/rels/d_a_warpls.rel out of the user's own USA ISO and matching it against config/GZLE01/rels/d_a_warpls/symbols.txt, then cross-checked against all 65 real Ywarp00 + Ysdls00 placements in out/rip/GZLE01/godot/stage_data.json. The .rel offsets below are real read addresses, not decomp line numbers - treat them as a different class of evidence.",
+      "aliases": ["Ywarp00 (type 0 - already wrapped by the remake)", "Ysdls00 (type 1)"],
+      "placements": "Ysdls00 45 (one or two in nearly every Cave, plus M_Dai, kaze, Pfigure); Ywarp00 20 (I_SubAN 12, Siren rooms 7 and 17, ...)",
+      "params": {
+        "type": {"bits": "(params >> 28) & 0xF", "meaning": "arc/model select and THE ONLY thing that distinguishes Ysdls00 from Ywarp00 - the OBJNAME argument byte is 255 for both. 0 = the Ywarp00 arc (BDL 8, BCK 5, BRK 11 - an animated spinning light shaft); 1 = the Ysdls00 arc (BDL 3, BCK and BRK both -1, i.e. NO animation at all). Confirmed empirically: every Ysdls00 placement is 0x10xxxxxx and every Ywarp00 is 0x00xxxxxx.", "proof": "src/d/d_stage.cpp:906-907; d_a_warpls.rel .text:0x7A0-0x7A8 (lwz 0xb0 / srwi 0x1c / stb 0x2bc) with the m_bdlidx/m_brkidx/m_bckidx tables {8,3}/{11,-1}/{5,-1} at .rodata:0x00/0x04/0x08"},
+        "swNo": {"bits": "params & 0xFF", "meaning": "switch gating whether the light column is lit. 0xFF = no switch = always lit. If already on at create the light spawns fully lit (animations jumped to end-3.0 frames); otherwise it is dark until the switch turns on.", "proof": "d_a_warpls.rel .text:0x4B4-0x4BC, :0x5C4 (isSwitch on actor+0x1e2)"},
+        "sclsNo": {"bits": "(params >> 8) & 0xFF", "meaning": "THE DESTINATION - an index into the stage's SCLS (stage-change list) chunk. The warp fires dLib_setNextStageBySclsNum(sclsNo, current.roomNo). It does NOT use dStage_getWarpTable and does NOT call dComIfGs_setRestartRoom; the destination stage, spawn and room all come out of the SCLS entry.", "proof": "d_a_warpls.rel .text:0x4C0-0x4C8, :0xA4C-0xA58 (bl dLib_setNextStageBySclsNum__FUcSc)"},
+        "evId": {"bits": "(params >> 16) & 0xFF", "meaning": "event id (0xFF = none) for the ACTIVATION cutscene, resolved with getEventIdx and ordered with fopAcM_orderOtherEventId. All 45 Ysdls00 placements use 0xFF.", "proof": "d_a_warpls.rel .text:0x6BC-0x6D4, :0xB08-0xB20"},
+        "bits_24_27": {"bits": "(params >> 24) & 0xF", "meaning": "zero in all 65 placements.", "proof": "out/rip/GZLE01/godot/stage_data.json scan"}
+      },
+      "params_observed": "Ysdls00: 0x10ff00e0 x23, then 0x10ff01e0, 0x10ff01ff, 0x10ff0080, 0x10ff00cb, 0x10ff000e, 0x10ff010c, 0x10ff00e1, 0x10ff00e6. Ywarp00: 0x000000ff x12, 0x00ff00ff, 0x00ff01ff, 0x00ff0080, 0x00010128.",
+      "second_event_by_name": "A SECOND event index is looked up BY NAME from the stage name and room, not from params: in stage \"Siren\", room 7 -> \"TOWER_WARP_U\" and room 17 -> \"TOWER_WARP_D\"; any other stage -> \"DUNGEON_WARP\". That named event is what actually plays when Link steps in, and when it ENDS the stage change fires. The .rodata string table contains exactly {Ywarp00, Ysdls00, d_a_warpls.cpp, asserts, TOWER_WARP_U, TOWER_WARP_D, DUNGEON_WARP, Siren} and the placement data agrees - the only two Ywarp00 in Siren are in rooms 7 and 17. A JPA emitter is created ONLY for the two TOWER_WARP cases, so every Ysdls00 (always DUNGEON_WARP) has no emitter and no animation - a plain static model.",
+      "rot_scale": "Rotation is completely IGNORED - set_mtx is only setBaseScale(scale) + a translation, with no angle read anywhere. SCALE is load-bearing twice: it scales the model, AND the trigger radius is 112.5 * scale.x. Placements vary scale.y between 0.2 and 1.7 to set the visible column height while leaving scale.x at 1.0. Cull box is fixed at (-250, 0, -250)..(250, 2600, 250).",
+      "behaviour": "A vertical light column that returns Link out of a secret cave or sub-dungeon. If its switch is on (or swNo is 0xFF) it is lit from the start; otherwise it lights when the switch flips. Once lit, when the player comes within 112.5*scale.x units horizontally it orders the DUNGEON_WARP event, calls setGoal on its own position so Link walks into it, and on event end warps.",
+      "activates_on": "the player coming within 112.5 * scale.x horizontal units while the light is lit and the 'spawned already standing in it' guard has cleared. There is no button press.",
+      "effect": "plays the warp cutscene, then changes stage to the SCLS entry named by params bits 8-15 of the CURRENT room.",
+      "implementation_note": "The remake already wraps Ywarp00 in res://actors/warp_object.gd - Ysdls00 is the SAME actor with type 1. Branch on (params>>28)&0xF: type 1 loads the Ysdls00 single BDL with no bck/brk and no emitter; type 0 is the animated one. Destination = the stage's SCLS[(params>>8)&0xFF] for the actor's room, NOT a warp table. Trigger = a cylinder of radius 112.5*scale.x, ignore rotation, apply the placement scale to the mesh (scale.y 0.3-1.7 is what makes cave lights short and tower lights tall). Gate visibility on the switch, 0xFF meaning always on, and suppress the trigger for the first frames if Link spawns inside it.",
+      "confidence": "high",
+      "sources": ["src/d/actor/d_a_warpls.cpp:1-127", "include/d/actor/d_a_warpls.h:1-30", "src/d/d_stage.cpp:906-907", "src/d/d_stage.cpp:432-436", "config/GZLE01/rels/d_a_warpls/symbols.txt", "assets/GZLE01/res/Object/Ysdls00.h", "assets/GZLE01/res/Object/Ywarp00.h", "src/d/actor/d_a_obj_warpt.cpp:277-281", "d_a_warpls.rel disassembly: .text 0x420-0x10C8, .rodata 0x00-0xD8", "out/rip/GZLE01/godot/stage_data.json"]
+    },
+
+    "Hmlif": {
+      "name": "Hmlif",
+      "file": "src/d/actor/d_a_hmlif.cpp",
+      "profile": "fpcNm_Hmlif_e",
+      "stub": false,
+      "placements": "20 (Siren 16, SirenMB 2, I_SubAN 1, K_Test5 1)",
+      "params": {
+        "swNo": {"bits": "params & 0xFF", "meaning": "path-switch number, 0xFF = none. When set the lift uses two-path mode: while the switch is ON it runs dPath_GetNextRoomPath(), when OFF it returns to the base path and heads for point mArg0.", "proof": "src/d/actor/d_a_hmlif.cpp:71-73, :180, :456-478"},
+        "pathId": {"bits": "(params >> 8) & 0xFF", "meaning": "room-local path index for dPath_GetRoomPath. 0xFF = no path, and then Create() fails and the actor dies.", "proof": "src/d/actor/d_a_hmlif.cpp:74-76, :179, :183-190"},
+        "speed": {"bits": "(params >> 16) & 0xF", "meaning": "index into m_speed[], CLAMPED to <= 8, so the effective speed is (idx+1) * 1.6666667 units/frame = (idx+1) * 50 units/sec at 30fps, maxing at 15.0/frame.", "proof": "src/d/actor/d_a_hmlif.cpp:16-33 (table), :77-79, :227-231 (clamp)"},
+        "direction": {"bits": "(params >> 20) & 3", "meaning": "0 = forward along the path, 1 = backward, 2 = random +/-1, anything else = forward.", "proof": "src/d/actor/d_a_hmlif.cpp:80-82, :211-225"},
+        "start": {"bits": "(params >> 22) & 0x1F", "meaning": "starting path-point index, clamped to 0 if it is >= the point count. NOTE the `if (v == 0xFF) v = cM_rndF(...)` random-start branch at :204-206 is DEAD CODE - a 5-bit field can never be 0xFF.", "proof": "src/d/actor/d_a_hmlif.cpp:83-85, :199-209"},
+        "type": {"bits": "(params >> 27) & 0xF", "meaning": "arc select: 0 = \"Hmlif\" (the small glowing platform, BRK only), 1 = \"Hyuf1\", 2 = \"Hyuf2\". Types 1 and 2 additionally get an arrow-target sphere. All 20 placements use type 0.", "proof": "src/d/actor/d_a_hmlif.cpp:12-40 (arcname/res tables), :86-88, :247-249"},
+        "smooth": {"bits": "(params >> 31) & 1", "meaning": "0 = lift_normal_move (accelerate / cruise / decelerate, straight-line lerp to the next point), 1 = lift_smooth_move (turns toward the next point with cLib_addCalcAngleS2 and flies along its facing - a curving flight).", "proof": "src/d/actor/d_a_hmlif.cpp:89-91, :233, :270-278"}
+      },
+      "rot_scale": "rot.z is NOT a rotation - `home.angle.z & 0xFF` is a SECOND switch number, the 'lit' switch, which drives the BTP texture-pattern frame (0..3) and, for types 1/2, is turned ON when the platform is shot by any arrow. All 20 placements have rot.z == 0, i.e. switch 0. set_mtx uses current.angle (not shape_angle), and in smooth mode current.angle.y is overwritten every frame to face the travel direction; the BG collision is registered with dBgS_MoveBGProc_TypicalRotY so it follows that yaw. scale goes straight to the model.",
+      "params_observed": "Siren 0x000300ff / 0x00030218 / 0x00030320 / 0x000305ff / 0x00030bff / 0x004301ff; SirenMB 0x000000ff / 0x000001ff; I_SubAN 0x87ffffff (smooth = 1, speed clamped to 15.0); K_Test5 0x0003011a.",
+      "behaviour": "A floating platform that patrols a stage PATH. It picks a start point, a direction and a speed from params, then either lerps point-to-point with an accelerate/cruise/decelerate cycle or steers smoothly toward each point. Closed paths loop; open paths ping-pong. With swNo set it swaps between its own path and dPath_GetNextRoomPath() depending on that switch.",
+      "activates_on": "nothing - it is always moving from spawn. swNo re-routes it; the rot.z switch changes its glow.",
+      "effect": "rideable moving BG (dBgS_MoveBgActor); plays JA_SE_OBJ_FLOAT_LIFT_MOVE whenever it is actually moving, and the BRK colour animation loops only while moving.",
+      "implementation_note": "This is a PATH FOLLOWER, not a fixed-travel lift - you need the stage PATH/RPAT chunk exposed per room, because the travel distance comes entirely from the path points. Speed = ((params>>16 & 0xF, clamped to 8) + 1) * 50 units/sec. The platform must carry the player. Normal mode: accelerate at rate 1/4 toward the target speed, cruise, then decelerate to speed/2.2 when within 50 units of the next point. Smooth mode: turn toward the next point at up to 0x400/frame and advance when within 80 units. Cull box (-200,-100,-200)..(200,50,200) for type 0.",
+      "confidence": "high",
+      "sources": ["src/d/actor/d_a_hmlif.cpp:1-562", "include/d/actor/d_a_hmlif.h:1-88", "src/d/d_stage.cpp:905"]
+    },
+
+    "Mhsg4h": {
+      "name": "Mhsg4h",
+      "file": "src/d/actor/d_a_obj_ladder.cpp",
+      "profile": "fpcNm_Obj_Ladder_e",
+      "stub": false,
+      "placements": "17 (Abship 7, PShip 3, SubD45 3, SubD71 2, M_Dai 1, K_Testd 1)",
+      "params": {
+        "type": {"bits": "params & 7", "meaning": "ladder length and model: 0 = MHSG6 (600 units tall), 1 = MHSG9 (900), 2 = MHSG12 (1200), 3 = MHSG15 (1500), 4 = MHSG4H (450). Each type selects its own BDL and its own DZB collision mesh. Every Mhsg4h placement ends in 0x04, i.e. the 450-unit ladder.", "proof": "include/d/actor/d_a_obj_ladder.h:8-14 (Type_e), :27-28, :37; src/d/actor/d_a_obj_ladder.cpp:45-51 (L_attr_type), :65, :77-80, :113-116"},
+        "swSave": {"bits": "(params >> 8) & 0xFF", "meaning": "the switch that DROPS the ladder. 0xFF, or a switch already on at create, means the ladder starts already down (snapped to the ground, Mode_FELL). Otherwise it waits until fopAcM_isSwitch becomes true.", "proof": "include/d/actor/d_a_obj_ladder.h:30-31, :38; src/d/actor/d_a_obj_ladder.cpp:98-104, :150-154"},
+        "evId": {"bits": "(params >> 16) & 0xFF", "meaning": "event id for the drop cutscene, 0xFF = none. Create resolves it with getEventIdx; Mode_DEMOREQ orders it and waits. If the event does not exist it falls straight through to the shake and drop.", "proof": "include/d/actor/d_a_obj_ladder.h:33-34, :39; src/d/actor/d_a_obj_ladder.cpp:96, :156-180"}
+      },
+      "params_observed": "Abship 0x0001e004 / 0x0004e504 / 0x0005e004 / 0x0005e504 / 0x0008e904 / 0x00ffe404 / 0x00ffe504; PShip + SubD45 + SubD71 0x00ffe004; M_Dai 0x00ff3404; K_Testd 0x00ffff04 (starts already down). So type 4 everywhere, swSave in {0x34, 0xe0, 0xe4, 0xe5, 0xe9, 0xff}, evId in {0x01, 0x04, 0x05, 0x08, 0xff}.",
+      "rot_scale": "shape_angle is used: the ground probe is placed at current.pos rotated by shape_angle.y and offset (0, 10, 5), and set_mtx is transS(current.pos) then ZXYrotM(shape_angle) then a small vibration offset. scale goes to setBaseScale. All 17 placements are scale 1 and rot (0, y, 0).",
+      "behaviour": "A retractable ladder that hangs retracted at its placed position and DROPS to the floor when its switch turns on. Modes: WAIT -> (switch on) DEMOREQ (optionally play the event) -> VIB (15 frames of a cosine wobble, +/-2.0 in X and +/-1.0 in Y) -> DROP (gravity -5.0, falls to the ground height sampled at create, bounces 3 times with speed.y *= -0.5 and a descending set of SE pitches) -> FELL. Both the model and its DZB collision move as one MoveBgActor.",
+      "activates_on": "its switch becoming true. NOT Link pulling it and NOT proximity.",
+      "effect": "plays the ladder-fall SE with the ground material sound plus a rumble on first impact, then a lighter SE on each of the 3 bounces. Once fallen it is a permanent climbable ladder.",
+      "implementation_note": "The climb surface is the archive's DZB mesh for this type (Mhsg.arc, dRes_INDEX_MHSG_DZB_MHSG4H_e) - its polygons carry the climb attribute, so wire it into the existing ladder-climb code rather than inventing a box. Geometry: 450 units tall, roughly x in [-55,55] and z in [-10,10]. Travel is from the placed Y down to the ground raycast at (pos rotated by yaw + (0,10,5)); gravity -5 units/frame^2, 3 bounces at 50% restitution. Do the 15-frame shake first - it is the visual cue. Persist the fallen state via the switch, not a local flag.",
+      "confidence": "high",
+      "sources": ["src/d/actor/d_a_obj_ladder.cpp:1-358", "include/d/actor/d_a_obj_ladder.h:1-90", "src/d/d_stage.cpp:910-914"]
+    },
+
+    "Hjump2": {
+      "name": "Hjump2",
+      "file": "src/d/actor/d_a_obj_jump.cpp",
+      "profile": "fpcNm_Obj_Jump_e",
+      "stub": "partial",
+      "placements": "12 (kaze 6, Cave08 2, GanonC 2, K_Testa 1, K_Testc 1)",
+      "params": {
+        "type": {"bits": "params & 1", "meaning": "0 = Type_SPRING_e (BDL/DZB hjump2, the bare springboard, has a simple shadow, cull height 151). 1 = Type_SPRING_ON_BOX_e (BDL hjump1 / DZB hjump1b, a springboard mounted on a crate 150 units higher, no shadow). ALL 12 placements are params 0x00000000, i.e. type 0; type 1 is only produced from code via prm_make_b().", "proof": "include/d/actor/d_a_obj_jump.h:46-49 (Type_e), :64-68; src/d/actor/d_a_obj_jump.cpp:15-77 (attr table), :130"}
+      },
+      "rot_scale": "set_mtx is transS(current.pos) then ZXYrotM(shape_angle), followed by a Y-axis squash matrix about the spring height; init_mtx applies setBaseScale(scale). shape_angle.y also feeds the simple shadow. Placement rot.y is what aims the board (0, 90, 180 and 270 degrees all appear); all placements are scale 1.",
+      "behaviour": "A spring pad that only works with the IRON BOOTS (the file's own header: 'Object - Wind Temple - Iron Boots springboard'). Its ride callback flags who is standing on it and whether that rider is heavy. In WAIT, any rider adds a small bounce impulse; once a HEAVY rider has stood on it for 15 frames it plays the close SE and compresses to scale 0.1. In LOWER it stays compressed while heavy; once the heavy load is gone for 5 frames it plays the open SE and springs out to scale 1.2, and at the instant it reaches 1.2, if the player is still on it, it calls player->onForceVomitJump().",
+      "activates_on": "compression: Link standing on it wearing the Iron Boots for ~15 frames. Launch: taking the boots off (or the heavy load leaving) for ~5 frames while Link is still on the pad.",
+      "effect": "LAUNCH VALUES, taken from the player side because the actor only raises a flag: onForceVomitJump -> daPyFlg1_FORCE_VOMIT_JUMP -> procVomitJump_init(0), which sets speed.y = 64.5 units/frame plus a rumble and the spin animation. In flight shape_angle.x spins +22000 per frame, horizontal speed chases 12.725 * stick magnitude, and gravity is the normal -2.5 units/frame^2 - an apex of roughly 832 units, about 26 frames up.",
+      "implementation_note": "The spring visual is a Y-scale of joint 1 driven by a damped spring (k 0.7, damping 0.4; targets rest 1.0, compressed 0.1, released 1.2) with the top plate translating 85 units. Gate the compression on the Iron Boots equip flag (checkEquipHeavyBoots), NOT on plain contact. Launch: set vertical velocity to 64.5 units/frame and let normal jump gravity -2.5/frame^2 take over, with ~12.725/frame of horizontal control while airborne. Collision is a MoveBgActor, cull box +/-60 XZ. NOTE Execute() carries a /* Nonmatching */ marker but its body is present and complete - the marker only flags a codegen mismatch.",
+      "confidence": "high",
+      "sources": ["src/d/actor/d_a_obj_jump.cpp:1-483", "include/d/actor/d_a_obj_jump.h:1-130", "src/d/d_stage.cpp:1104", "src/d/actor/d_a_player_vomit.inc:100-240", "include/d/actor/d_a_player.h:555", "src/d/actor/d_a_player_HIO_data.inc:115-118, :310-313", "include/d/actor/d_a_player_HIO.h:665-681, :1757-1780"]
+    },
+
+    "Hfuck1": {
+      "name": "Hfuck1",
+      "file": "src/d/actor/d_a_obj_hfuck1.cpp",
+      "profile": "fpcNm_Obj_Hfuck1_e",
+      "stub": false,
+      "placements": "42 (kaze 18, Cave08 13, Hyrule 4, GanonC 2, SubD44 2, kazeMB 1)",
+      "params": {
+        "none": {"bits": "-", "meaning": "the actor never calls fopAcM_GetParam at all, and all 42 placements carry 0xFFFFFFFF. There is nothing to configure per placement - every one in the game is identical.", "proof": "src/d/actor/d_a_obj_hfuck1.cpp (no GetParam/PrmAbstract anywhere in the file); out/rip/GZLE01/godot/stage_data.json"}
+      },
+      "rot_scale": "Both matter. init_mtx is setBaseScale(scale) then transS(current.pos) then XYZrotM(shape_angle) - note XYZ order, not the usual ZXY. The hit sphere is placed in that rotated local frame: translate (0, 0, -50) then SetR(90.0f), i.e. the catchable volume is a 90-radius sphere sitting 50 units out along the plate's local -Z. Placement rot.y steps in 45/90-degree units to face the plate at the player.",
+      "behaviour": "A wall-mounted HOOKSHOT TARGET (the decomp's own file comment says exactly that, and the DEMO-build HIO panel is named the Japanese for 'hookshot target'). It registers its DZB as MOVE_BG solid collision and keeps a dCcD_Sph whose only Tg type is AT_TYPE_HOOKSHOT. When a hookshot hits it, it records the hookshot actor and the next frame calls player->setHookshotCarryOffset(its own id, {0,0,0}), telling the hookshot to reel Link to this actor's origin.",
+      "activates_on": "the hookshot projectile entering the 90-radius sphere offset 50 units along local -Z. Nothing else can trigger it.",
+      "effect": "Link is pulled to the target's position and hangs there. No sound, no animation, no state change on the actor.",
+      "implementation_note": "A pure hookshot anchor - 42 of them, and the remake's hookshot has nothing to grab without them. Give it an Area3D sphere r=90 centred at local (0,0,-50) on a hookshot-only layer, plus a static collider from the Hfuck1 DZB so Link does not clip through the plate. On hit, drive Link to the actor origin with zero offset and put him in the hanging state. Honour shape_angle on all three axes in XYZ order and the placement scale - both the mesh and the sphere offset rotate with it.",
+      "confidence": "high",
+      "sources": ["src/d/actor/d_a_obj_hfuck1.cpp:1-278", "include/d/actor/d_a_obj_hfuck1.h:1-50", "src/d/d_stage.cpp:1124", "src/d/actor/d_a_player_hook.inc:30-42"]
+    },
+
+    "Hcbh": {
+      "name": "Hcbh",
+      "file": "src/d/actor/d_a_obj_hcbh.cpp",
+      "profile": "fpcNm_Obj_Hcbh_e",
+      "stub": true,
+      "evidence_note": "PROVENANCE: all 16 functions are /* Nonmatching */ stubs and the header's four param getters are empty bodies with no widths. The layout below was recovered by disassembling files/rels/d_a_obj_hcbh.rel from the user's own ISO against config/GZLE01/rels/d_a_obj_hcbh/symbols.txt - the generic daObj::PrmAbstract<daObjHcbh_c::Param_e> is present at .text:0x1BB4 and is verbatim (params >> S) & ((1<<W)-1), so the W/S immediates at each call site give the exact layout. Cross-checked against all 51 placements. This is disassembly evidence, not decomp line numbers.",
+      "placements": "51 (GanonJ 11, Siren 10, TF_01 8, TF_02 8, KATA_RM 6, Cave10 4, SirenMB 4)",
+      "params": {
+        "itemNo": {"bits": "params & 0x3F", "meaning": "item-table index dropped when the pillar is destroyed; 0x3F = nothing. Passed as argument 2 of fopAcM_createItemFromTable.", "proof": "d_a_obj_hcbh.rel .text:0x910-0x918 (li r4,6 / li r5,0 / bl PrmAbstract), result used at :0x978-0x998"},
+        "itemSave": {"bits": "(params >> 6) & 0x7F", "meaning": "the 'already collected' save bit for that drop; 0x7F = none.", "proof": "d_a_obj_hcbh.rel .text:0x920-0x930 (li r4,7 / li r5,6)"},
+        "swSave": {"bits": "(params >> 13) & 0xFF", "meaning": "save/zone switch, 0xFF = none. Dual role: chk_appear() returns FALSE when the switch is already ON and _create then returns cPhs_ERROR_e, so a pillar you already broke never respawns; and make_item() calls onSwitch(swSave, roomNo) after it breaks.", "proof": "d_a_obj_hcbh.rel .text:0x8C-0x94, :0x9A0-0x9C8 (li r4,8 / li r5,0xd), :0xBD8-0xC04"},
+        "bits_21_31": {"bits": "params >> 21", "meaning": "zero in every real placement.", "proof": "out/rip/GZLE01/godot/stage_data.json scan of all 51"}
+      },
+      "params_observed": "Siren / SirenMB / GanonJ / Cave10 use 0x001fffXX with XX in {c0, ca, cb, cc, ce, d0, d2, e0, ff} - so no item save bit, no switch, itemNo = XX & 0x3F. TF_01 and TF_02 use 0x00117fd0 .. 0x00125fec - itemNo 0x04/0x0c/0x10/0x2c/0x33 and swSave 139..146, which is inside the dungeon-switch range 0x80-0xBF. KATA_RM x6 are 0xffffffff (the all-none default).",
+      "rot_scale": "shape_angle IS used - set_mtx ends with XYZrotM(shape_angle) before writing the base matrix, and every placement carries a distinct rot.y. Placement scale is 1.0 everywhere and no setBaseScale was found in the recovered create path, so treat scale as unused. The toppling transform layered on top is: translate(pos.x, fallY, pos.z), YrotM(fallDir), translate(0, pivot, 0), XrotM(tilt), translate(0, -pivot, 0), YrotM(-fallDir).",
+      "behaviour": "NOT a traversal actor - it is a tall stack-of-blocks stone pillar (the decomp file comment calls it 'Tower of the Gods - Pillar with Companion Statue's face on it'). It is built from FIVE models out of Hcbh.arc: HCBH2 as the base plus four HCBH1A/1B/1C/1D segments, each pre-rotated by one of the four fixed Y angles {180, 270, 90, 0} degrees. Overall about 590 units tall with a radius-70 wall cylinder, carrying six damage spheres of radius 35 stacked at local Y = 157, 227, 297, 367, 437, 507. When a break condition fires it computes the fall direction as atan2s away from the attacker, gives each of the four segments its own tumble delay, plays smoke and an impact SE, and topples.",
+      "activates_on": "exactly four break conditions, decoded from checkCollision / co_hitCallback: AT_TYPE_BOMB -> cause 3; AT_TYPE_SKULL_HAMMER -> cause 2; AT_TYPE_UNK8 from an actor whose profile is fpcNm_TN_e (Darknut) -> cause 1; AT_TYPE_DARKNUT_SWORD -> cause 1; and a Co push hit from an actor whose profile is fpcNm_AM_e (Armos) -> cause 4. Nothing else breaks it.",
+      "effect": "topples into 4 tumbling blocks, optionally spawns an item, and sets swSave so it stays broken across reloads. Until then it is a solid dBgW obstacle.",
+      "implementation_note": "Spawn only when swSave is unset. Body = a 590-tall radius-70 cylinder collider, visually 4 stacked segments at Y ~157/227/297/367/437/507 each yawed by one of {180,270,90,0} plus a base. Damage volume = 6 spheres r=35 at those heights. Accept damage only from bombs, the Skull Hammer, a Darknut attack, or an Armos body-check. On break pick the direction away from the attacker, tumble the 4 pieces with staggered delays, spawn the drop, set the switch. Apply the placement rot.y to the whole assembly.",
+      "confidence": "medium",
+      "sources": ["src/d/actor/d_a_obj_hcbh.cpp:1-137", "include/d/actor/d_a_obj_hcbh.h:1-35", "src/d/d_stage.cpp:1166", "config/GZLE01/rels/d_a_obj_hcbh/symbols.txt", "assets/GZLE01/res/Object/Hcbh.h", "include/d/d_cc_d.h:14-41", "include/f_pc/f_pc_name.h:201, :215", "d_a_obj_hcbh.rel disassembly: .text 0x78-0x1BD0, .rodata 0x00-0x130"]
+    },
+
+    "Sss": {
+      "name": "Sss",
+      "file": "src/d/actor/d_a_sss.cpp",
+      "profile": "fpcNm_SSS_e",
+      "stub": true,
+      "evidence_note": "PROVENANCE: all 17 functions are /* Nonmatching */ stubs and the header class sss_class has no members. Params and key constants were recovered by disassembling files/RELS.arc/rels/amem/d_a_sss.rel from the user's own ISO against config/GZLE01/rels/d_a_sss/symbols.txt, then cross-checked against all 41 placements. Disassembly evidence, not decomp line numbers.",
+      "identity_correction": "Sss is the DEXIVINE ENEMY, not a climbable rope and not a variant of d_a_ss.cpp. The two are sibling implementations by the same author (both have hand_draw / hand_move / hand_main / useHeapInit, both fopAc_ENEMY_e, list 7) but they are different creatures: `Ss` (fpcNm_SS_e, d_stage.cpp:892) loads Ss.arc whose model is 'sw' with joints DODAI/EYE/GAKU/TUBOMI and OPEN/CLOSE/DAMAGE/WAIT anims (a flower-bud plant), while `Sss` loads Sss.arc whose only model is 'sss_hand' with joints UDE (arm), NAKAYUBI (middle finger), YUBI1, YUBI2 and anims sss_hiraku (open) / sss_tojiru (close), plus an mDoExt_3DlineMat_c for the vine. The decomp file comment names it: 'Enemy - Dexivine (Forbidden Woods, Wind Temple)'.",
+      "placements": "41 (kaze 30, kindan 7, Cave08 4)",
+      "params": {
+        "segCount": {"bits": "params & 0xFF", "meaning": "vine segment count, but with only two possible outcomes: `v = params & 0xFF; if (v == 0xFF) v = 0; if (v != 1) v = 0x23;` - so 0x01 gives the short 1-segment form and 0x00 or 0xFF give the full 35-segment vine.", "proof": "d_a_sss.rel .text:0x2A74-0x2AA0"},
+        "range10": {"bits": "(params >> 8) & 0xFF", "meaning": "player-detection radius = 10.0 * this value; 0xFF means use the default 250.0. Observed: 0x46 (700), 0xC8 (2000), 0x3C (600), 0x50 (800), 0xFF (250).", "proof": "d_a_sss.rel .text:0x2AA4-0x2AAC, consumed in hand_move at .text:0x1664-0x1694 against fopAcM_searchActorDistance"},
+        "swNo": {"bits": "(params >> 16) & 0xFF (0xFF normalised to 0)", "meaning": "an alternative switch trigger - if non-zero, isSwitch(swNo, roomNo) also wakes it. When the field ends up 0 (which is every placement) the actor's stored retract-target Y is raised by 10000.0, i.e. effectively infinite. All 41 placements carry 0xFF.", "proof": "d_a_sss.rel .text:0x2AB0-0x2ACC, :0x2B6C-0x2B84, :0x1718-0x1758"},
+        "bits_24_31": {"bits": "params >> 24", "meaning": "zero in all 41 placements.", "proof": "out/rip/GZLE01/godot/stage_data.json scan"}
+      },
+      "params_observed": "kaze 0x00ffc800 x10, 0x00ffc8ff x12, 0x00ff4600 x4, 0x00ffffff x4; Cave08 0x00ff4600 x4; kindan 0x00ff3cff x5, 0x00ff5001 x2. So kaze uses range 2000 with both the 35-segment and 1-segment forms, and kindan's 0x...01 entries are the short form.",
+      "rot_scale": "Placement rot is (0,0,0) in kaze and Cave08 and (0, 0x4000 = 90 degrees, 0) in kindan. The recovered create path builds its matrix from YrotS(current.angle.y) then XrotM(current.angle.x), so the placement rot sets the arm's rest orientation. Scale is 1.0 in all 41 placements and no setBaseScale was found - treat scale as unused. Health is initialised to 2 and a random phase offset is seeded with cM_rndF.",
+      "behaviour": "A hostile plant claw that hangs from the ceiling: a procedurally drawn vine (1 or 35 segments) with the sss_hand model (arm plus three finger joints) at the tip and open/close animations. It idles until the player comes within 10*range units (or its switch fires), then extends and grabs. Three damage spheres of radius 20 along the body accept almost every attack type (everything except boomerang, water, wind and light), and a SEPARATE radius-80 sphere accepts only boomerang and wind - so the boomerang and the Deku Leaf gust have their own, much larger catch volume.",
+      "activates_on": "player distance < 10 * ((params>>8)&0xFF) units, defaulting to 250 when that byte is 0xFF, or the optional switch in bits 16-23.",
+      "effect": "grabs and attacks the player; can be cut, with the vine line reacting. Registered as fopAc_ENEMY_e, not as BG and not as a climbable.",
+      "implementation_note": "Do NOT model this as a climbable rope. Draw the vine as a 1- or 35-segment line hanging from the anchor with the hand mesh at the tip, playing hiraku/tojiru for open/close. Aggro sphere radius = 10 * (params>>8 & 0xFF), default 250. Hit volumes: 3 spheres r=20 on the body for melee and arrows, 1 sphere r=80 for boomerang and Deku-Leaf wind. HP 2. Because the whole cpp is a stub, the exact motion curves, the grab hold and the cut sequence are NOT recoverable - approximate them or defer this actor until you have reference footage. This one probably belongs in enemies.json rather than a world-actor script.",
+      "confidence": "medium",
+      "sources": ["src/d/actor/d_a_sss.cpp:1-179", "include/d/actor/d_a_sss.h:1-12", "src/d/d_stage.cpp:892, :915", "src/d/actor/d_a_ss.cpp:1-140", "config/GZLE01/rels/d_a_sss/symbols.txt", "config/GZLE01/rels/d_a_ss/symbols.txt", "assets/GZLE01/res/Object/Sss.h", "assets/GZLE01/res/Object/Ss.h", "d_a_sss.rel disassembly: .text 0x1600-0x1820 and 0x28C0-0x2BB4, .rodata 0x00-0xB4"]
+    }
+
+  }
+}

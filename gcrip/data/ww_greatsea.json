@@ -1,0 +1,638 @@
+{
+  "_source": {
+    "title": "Wind Waker - the Great Sea: room grid, streaming, wind, cyclones, chart, currents",
+    "purpose": "System reference for the gcrip remake. Companion to Z:/memRip/knowledge/gamecube/sailing-spec.md, which covers the boat's own physics (sail force, speed, turning, waves, camera) and is NOT repeated here. This file covers everything around the boat: which rooms are resident, what loads and unloads them, how the wind is stored/changed/read, the roaming cyclones and the Ballad of Gales, the sea chart save data, and the only things that move the boat without player input.",
+    "decomp": "zeldaret/tww at Z:/memRip/sources/tww. Every 'file:line' below is a path relative to that root, read directly. Line numbers are of the checkout as of 2026-08-21.",
+    "ripped_data": "Cross-checks cite paths relative to Z:/3d ripper.",
+    "structure": "Top-level keys: _source, _rooms, _wind, _cyclones, _chart, _currents. Each system key holds sub-topics; a sub-topic is an object with 'behaviour' (prose, the rule), optional 'constants' (name -> value), optional 'implementation_note' (what the remake should do), 'confidence' ('high' = read out of decompiled C++, 'medium' = inferred from code that is present but indirect, 'low' = guess), and 'sources' (list of 'path:line' or ripped-data paths).",
+    "units": "Game units; 1 frame = 1/30 s. Angles are s16 (0x8000 = 180 deg). World axes on the Great Sea: +X = east, +Z = south.",
+    "honesty": "Nonmatching (undecompiled) functions that block an answer are named explicitly, and the 'unknown' key at the end of each system lists what could not be established.",
+    "confidence": "high",
+    "sources": ["Z:/memRip/knowledge/gamecube/sailing-spec.md"]
+  },
+
+  "_rooms": {
+    "summary": "The sea stage is one stage ('sea') with 50 rooms. Room 0 is the sea floor and is the thing that is always under you; rooms 1..49 are the 49 island cells of a 7x7 grid. Streaming is entirely data-driven: the sea-floor collision mesh tells the game which RTBL entry applies at this spot, the RTBL entry lists the rooms that must be resident, and the room controller converges on that list at a rate of one room per frame.",
+
+    "grid": {
+      "behaviour": "The sea is a 7x7 grid of 100000-unit square cells. Index from a world position: idx = (int)((v + 450000) / 100000), giving 0..8; only 1..7 are real rooms (0 and 8 are the border ring, permanently wave-height 10). Room number = (zi - 1) * 7 + xi for 1 <= xi, zi <= 7. Cell bounds: min = i*100000 - 450000, max = min + 100000. Cell centre = i*100000 - 400000. The wave-height table is u8 mHeight[9][9] indexed [z][x], filled by walking i=1..7, j=1..7 with roomNo starting at 1 and incrementing, which is what fixes the row-major, z-major room numbering.",
+      "constants": {
+        "cell_size": 100000.0,
+        "grid_origin": -450000.0,
+        "grid_dim": 7,
+        "border_ring_wave_max": 10,
+        "room_of_cell": "(zi-1)*7 + xi",
+        "cell_min": "i*100000 - 450000",
+        "cell_centre": "i*100000 - 400000"
+      },
+      "implementation_note": "Room 44 (Outset) is cell (xi=2, zi=7), centre (-200000, +300000). Room 11 (Windfall) is cell (4, 2), centre (0, -200000). Cross-checked against the rip: the Hr2/Ytrnd00 pair in room 38 sits at real X = -100000, Z = +200000, the exact centre of cell (3, 6).",
+      "confidence": "high",
+      "sources": [
+        "src/d/actor/d_a_sea.cpp:67-75 (Pos2Index)",
+        "src/d/actor/d_a_sea.cpp:109-113 (calcMinMax)",
+        "src/d/actor/d_a_sea.cpp:121-137 (SetInf, the roomNo=1..49 walk)",
+        "include/d/actor/d_a_sea.h:10 (u8 mHeight[9][9])",
+        "out/rip/GZLE01/stages/sea/sea_report.json"
+      ]
+    },
+
+    "room_numbering": {
+      "behaviour": "Room 0 is not an island: it is the sea floor, and the decomp says so in a comment - 'Room 0 on the sea is not an island, it's the sea floor, used to load islands as you sail.' Rooms 1..49 are the islands, enumerated in dIslandRoomNo_e. A parallel enum dIslandIndex_e is the same list shifted down by one (dIsleIdx = dIsleRoom - 1); it indexes the 49-byte chart bitfield and, as it happens, the chart grid square (see _chart.grid_square).",
+      "constants": {
+        "dIsleRoom_SeaFloor": 0,
+        "dIsleRoom_ForsakenFortress": 1,
+        "dIsleRoom_MotherandChildIsles": 9,
+        "dIsleRoom_WindfallIsland": 11,
+        "dIsleRoom_DragonRoostIsland": 13,
+        "dIsleRoom_NorthernTriangleIsland": 18,
+        "dIsleRoom_ToweroftheGods": 26,
+        "dIsleRoom_SharkIsland": 38,
+        "dIsleRoom_ForestHaven": 41,
+        "dIsleRoom_OutsetIsland": 44,
+        "dIsleRoom_FiveStarIsles": 49,
+        "dIsleIdx_COUNT": 49
+      },
+      "implementation_note": "gcrip/data/ww_stages.py already names these as sea/RoomNN; the enum is the authoritative name list and matches.",
+      "confidence": "high",
+      "sources": [
+        "include/d/d_save.h:301-354 (dIslandRoomNo_e, incl. the Room 0 comment)",
+        "include/d/d_save.h:356-408 (dIslandIndex_e)"
+      ]
+    },
+
+    "rtbl_table": {
+      "behaviour": "RTBL is a chunk of stage.dzs. On disc it is: chunk header {fourcc, u32 num, u32 offset}; at 'offset' an array of num u32 file-offsets, one per RTBL entry; each entry is {u8 num; u8 reverbAndFlags; u8 timePassField; u8 pad; u32 roomsOffset}; roomsOffset points at 'num' bytes, one per room in the resident set. The loader relocates the two offset levels into pointers and does nothing else. Accessors: room index = byte & 0x3F; byte & 0x80 = 'load this room with its BG collision and dzr actors' (see streaming.hidden_rooms); entry reverb = reverbAndFlags & 0x7F; entry time-pass mode = timePassField & 0x03.",
+      "constants": {
+        "roomRead_data_class_size": 8,
+        "room_byte_index_mask": "0x3F",
+        "room_byte_with_bg_bit": "0x80",
+        "entry_reverb_mask": "0x7F",
+        "entry_timepass_mask": "0x03"
+      },
+      "implementation_note": "gcrip/formats/dzs.py does NOT parse RTBL today - adding it is the single prerequisite for streaming in the remake. The chunk-table walk in dzs.parse() already gives (n, off) for 'RTBL'; the entry array is one extra pointer indirection deeper than the other chunks, so it needs its own branch.",
+      "confidence": "high",
+      "sources": [
+        "include/d/d_stage.h:215-226 (roomRead_data_class / roomRead_class)",
+        "src/d/d_stage.cpp:1732-1743 (dStage_roomReadInit - the on-disc relocation, which reveals the layout)",
+        "include/d/d_stage.h:1058-1072 (GetLoadRoomIndex / ChkBg / GetReverb / GetTimePass)",
+        "src/d/d_stage.cpp:2160,2183 (RTBL registered in the stage and room chunk dispatch tables)",
+        "gcrip/formats/dzs.py (no RTBL branch present)"
+      ]
+    },
+
+    "what_picks_the_rtbl_entry": {
+      "behaviour": "The ground polygon under Link carries two pieces of room data, both read from the dzb: (a) a room id, and (b) an RTBL entry index. dBgS::GetRoomId takes dBgW::mRoomNo, or, when that is 0xFFFF, walks the collision group tree - the room id is stored on the *grandparent* group of the triangle's group (cBgD_Grp_t::m_room_id at +0x2A). dBgS::GetGrpRoomInfId takes dBgW::mRoomNo2, or, when that is 0xFF, the triangle's own group's m_info (+0x30) & 0xFF. So the sea-floor mesh of Room0 is cut into groups, one per grid cell, and each group's m_info low byte is the RTBL index for that cell. Crossing a cell boundary changes the group under you, hence the RTBL index, hence the resident set.",
+      "constants": {
+        "grp_room_id_offset": "0x2A",
+        "grp_info_offset": "0x30",
+        "rtbl_index_from_group": "m_info & 0xFF",
+        "room_id_lookup": "grandparent group's m_room_id"
+      },
+      "implementation_note": "gcrip/formats/dzb.py ALREADY parses both fields: Group.room is m_room_id and Group.attr is m_info. So `group.attr & 0xFF` is the RTBL index and the grandparent chain gives the room id - no new parsing needed on the dzb side, only on the dzs side. Note that gcrip currently documents attr only for its high bits (0x100 water, 0x200 lava, 0x400 poison, 0x80000 light-shaft); the low byte is this room-info id and they coexist in the same u32.",
+      "confidence": "high",
+      "sources": [
+        "src/d/d_bg_s.cpp:277-297 (dBgS::GetRoomId)",
+        "src/d/d_bg_s.cpp:120-136 (dBgS::GetGrpRoomInfId)",
+        "src/SSystem/SComponent/c_bg_w.cpp:730-737 (GetGrpToRoomIndex - the grandparent walk)",
+        "include/SSystem/SComponent/c_bg_w.h:59-71 (cBgD_Grp_t layout)",
+        "include/SSystem/SComponent/c_bg_w.h:179-187 (GetGrpInf / GetTriGrp)",
+        "include/d/d_bg_w.h:103,115-117 (mRoomNo / mRoomNo2)",
+        "gcrip/formats/dzb.py:317-338 (Group.room / Group.attr already parsed)"
+      ]
+    },
+
+    "streaming_trigger": {
+      "behaviour": "Exactly one caller drives streaming: Link. Every frame, if Link's ground probe found a floor, daPy_lk_c calls dStage_RoomCheck(&mAcch.m_gnd). That function: (1) roomId = GetRoomId(gnd); if it differs from the current stay-room it calls zoneCountCheck(roomId), which ages out per-room switch 'zones' and then setStayNo(roomId); (2) rtblIdx = GetGrpRoomInfId(gnd); if 0xFF, stop; (3) sets the room time-pass mode from that entry; (4) calls loadRoom(entry->num, entry->m_rooms). The boat never triggers a load - daShip_c::setRoomInfo only *reads* a room id off its own ground probe (falling back to the current stay-room when it has no ground) to set reverb, env colour and its own roomNo. Since Link rides the boat and probes the same sea floor, the boat is effectively what moves the trigger.",
+      "implementation_note": "In the remake, run the room check off the player node's downward probe against the sea-floor collider, not off the boat. One check per frame, and only act when the RTBL index changes.",
+      "confidence": "high",
+      "sources": [
+        "src/d/d_stage.cpp:2263-2290 (dStage_RoomCheck)",
+        "src/d/actor/d_a_player_main.cpp:11447-11457 (the only call site)",
+        "src/d/d_stage.cpp:170-179 (setStayNo)",
+        "src/d/d_stage.cpp:249-267 (zoneCountCheck)",
+        "src/d/actor/d_a_ship.cpp:3080-3096 (daShip_c::setRoomInfo - reads only)"
+      ]
+    },
+
+    "load_unload_rule": {
+      "behaviour": "dStage_roomControl_c::loadRoom(count, rooms) runs every frame and converges the 64-slot room status array on the requested list, one step per frame:\n  1. If ANY room slot has flag 0x02 (loading) or 0x04 (unload requested), return 0 immediately - nothing else happens this frame. Loads and unloads are strictly serialised.\n  2. Otherwise, for every slot with 0x01 (resident) that is NOT in the requested list, set 0x04 (unload requested). If at least one was flagged, return FALSE - the new rooms wait until the old ones are gone.\n  3. Only when nothing needed unloading, walk the requested list in order; for each entry set zone count 2, and at the FIRST entry that is not already resident, create its room scene, set its flags, and return TRUE. That is one new room started per call.\nSo: unload everything stale first (all at once, but the frame ends there), then bring rooms in one at a time in RTBL order. Steady state resident set == exactly the RTBL entry of the cell you are standing on.",
+      "constants": {
+        "status_slots": 64,
+        "flag_0x01": "resident",
+        "flag_0x02": "loading (room scene created, waiting to finish)",
+        "flag_0x04": "unload requested",
+        "flag_0x08": "hidden - resources only, no BG collision actor, no dzr actors",
+        "flag_0x10": "the room's dBg actor has registered its collision",
+        "rooms_started_per_frame": 1
+      },
+      "implementation_note": "This is a queue, not a set-diff: implement it as (a) mark stale rooms for unload and wait for them to finish, then (b) pop one pending room per frame and instantiate it. The serialisation is what keeps the peak memory at 'current set + one'. It also means the visible cost of a boundary crossing is spread over as many frames as there are new rooms.",
+      "confidence": "high",
+      "sources": [
+        "src/d/d_stage.cpp:213-247 (loadRoom)",
+        "src/d/d_stage.cpp:182-189 (stayRoomCheck - the 'is this room in the list' test)",
+        "src/d/d_stage.cpp:204-211 (checkRoomDisp)",
+        "include/d/d_stage.h:875-940 (dStage_roomControl_c, mStatus[64])"
+      ]
+    },
+
+    "hidden_rooms": {
+      "behaviour": "When loadRoom starts a room it sets flags 0x02 if the RTBL byte has bit 0x80, else 0x0A (= 0x02 | 0x08). Flag 0x08 means 'hidden': the room scene loads its archive and room.dzr but objectSetCheck refuses to create the fpcNm_BG_e actor (its collision) or run the dzr actor loader. Toggling 0x08 later re-runs objectSetCheck, which either creates or deletes the whole actor layer - this is how doors show/hide the room on the far side. On the sea, a neighbour listed WITHOUT bit 0x80 is therefore a room whose data is warm in RAM but which has no collision and no actors yet.",
+      "implementation_note": "Two-stage residency is worth copying: a 'warm' room (meshes ready, hidden, no colliders) and a 'live' room. It is what lets the game promote a neighbour instantly when you actually enter it.",
+      "confidence": "high",
+      "sources": [
+        "src/d/d_stage.cpp:235-241 (the 0x02 vs 0x0A choice)",
+        "src/d/d_s_room.cpp:66-83 (objectSetCheck)",
+        "src/d/d_door.cpp:282,305 (0x08 toggled by doors)"
+      ]
+    },
+
+    "room_scene_lifecycle": {
+      "behaviour": "A room is a scene process (fpcNm_ROOM_SCENE_e, g_profile_ROOM_SCENE) whose param is the room number. Create runs 5 phases: phase_0 records the proc id; phase_1 waits until the room's memory block heap is empty, then requests the archive 'Room%d' (sprintf, no zero padding) into that heap; phase_2 syncs the archive, creates/attaches the room's switch 'zone', runs dStage_dt_c_roomLoader on 'room.dzr', mounts the room's Demo%02d cutscene bank via the LBNK chunk, and requests the FILI particle scene; phase_3 waits for those and calls objectSetCheck; phase_4 waits for the player actor and registers the map image. Execute: if 0x04 -> delete request; else if 0x02 -> clear 0x02 and set 0x01 (now resident); else objectSetCheck. Delete: drop the map image, delete the stage resource, zero the flags, re-init the room data, remove the room particle scene, reset Salvage state, and freeAll() the memory block.",
+      "constants": {
+        "arc_name_format": "Room%d",
+        "room_data_file": "room.dzr",
+        "demo_bank_format": "Demo%02d (from the room's LBNK chunk, index = the room's layer number)"
+      },
+      "confidence": "high",
+      "sources": [
+        "src/d/d_s_room.cpp:49-53 (setArcName)",
+        "src/d/d_s_room.cpp:149-288 (phase_0..phase_4)",
+        "src/d/d_s_room.cpp:88-104 (dScnRoom_Execute)",
+        "src/d/d_s_room.cpp:114-139 (dScnRoom_Delete)",
+        "src/d/d_stage.cpp:193-201 (createRoomScene)",
+        "src/d/d_stage.cpp:424-430 and :2232 (dStage_roomInit - the very first room at stage entry)"
+      ]
+    },
+
+    "memory_blocks": {
+      "behaviour": "The stage.dzs MEMA chunk is an array of u32 heap sizes; at stage load, block i becomes an expanding heap of (size + 0x300) carved out of the archive heap, up to MEMORY_BLOCK_MAX = 16 blocks. The MECO chunk is an array of {u8 roomNo; u8 blockID} that assigns each room to one block. Room scene phase_1 will not start reading a room's archive until that block reports zero used bytes. So MEMA/MECO, not RTBL, is what caps how many rooms can physically be resident at once, and two rooms sharing a block can never overlap - the second waits for the first to be freed.",
+      "constants": {
+        "MEMORY_BLOCK_MAX": 16,
+        "heap_size_slack": "0x300",
+        "MECO_entry": "{u8 roomNo, u8 blockID}"
+      },
+      "implementation_note": "For a Godot remake with a GB of RAM this is mostly a curiosity, but MECO is a free hint about which rooms the designers considered mutually exclusive, and MEMA sizes are a per-room budget you can use to prioritise mesh LODs.",
+      "confidence": "high",
+      "sources": [
+        "src/d/d_stage.cpp:1812-1828 (dStage_memaInfoInit)",
+        "src/d/d_stage.cpp:1830-1843 (dStage_mecoInfoInit)",
+        "src/d/d_stage.cpp:353-359 (createMemoryBlock)",
+        "include/d/d_stage.h:229-243 (dStage_MemoryMap_c / dStage_MemoryConfig_c)",
+        "include/d/d_stage.h:923 (MEMORY_BLOCK_MAX = 16)",
+        "src/d/d_s_room.cpp:156-161 (phase_1 waits for the block to be empty)"
+      ]
+    },
+
+    "bg_actor_and_collision": {
+      "behaviour": "The room's collision and static geometry are a separate actor, fpcNm_BG_e (daBg_c), created by objectSetCheck with the room number as its param. It registers its dBgW with the collision system and sets room flag 0x10 when done; on delete it releases the dBgW, clears 0x10, and purges the room from the grass/tree/wood/flower/magma managers. When the room is flagged 0x04, the BG actor sets an unload timer of 16 frames on the sea stage (1 frame elsewhere) before actually deleting itself, so sea collision lingers briefly after the room is dropped.",
+      "constants": {
+        "sea_bg_unload_delay_frames": 16,
+        "other_stage_unload_delay_frames": 1
+      },
+      "confidence": "high",
+      "sources": [
+        "src/d/actor/d_a_bg.cpp:295-315 (the unload timer, sea special case)",
+        "src/d/actor/d_a_bg.cpp:236-255 (delete path, clears 0x10)",
+        "src/d/actor/d_a_bg.cpp:441 (sets 0x10 once collision is up)",
+        "src/d/d_s_room.cpp:70-76 (fopAcM_create(fpcNm_BG_e, roomNo))"
+      ]
+    },
+
+    "lod_islands": {
+      "behaviour": "Distant islands are impostors: daLodbg_c, one actor per island, spawned from stage objects named LOD01..LOD49 where the number IS the room number and fopAcM_GetParam(this) IS the room number. State machine: (a) wait until the player's XZ distance <= scale.x, then asynchronously mount /res/Stage/sea/LODALL.arc into ARAM and build /lod%02d/bdl/model.bdl; (b) while distance < scale.z, keep it - alpha chases (16/frame) toward 255 when the impostor should show and toward 0 when it should not. It should NOT show when distance > scale.x, or when the real room is resident (flag 0x01 set and 0x04 clear). Beyond 150000 units the impostor is sunk by 0.1 * (distance - 150000) so it dips below the horizon. Drawing temporarily pushes the far clip plane to 500000. (c) once distance >= scale.z the heap is freed and it goes back to waiting. Two islands carry a second model: Windfall's lighthouse (aimed by daObjLight) and the Forsaken Fortress' searchlight; Tower of the Gods' impostor is suppressed until event bit UNK_1E40.",
+      "constants": {
+        "archive": "/res/Stage/sea/LODALL.arc",
+        "model_path": "/lod%02d/bdl/model.bdl",
+        "load_and_show_radius": "scale.x (per-actor, from the stage/room placement)",
+        "keep_alive_radius": "scale.z",
+        "alpha_step_per_frame": 16,
+        "sink_start_distance": 150000.0,
+        "sink_rate": 0.1,
+        "draw_far_clip": 500000.0
+      },
+      "implementation_note": "The 'hide the impostor exactly when the real room is resident' rule is the crossfade: the impostor and the room are never both visible, and the 16/frame alpha ramp (about 0.5 s) covers the pop. gcrip does not resolve LODnn actors yet - they appear in sea_report.json's unresolved_names (LOD01, LOD13, LOD41, LOD44, LOD45 in the ripped subset), so their per-island scale.x / scale.z radii are on disc in the placement's scale bytes but not yet in the exported data.",
+      "confidence": "high",
+      "sources": [
+        "src/d/actor/d_a_lod_bg.cpp:17 (LodAllPath)",
+        "src/d/actor/d_a_lod_bg.cpp:55-57,160 (param = room number, model path)",
+        "src/d/actor/d_a_lod_bg.cpp:214-228 (execCreateWait, scale.x gate)",
+        "src/d/actor/d_a_lod_bg.cpp:270-330 (execDeleteWait: alpha rule, sinking, heap free)",
+        "src/d/actor/d_a_lod_bg.cpp:334-348 (draw, far clip, Tower of the Gods gate)",
+        "src/d/d_stage.cpp:1032-1080 (OBJNAME LOD01..LOD49 -> fpcNm_LODBG_e)",
+        "out/rip/GZLE01/stages/sea/sea_report.json (unresolved_names)"
+      ]
+    },
+
+    "per_room_wave_height": {
+      "behaviour": "Each MULT entry carries a u8 wave_max alongside the room transform. get_wave_max(roomNo) scans the stage MULT list and returns 10 when the room has no entry. On the sea stage the whole 9x9 table is precomputed once at sea-packet creation. Every frame the sea takes h = wave_max of the cell under the player, low-passes it with GetScale (moving 1/100 of the gap per frame), multiplies by mFlatInter (the harbour flatten factor), and uses that as the amplitude scale for all four ocean waves, each of base height 2.5. So peak sum amplitude ~= 4 * 2.5 * wave_max * mFlatInter = 10 * wave_max * flat. Apart from that one multiply, wave_max is only ever tested against zero: a zero cell is 'flat water', which (i) drives mFlatInter to 0, (ii) fades neighbouring cells over a 12800-unit skirt, and (iii) lets the sea mesh be culled entirely once you are more than 25600 units inside such a cell.",
+      "constants": {
+        "MULT_entry": "{f32 transX; f32 transZ; s16 angle; u8 roomNo; u8 waveMax} size 0x0C",
+        "default_wave_max_when_absent": 10,
+        "wave_base_height_each": 2.5,
+        "wave_count": 4,
+        "lowpass_per_frame": "1/100",
+        "flat_skirt": 12800.0,
+        "cull_inset": 25600.0
+      },
+      "implementation_note": "CORRECTION to sailing-spec.md section 5, which assumed wave_max is 0..10. The real MULT values on the sea run 0, 5, 15, 30, 50 (out/rip/GZLE01/stages/sea/sea_report.json -> wave_max; room 0 reads -1 because gcrip parses the byte as s8 and it is 0xFF). Typical open-sea cells are 30; calm/harbour cells (rooms 1, 11, 13, 20, 40, 41, 44) are 0; a few (2, 3, 7, 8, 9, 15, 24, 25, 31) are 50. gcrip/godot.py:4778 currently treats sea_scale as 0..10, which under-scales the ocean by roughly 3x for the open sea.",
+      "confidence": "high",
+      "sources": [
+        "src/d/actor/d_a_sea.cpp:83-95 (get_wave_max)",
+        "src/d/actor/d_a_sea.cpp:121-137 (SetInf)",
+        "src/d/actor/d_a_sea.cpp:171-174 (GetScale, the 1/100 low-pass)",
+        "src/d/actor/d_a_sea.cpp:531-547 (h -> scale -> per-wave height)",
+        "src/d/actor/d_a_sea.cpp:25-54 (wi_prm_ocean, mHeight = 2.5 x4)",
+        "src/d/actor/d_a_sea.cpp:246-275 (CalcFlatInterTarget, the 12800 skirt)",
+        "src/d/actor/d_a_sea.cpp:449-475 (SetCullStopFlag, the 25600 inset)",
+        "include/d/d_stage.h:259-265 (dStage_Mult_info)",
+        "out/rip/GZLE01/stages/sea/sea_report.json"
+      ]
+    },
+
+    "unknown": [
+      "The actual contents of the sea stage's RTBL - i.e. the real neighbour list per cell, and therefore the exact number of rooms resident at once while sailing. It is on the disc in sea/Stage/stage.dzs but gcrip does not extract RTBL and this task did not run the exporter. Everything needed to parse it is in _rooms.rtbl_table.",
+      "The MEMA block sizes and MECO room->block assignment for the sea stage (same reason).",
+      "Per-island LOD radii (scale.x / scale.z) - present in the placement scale bytes on disc, not in the current export.",
+      "Whether the sea-floor mesh's group m_info low bytes are one distinct RTBL index per cell or coarser groupings - only readable from the ripped Room0 dzb."
+    ]
+  },
+
+  "_wind": {
+    "summary": "One global wind vector plus a scalar power, both living in the env-light singleton. Direction comes from a pair of saved s16 angles that the Wind's Requiem writes; power comes from the current room's FILI wind level. Both are eased toward their targets every frame, so the wind turns visibly rather than snapping.",
+
+    "storage": {
+      "behaviour": "g_env_light.mWind holds: mWindVec (cXyz, the eased unit-ish direction), mWindPower (f32 0..1, eased), mTactWindAngleX / mTactWindAngleY (s16, the Requiem's target angles), mTactWindAngleFlags (bit 0 = the Requiem has set a direction, bit 0x80 = the last change went counter-clockwise), mEvtWindAngleX/Y + mEvtWindSet (stage/event override), mpWindVecOverride + mWindStrengthOverride (a direct vector override), mCustomWindPower, and field_0x8 (the last tornado position notice). Init sets vec = (-1, 0, 0) and power 0, and takes the tact angles from the save file; on a fresh file both saved angles are -1, which is treated as 'not set' -> flags 0, angles (0, 0).",
+      "constants": {
+        "init_vec": [-1.0, 0.0, 0.0],
+        "init_power": 0.0,
+        "save_fields": "dSv_player_status_b_c::mTactWindAngleX / mTactWindAngleY (include/d/d_save.h:76-77), both -1 on a new file",
+        "flags_bit0": "Requiem direction has been set",
+        "flags_bit0x80": "last rotation was counter-clockwise"
+      },
+      "confidence": "high",
+      "sources": [
+        "src/d/d_kankyo_wether.cpp:960-983 (dKyw_wind_init)",
+        "include/d/d_save.h:76-77",
+        "src/d/d_save.cpp:52-53 (the -1/-1 new-file default)"
+      ]
+    },
+
+    "per_frame_update": {
+      "behaviour": "dKyw_wind_set runs every frame. Priority for the direction: (1) an explicit vector override pointer, if set; (2) event wind angles, when mEvtWindSet is neither 0 nor 0xFF; (3) the Requiem's tact angles, when mTactWindAngleFlags != 0; (4) (0, 0). From the chosen angles the vector is built as x = cos(X)*cos(Y), y = sin(X), z = cos(X)*sin(Y) - note that X is the elevation and Y is the compass angle measured from +X toward +Z, so (0, 0) gives (1, 0, 0) = east. Strength comes from the current room's FILI global wind level: level 0 -> 0.3, 1 -> 0.6, 2 -> 0.9, anything else -> 0.0 (no wind). mCustomWindPower, when > 0, replaces the strength outright (Cyclos sets this). mEvtWindSet == 2 forces strength 0. The result is clamped to 1 and then eased: each vector component with cLib_addCalc(target, 0.1, maxStep 2.0, minStep 0.001) and the power with cLib_addCalc(target, 0.1, 1.0, 0.005). While mInitAnimTimer is non-zero the values snap instead.",
+      "constants": {
+        "wind_level_strength": [0.3, 0.6, 0.9, 0.0],
+        "vector_from_angles": "(cos X * cos Y, sin X, cos X * sin Y)",
+        "ease_scale": 0.1,
+        "vec_max_step": 2.0,
+        "vec_min_step": 0.001,
+        "power_max_step": 1.0,
+        "power_min_step": 0.005
+      },
+      "implementation_note": "The ship divides power by 0.5 and clamps, so every room with wind level >= 1 sails at full speed and only level-0 rooms (0.3) sail at 60% - see sailing-spec.md section 4. The eased vector is what makes the Requiem's 45-degree turn take about half a second.",
+      "confidence": "high",
+      "sources": ["src/d/d_kankyo_wether.cpp:985-1084 (dKyw_wind_set)"]
+    },
+
+    "changing_it_wind_requiem": {
+      "behaviour": "The Wind's Requiem commits through dKyw_tact_wind_set(x, y): it stores the two angles in the env-light block, writes them to the save with dComIfGs_setWindX/setWindY, sets flags bit 0, and then compares the *current* eased wind heading, computed as -(cM_atan2s(vec.x, vec.z) + 0x4000), against the new target Y to record which way it will rotate in flag bit 0x80 (read back by dKyw_get_tactwind_dir). dKyw_tact_wind_set_go() additionally sets mEvtWindSet = 0xFF, which permanently prevents stage event wind from overriding the player's choice. The UI that produces the angles (dOperate_wind_c, src/d/d_operate_wind.cpp) snaps to multiples of 45 degrees from the stick; see sailing-spec.md section 4.2 - its commit function windSet is Nonmatching.",
+      "constants": {
+        "heading_from_vector": "-(cM_atan2s(vec.x, vec.z) + 0x4000)",
+        "requiem_snap": "45 degrees (0x2000 in s16)"
+      },
+      "confidence": "high",
+      "sources": [
+        "src/d/d_kankyo_wether.cpp:1328-1344 (dKyw_tact_wind_set)",
+        "src/d/d_kankyo_wether.cpp:1346-1349 (dKyw_tact_wind_set_go)",
+        "src/d/d_kankyo_wether.cpp:1352-1360 (dKyw_get_tactwind_dir)"
+      ]
+    },
+
+    "readers": {
+      "behaviour": "Getters: dKyw_get_wind_vec() -> cXyz*, dKyw_get_wind_pow() -> f32, dKyw_get_wind_power() -> f32*, dKyw_get_wind_vecpow() -> vec * power. dKyw_get_AllWind_vec(pos, &dir, &pow) blends in local point winds: with p = the point-wind strength at pos, the result is globalVec * globalPower * (1 - p) + pointDir * (p * 5), renormalised, falling back to the global vector when the sum is zero. dKyw_get_windsdir() converts the current heading into an 8-way index using u16 t = -(atan2s(x, z) + 0x4000) and a table of 0x1000-wide buckets, with bucket 0 wrapping across 0xF000..0x1000.",
+      "constants": {
+        "point_wind_weight": 5.0,
+        "windsdir_buckets": "0x1000 half-width, index 0 spans 0xF000..0x1000",
+        "windsdir_range": "0..7"
+      },
+      "implementation_note": "37 translation units read the wind. The ones that matter for the remake's feel: d_a_sail.cpp and d_a_ship.cpp (the sail), d_a_player_fan.inc (Deku Leaf), d_a_majuu_flag.cpp / d_a_pirate_flag.cpp / d_a_sie_flag.cpp / d_a_tori_flag.cpp / d_a_goal_flag.cpp (cloth), d_grass.cpp and d_wood.cpp (grass and trees), d_a_obj_lpalm.cpp (palms), d_wind_arrow.cpp (the HUD arrow, which just Y-rotates by the wind vector), d_a_vrbox2.cpp (cloud drift), d_particle.cpp, d_kankyo_rain.cpp, d_a_npc_people.cpp / npc_md / npc_cb1 / npc_ji1 (NPC facing), d_a_ghostship.cpp, d_a_obj_ferris.cpp, d_a_ikari.cpp, d_a_himo3.cpp, d_a_bridge.cpp, d_a_mflft.cpp, d_meter.cpp.",
+      "confidence": "high",
+      "sources": [
+        "src/d/d_kankyo_wether.cpp:1087-1109 (getters)",
+        "src/d/d_kankyo_wether.cpp:1283-1308 (dKyw_get_AllWind_vec)",
+        "src/d/d_kankyo_wether.cpp:1367-1392 (dKyw_get_windsdir)",
+        "src/d/d_wind_arrow.cpp:55-58",
+        "grep of dKyw_get_wind_* across src/d/"
+      ]
+    },
+
+    "wind_lines": {
+      "behaviour": "The visible streaks of wind are counted per frame as wind_pow * 10, but only when the current room's FILI has the path-wind-effect flag set and the stage is not GTower. If any tornado called dKyw_tornado_Notice this frame, the count is forced to 0 and the notice is consumed - i.e. a cyclone suppresses the wind lines while it is on screen.",
+      "constants": {"windline_count": "dKyw_get_wind_pow() * 10", "max_windline_entries": 30},
+      "confidence": "high",
+      "sources": ["src/d/d_kankyo_wether.cpp:399-419 (wether_move_windline)", "src/d/d_kankyo_wether.cpp:1424-1427 (dKyw_tornado_Notice)"]
+    },
+
+    "unknown": [
+      "The exact mapping from a Requiem stick slot to (X, Y) angles - dOperate_wind_c::windSet is Nonmatching. The 45-degree snap is confirmed by dOw_angleRegular and the symbol table (see sailing-spec.md section 4.2); the elevation angle X is 0 for every normal use.",
+      "Which FILI wind level each sea room carries - that is per-room stage data, not code."
+    ]
+  },
+
+  "_cyclones": {
+    "summary": "One actor class, daTornado_c ('Ytrnd00', arc 'Trnd'), plays three roles selected by its actor param: 0 = a roaming Cyclos cyclone that hunts the boat and throws it across the sea; 1 = the tornado Link summons with the Ballad of Gales; 2 = the tornado he arrives inside. The three roaming cyclones are deleted permanently by one event bit.",
+
+    "actor": {
+      "behaviour": "Object name 'Ytrnd00' maps to fpcNm_TORNADO_e. The actor builds two models from the Trnd archive: YTRND00 (the funnel, 11 animated joints) and YWUWT00 (the water disc under it). Param semantics come from create(): param 1 -> the summon tornado (sinks 2000 units, small scale, joints grow); param 2 -> the arrival tornado (small scale, joints already grown, shrinks away and self-deletes); anything else is forced to 0 -> the roaming cyclone, which refuses to be created at all if the 'Cyclos stopped' event bit is set, notices itself to the weather system, spawns the AK_SN_WINDUPWATER00 particle, and turns on fopAcStts_SHOWMAP so it appears on the map.",
+      "constants": {
+        "object_name": "Ytrnd00",
+        "proc": "fpcNm_TORNADO_e",
+        "archive": "Trnd",
+        "models": ["YTRND00 (funnel)", "YWUWT00 (water disc)"],
+        "param_0": "roaming Cyclos cyclone",
+        "param_1": "Ballad of Gales departure tornado",
+        "param_2": "Ballad of Gales arrival tornado",
+        "joint_count": 11
+      },
+      "confidence": "high",
+      "sources": [
+        "src/d/d_stage.cpp:987 (OBJNAME Ytrnd00)",
+        "src/d/actor/d_a_tornado.cpp:287-333 (create)",
+        "src/d/actor/d_a_tornado.cpp:254-280 (createHeap, both models)"
+      ]
+    },
+
+    "roaming": {
+      "behaviour": "Each frame a param-0 cyclone, while no event is running, turns toward Link with cLib_addCalcAngleS(targetAngle, scale 10, maxStep 0x1000, minStep 0x100) and chases speedF toward 20.0 at 0.2 per frame - so it homes on the player, slowly. It then moves along its heading and is clamped to a 7500-unit leash around home.pos, its dzr spawn point: if it drifts outside, it is snapped back onto that circle. So a cyclone patrols a 7500-radius disc, not the open sea. If Link is aboard the ship and the ship is within 10000 units in XZ, the cyclone calls ship->onTornadoFlg(itsID) and drops its own speed to 0 - it stops moving and starts reeling the boat in. It emits AK_SN_TORNADOWIND00 every 10 frames, loops JA_SE_OBJ_TORNADE_SUS, and calls dKyw_tornado_Notice(&pos) every frame (which kills the wind lines).",
+      "constants": {
+        "move_dis_leash": 7500.0,
+        "start_dis_capture": 10000.0,
+        "chase_speed": 20.0,
+        "chase_accel_per_frame": 0.2,
+        "turn_addCalcAngleS": [10, "0x1000", "0x100"],
+        "particle_period_frames": 10,
+        "funnel_spin_per_frame": {"mAngle1": 500, "mAngle2": 250},
+        "joint_offsets": [100, 200, 300, 400, 300, 300, 400, 500, 400, 500, 600],
+        "joint_phase_step": {"mAngle1": "0x1000 per joint", "mAngle2": "0x1800 per joint"},
+        "amplitude_while_holding_boat": 0.25
+      },
+      "implementation_note": "The funnel shape is procedural, not animated: joint i is offset by x = sin(mAngle2 - 0x1800*i) * f, z = cos(mAngle2 - 0x1800*i) * f with f = amp * jointOffset[i] * (sin(mAngle1 - 0x1000*i) + 1), scaled by the actor's scale.x. amp is 0.25 while the cyclone holds the boat (so the funnel tightens), else 1.0.",
+      "confidence": "high",
+      "sources": [
+        "src/d/actor/d_a_tornado.cpp:99-191 (execute, param 0 branch)",
+        "src/d/actor/d_a_tornado.cpp:17-18 (move_dis 7500, start_dis 10000)",
+        "src/d/actor/d_a_tornado.cpp:112-142 (joint math)"
+      ]
+    },
+
+    "placements": {
+      "behaviour": "There are exactly three roaming cyclones on the Great Sea, each spawned at the same position as a Cyclos NPC ('Hr2'). Verified against the ripped sea placements.",
+      "constants": {
+        "count": 3,
+        "rooms": [9, 18, 38],
+        "room_names": ["Mother and Child Isles", "Northern Triangle Island", "Shark Island"],
+        "ytrnd00_params": "0xFFFFFFFF (falls through create()'s else branch and is forced to param 0)",
+        "hr2_params": "0xFF6B01 (shape type 1 = Cyclos, switch bit 0x6B)"
+      },
+      "implementation_note": "Positions in sea_report.json have the report's world_offset applied: real X = reported X - 12639.577 (Z is unshifted). Applying that, the room-38 pair lands on (-100000, +200000), the exact centre of its grid cell, which double-confirms the grid formula.",
+      "confidence": "high",
+      "sources": [
+        "out/rip/GZLE01/stages/sea/sea_report.json -> actors (3x Ytrnd00, 3x Hr2, 1x Hr in room 13 = Zephos on Dragon Roost)",
+        "src/d/d_stage.cpp:1004-1005 (OBJNAME Hr subtype 0, Hr2 subtype 1 -> fpcNm_NPC_HR_e)",
+        "src/d/actor/d_a_npc_hr.cpp:234-241 (getShapeType = param & 0xFF, getSwbit = (param >> 8) & 0xFF)",
+        "gcrip/stage.py:444-447 (world_offset is subtracted from reported positions)"
+      ]
+    },
+
+    "capturing_the_boat": {
+      "behaviour": "Once ship->onTornadoFlg is set, daShip_c::setTornadoActor resolves the actor, records m0400 = XZ distance and m040C = atan2f(dx, dz) as polar coordinates about the cyclone, forces the camera to type 'Tornado', and computes a pull factor m0404 = max(0, (tornado_distance - dist) * 0.0004). checkForceMove() is then true, and the ship's per-frame update: (a) chases yaw toward m040C + 0x5000 with cLib_addCalcAngleS(5, 0x2000, 0x200), i.e. it is dragged broadside-on; (b) brakes with firstDecrementShipSpeed(m0404 * 40 + 30), multiplied by 1.2 unless you are bow-aiming with the camera locked; (c) shrinks the orbit radius m0400 by 25 units per frame (only 5 while bow-aiming); (d) advances the polar angle by speedF / radius and re-places the boat on the circle, then clamps the resulting step so it never exceeds speedF. When the boat gets within 3500 units of funnel joint 0, procTornadoUp starts the throw.",
+      "constants": {
+        "tornado_distance": 6000.0,
+        "tornado_pull_factor": 0.0004,
+        "yaw_offset": "0x5000",
+        "yaw_addCalcAngleS": [5, "0x2000", "0x200"],
+        "brake": "m0404 * 40 + 30 (x1.2 when not bow-aiming)",
+        "radius_shrink_per_frame": 25.0,
+        "radius_shrink_bow_aiming": 5.0,
+        "throw_trigger_radius": 3500.0
+      },
+      "implementation_note": "Bow-aiming with the camera locked is the escape hatch the game gives you: it quarters the inward pull (25 -> 5 per frame) so you can shoot Cyclos before being thrown.",
+      "confidence": "high",
+      "sources": [
+        "src/d/actor/d_a_ship.cpp:3405-3433 (setTornadoActor)",
+        "src/d/actor/d_a_ship.cpp:3696-3722 (yaw drag)",
+        "src/d/actor/d_a_ship.cpp:3765-3782 (braking)",
+        "src/d/actor/d_a_ship.cpp:3806-3858 (radius shrink and circular placement)",
+        "src/d/actor/d_a_ship.cpp:96-102 (daShip_HIO_c0 tornado constants)",
+        "include/d/actor/d_a_ship.h:139-149 (checkForceMove)"
+      ]
+    },
+
+    "the_throw": {
+      "behaviour": "procTornadoUp: the boat's XZ chases the position of funnel joint m037A with cLib_addCalc(0.5, 80, 20), climbs with speed.y increasing by 2 per frame up to 50, spins yaw by 0x1C25 per frame, and steps m037A up the 11 joints as it passes each one. The camera is pinned to the funnel axis. Once the boat is 5000 units above the cyclone, it calls dStage_changeScene(rndF(8) + 0xC6, 0, 0, 0xFF) with the result clamped to at most 0xCD - i.e. one of eight stage-level SCLS exits, indices 0xC6..0xCD, chosen at random. That is where you are dumped.",
+      "constants": {
+        "climb_accel": 2.0,
+        "climb_max": 50.0,
+        "spin_per_frame": "0x1C25",
+        "release_height_above_cyclone": 5000.0,
+        "destination_exit_ids": "0xC6..0xCD (8 entries, uniformly random)"
+      },
+      "confidence": "high",
+      "sources": ["src/d/actor/d_a_ship.cpp:2621-2673 (procTornadoUp_init / procTornadoUp)", "src/d/d_stage.cpp:2342-2365 (dStage_changeScene: room_no -1 means the stage-level SCLS list)"]
+    },
+
+    "ballad_of_gales": {
+      "behaviour": "Playing the Ballad while aboard on the sea creates a param-1 tornado at Link's position (d_a_player_tact.inc), then opens the sea chart via dComIfGp_fmapOpenOn(). If the player picks a destination, the chart menu writes it into ship->setTactWarpPosNum(n) and Link's tact proc puts the ship into MODE_TACT_WARP; procTactWarp eventually calls dStage_changeScene(mTactWarpPosNum + 0xC5, 0, 0, 0xFF). If no destination is chosen, the tornado actor is deleted and the ID reset. On arrival the ship creates a param-2 tornado around itself (procStartModeWarp) which shrinks its joints away and self-deletes.",
+      "constants": {
+        "departure_tornado_param": 1,
+        "arrival_tornado_param": 2,
+        "warp_exit_base": "0xC5",
+        "warp_exit_id": "0xC5 + tactWarpPosNum"
+      },
+      "confidence": "high",
+      "sources": [
+        "src/d/actor/d_a_player_tact.inc:544-551 (creates the param-1 tornado)",
+        "src/d/actor/d_a_player_tact.inc:750-775 (fmapOpenOn, then setTactWarp or cancel)",
+        "src/d/actor/d_a_ship.cpp:2849 (dStage_changeScene(mTactWarpPosNum + 0xC5, ...))",
+        "src/d/actor/d_a_ship.cpp:2692 (arrival tornado, param 2)",
+        "src/d/actor/d_a_tornado.cpp:192-210 (param 1 grows the joints, param 2 shrinks and deletes)"
+      ]
+    },
+
+    "stopping_cyclos": {
+      "behaviour": "During the TACT0_RT event, Cyclos' Hr2 staff carries the integer property TORNADE_OFF; daNpc_Hr_c reacts by setting event bit UNK_2710 (0x2710), turning on its own switch bit for its room, and returning to its post-event state. From then on: every existing roaming cyclone removes its particle, calls ship->offTornadoFlg() (releasing the boat if it had it), plays its BRK colour animation at 0.3 frames per frame and deletes itself when that animation ends; and any new roaming cyclone returns cPhs_ERROR_e from create(), so it never appears. Cyclos himself also tests the bit in two places to switch to his calmed behaviour. The effect is permanent and saved.",
+      "constants": {
+        "event_bit": "dSv_event_flag_c::UNK_2710",
+        "event_property": "TORNADE_OFF (integer, on the Hr2 staff of TACT0_RT)",
+        "fadeout_brk_rate": 0.3
+      },
+      "confidence": "high",
+      "sources": [
+        "src/d/actor/d_a_npc_hr.cpp:679-684 (TORNADE_OFF -> onEventBit(UNK_2710))",
+        "src/d/actor/d_a_tornado.cpp:179-188 (fade out and delete)",
+        "src/d/actor/d_a_tornado.cpp:313-316 (create refuses)",
+        "src/d/actor/d_a_npc_hr.cpp:1335,1514 (Cyclos reads the bit)"
+      ]
+    },
+
+    "unknown": [
+      "Which islands SCLS exits 0xC5.. and 0xC6..0xCD actually name. The sea stage's SCLS table is not in the export - out/rip/GZLE01/stages/sea/sea_report.json's 'exits' is a door-derived list of 27 entries, not the raw SCLS chunk, so index 0xC5 cannot be resolved from it. The consumer side is exact; the table is on disc.",
+      "How the chart menu maps a cursor position to tactWarpPosNum. setTactWarpPosNum has no decompiled caller - the only writer is inside dMenu_Fmap_c, which is essentially not decompiled (131 Nonmatching bodies in src/d/d_menu_fmap.cpp, 113 in d_menu_fmap2.cpp).",
+      "Whether the three cyclones' 7500-unit leash centres are their dzr positions exactly (home.pos is set from the placement by the actor framework; not separately verified)."
+    ]
+  },
+
+  "_chart": {
+    "summary": "The save side of the chart is small and fully readable; the chart UI is not. dSv_player_map_c holds four 128-bit map-state sets plus one byte per island, and the sea chart's 7x7 grid square index turns out to be exactly dIsleIdx (= room number - 1).",
+
+    "save_block": {
+      "behaviour": "dSv_player_map_c is 0x84 bytes: u32 field_0x0[4][4] = four sets of 128 bits indexed by a map/dungeon number 0..127, u8 mFmapBits[49] = one byte per island index, u8 field_0x71[16], u8 field_0x81 = 8 triforce-chart bits, then padding. Set [1] is getMap ('you have this map'), [2] is openMap, [3] is completeMap; set [0] is cleared at init and never touched by any decompiled code. getCollectMapNum counts isGetMap(i-1) for i = 1..61, skipping 35, 36 and anything >= 52. On a new file everything is zero except mFmapBits for Forsaken Fortress, Outset and Windfall, which are set to 0x03 (bits 0 and 1) - the three places you already know about.",
+      "constants": {
+        "size": "0x84",
+        "map_bit_sets": {"0": "unused in decompiled code", "1": "getMap", "2": "openMap", "3": "completeMap"},
+        "map_no_range": "0..127",
+        "mFmapBits_len": 49,
+        "triforce_bits": 8,
+        "collect_count_range": "i = 1..61, skip 35, 36 and i >= 52",
+        "new_file_seeded": ["ForsakenFortress", "OutsetIsland", "WindfallIsland"],
+        "new_file_seed_value": "0x03"
+      },
+      "confidence": "high",
+      "sources": [
+        "include/d/d_save.h:410-439 (dSv_player_map_c)",
+        "src/d/d_save.cpp:827-848 (init)",
+        "src/d/d_save.cpp:852-926 (onGetMap .. getCollectMapNum)"
+      ]
+    },
+
+    "fmap_bits": {
+      "behaviour": "mFmapBits[islandIdx] is a per-island bitfield. Bit 0 is 'arrived' (onSaveArriveGrid / isSaveArriveGrid, both asserting 0 <= no < 49). Bit 1 is the Tingle Tuner / GBA arrival grid (onSaveArriveGridForAgb). Only bit 1 is ever written by decompiled code: dMap_c::setArriveInfo, called while on the 'sea' stage and not during an event, converts the player position to a grid square and, when the square changes, sets bit 1 for it. The bit-0 wrappers dMap_onSaveArriveGridUseGridNo / dMap_onSaveArriveGridUseGridPos / dMap_isSaveArriveGrid* are empty inline stubs in the header. Bits 2..7 are never referenced in decompiled code.",
+      "constants": {
+        "bit_0": "arrived (setter exists in d_save.cpp but every caller is an empty stub)",
+        "bit_1": "arrived, GBA/Tingle Tuner grid (the only one actually written)"
+      },
+      "confidence": "high",
+      "sources": [
+        "src/d/d_save.cpp:942-982 (onSaveArriveGrid / ForAgb)",
+        "src/d/d_map.cpp:1783-1801 (dMap_c::setArriveInfo - Nonmatching, but the body shown is complete)",
+        "src/d/d_map.cpp:147-159 (gridPos2GridNo, onSaveArriveGridForAgbUseGridPos)",
+        "include/d/d_map.h:544-547 (the empty bit-0 stubs)"
+      ]
+    },
+
+    "grid_square": {
+      "behaviour": "dMap_c::point2GridAndLocal maps a world XZ to a chart square: gx = floor(x/100000 + 0.5) clamped to [-3, 3], gy likewise from z, and the local offset is x - gx*100000. gridPos2GridNo(gx, gy) = (gx + 3) + (gy + 3) * 7. Substituting the streaming grid's cell indices (gx = xi - 4, gy = zi - 4) gives gridNo = (xi - 1) + (zi - 1) * 7 = roomNumber - 1 = dIsleIdx. So the chart square, the island index and the room number are the same thing offset by one, and the chart's 'centre of a square' is at a multiple of 100000 - which is exactly a streaming cell centre.",
+      "constants": {
+        "grid_x": "clamp(floor(x/100000 + 0.5), -3, 3)",
+        "grid_no": "(gx + 3) + (gy + 3) * 7",
+        "identity": "gridNo == dIsleIdx == roomNo - 1"
+      },
+      "implementation_note": "This is the cleanest bridge between the remake's world and its chart UI: one integer, 0..48, is simultaneously the room, the chart square and the save bitfield index.",
+      "confidence": "high",
+      "sources": ["src/d/d_map.cpp:1640-1664 (point2GridAndLocal)", "src/d/d_map.cpp:147-150 (gridPos2GridNo)"]
+    },
+
+    "map_kinds": {
+      "behaviour": "dMap_c::getKindMapType returns 1 for the sea stage, 2 for dungeon / Forsaken Fortress / miniboss stages, 0 for anything else - the sea chart and the dungeon map are the same widget in two modes. Only the sea chart supports enlargement scrolling (isEnableEnlargementScroll is literally 'is this the sea stage'). Room map images are registered and dropped by the room scene itself: dComIfGp_map_setImage(roomNo, stayNo, playerY) when the room finishes loading, dComIfGp_map_deleteImage(roomNo) when it unloads, so the chart art is streamed with the rooms.",
+      "constants": {"kind_sea": 1, "kind_dungeon": 2, "kind_other": 0, "map_image_size": "120 x 120"},
+      "confidence": "high",
+      "sources": [
+        "src/d/d_map.cpp:1003-1023 (isEnableEnlargementScroll, getKindMapType)",
+        "src/d/d_map.cpp:1030-1059 (setImage / deleteImage)",
+        "src/d/d_s_room.cpp:30-46 (the room scene calls them)"
+      ]
+    },
+
+    "island_arrival": {
+      "behaviour": "'TagIsland' actors handle island arrival cutscenes, not the chart. Param layout: type = param & 0xFF, switch bit = (param >> 8) & 0xFF, event number = (param >> 24) & 0xFF. checkArea triggers when Link is within scale.x * 10000 in XZ and |dy| <= scale.y * 10000. Each type has both a ride-in event (from the stage EVNT table via the event number) and an on-foot variant (ARRIVAL_DRG2 / FST2 / BRK2 / TWN2 / GND2 / WND2 / PUROLO_RETURN2), plus an arrival event flag per type.",
+      "constants": {
+        "trigger_radius": "scale.x * 10000",
+        "trigger_height": "scale.y * 10000",
+        "type_to_arrival_flag": {"1": "UNK_0902", "2": "UNK_0A20", "3": "ENDLESS_NIGHT", "4": "UNK_1F04", "5": "UNK_2E04", "6": "UNK_2E02", "7": "UNK_3E10"}
+      },
+      "confidence": "high",
+      "sources": ["src/d/actor/d_a_tag_island.cpp:32-90"]
+    },
+
+    "unknown": [
+      "How the chart decides which island names and silhouettes to show, and how buying/reading an island chart reveals one. dMenu_Fmap_c::islandNameSet, changeIslandName, setDispIslandPos and the whole draw path are Nonmatching (131 stubbed bodies in src/d/d_menu_fmap.cpp, 113 in d_menu_fmap2.cpp, 52 more in d_map.cpp).",
+      "What field_0x0[0] (the fourth 128-bit map set) and field_0x71[16] hold - nothing in the decompiled code reads or writes them.",
+      "What mFmapBits bits 2..7 mean.",
+      "The Ballad of Gales destination list and its cursor UI (same stubbed menu)."
+    ]
+  },
+
+  "_currents": {
+    "summary": "There is no global ocean current on the Great Sea. Everything that moves the boat without input is either a scripted attractor (cyclone, whirlpool, Ballad warp) or a per-polygon 'belt conveyor' driven by a room path.",
+
+    "belt_conveyor": {
+      "behaviour": "Collision polygons can carry a current. Polygon-info word 2 packs the room-path id in bits 16-23 and the path point number in bits 24-31 (dBgS::GetRoomPathId / GetRoomPathPntNo). dPath_GetPolyRoomPathVec resolves them: get the room id for the polygon, fetch dPath_GetRoomPath(pathId, roomId), bail out if the path's switch field (offset 0x6) is not 0xFF and that switch is on, then return the vector from point[n] to point[n+1] (wrapping at the end of the path) plus the path's mArg0 as a magnitude. The ship applies it as a direct position offset: normalise the direction, scale it by (arg0 >> 1), ease m1044 toward that with cLib_addCalcPosXZ(0.5, maxStep 5.0, minStep 1.0), and add m1044 to the position each frame. With no current under it, m1044 decays with (0.05, 0.1, 0.02). getBeltSpeed() is |m1044| in XZ; Link may only step off the boat when both speedF and beltSpeed are below 3. Link on foot or swimming gets the same treatment through daPy_lk_c::setBeltConveyerPower, but with magnitude arg0 (not halved) and easing (0.5, 3.0 or 1.0, 0.5).",
+      "constants": {
+        "path_id_bits": "polyInf2 bits 16-23",
+        "path_point_bits": "polyInf2 bits 24-31",
+        "ship_magnitude": "path.mArg0 >> 1 (units per frame)",
+        "link_magnitude": "path.mArg0",
+        "ship_ease": [0.5, 5.0, 1.0],
+        "ship_decay": [0.05, 0.1, 0.02],
+        "link_ease": [0.5, "3.0 when already faster than the target else 1.0", 0.5],
+        "disembark_threshold": 3.0
+      },
+      "implementation_note": "gcrip/formats/dzb.py already decodes inf2's room_path_id and room_path_point, so the only missing piece is the room's PATH/RPAT chunk. This is the mechanism behind river-like flows and the Forest Haven / Boating Course pushes - not open-ocean drift.",
+      "confidence": "high",
+      "sources": [
+        "src/d/d_path.cpp:65-100 (dPath_GetPolyRoomPathVec)",
+        "src/d/d_bg_s.cpp:262-274 (GetRoomPathId / GetRoomPathPntNo)",
+        "src/d/actor/d_a_ship.cpp:3862-3881 (ship application)",
+        "include/d/actor/d_a_ship.h:149 (getBeltSpeed)",
+        "src/d/actor/d_a_player_ship.inc:317 (disembark gate)",
+        "src/d/actor/d_a_player_main.cpp:11052-11077 (setBeltConveyerPower)",
+        "gcrip/formats/dzb.py (inf2 room_path_id / room_path_point already parsed)"
+      ]
+    },
+
+    "whirlpools": {
+      "behaviour": "'Auzu' (fpcNm_Obj_Auzu_e, daObjAuzu::Act_c) is the Big Octo / Jabun's-cave whirlpool, not an ocean feature. Base radius L_radius = 2500, scaled by a per-type attribute row: type 0 = {radius x1.5, outer x1.5, inner x1.3, anim 0.5}, type 1 = {x2.0, x2.0, x2.0, anim 1.0}. Type 0 only exists while the ENDLESS_NIGHT event bit is set. Each frame, if Link is aboard: inside the outer radius (2500 * outerMult) it calls ship->onWhirlFlgDirect (m0352 = 0); inside the inner radius (2500 * innerMult) it calls ship->onWhirlFlg (m0352 = 1); if the whirlpool has faded out it releases the ship. The ship's force-move for a whirlpool mirrors the cyclone's but with yaw target atan2 + 0x8000 for the outer capture and + 0x5000 for the inner one, pull factor m0404 = max(0, (whirl_distance - dist) / 3500), brake m0404 * 30 + 10, and inward radius shrink 0.6 per frame - except at Outset with zero bombs, where it is 10 per frame (a commented-out-looking room check the decomp flags as a possible bug). Only the inner capture (m0352 = 1) places the boat on the shrinking circle; the outer one just brakes and turns it. Within 500 units, procWhirlDown starts the swallow.",
+      "constants": {
+        "L_radius": 2500.0,
+        "type_0": {"radiusMult": 1.5, "outerActivationMult": 1.5, "innerActivationMult": 1.3, "anmSpeed": 0.5},
+        "type_1": {"radiusMult": 2.0, "outerActivationMult": 2.0, "innerActivationMult": 2.0, "anmSpeed": 1.0},
+        "whirl_distance": 4000.0,
+        "whirl_pull_divisor": 3500.0,
+        "brake": "m0404 * 30 + 10",
+        "radius_shrink_per_frame": 0.6,
+        "radius_shrink_outset_no_bombs": 10.0,
+        "yaw_offset_inner": "0x5000",
+        "yaw_offset_outer": "0x8000",
+        "swallow_radius": 500.0,
+        "type_0_gate": "dSv_event_flag_c::ENDLESS_NIGHT"
+      },
+      "implementation_note": "Cross-check: the rip finds two Auzu, both in room 44 (Outset), params 0x971C - Jabun's cave. No Auzu sits in open water.",
+      "confidence": "high",
+      "sources": [
+        "src/d/actor/d_a_obj_auzu.cpp:13-33 (L_radius and the attribute table)",
+        "src/d/actor/d_a_obj_auzu.cpp:113-119 (is_exist / ENDLESS_NIGHT)",
+        "src/d/actor/d_a_obj_auzu.cpp:151-178 (ship_whirl)",
+        "src/d/actor/d_a_ship.cpp:3435-3460 (setWhirlActor)",
+        "src/d/actor/d_a_ship.cpp:3710-3722 (yaw targets)",
+        "src/d/actor/d_a_ship.cpp:3779-3826 (brake and shrink)",
+        "include/d/actor/d_a_ship.h:190-199 (onWhirlFlg vs onWhirlFlgDirect sets m0352)",
+        "src/d/d_stage.cpp:1027 (OBJNAME Auzu)",
+        "out/rip/GZLE01/stages/sea/sea_report.json -> actors"
+      ]
+    },
+
+    "other_non_input_motion": {
+      "behaviour": "Completing the list of things that move the boat with no stick input: (1) cyclones and whirlpools, above; (2) the Ballad of Gales warp (_cyclones.ballad_of_gales); (3) the story fence - the room path polygon test that turns the boat around at the edge of the permitted area, with a forced talk event and a re-acceleration to 55 (documented in sailing-spec.md section 3.9); (4) wall push-out - mAcch.CrrPos runs every frame and simply displaces the hull out of collision, with no bounce; (5) collision push from other actors, via mStts.GetCCMoveP(), which is the same m1044 accumulator the belt conveyor uses.",
+      "confidence": "medium",
+      "sources": [
+        "Z:/memRip/knowledge/gamecube/sailing-spec.md section 3.9 (story fence)",
+        "src/d/actor/d_a_ship.cpp:3846-3849 (fopAcM_posMoveF with the CC move pointer)",
+        "src/d/actor/d_a_ship.cpp:3862-3881"
+      ]
+    },
+
+    "unknown": [
+      "Whether any sea room's dzb actually tags polygons with a room path (i.e. whether there is any true current on the open sea at all). The mechanism is confirmed; the data is not in the export because gcrip does not read the PATH/RPAT chunks. My reading of the sea's design is that there is none, but that is not proven from code.",
+      "The dPath / dPnt on-disc layout beyond the fields used here (mArg0, field4_0x6 switch, m_num, m_points[].m_position) - dPath_GetRoomPath was not read in full."
+    ]
+  }
+}

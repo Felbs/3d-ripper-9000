@@ -5,7 +5,7 @@ the mined data - the player's own state machine, the item list, the enemy table,
 baked cutscenes, the story graph - so this cannot drift from what the engine does.
 
 **Systems:** 10 working, 3 partial, 1 not started.  
-**Story:** 262 of 324 mined steps reachable (13 partial, 49 missing) across 15 chapters: outset, fortress, dragonroost, forbiddenwoods, jabun, towerofgods, hyrule, temples, fortress2, ganon, caves, gallery, minigames, triforce, windfall.
+**Story:** 312 of 379 mined steps reachable (13 partial, 54 missing) across 17 chapters: outset, fortress, dragonroost, forbiddenwoods, jabun, towerofgods, hyrule, temples, fortress2, ganon, ganontower, caves, gallery, houses, minigames, triforce, windfall.
 
 ## 1. Systems
 
@@ -18,7 +18,7 @@ flowchart LR
     GAME --> G0["World"]
     G0 --> G0_0["Stages<br/><i>161 scenes exported, 157 enterable</i>"]
     class G0_0 ok;
-    G0 --> G0_1["Doors<br/><i>108 distinct door landings, all checked for a floor</i>"]
+    G0 --> G0_1["Doors<br/><i>122 distinct door landings, all checked for a floor</i>"]
     class G0_1 ok;
     G0 --> G0_2["Day / night<br/><i>600 real seconds per in-game day (dKy: 360 units, 0.02/frame); l</i>"]
     class G0_2 ok;
@@ -53,7 +53,7 @@ flowchart LR
 | system | status | evidence |
 | --- | --- | --- |
 | Stages | ok | 161 scenes exported, 157 enterable |
-| Doors | ok | 108 distinct door landings, all checked for a floor |
+| Doors | ok | 122 distinct door landings, all checked for a floor |
 | Player movement | ok | 27 states: GROUND, AIR, ROLL, SWIM, LAND, ATTACK, JUMPCUT, JUMPCUT_LAND, DAMAGE, GLIDE, CARRY, GRAB, VJUMP, HANG, CLIMB, LADDER, CLIMBWALL, AIM, ITEM_WAIT, HOOKPULL, SHIP, ROPE_THROW, ROPE, LOOK, CROUCH, CRAWL, CONDUCT |
 | Items (X) | ok | 8: leaf, bow, boomerang, bomb, hookshot, rope, telescope, windwaker |
 | Enemies | partial | 27 fully mined, 14 stubbed in the decomp (Gnd, PW, bable, bbaba, magtail, nezumi, Sss, Puti, gmos, wiz_r, Oq, p_hat, pow, Oqw) |
@@ -485,6 +485,59 @@ flowchart TD
         gt_ending["gt_ending<br/>ending.stb<br/><i>spawn - OK</i>"]
         gt_endhr --> gt_ending
     end
+    subgraph ganontower["ganontower"]
+        gtj_enter_maze["gtj_enter_maze<br/><i>room_enter - OK</i>"]
+        gtj_phantom_illusion["gtj_phantom_illusion<br/><i>hit - OK</i>"]
+        gtj_enter_maze --> gtj_phantom_illusion
+        gtj_doorsound_path["gtj_doorsound_path<br/>DoorSound<br/><i>tag - OK</i>"]
+        gtj_phantom_illusion --> gtj_doorsound_path
+        gtj_trap_room_moblins["gtj_trap_room_moblins<br/><i>defeat - OK</i>"]
+        gtj_doorsound_path --> gtj_trap_room_moblins
+        gtj_trap_room_bokoblins["gtj_trap_room_bokoblins<br/><i>defeat - OK</i>"]
+        gtj_trap_room_moblins --> gtj_trap_room_bokoblins
+        gtj_trap_room_darknuts["gtj_trap_room_darknuts<br/><i>defeat - OK</i>"]
+        gtj_trap_room_bokoblins --> gtj_trap_room_darknuts
+        gtj_trap_room_moblin_pair["gtj_trap_room_moblin_pair<br/><i>defeat - OK</i>"]
+        gtj_trap_room_darknuts --> gtj_trap_room_moblin_pair
+        gtj_seal_room13["gtj_seal_room13<br/><i>object - OK</i>"]
+        gtj_trap_room_moblin_pair --> gtj_seal_room13
+        gtj_light_arrow_chest["gtj_light_arrow_chest<br/><i>chest - OK</i>"]
+        gtj_seal_room13 --> gtj_light_arrow_chest
+        gtj_maze_exit["gtj_maze_exit<br/><i>object - OK</i>"]
+        gtj_light_arrow_chest --> gtj_maze_exit
+        gtn_stairs_to_the_hub["gtn_stairs_to_the_hub<br/><i>room_enter - OK</i>"]
+        gtj_maze_exit --> gtn_stairs_to_the_hub
+        gtn_top_of_stairs["gtn_top_of_stairs<br/><i>object - OK</i>"]
+        gtn_stairs_to_the_hub --> gtn_top_of_stairs
+        gtl_stairs_to_puppet_ganon["gtl_stairs_to_puppet_ganon<br/><i>room_enter - OK</i>"]
+        gtn_top_of_stairs --> gtl_stairs_to_puppet_ganon
+        gtl_clear_the_stairs["gtl_clear_the_stairs<br/><i>defeat - OK</i>"]
+        gtl_stairs_to_puppet_ganon --> gtl_clear_the_stairs
+        gtl_to_puppet_ganon["gtl_to_puppet_ganon<br/><i>object - OK</i>"]
+        gtl_clear_the_stairs --> gtl_to_puppet_ganon
+        gtx_rematch_gohma["gtx_rematch_gohma<br/>sets 0x3240<br/><i>defeat - OK</i>"]
+        gtl_to_puppet_ganon --> gtx_rematch_gohma
+        gtx_rematch_kalle_demos["gtx_rematch_kalle_demos<br/>sets 0x3220<br/><i>defeat - OK</i>"]
+        gtx_rematch_gohma --> gtx_rematch_kalle_demos
+        gtx_rematch_jalhalla["gtx_rematch_jalhalla<br/>sets 0x3210<br/><i>defeat - OK</i>"]
+        gtx_rematch_kalle_demos --> gtx_rematch_jalhalla
+        gtx_rematch_molgera["gtx_rematch_molgera<br/>sets 0x3208<br/><i>defeat - OK</i>"]
+        gtx_rematch_jalhalla --> gtx_rematch_molgera
+        gtx_return_to_the_trial_hall["gtx_return_to_the_trial_hall<br/><i>warp - OK</i>"]
+        gtx_rematch_molgera --> gtx_return_to_the_trial_hall
+        ff3_third_visit_swap["ff3_third_visit_swap<br/><i>bits - OK</i>"]
+        gtx_return_to_the_trial_hall --> ff3_third_visit_swap
+        ff3_enter_the_cells["ff3_enter_the_cells<br/>kankin1<br/><i>spawn - OK</i>"]
+        ff3_third_visit_swap --> ff3_enter_the_cells
+        ff3_deserted_fortress["ff3_deserted_fortress<br/><i>room_enter - OK</i>"]
+        ff3_enter_the_cells --> ff3_deserted_fortress
+        ff3_moro_cam["ff3_moro_cam<br/>moro_cam<br/><i>tag - OK</i>"]
+        ff3_deserted_fortress --> ff3_moro_cam
+        ff3_chests["ff3_chests<br/><i>chest - OK</i>"]
+        ff3_moro_cam --> ff3_chests
+        ff3_warp_to_ganons_tower["ff3_warp_to_ganons_tower<br/>GANON_ARRIVE<br/><i>warp - OK</i>"]
+        ff3_chests --> ff3_warp_to_ganons_tower
+    end
     subgraph caves["caves"]
         cave_entry["cave_entry<br/><i>warp - PARTIAL</i>"]
         cave_clear_room["cave_clear_room<br/>DEFAULT_TREASURE_APPEAR<br/><i>defeat - OK</i>"]
@@ -572,6 +625,65 @@ flowchart TD
         shop_board --> shop_buy
         shop_membership["shop_membership<br/>PUT_PRAICE_TICKET<br/><i>show_item - MISSING</i>"]
         shop_buy --> shop_membership
+    end
+    subgraph houses["houses"]
+        house_abesso_enter["house_abesso_enter<br/><i>spawn - OK</i>"]
+        house_abesso_sliding_puzzle["house_abesso_sliding_puzzle<br/>PUZZLE_GAME<br/><i>talk - OK</i>"]
+        house_abesso_enter --> house_abesso_sliding_puzzle
+        house_abesso_puzzle_display_board["house_abesso_puzzle_display_board<br/><i>object - OK</i>"]
+        house_abesso_sliding_puzzle --> house_abesso_puzzle_display_board
+        house_abesso_grapple_point["house_abesso_grapple_point<br/><i>object - OK</i>"]
+        house_abesso_puzzle_display_board --> house_abesso_grapple_point
+        house_abesso_labyrinth_entrance_missing["house_abesso_labyrinth_entrance_missing<br/><i>warp - OK</i>"]
+        house_abesso_grapple_point --> house_abesso_labyrinth_entrance_missing
+        house_abesso_dead_layer_7["house_abesso_dead_layer_7<br/><i>object - OK</i>"]
+        house_abesso_labyrinth_entrance_missing --> house_abesso_dead_layer_7
+        house_ojhous2_is_unreachable["house_ojhous2_is_unreachable<br/>StartCamera<br/><i>spawn - OK</i>"]
+        house_abesso_dead_layer_7 --> house_ojhous2_is_unreachable
+        house_ojhous2_suebelle_upstairs["house_ojhous2_suebelle_upstairs<br/><i>talk - OK</i>"]
+        house_ojhous2_is_unreachable --> house_ojhous2_suebelle_upstairs
+        house_ojhous2_knights_crest_shelf["house_ojhous2_knights_crest_shelf<br/><i>show_item - MISSING</i>"]
+        house_ojhous2_suebelle_upstairs --> house_ojhous2_knights_crest_shelf
+        house_omasao_enter["house_omasao_enter<br/><i>spawn - OK</i>"]
+        house_ojhous2_knights_crest_shelf --> house_omasao_enter
+        house_omasao_resident_is_night_only["house_omasao_resident_is_night_only<br/><i>talk - OK</i>"]
+        house_omasao_enter --> house_omasao_resident_is_night_only
+        house_omasao_chest["house_omasao_chest<br/><i>chest - OK</i>"]
+        house_omasao_resident_is_night_only --> house_omasao_chest
+        house_omasao_dead_layers["house_omasao_dead_layers<br/><i>item - MISSING</i>"]
+        house_omasao_chest --> house_omasao_dead_layers
+        house_onobuta_enter["house_onobuta_enter<br/><i>spawn - OK</i>"]
+        house_omasao_dead_layers --> house_onobuta_enter
+        house_onobuta_day_and_night_residents["house_onobuta_day_and_night_residents<br/><i>talk - OK</i>"]
+        house_onobuta_enter --> house_onobuta_day_and_night_residents
+        house_linkug_is_unused["house_linkug_is_unused<br/><i>chest - OK</i>"]
+        house_onobuta_day_and_night_residents --> house_linkug_is_unused
+        house_ocrogh_walk_start["house_ocrogh_walk_start<br/>WALK_START<br/><i>spawn - OK</i>"]
+        house_linkug_is_unused --> house_ocrogh_walk_start
+        house_pdrgsh_next_link["house_pdrgsh_next_link<br/>next_link<br/><i>spawn - OK</i>"]
+        house_ocrogh_walk_start --> house_pdrgsh_next_link
+        house_pdrgsh_display_stands["house_pdrgsh_display_stands<br/>DAI_ITEM<br/>sets 0xD4FF 0xD3FF<br/><i>show_item - MISSING</i>"]
+        house_pdrgsh_next_link --> house_pdrgsh_display_stands
+        house_pdrgsh_shelf_items["house_pdrgsh_shelf_items<br/><i>item - MISSING</i>"]
+        house_pdrgsh_display_stands --> house_pdrgsh_shelf_items
+        house_orichh_auction_is_night_only["house_orichh_auction_is_night_only<br/>Auction<br/><i>spawn - OK</i>"]
+        house_pdrgsh_shelf_items --> house_orichh_auction_is_night_only
+        house_orichh_residents["house_orichh_residents<br/><i>talk - OK</i>"]
+        house_orichh_auction_is_night_only --> house_orichh_residents
+        house_orichh_display_stands["house_orichh_display_stands<br/>DAI_ITEM<br/>sets 0xE9FF 0xE7FF 0xE6FF 0xE5FF 0xDDFF 0xDAFF 0xD9FF 0xD8FF 0xD7FF 0xD6FF 0xD5FF<br/><i>show_item - MISSING</i>"]
+        house_orichh_residents --> house_orichh_display_stands
+        house_orichh_chest["house_orichh_chest<br/><i>chest - OK</i>"]
+        house_orichh_display_stands --> house_orichh_chest
+        house_ebesso_is_empty["house_ebesso_is_empty<br/><i>spawn - OK</i>"]
+        house_orichh_chest --> house_ebesso_is_empty
+        house_tincle_is_empty["house_tincle_is_empty<br/><i>spawn - OK</i>"]
+        house_ebesso_is_empty --> house_tincle_is_empty
+        house_mukao_is_empty["house_mukao_is_empty<br/><i>spawn - OK</i>"]
+        house_tincle_is_empty --> house_mukao_is_empty
+        house_kazan_is_empty["house_kazan_is_empty<br/><i>spawn - OK</i>"]
+        house_mukao_is_empty --> house_kazan_is_empty
+        house_morocam_is_a_moblin_camera_test["house_morocam_is_a_moblin_camera_test<br/>moro_scam<br/><i>tag - MISSING</i>"]
+        house_kazan_is_empty --> house_morocam_is_a_moblin_camera_test
     end
     subgraph minigames["minigames"]
         mg_birdman_look["mg_birdman_look<br/>BirdLook<br/><i>tag - OK</i>"]
@@ -672,7 +784,7 @@ flowchart TD
         tc_salvage_full_moon_points --> tc_salvage_corp
     end
     subgraph windfall["windfall"]
-        wf_town_title_card["wf_town_title_card<br/>TELOP_TAURA<br/><i>tag - MISSING</i>"]
+        wf_town_title_card["wf_town_title_card<br/>TELOP_TAURA<br/><i>tag - OK</i>"]
         wf_jail_entry_camera["wf_jail_entry_camera<br/>First<br/><i>tag - OK</i>"]
         wf_town_title_card --> wf_jail_entry_camera
         wf_jail_picto_box["wf_jail_picto_box<br/><i>chest - OK</i>"]
@@ -853,6 +965,8 @@ flowchart TD
     gt_trial_molgera -.->|0x3208| gt_four_doors_open
     gt_four_doors_open -.->|0x3204| gt_phantom_ganon
     gt_four_doors_open -.->|0x3204| gt_puppet_ganon
+    gt_four_doors_open -.->|0x3204| gtn_stairs_to_the_hub
+    gt_warp_appears -.->|0x3D02| ff3_warp_to_ganons_tower
     fw_otkura_boundary -.->|0x1610| otkura_awake_kokiri
     gal_meet_carlov -.->|0x2F02| gal_show_pictograph
     gal_show_pictograph -.->|0x2F01| gal_wait_a_day
@@ -887,9 +1001,9 @@ flowchart TD
     jab_arrive_windfall_night -.->|0x1F04| wf_sploosh_kaboom
     jab_arrive_windfall_night -.->|0x1F04| wf_chu_jelly_juice_shop
     jab_arrive_windfall_night -.->|0x1F04| wf_bomb_shop
-    class opening_lookout_awake,aryll_tower_first_talk,grandma_birthday_talk,tale_demo_hero_clothes,aryll_omedeto,aryll_get_telescope,telescope_watch_quill,zelda_fly_helmaroc,aryll_etalk,grandma_after_prologue,orca_first_talk,orca_sparring_lesson,orca_gives_hero_sword,orca_spin_attack_lesson,grandma_after_sword,amori_bokoblin_dropin,amori_meet_tetra,outset_ridge_layer9,stolen_sister,outset_village_layer2,look_shield,grandma_gives_shield,grandma_after_kidnap,tetra_dock_conversation,tetra_board_ship,departure,post_outset_note,ff_ride_to_fortress,ff_launched_at_fortress,ff_arrive_exterior,ff_tower_looks,ff_tetra_ooi,ff_infiltration,ff_searchlight_look,ff_push_barrel,ff_interior_cells,ff_door_looks,ff_moblin_patrol,ff_find_sister,ff_meet_korl,ff_board_korl,dr_chieftain_dragontale,dr_medli_gives_letter,dr_medli_cliff_request,dr_throw_medli_to_ledge,dr_bomb_the_spring,dr_enter_cavern,dr_cavern_set_pieces,dr_trapped_with_bokoblins,dr_clear_room_bars_open,dr_grappling_hook,dr_carry_medli,dr_gohma,dr_boss_warp_out,dr_valoo_calms,dr_dins_pearl,dr_secret_cave,fw_korl_sends_link_to_forest,fw_korl_forest_directions,fw_forest_haven_looks,fw_fall_into_forest_haven,fw_mori_inside,fw_meet_deku_tree,fw_woods_telop,fw_woods_cameras,fw_mothula,fw_kalle_demos,fw_rescue_makar,fw_warp_out_with_makar,fw_boss_warpout_to_forest_haven,fw_getperl_deku,fw_makar_in_forest_haven,fw_korl_after_the_pearl,fw_otkura_boundary,jab_korl_points_to_greatfish,jab_korl_briefing_after_greatfish,jab_quill_at_greatfish,jab_bombshop_raid,jab_password_door,jab_board_pirate_ship,jab_rope_course_2,jab_rope_course_2_cleared,jab_get_bomb_bag,jab_korl_briefing_after_bombs,jab_blow_open_the_cave,jab_receive_nayrus_pearl,jab_curse_broken,jab_abship_not_in_this_chapter,totg_pearl_din,totg_first_statue_reaction,totg_place_pearl,totg_tower_rises,totg_tower_rises_cutscene,totg_arrive_tower,totg_enter_dungeon,totg_interior_camera_beats,totg_wake_servants,totg_trial_east,totg_trial_west,totg_trial_north,totg_pedestals_done,totg_warp_up,totg_big_key,totg_darknut,totg_get_bow,totg_gohdan,totg_heart_container,totg_boss_warp,totg_descend_shaft,totg_warp_to_hyrule,totg_return_from_tower,totg_later_return_to_hyrule,hy_warp_in,hy_descent,hy_courtyard,hy_intro,hy_floor_puzzle,hy_statue_moves,hy_draw_master_sword,hy_rebirth,hy_swing_sword,hy_fight_out,hy_warp_back,hy_return_route_opens,hy_second_visit_awake_zelda,hy_third_visit_swordroom_ambush,hy_third_visit_break_barrier,et_land_headstone,et_enter_edaichi,et_learn_earth_gods_lyric,et_dance_zola,et_duet_opens_earth_temple,et_hole_cam,et_inner_tablets,et_warp_jars,et_mkie_block_cameras,et_moro_cam,et_stalfos_miniboss,et_jalhalla,et_boss_warp,et_pray_zola,wt_land_gale_isle,wt_enter_ekaze,wt_learn_wind_gods_aria,wt_dance_kokiri,wt_duet_opens_wind_temple,wt_makar_sows_seeds,wt_inner_tablets,wt_wizzrobe_miniboss,wt_molgera,wt_boss_warp,wt_pray_kokiri,ff2_sail_to_fortress,ff2_land_at_fortress,ff2_enter_interior,ff2_moblins_patrol,ff2_interior_chests,ff2_phantom_ganon,ff2_skull_hammer,ff2_rescue,ff2_tower_redressed,ff2_helmaroc_king,ff2_enter_ganon_room,ff2_attack_ganon,ff2_runaway_majuto,ff2_after_endless_night,gt_tower_intro,gt_trial_gohma,gt_trial_kalle_demos,gt_trial_molgera,gt_four_doors_open,gt_phantom_ganon,gt_puppet_ganon,gt_to_the_roof,gt_rooftop_confrontation,gt_endhr,gt_ending,cave_clear_room,cave_switch_chest,cave_open_chest,savage_labyrinth,cave08_unused,fairy_island_arrival,fairy_fountain_enter,great_fairy_arrival,fairy_fountain_heal,bigocto_fairy_freed,otkura_wind_gods_aria,otkura_awake_kokiri,gal_hatch_open,gal_enter,gal_meet_carlov,gal_collect_figure,gal_go_and_look,gal_hall_doors,gal_halls,gal_complete,pship_chart,pship_appear,pship_board,pship_treasure,pship_clear,steel_approach,steel_interior,steel_chest,sub_board,sub_interior,sub_ladder_down,sub_chests,shop_board,mg_birdman_look,mg_birdman_launch,mg_birdman_flight,mg_birdman_prize,mg_boating_briefing,mg_boating_enter,mg_boating_reward,mg_squid_enter,mg_squid_play,mg_squid_prize,mg_cannon_game,mg_big_octo,mg_cyclones,mg_cyclones_off,mg_hoho_lookouts,mg_sea_platforms,tf_korl_briefing,tf_tingle_jail_talk,tf_ghost_ship_chart,tf_tingle_decipher_chart,tf_chart_state_is_not_an_event_bit,tf_open_chart_on_sea_chart,tf_salvage_arm,tf_warship_guards_shard,tf_golden_warship,tf_korl_confirms_complete,tf_gate_to_hyrule,tf_descend_to_hyrule,tf_assembled_triforce_layer,wf_jail_entry_camera,wf_jail_picto_box,wf_jail_rotten_floor,wf_tingle_through_bars,wf_free_tingle,wf_lenzo_first_talk,wf_lenzo_attic_chests,wf_lenzo_sees_picto_box,wf_lenzo_research_assistant,wf_killer_bees_first_talk,wf_hide_and_seek,wf_hide_and_seek_cleared,wf_marie_first_talk,wf_marie_asks_for_pendant,wf_bees_point_at_the_tree,wf_joy_pendant_tree,wf_marie_preach,wf_auction,wf_moblins_letter,wf_cafe_bar_camera,wf_tott_dance,wf_bomb_shop,wf_hollo_shop_is_not_windfall ok;
+    class opening_lookout_awake,aryll_tower_first_talk,grandma_birthday_talk,tale_demo_hero_clothes,aryll_omedeto,aryll_get_telescope,telescope_watch_quill,zelda_fly_helmaroc,aryll_etalk,grandma_after_prologue,orca_first_talk,orca_sparring_lesson,orca_gives_hero_sword,orca_spin_attack_lesson,grandma_after_sword,amori_bokoblin_dropin,amori_meet_tetra,outset_ridge_layer9,stolen_sister,outset_village_layer2,look_shield,grandma_gives_shield,grandma_after_kidnap,tetra_dock_conversation,tetra_board_ship,departure,post_outset_note,ff_ride_to_fortress,ff_launched_at_fortress,ff_arrive_exterior,ff_tower_looks,ff_tetra_ooi,ff_infiltration,ff_searchlight_look,ff_push_barrel,ff_interior_cells,ff_door_looks,ff_moblin_patrol,ff_find_sister,ff_meet_korl,ff_board_korl,dr_chieftain_dragontale,dr_medli_gives_letter,dr_medli_cliff_request,dr_throw_medli_to_ledge,dr_bomb_the_spring,dr_enter_cavern,dr_cavern_set_pieces,dr_trapped_with_bokoblins,dr_clear_room_bars_open,dr_grappling_hook,dr_carry_medli,dr_gohma,dr_boss_warp_out,dr_valoo_calms,dr_dins_pearl,dr_secret_cave,fw_korl_sends_link_to_forest,fw_korl_forest_directions,fw_forest_haven_looks,fw_fall_into_forest_haven,fw_mori_inside,fw_meet_deku_tree,fw_woods_telop,fw_woods_cameras,fw_mothula,fw_kalle_demos,fw_rescue_makar,fw_warp_out_with_makar,fw_boss_warpout_to_forest_haven,fw_getperl_deku,fw_makar_in_forest_haven,fw_korl_after_the_pearl,fw_otkura_boundary,jab_korl_points_to_greatfish,jab_korl_briefing_after_greatfish,jab_quill_at_greatfish,jab_bombshop_raid,jab_password_door,jab_board_pirate_ship,jab_rope_course_2,jab_rope_course_2_cleared,jab_get_bomb_bag,jab_korl_briefing_after_bombs,jab_blow_open_the_cave,jab_receive_nayrus_pearl,jab_curse_broken,jab_abship_not_in_this_chapter,totg_pearl_din,totg_first_statue_reaction,totg_place_pearl,totg_tower_rises,totg_tower_rises_cutscene,totg_arrive_tower,totg_enter_dungeon,totg_interior_camera_beats,totg_wake_servants,totg_trial_east,totg_trial_west,totg_trial_north,totg_pedestals_done,totg_warp_up,totg_big_key,totg_darknut,totg_get_bow,totg_gohdan,totg_heart_container,totg_boss_warp,totg_descend_shaft,totg_warp_to_hyrule,totg_return_from_tower,totg_later_return_to_hyrule,hy_warp_in,hy_descent,hy_courtyard,hy_intro,hy_floor_puzzle,hy_statue_moves,hy_draw_master_sword,hy_rebirth,hy_swing_sword,hy_fight_out,hy_warp_back,hy_return_route_opens,hy_second_visit_awake_zelda,hy_third_visit_swordroom_ambush,hy_third_visit_break_barrier,et_land_headstone,et_enter_edaichi,et_learn_earth_gods_lyric,et_dance_zola,et_duet_opens_earth_temple,et_hole_cam,et_inner_tablets,et_warp_jars,et_mkie_block_cameras,et_moro_cam,et_stalfos_miniboss,et_jalhalla,et_boss_warp,et_pray_zola,wt_land_gale_isle,wt_enter_ekaze,wt_learn_wind_gods_aria,wt_dance_kokiri,wt_duet_opens_wind_temple,wt_makar_sows_seeds,wt_inner_tablets,wt_wizzrobe_miniboss,wt_molgera,wt_boss_warp,wt_pray_kokiri,ff2_sail_to_fortress,ff2_land_at_fortress,ff2_enter_interior,ff2_moblins_patrol,ff2_interior_chests,ff2_phantom_ganon,ff2_skull_hammer,ff2_rescue,ff2_tower_redressed,ff2_helmaroc_king,ff2_enter_ganon_room,ff2_attack_ganon,ff2_runaway_majuto,ff2_after_endless_night,gt_tower_intro,gt_trial_gohma,gt_trial_kalle_demos,gt_trial_molgera,gt_four_doors_open,gt_phantom_ganon,gt_puppet_ganon,gt_to_the_roof,gt_rooftop_confrontation,gt_endhr,gt_ending,gtj_enter_maze,gtj_phantom_illusion,gtj_doorsound_path,gtj_trap_room_moblins,gtj_trap_room_bokoblins,gtj_trap_room_darknuts,gtj_trap_room_moblin_pair,gtj_seal_room13,gtj_light_arrow_chest,gtj_maze_exit,gtn_stairs_to_the_hub,gtn_top_of_stairs,gtl_stairs_to_puppet_ganon,gtl_clear_the_stairs,gtl_to_puppet_ganon,gtx_rematch_gohma,gtx_rematch_kalle_demos,gtx_rematch_jalhalla,gtx_rematch_molgera,gtx_return_to_the_trial_hall,ff3_third_visit_swap,ff3_enter_the_cells,ff3_deserted_fortress,ff3_moro_cam,ff3_chests,ff3_warp_to_ganons_tower,cave_clear_room,cave_switch_chest,cave_open_chest,savage_labyrinth,cave08_unused,fairy_island_arrival,fairy_fountain_enter,great_fairy_arrival,fairy_fountain_heal,bigocto_fairy_freed,otkura_wind_gods_aria,otkura_awake_kokiri,gal_hatch_open,gal_enter,gal_meet_carlov,gal_collect_figure,gal_go_and_look,gal_hall_doors,gal_halls,gal_complete,pship_chart,pship_appear,pship_board,pship_treasure,pship_clear,steel_approach,steel_interior,steel_chest,sub_board,sub_interior,sub_ladder_down,sub_chests,shop_board,house_abesso_enter,house_abesso_sliding_puzzle,house_abesso_puzzle_display_board,house_abesso_grapple_point,house_abesso_labyrinth_entrance_missing,house_abesso_dead_layer_7,house_ojhous2_is_unreachable,house_ojhous2_suebelle_upstairs,house_omasao_enter,house_omasao_resident_is_night_only,house_omasao_chest,house_onobuta_enter,house_onobuta_day_and_night_residents,house_linkug_is_unused,house_ocrogh_walk_start,house_pdrgsh_next_link,house_orichh_auction_is_night_only,house_orichh_residents,house_orichh_chest,house_ebesso_is_empty,house_tincle_is_empty,house_mukao_is_empty,house_kazan_is_empty,mg_birdman_look,mg_birdman_launch,mg_birdman_flight,mg_birdman_prize,mg_boating_briefing,mg_boating_enter,mg_boating_reward,mg_squid_enter,mg_squid_play,mg_squid_prize,mg_cannon_game,mg_big_octo,mg_cyclones,mg_cyclones_off,mg_hoho_lookouts,mg_sea_platforms,tf_korl_briefing,tf_tingle_jail_talk,tf_ghost_ship_chart,tf_tingle_decipher_chart,tf_chart_state_is_not_an_event_bit,tf_open_chart_on_sea_chart,tf_salvage_arm,tf_warship_guards_shard,tf_golden_warship,tf_korl_confirms_complete,tf_gate_to_hyrule,tf_descend_to_hyrule,tf_assembled_triforce_layer,wf_town_title_card,wf_jail_entry_camera,wf_jail_picto_box,wf_jail_rotten_floor,wf_tingle_through_bars,wf_free_tingle,wf_lenzo_first_talk,wf_lenzo_attic_chests,wf_lenzo_sees_picto_box,wf_lenzo_research_assistant,wf_killer_bees_first_talk,wf_hide_and_seek,wf_hide_and_seek_cleared,wf_marie_first_talk,wf_marie_asks_for_pendant,wf_bees_point_at_the_tree,wf_joy_pendant_tree,wf_marie_preach,wf_auction,wf_moblins_letter,wf_cafe_bar_camera,wf_tott_dance,wf_bomb_shop,wf_hollo_shop_is_not_windfall ok;
     class aj_speak_ambient,dr_komali_refuses,fw_koroks_and_lift,fw_glide_to_forbidden_woods,jab_bombshop_owner,jab_niko_second_course_intro,ff2_climb_the_wall,ff2_reach_the_tower,gt_trial_jalhalla,cave_entry,mg_birdman_signup,tc_salvage_corp,wf_chu_jelly_juice_shop partial;
-    class dr_arrive_island,fw_arrive_forest_haven,fw_get_deku_leaf,fw_dungeon_items,fw_get_boomerang,fw_heart_container,jab_arrive_greatfish_ruined,jab_arrive_windfall_night,jab_return_to_outset,hy_hint,et_partner_hint_tags,wt_partner_hint_tags,gt_warp_appears,cave_heart_piece,cave_triforce_chart,cave_treasure_chart,great_fairy_upgrade,bigocto_fairy_magic,gal_show_pictograph,gal_wait_a_day,shop_buy,shop_membership,mg_birdman_result,mg_boating_start,mg_boating_goal,mg_boating_fail,mg_squid_end,mg_fishman_chart,mg_fishman_bow,mg_hyoi_seagull,tf_rescue_tingle,tf_find_the_eight_charts,tf_salvage_shard,tf_salvage_miss,tc_treasure_chart_points,tc_salvage_free_points,tc_salvage_night_points,tc_salvage_switch_points,tc_salvage_full_moon_points,wf_town_title_card,wf_lenzo_three_assignments,wf_lenzo_deluxe_picto_box,wf_lenzo_legendary_pictograph,wf_photograph_ub1,wf_marie_joy_pendants,wf_auction_lots,wf_stall_merchants,wf_shop_guru_statue,wf_sploosh_kaboom missing;
+    class dr_arrive_island,fw_arrive_forest_haven,fw_get_deku_leaf,fw_dungeon_items,fw_get_boomerang,fw_heart_container,jab_arrive_greatfish_ruined,jab_arrive_windfall_night,jab_return_to_outset,hy_hint,et_partner_hint_tags,wt_partner_hint_tags,gt_warp_appears,cave_heart_piece,cave_triforce_chart,cave_treasure_chart,great_fairy_upgrade,bigocto_fairy_magic,gal_show_pictograph,gal_wait_a_day,shop_buy,shop_membership,house_ojhous2_knights_crest_shelf,house_omasao_dead_layers,house_pdrgsh_display_stands,house_pdrgsh_shelf_items,house_orichh_display_stands,house_morocam_is_a_moblin_camera_test,mg_birdman_result,mg_boating_start,mg_boating_goal,mg_boating_fail,mg_squid_end,mg_fishman_chart,mg_fishman_bow,mg_hyoi_seagull,tf_rescue_tingle,tf_find_the_eight_charts,tf_salvage_shard,tf_salvage_miss,tc_treasure_chart_points,tc_salvage_free_points,tc_salvage_night_points,tc_salvage_switch_points,tc_salvage_full_moon_points,wf_lenzo_three_assignments,wf_lenzo_deluxe_picto_box,wf_lenzo_legendary_pictograph,wf_photograph_ub1,wf_marie_joy_pendants,wf_auction_lots,wf_stall_merchants,wf_shop_guru_statue,wf_sploosh_kaboom missing;
 ```
 
 | chapter | step | trigger | event | sets | status | why |
@@ -1093,6 +1207,32 @@ flowchart TD
 | ganon | gt_rooftop_confrontation | spawn | g2before | 0x4002 0x4002 0x4002 0x4002 0x4002 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | ganon | gt_endhr | spawn | endhr | 0x3F40 0x3F40 0x3F40 0x3F40 0x3F40 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | ganon | gt_ending | spawn | ending |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| ganontower | gtj_enter_maze | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
+| ganontower | gtj_phantom_illusion | hit |  |  | ok | actors/hit_object.gd - take_hit stages that each order an event. The one mined case cannot fire: the Ajav wall is absent from the ripped placement data |
+| ganontower | gtj_doorsound_path | tag | DoorSound |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| ganontower | gtj_trap_room_moblins | defeat |  |  | ok | actors/enemy.gd death -> Game.story_enemy_defeated / story_room_cleared; a dungeon boss also writes the per-stage boss_dead field, which is NOT an event bit |
+| ganontower | gtj_trap_room_bokoblins | defeat |  |  | ok | actors/enemy.gd death -> Game.story_enemy_defeated / story_room_cleared; a dungeon boss also writes the per-stage boss_dead field, which is NOT an event bit |
+| ganontower | gtj_trap_room_darknuts | defeat |  |  | ok | actors/enemy.gd death -> Game.story_enemy_defeated / story_room_cleared; a dungeon boss also writes the per-stage boss_dead field, which is NOT an event bit |
+| ganontower | gtj_trap_room_moblin_pair | defeat |  |  | ok | actors/enemy.gd death -> Game.story_enemy_defeated / story_room_cleared; a dungeon boss also writes the per-stage boss_dead field, which is NOT an event bit |
+| ganontower | gtj_seal_room13 | object |  |  | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
+| ganontower | gtj_light_arrow_chest | chest |  |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
+| ganontower | gtj_maze_exit | object |  |  | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
+| ganontower | gtn_stairs_to_the_hub | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
+| ganontower | gtn_top_of_stairs | object |  |  | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
+| ganontower | gtl_stairs_to_puppet_ganon | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
+| ganontower | gtl_clear_the_stairs | defeat |  |  | ok | actors/enemy.gd death -> Game.story_enemy_defeated / story_room_cleared; a dungeon boss also writes the per-stage boss_dead field, which is NOT an event bit |
+| ganontower | gtl_to_puppet_ganon | object |  |  | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
+| ganontower | gtx_rematch_gohma | defeat |  | 0x3240 | ok | actors/enemy.gd death -> Game.story_enemy_defeated / story_room_cleared; a dungeon boss also writes the per-stage boss_dead field, which is NOT an event bit |
+| ganontower | gtx_rematch_kalle_demos | defeat |  | 0x3220 | ok | actors/enemy.gd death -> Game.story_enemy_defeated / story_room_cleared; a dungeon boss also writes the per-stage boss_dead field, which is NOT an event bit |
+| ganontower | gtx_rematch_jalhalla | defeat |  | 0x3210 | ok | actors/enemy.gd death -> Game.story_enemy_defeated / story_room_cleared; a dungeon boss also writes the per-stage boss_dead field, which is NOT an event bit |
+| ganontower | gtx_rematch_molgera | defeat |  | 0x3208 | ok | actors/enemy.gd death -> Game.story_enemy_defeated / story_room_cleared; a dungeon boss also writes the per-stage boss_dead field, which is NOT an event bit |
+| ganontower | gtx_return_to_the_trial_hall | warp |  |  | ok | actors/warp_object.gd - picks WHICH event to order from save state, the way daWarpf_c::CreateInit does, then plays it and changes stage |
+| ganontower | ff3_third_visit_swap | bits |  |  | ok | Game.story_bits_tick - fires as soon as every requires_bits entry is set |
+| ganontower | ff3_enter_the_cells | spawn | kankin1 |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| ganontower | ff3_deserted_fortress | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
+| ganontower | ff3_moro_cam | tag | moro_cam |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| ganontower | ff3_chests | chest |  |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
+| ganontower | ff3_warp_to_ganons_tower | warp | GANON_ARRIVE |  | ok | actors/warp_object.gd - picks WHICH event to order from save state, the way daWarpf_c::CreateInit does, then plays it and changes stage |
 | caves | cave_entry | warp |  |  | partial | mined with low confidence |
 | caves | cave_clear_room | defeat | DEFAULT_TREASURE_APPEAR |  | ok | actors/enemy.gd death -> Game.story_enemy_defeated / story_room_cleared; a dungeon boss also writes the per-stage boss_dead field, which is NOT an event bit |
 | caves | cave_switch_chest | object | DEFAULT_TREASURE_APPEAR |  | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
@@ -1136,6 +1276,35 @@ flowchart TD
 | gallery | shop_board | board |  |  | ok | player.gd board() raises RODE_KORL the first time Link boards the boat |
 | gallery | shop_buy | buy | BS1_GETDEMO |  | missing | trigger kind 'buy' has no mechanism |
 | gallery | shop_membership | show_item | PUT_PRAICE_TICKET |  | missing | holding an inventory item out to an NPC (dEvtCnd_CANTALKITEM_e): a talk that carries the selected item id, with the NPC branching on it |
+| houses | house_abesso_enter | spawn |  |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| houses | house_abesso_sliding_puzzle | talk | PUZZLE_GAME |  | ok | Game.story_talk - via actors/npc.gd |
+| houses | house_abesso_puzzle_display_board | object |  |  | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
+| houses | house_abesso_grapple_point | object |  |  | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
+| houses | house_abesso_labyrinth_entrance_missing | warp |  |  | ok | actors/warp_object.gd - picks WHICH event to order from save state, the way daWarpf_c::CreateInit does, then plays it and changes stage |
+| houses | house_abesso_dead_layer_7 | object |  |  | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
+| houses | house_ojhous2_is_unreachable | spawn | StartCamera |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| houses | house_ojhous2_suebelle_upstairs | talk |  |  | ok | Game.story_talk - via actors/npc.gd |
+| houses | house_ojhous2_knights_crest_shelf | show_item |  |  | missing | holding an inventory item out to an NPC (dEvtCnd_CANTALKITEM_e): a talk that carries the selected item id, with the NPC branching on it |
+| houses | house_omasao_enter | spawn |  |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| houses | house_omasao_resident_is_night_only | talk |  |  | ok | Game.story_talk - via actors/npc.gd |
+| houses | house_omasao_chest | chest |  |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
+| houses | house_omasao_dead_layers | item |  |  | missing | trigger kind 'item' has no mechanism |
+| houses | house_onobuta_enter | spawn |  |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| houses | house_onobuta_day_and_night_residents | talk |  |  | ok | Game.story_talk - via actors/npc.gd |
+| houses | house_linkug_is_unused | chest |  |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
+| houses | house_ocrogh_walk_start | spawn | WALK_START |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| houses | house_pdrgsh_next_link | spawn | next_link |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| houses | house_pdrgsh_display_stands | show_item | DAI_ITEM | 0xD4FF 0xD3FF | missing | holding an inventory item out to an NPC (dEvtCnd_CANTALKITEM_e): a talk that carries the selected item id, with the NPC branching on it |
+| houses | house_pdrgsh_shelf_items | item |  |  | missing | trigger kind 'item' has no mechanism |
+| houses | house_orichh_auction_is_night_only | spawn | Auction |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| houses | house_orichh_residents | talk |  |  | ok | Game.story_talk - via actors/npc.gd |
+| houses | house_orichh_display_stands | show_item | DAI_ITEM | 0xE9FF 0xE7FF 0xE6FF 0xE5FF 0xDDFF 0xDAFF 0xD9FF 0xD8FF 0xD7FF 0xD6FF 0xD5FF | missing | holding an inventory item out to an NPC (dEvtCnd_CANTALKITEM_e): a talk that carries the selected item id, with the NPC branching on it |
+| houses | house_orichh_chest | chest |  |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
+| houses | house_ebesso_is_empty | spawn |  |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| houses | house_tincle_is_empty | spawn |  |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| houses | house_mukao_is_empty | spawn |  |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| houses | house_kazan_is_empty | spawn |  |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
+| houses | house_morocam_is_a_moblin_camera_test | tag | moro_scam |  | missing | no TagEv in morocam orders 'moro_scam' |
 | minigames | mg_birdman_look | tag | BirdLook |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
 | minigames | mg_birdman_signup | talk |  |  | partial | mined with low confidence |
 | minigames | mg_birdman_launch | tag | BMCON_NEXT |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
@@ -1184,7 +1353,7 @@ flowchart TD
 | triforce | tc_salvage_switch_points | salvage | SALVAGE_GETITEM |  | missing | trigger kind 'salvage' has no mechanism |
 | triforce | tc_salvage_full_moon_points | salvage | SALVAGE_GETITEM | 0x2080 0x2004 0x2002 0x2804 0x2802 0x2801 0x2980 0x2940 0x3B01 0x3C80 0x3C40 0x3C20 0x3C10 0x3C08 0x3C04 0x3C02 | missing | trigger kind 'salvage' has no mechanism |
 | triforce | tc_salvage_corp | talk | SV_TALK_P1_1ST |  | partial | mined with low confidence |
-| windfall | wf_town_title_card | tag | TELOP_TAURA |  | missing | no TagEv in sea_r11 orders 'TELOP_TAURA' |
+| windfall | wf_town_title_card | tag | TELOP_TAURA |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
 | windfall | wf_jail_entry_camera | tag | First |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
 | windfall | wf_jail_picto_box | chest |  |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
 | windfall | wf_jail_rotten_floor | object | NZFALL |  | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |

@@ -1,0 +1,997 @@
+{
+ "_source": "Mined read-only from the zeldaret/tww decompilation at Z:/memRip/sources/tww and the ripped GZLE01 (Wind Waker USA) disc data at Z:/3d ripper/out/rip/GZLE01. Chapter: the ISLAND HOUSE INTERIORS that no earlier mined chapter covers - Abesso (Cabana Interior), Ebesso, Ojhous2, Omasao (Mesa's house), Onobuta (Rose's house), LinkUG (Underneath Link's House), Ocrogh (Hollo's Forest Potion Shop), Pdrgsh (Chu Jelly Juice Shop), Orichh (House of Wealth), tincle, Mukao, kazan, morocam. Same conventions as ww_story_fortress.json. Event names come from each stage's Stage.arc/event_list.dat and from the stage.dzs EVNT table (dumped by tools/ww_story_mine.py). Triggers come from stage.dzs / room.dzr placement chunks. This chapter is unusual: it is mostly NOT a chain of cutscenes. Five of the thirteen stages are unused leftovers with zero placed actors, and the four that carry real gameplay (Abesso's sliding puzzle, the House of Wealth auction, the Windfall display stands, three residential interiors) store their progress in SAVE FIELDS OTHER THAN EVENT BITS - the puzzle counter dSv_player_status_a_c::mPuzzleData[16], the per-stage treasure-chest flags dComIfGs_isTbox(), the per-room item flags fopAcM_isItem(), and thirteen full-byte EVENT REGISTERS for the display stands. The only event-flag storage any of these stages touches is that register block, which is what _bits below documents. Ocrogh, Pdrgsh and Orichh already have one step each in ww_story_windfall.json; the steps here deliberately add what that file did not carry (the auction's night gating, the display stands, the residents) and cross-reference rather than restate.",
+ "_layer_rule": {
+  "why_it_matters_here": "getLayerNo (src/d/d_com_inf_game.cpp:184-268) is the ONLY layer selection function in the game. It special-cases exactly nine stage names: sea, A_mori, Asoko, Hyrule, Hyroom, kenroom, M2tower, GanonK, GTower. NONE of the thirteen stages in this chapter is among them, and none of them appears in the known_forced_layers list in gcrip/data/ww_layers.json, so for every stage here getLayerNo can only ever return 0 (day) or 1 (night).",
+  "consequence_a": "Layer 0 / layer 1 rosters in these houses are a DAY roster and a NIGHT roster. That is how the House of Wealth auction, and Mesa in Omasao, are gated: they are placed on layer 1 only.",
+  "consequence_b": "Any ACT7 / ACTb (layer 7 / layer 11) actor placed in one of these stages can never be loaded in normal play. Abesso, Ojhous2, Omasao and Onobuta all carry such actors. They are dead data.",
+  "day_night_formula": "base = dKy_checkEventNightStop() ? 1 : (hour >= 6 && hour < 18 ? 0 : 1); hour = (int)(saveTime / 15.0f)",
+  "sources": [
+   "src/d/d_com_inf_game.cpp:184-268",
+   "gcrip/data/ww_layers.json:rules, explicit_layer_override, caveats"
+  ]
+ },
+ "_bits": {
+  "0xE9FF": {
+   "dec": 59903,
+   "byte_mask": [
+    233,
+    255
+   ],
+   "meaning": "REGISTER, not a bit. Windfall display stand (Fdai) save slot 0x0F - the House of Wealth stand at (843, 900, -600). Holds the dItemNo of whatever decoration Link has left on that stand, or 0 for empty. daDai_c::m_savelabel[N] = 0xF8FF - N*0x100, i.e. one whole save byte per stand; the low byte 0xFF is a full-byte mask, so this is read with getEventReg / written with setEventReg, never with isEventBit.",
+   "set_by": "src/d/actor/d_a_dai.cpp:201 (placing an item: setEventReg(label, m84B) when the DAI_ITEM event ends) and src/d/actor/d_a_dai.cpp:321 (taking it back: setEventReg(label, 0))",
+   "read_by": [
+    "src/d/actor/d_a_dai.cpp:101-113 (respawn the placed item on load)",
+    "src/d/actor/d_a_dai.cpp:184",
+    "src/d/actor/d_a_dai.cpp:221 (XyCheckCB - only offer the stand if it is empty)",
+    "src/d/actor/d_a_dai.cpp:291 (getMsg: 0xF0D placed / 0xF11 empty)",
+    "src/d/actor/d_a_dai.cpp:320"
+   ],
+   "confidence": "high"
+  },
+  "0xE7FF": {
+   "dec": 59391,
+   "byte_mask": [
+    231,
+    255
+   ],
+   "meaning": "REGISTER. Display stand save slot 0x11 - House of Wealth stand at (548, 900, -739). Same encoding and same accessors as 0xE9FF.",
+   "set_by": "src/d/actor/d_a_dai.cpp:201, 321",
+   "read_by": [
+    "src/d/actor/d_a_dai.cpp:101-113",
+    "src/d/d_com_static.cpp:198-230 (daDai_c::m_savelabel table)"
+   ],
+   "confidence": "high"
+  },
+  "0xE6FF": {
+   "dec": 59135,
+   "byte_mask": [
+    230,
+    255
+   ],
+   "meaning": "REGISTER. Display stand save slot 0x12 - House of Wealth stand at (-244, 0, 1591), beside the entrance.",
+   "set_by": "src/d/actor/d_a_dai.cpp:201, 321",
+   "read_by": [
+    "src/d/actor/d_a_dai.cpp:101-113",
+    "src/d/d_com_static.cpp:198-230"
+   ],
+   "confidence": "high"
+  },
+  "0xE5FF": {
+   "dec": 58879,
+   "byte_mask": [
+    229,
+    255
+   ],
+   "meaning": "REGISTER. Display stand save slot 0x13 - House of Wealth stand at (239, 0, 1591), the other side of the entrance.",
+   "set_by": "src/d/actor/d_a_dai.cpp:201, 321",
+   "read_by": [
+    "src/d/actor/d_a_dai.cpp:101-113",
+    "src/d/d_com_static.cpp:198-230"
+   ],
+   "confidence": "high"
+  },
+  "0xDDFF": {
+   "dec": 56831,
+   "byte_mask": [
+    221,
+    255
+   ],
+   "meaning": "REGISTER. Display stand save slot 0x1B - House of Wealth upper floor stand at (-698, 900, -650).",
+   "set_by": "src/d/actor/d_a_dai.cpp:201, 321",
+   "read_by": [
+    "src/d/actor/d_a_dai.cpp:101-113",
+    "src/d/d_com_static.cpp:198-230"
+   ],
+   "confidence": "high"
+  },
+  "0xDAFF": {
+   "dec": 56063,
+   "byte_mask": [
+    218,
+    255
+   ],
+   "meaning": "REGISTER. Display stand save slot 0x1E - House of Wealth stand at (-183, 156, 128).",
+   "set_by": "src/d/actor/d_a_dai.cpp:201, 321",
+   "read_by": [
+    "src/d/actor/d_a_dai.cpp:101-113",
+    "src/d/d_com_static.cpp:198-230"
+   ],
+   "confidence": "high"
+  },
+  "0xD9FF": {
+   "dec": 55807,
+   "byte_mask": [
+    217,
+    255
+   ],
+   "meaning": "REGISTER. Display stand save slot 0x1F - House of Wealth stand at (167, 156, 128).",
+   "set_by": "src/d/actor/d_a_dai.cpp:201, 321",
+   "read_by": [
+    "src/d/actor/d_a_dai.cpp:101-113",
+    "src/d/d_com_static.cpp:198-230"
+   ],
+   "confidence": "high"
+  },
+  "0xD8FF": {
+   "dec": 55551,
+   "byte_mask": [
+    216,
+    255
+   ],
+   "meaning": "REGISTER. Display stand save slot 0x20 - House of Wealth stand at (-452, 0, 493).",
+   "set_by": "src/d/actor/d_a_dai.cpp:201, 321",
+   "read_by": [
+    "src/d/actor/d_a_dai.cpp:101-113",
+    "src/d/d_com_static.cpp:198-230"
+   ],
+   "confidence": "high"
+  },
+  "0xD7FF": {
+   "dec": 55295,
+   "byte_mask": [
+    215,
+    255
+   ],
+   "meaning": "REGISTER. Display stand save slot 0x21 - House of Wealth stand at (442, 0, 502).",
+   "set_by": "src/d/actor/d_a_dai.cpp:201, 321",
+   "read_by": [
+    "src/d/actor/d_a_dai.cpp:101-113",
+    "src/d/d_com_static.cpp:198-230"
+   ],
+   "confidence": "high"
+  },
+  "0xD6FF": {
+   "dec": 55039,
+   "byte_mask": [
+    214,
+    255
+   ],
+   "meaning": "REGISTER. Display stand save slot 0x22 - House of Wealth stand at (-37, 977, -395), the highest one in the building.",
+   "set_by": "src/d/actor/d_a_dai.cpp:201, 321",
+   "read_by": [
+    "src/d/actor/d_a_dai.cpp:101-113",
+    "src/d/d_com_static.cpp:198-230"
+   ],
+   "confidence": "high"
+  },
+  "0xD5FF": {
+   "dec": 54783,
+   "byte_mask": [
+    213,
+    255
+   ],
+   "meaning": "REGISTER. Display stand save slot 0x23 - House of Wealth stand at (698, 900, -667).",
+   "set_by": "src/d/actor/d_a_dai.cpp:201, 321",
+   "read_by": [
+    "src/d/actor/d_a_dai.cpp:101-113",
+    "src/d/d_com_static.cpp:198-230"
+   ],
+   "confidence": "high"
+  },
+  "0xD4FF": {
+   "dec": 54527,
+   "byte_mask": [
+    212,
+    255
+   ],
+   "meaning": "REGISTER. Display stand save slot 0x24 - Chu Jelly Juice Shop stand at (-198, 10, 524), left of the counter.",
+   "set_by": "src/d/actor/d_a_dai.cpp:201, 321",
+   "read_by": [
+    "src/d/actor/d_a_dai.cpp:101-113",
+    "src/d/d_com_static.cpp:198-230"
+   ],
+   "confidence": "high"
+  },
+  "0xD3FF": {
+   "dec": 54271,
+   "byte_mask": [
+    211,
+    255
+   ],
+   "meaning": "REGISTER. Display stand save slot 0x25 - Chu Jelly Juice Shop stand at (195, 10, 524), right of the counter.",
+   "set_by": "src/d/actor/d_a_dai.cpp:201, 321",
+   "read_by": [
+    "src/d/actor/d_a_dai.cpp:101-113",
+    "src/d/d_com_static.cpp:198-230"
+   ],
+   "confidence": "high"
+  }
+ },
+ "_actors": {
+  "Apzl": {
+   "name": "Sliding picture puzzle board (15-puzzle)",
+   "file": "src/d/actor/d_a_obj_apzl.cpp",
+   "event_table": [
+    "PUZZLE_TALK",
+    "PUZZLE_GAME",
+    "PUZZLE_RUPEE"
+   ],
+   "table_source": "src/d/actor/d_a_obj_apzl.cpp:854-856 (dComIfGp_evmng_getEventIdx with default 0xff, so the events come from the stage's event_list.dat, not from an EVNT table entry)",
+   "index_rule": "Not an EVNT-table actor. daObjApzl_c drives its own three events with fopAcM_orderChangeEventId as it walks STATE_IDLE -> STATE_TALK (PUZZLE_TALK) -> STATE_START/STATE_PLAYING (PUZZLE_GAME) -> STATE_END -> STATE_RUPEE (PUZZLE_RUPEE). src/d/actor/d_a_obj_apzl.cpp:1024-1096.",
+   "params": "type = (params >> 8) & 0xFF (include/d/actor/d_a_obj_apzl.h:81-83). type 0 = the playable board: pieces are shuffled by randamize_piece() and the actor turns on fopAc_Attn_TALKFLAG_CHECK_e so Link can talk to it. Any other type = a static board with mPiecePos[i] = i, i.e. a solved picture that cannot be talked to.",
+   "save_state": "dComIfGs_getPuzzleInfo() / setPuzzleInfo() = dSv_player_status_a_c::mPuzzleData[16] (include/d/d_save.h:454-455). It is a 0..15 CLEAR COUNT, incremented on each solve and wrapped to 0 at 16; it also selects which of the 16 pictures the board wears. No event bit is involved anywhere in this actor."
+  },
+  "Fdai": {
+   "name": "Windfall decoration stand (daDai_c, OBJNAME \"Fdai\" -> fpcNm_DAI_e)",
+   "file": "src/d/actor/d_a_dai.cpp",
+   "event_table": [
+    "DAI_ITEM",
+    "DEFAULT_TALK"
+   ],
+   "table_source": "src/d/actor/d_a_dai.cpp:96-97",
+   "index_rule": "Not an EVNT-table actor either. The stand registers a talk callback and an X/Y show-item callback (eventInfo.mpCheckCB / mpEventCB, src/d/actor/d_a_dai.cpp:92-94) and orders DAI_ITEM when Link offers a decoration with the item button.",
+   "params": "mSaveID = fopAcM_GetParam(this), truncated to u8 (src/d/actor/d_a_dai.cpp:98). It indexes daDai_c::m_savelabel[40] = 0xF8FF, 0xF7FF, ... 0xD1FF (src/d/d_com_static.cpp:198-230), i.e. register id 0xF8FF - mSaveID*0x100.",
+   "gate": "daDai_c::_create returns cPhs_ERROR_e unless checkItemGet(dItemNo_DELIVERY_BAG_e, TRUE) (src/d/actor/d_a_dai.cpp:123-125), so no stand exists in any stage until Link owns the Delivery Bag.",
+   "messages": "0xF11 empty / 0xF12 empty follow-up / 0xF0D occupied 'take it back?' / 0xF0E bag full / 0xF0F removed / 0xF13 while showing an item (src/d/actor/d_a_dai.cpp:285-330)."
+  },
+  "Ji1": {
+   "name": "Orca",
+   "file": "src/d/actor/d_a_npc_ji1.cpp",
+   "note": "Already mined in ww_story_outset.json for the stage Ojhous. He is placed identically in Ojhous2, which this chapter shows is unreachable.",
+   "table_source": "src/d/actor/d_a_npc_ji1.cpp:1-4 header comment 'NPC - Orca / \u7237\u3055\u3093 (Jiisan)'"
+  },
+  "Aj1": {
+   "name": "Sturgeon",
+   "file": "src/d/actor/d_a_npc_aj1.cpp",
+   "note": "Every function in the file is a /* Nonmatching */ stub (89 of them). No event name, event bit, message id or param decoding survives in it.",
+   "table_source": "src/d/actor/d_a_npc_aj1.cpp:1-4"
+  },
+  "Yw1": {
+   "name": "Sue-Belle",
+   "file": "src/d/actor/d_a_npc_yw1.cpp",
+   "note": "77 /* Nonmatching */ stubs. Nothing recoverable.",
+   "table_source": "src/d/actor/d_a_npc_yw1.cpp:1-4"
+  },
+  "Ym1": {
+   "name": "Mesa & Abe",
+   "file": "src/d/actor/d_a_npc_ym1.cpp",
+   "note": "81 /* Nonmatching */ stubs. One actor class serves both Outset grass-cutters; which one a placement is has to come from the params, and the param decoder did not survive decompilation.",
+   "table_source": "src/d/actor/d_a_npc_ym1.cpp:1-4"
+  },
+  "Ym2": {
+   "name": "Mesa & Abe (second class, same model ym.bdl)",
+   "file": "src/d/actor/d_a_npc_ym1.cpp",
+   "note": "gcrip/data/ww_actors.py:323-324 maps both Ym1 and Ym2 to bdlm/ym.bdl. Which of the pair Ym2 is was not determined."
+  },
+  "Ob1": {
+   "name": "Rose",
+   "file": "src/d/actor/d_a_npc_ob1.cpp",
+   "note": "73 /* Nonmatching */ stubs.",
+   "table_source": "src/d/actor/d_a_npc_ob1.cpp:1-4"
+  },
+  "Ko1": {
+   "name": "Joel & Zill (Outset Island)",
+   "file": "src/d/actor/d_a_npc_ko1.cpp",
+   "note": "134 /* Nonmatching */ stubs. Ko2 shares the model ko.bdl (gcrip/data/ww_actors.py:161-162).",
+   "table_source": "src/d/actor/d_a_npc_ko1.cpp:1-4"
+  },
+  "Bj7": {
+   "name": "Hollo (one of the Generic Koroks)",
+   "file": "src/d/actor/d_a_npc_bj1.cpp",
+   "note": "119 /* Nonmatching */ stubs. Already recorded in ww_story_windfall.json (step wf_hollo_shop_is_not_windfall).",
+   "table_source": "src/d/actor/d_a_npc_bj1.cpp:1-4"
+  },
+  "Ds1": {
+   "name": "Doc Bandam (Windfall Potion Shop shopkeeper)",
+   "file": "src/d/actor/d_a_npc_ds1.cpp",
+   "note": "53 /* Nonmatching */ stubs. Only the member-function names survive (evn_talk_init, evn_ItemModel_init, daNpc_Ds1_checkCreateDrugChuchu ...).",
+   "table_source": "src/d/actor/d_a_npc_ds1.cpp:1-4"
+  },
+  "Gp1": {
+   "name": "Maggie's Father (rich)",
+   "file": "src/d/actor/d_a_npc_gp1.cpp",
+   "note": "66 /* Nonmatching */ stubs.",
+   "table_source": "src/d/actor/d_a_npc_gp1.cpp:1-4"
+  },
+  "Kp1": {
+   "name": "Maggie (rich)",
+   "file": "src/d/actor/d_a_npc_kp1.cpp",
+   "note": "46 /* Nonmatching */ stubs.",
+   "table_source": "src/d/actor/d_a_npc_kp1.cpp:1-4"
+  },
+  "Kf1": {
+   "name": "Mila's Father (rich)",
+   "file": "src/d/actor/d_a_npc_kf1.cpp",
+   "note": "90 /* Nonmatching */ stubs. The only usable signal is the declared member daNpc_Kf1_c::orderTsuboEvent (include/d/actor/d_a_npc_kf1.h:83) - 'tsubo' is a pot, which matches the House of Wealth's eight Ptubo pots and the stage's 'bensyou' (compensation) script.",
+   "table_source": "src/d/actor/d_a_npc_kf1.cpp:1-4"
+  },
+  "Kui": {
+   "name": "Grappling Hook object",
+   "file": "src/d/actor/d_a_kui.cpp",
+   "params": "type = params & 0xF; field_0x2A2 = params & 0xF0; field_0x2A1 = params >> 8; mSwitchNo = params >> 0x18 (src/d/actor/d_a_kui.cpp:480-487). params == -1 is rejected.",
+   "table_source": "src/d/actor/d_a_kui.cpp:1-4"
+  },
+  "SPitem": {
+   "name": "Single displayed field item (daSpcItem01_c, OBJNAME \"SPitem\" -> fpcNm_SPC_ITEM01_e)",
+   "file": "src/d/actor/d_a_spc_item01.cpp",
+   "params": "itemNo = params & 0xFF; flag = (params >> 8) & 0xFFFF (src/d/actor/d_a_spc_item01.cpp:14-17). The actor has a hard-coded -24.0f Y offset for dItemNo_KNIGHTS_CREST_e (src/d/actor/d_a_spc_item01.cpp:53-59), which is exactly the item Orca's house places."
+  }
+ },
+ "steps": [
+  {
+   "id": "house_abesso_enter",
+   "stage": "Abesso",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "The Cabana on Private Oasis. The only way in is sea room 33's SCLS exit at (133054.7, 1200, 118174.5) -> Abesso spawn 0. Both of Abesso's PLYR spawns (0 at (0, 0, 706) facing 180 deg, 1 at (0, 0, -479)) carry params >> 24 == 0xFF, so neither auto-plays anything, and the stage has NO EVNT table at all - Abesso is the only stage in this chapter with real interactive content and no EVNT table."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Abesso/Abesso_report.json:spawns,exits,event_table",
+    "out/rip/GZLE01/stages/sea/sea_report.json:exits",
+    "tools/ww_story_mine.py Abesso"
+   ],
+   "notes": "Abesso is also one of only two stage names d_meter.cpp singles out for a HUD rule (src/d/d_meter.cpp:3098 compares getStartStageName() against \"Abesso\"), and it appears in the audio scene list at src/JAZelAudio/JAIZelScene.cpp:368. Its 73 event scripts are all engine boilerplate except the three PUZZLE_* ones."
+  },
+  {
+   "id": "house_abesso_sliding_puzzle",
+   "stage": "Abesso",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "Talk to the Apzl board at (675, 200, -29), params 0x00FF0017. getType = (params >> 8) & 0xFF = 0x00, which is the PLAYABLE type: CreateInit calls randamize_piece() and sets fopAc_Attn_TALKFLAG_CHECK_e | fopAc_Attn_ACTION_SPEAK_e with a talk distance of 0x28. Talking orders PUZZLE_TALK; agreeing moves the actor to STATE_START, which plays JA_SE_15PUZZLE_START and orders PUZZLE_GAME; while PUZZLE_GAME runs the stick slides tiles and the HUD is forced blank (d_meter.cpp:750-751 checks evmng_startCheck(\"PUZZLE_GAME\") / (\"PUZZLE_RUPEE\")). Completing the picture (check_clear() with mMoveTimer == 0) shakes the pad and orders PUZZLE_RUPEE. Holding B quits back to PUZZLE_TALK."
+   },
+   "event": "PUZZLE_GAME",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "rupees (dItemNo_GREEN_RUPEE_e / BLUE / YELLOW / RED / PURPLE, spawned loose)",
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_obj_apzl.cpp:854-856",
+    "src/d/actor/d_a_obj_apzl.cpp:1024-1096",
+    "src/d/actor/d_a_obj_apzl.cpp:672-733",
+    "src/d/actor/d_a_obj_apzl.cpp:582-588",
+    "src/d/d_meter.cpp:750-751",
+    "include/d/actor/d_a_obj_apzl.h:81-83",
+    "include/d/d_save.h:454-455",
+    "out/rip/GZLE01/stages/Abesso/Abesso_report.json:actors"
+   ],
+   "notes": "IMPORTANT for a remake: this reward is NOT stored in an event bit. STATE_END does clearCount = getPuzzleInfo() + 1, wraps it to 0 at 16, and writes it back with setPuzzleInfo - that byte is dSv_player_status_a_c::mPuzzleData[16]. The same byte also picks which of the 16 pictures (16 BMT sets A..P x 16 tiles, daObjApzl_bmt_table) the board wears and how many scoreboard marks are lit, so the puzzle cycles through sixteen different pictures and then resets. Payout: up to 30 rupees are flung out one at a time (every other frame, mGivenRupeeCount < 30, each with a 450-frame item timer). For puzzles 0..14 the drop is one blue rupee every sixth and green otherwise; for puzzle 15 - the last picture - it reads daObjApzl_Rupee_Table for a richer mix. Messages: 0x1BC6 idle, 0x1BCD mid-game, 0x1BCF cleared, 0x1BD0 reward given, 0x1BC5 reward already shown."
+  },
+  {
+   "id": "house_abesso_puzzle_display_board",
+   "stage": "Abesso",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "object",
+    "detail": "The second Apzl at (-675, 200, -29), params 0x00FF01FF, getType = 0x01. Any non-zero type skips randamize_piece() and sets mPiecePos[i] = i, and the TALKFLAG bits are never turned on, so this board is a permanently-solved picture that Link cannot interact with. The two boards face each other across the room (rot.y -16384 and +16384)."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_obj_apzl.cpp:846-861",
+    "include/d/actor/d_a_obj_apzl.h:81-83",
+    "out/rip/GZLE01/stages/Abesso/Abesso_report.json:actors"
+   ],
+   "notes": "Apzl exists in exactly two stages in the whole rip: Abesso (these two) and K_Teste, a test stage that lines up eight of them at y=333 along z=-2395 with params 0x00FF0001..0x00FF0708. K_Teste is outside this chapter's stage list but is the actor's development harness."
+  },
+  {
+   "id": "house_abesso_grapple_point",
+   "stage": "Abesso",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "object",
+    "detail": "A Kui (grappling-hook object) hangs at (0, 480, -29) with params 0x0BF2FF04: type = 4, field_0x2A1 = 0xFF, mSwitchNo = params >> 24 = 0x0B = 11. One of the stage's two AttTag attention volumes sits at (11, 423, -46) - directly under it - with type 2 and swSave 11, the SAME switch number, so that volume is the camera look-at marker for this grapple point. AttTag carries no event index (d_a_tag_attention.h decodes only type and swSave), so it orders nothing; it only aims the camera."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_kui.cpp:480-487",
+    "out/rip/GZLE01/stages/Abesso/Abesso_report.json:actors,tags"
+   ],
+   "notes": "The second AttTag is at (-1, -89, -768) with swSave 255 (= none)."
+  },
+  {
+   "id": "house_abesso_labyrinth_entrance_missing",
+   "stage": "Abesso",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "warp",
+    "detail": "NEGATIVE RESULT, recorded so nobody re-derives it. TF_04 is the Cabana Labyrinth (gcrip/data/ww_stages.py:122), but NO stage anywhere in the rip has an SCLS exit whose dest_stage is \"TF_04\", and Abesso's own SCLS list holds exactly one record, back to sea room 33 spawn 1. Abesso's placement data likewise contains no door or warp actor for it: its 16 placed actors are 1 Kui, 2 Apzl, 1 MPot, 2 MKoppu, 4 Ptubo, 3 Lamp, 1 KNOB01D (the front door) and 2 layer-7 Kmtub pots. The rip reports 29 placements of which 16 placed, 2 logic-skipped, 9 code-drawn-skipped and 2 spawns - so the labyrinth entrance is most likely one of the nine code-drawn actors the exporter does not emit."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "out/rip/GZLE01/stages/Abesso/Abesso_report.json:exits,actors,placements",
+    "gcrip/data/ww_stages.py:122"
+   ],
+   "notes": "Abesso's event script list does carry DEFAULT_WARP, WARPT_OPEN, DEFAULT_WARP_OPEN and DUNGEON_WARP, which is consistent with a warp-style entrance rather than an SCLS door. Which actor it is could not be determined from the ripped data."
+  },
+  {
+   "id": "house_abesso_dead_layer_7",
+   "stage": "Abesso",
+   "room": 0,
+   "layer": 7,
+   "trigger": {
+    "kind": "object",
+    "detail": "Two Kmtub pots are placed in Abesso's ACT7 chunk at (-210, 0, 391) and (-420, 0, 181), params 0x727FFF3F. Because Abesso is not one of the nine stages getLayerNo special-cases and is never given an explicit layer override, getLayerNo can only return 0 or 1 here, so layer 7 is never selected and these two pots never load."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/d_com_inf_game.cpp:184-268",
+    "src/d/d_stage.cpp:2071-2151",
+    "gcrip/data/ww_layers.json:explicit_layer_override",
+    "out/rip/GZLE01/stages/Abesso/Abesso_report.json:actors"
+   ],
+   "notes": "OBJNAME(\"Kmtub\", fpcNm_TSUBO_e, 2, 0) at src/d/d_stage.cpp:521 - it is a pot, not a door, so nothing story-critical is lost."
+  },
+  {
+   "id": "house_ojhous2_is_unreachable",
+   "stage": "Ojhous2",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "Ojhous2 is a second, slightly different copy of Orca and Sturgeon's house on Outset, and NOTHING IN THE SHIPPED GAME CAN ENTER IT. Evidence: (1) not one stage in the rip has an SCLS exit whose dest_stage is \"Ojhous2\" - sea room 44 has two doors into that building and both name \"Ojhous\", at (-190420.8, 675, 318175) and (-189997.5, 425, 317825), both to spawn 0; (2) no setNextStage call anywhere in src/ names it - the only four occurrences of the string are three read-only getStartStageName() comparisons (d_a_vrbox2.cpp:130, d_kankyo_rain.cpp:1350, d_kyeff.cpp:163) and the audio scene list (JAIZelScene.cpp:385). It has an exit OUT (to sea spawn 3, room 44) but no way in. Its own spawn 0 (room 0, params 0x00FFB000) carries EVNT index 0 = \"StartCamera\" and room 1 spawn 0 (params 0x01FF0001) carries index 1 = \"KNOB_S_BR\"; both are boilerplate."
+   },
+   "event": "StartCamera",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Ojhous2/Ojhous2_report.json:spawns,exits,event_table",
+    "out/rip/GZLE01/stages/sea/sea_report.json:exits",
+    "src/d/actor/d_a_vrbox2.cpp:130",
+    "src/d/d_kankyo_rain.cpp:1350",
+    "src/d/d_kyeff.cpp:163",
+    "src/JAZelAudio/JAIZelScene.cpp:385"
+   ],
+   "notes": "gcrip/data/ww_stages.py:93-94 labels Ojhous \"Orca's Room\" and Ojhous2 \"Sturgeon's Room\", but that is misleading: BOTH stages are the whole two-room house - room 0 is Orca's dojo and room 1 is Sturgeon's study - and it is Ojhous that the game actually loads. ww_story_outset.json already mines Ojhous (orca_first_talk, orca_sparring_lesson, orca_gives_hero_sword, orca_spin_attack_lesson); none of that is repeated here. The two stages' 90-entry event_list.dat files are identical except for one capitalisation ('Angry' in Ojhous vs 'angry' in Ojhous2)."
+  },
+  {
+   "id": "house_ojhous2_suebelle_upstairs",
+   "stage": "Ojhous2",
+   "room": 1,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "The one substantive content difference between Ojhous2 and the shipped Ojhous: Ojhous2 places Yw1 (Sue-Belle) at (110, -20, 890), params 0x00FF0002, in Sturgeon's room alongside the same two Aj1 (Sturgeon) copies Ojhous has at (-8, -20, 857) params 0x0000FF01 and (-18, -20, 706) params 0x0000FF02. Ojhous has no Yw1 anywhere. Ojhous2 also adds a KNOB00 door in room 1 at (546, -20, 1077) - the door its second spawn arrives at - and a layer-7 Plant."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Ojhous2/Ojhous2_report.json:actors",
+    "out/rip/GZLE01/stages/Ojhous/Ojhous_report.json:actors",
+    "src/d/actor/d_a_npc_yw1.cpp:1-4"
+   ],
+   "notes": "So the cut arrangement was: Sturgeon's study reachable by its own upper door, with Sue-Belle visiting. What she would have said is unrecoverable - d_a_npc_yw1.cpp is 77 /* Nonmatching */ stubs and carries no message ids."
+  },
+  {
+   "id": "house_ojhous2_knights_crest_shelf",
+   "stage": "Ojhous2",
+   "room": 0,
+   "layer": 7,
+   "trigger": {
+    "kind": "show_item",
+    "detail": "Both Ojhous and Ojhous2 place a SPitem at (12, 296, -351) with params 0x00000048 on layer 7, sitting on an Otana shelf at (10, 296, -441). daSpcItem01_prm::getItemNo = params & 0xFF = 0x48 = dItemNo_KNIGHTS_CREST_e - the trophy Orca collects. The actor even carries a hard-coded -24.0f Y offset for exactly that item id. But layer 7 is unreachable in these stages (getLayerNo returns only 0 or 1), so the displayed crest never loads in either copy."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_spc_item01.cpp:14-17",
+    "src/d/actor/d_a_spc_item01.cpp:53-59",
+    "include/d/d_item_data.h:79",
+    "src/d/d_com_inf_game.cpp:184-268",
+    "out/rip/GZLE01/stages/Ojhous2/Ojhous2_report.json:actors",
+    "out/rip/GZLE01/stages/Ojhous/Ojhous_report.json:actors"
+   ],
+   "notes": "The only other SPitem in the game sits in LinkRM at (-200, 551, 647) with params 0x0000003B = dItemNo_SHIELD_e - the Hero's Shield on Grandma's wall - and daSpcItem01_c::_create deletes itself if UNK_0E20 is set, which is how the shield disappears from the wall once Link takes it. No such gate exists for the crest."
+  },
+  {
+   "id": "house_omasao_enter",
+   "stage": "Omasao",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "Mesa the Grasscutter's house on Outset. In from sea room 44's SCLS at (-180773.4, 700, 318685.8) -> Omasao spawn 0 at (127, 0, 1375), params 0xFFFFB000, event byte 0xFF = none. Omasao has NO EVNT table and, of its 70 event scripts, tools/ww_story_mine.py classes ZERO as story-looking - every one is engine boilerplate. There is no scripted beat in this house at all; talking uses DEFAULT_TALK."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Omasao/Omasao_report.json",
+    "out/rip/GZLE01/stages/sea/sea_report.json:exits",
+    "tools/ww_story_mine.py Omasao"
+   ],
+   "notes": "Its single exit goes back to sea spawn 7, room 44."
+  },
+  {
+   "id": "house_omasao_resident_is_night_only",
+   "stage": "Omasao",
+   "room": 0,
+   "layer": 1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "The house's only NPC, Ym1 (\"NPC - Mesa & Abe\") at (-122, 92, 594), params 0x00000001, is placed in the ACT1 chunk. Omasao has no getLayerNo story rule, so layer 1 means exactly one thing: NIGHT (hour < 6 or hour >= 18, or dKy_checkEventNightStop()). There is no layer-0 copy, so the house is empty by day and occupied at night."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/d_com_inf_game.cpp:184-268",
+    "src/d/actor/d_a_npc_ym1.cpp:1-4",
+    "out/rip/GZLE01/stages/Omasao/Omasao_report.json:actors",
+    "gcrip/data/ww_layers.json:time_of_day"
+   ],
+   "notes": "d_a_npc_ym1.cpp is 81 /* Nonmatching */ stubs, so whether params 0x00000001 selects Mesa or Abe could not be determined, and no dialogue, item or event bit survives in the actor."
+  },
+  {
+   "id": "house_omasao_chest",
+   "stage": "Omasao",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "chest",
+    "detail": "A takara2 chest in the unlayered TRES chunk at (-612, 0, 824), params 0xFF000200, rot (0, -32768, 1279). Decoding per include/d/actor/d_a_tbox.h:35-37: item = rot.z >> 8 & 0xFF = 0x04 = dItemNo_RED_RUPEE_e; tboxNo = (params >> 7) & 0x1F = 4; swNo = (params >> 12) & 0xFF = 0; funcType = params & 0x7F = 0 = FUNC_TYPE_NORMAL; shapeType = (params >> 20) & 0xF = 0. Opened-state is remembered with dComIfGs_onTbox(4) / isTbox(4), which is per-stage treasure save data, NOT an event bit."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "0x04 (dItemNo_RED_RUPEE_e)",
+   "confidence": "high",
+   "sources": [
+    "include/d/actor/d_a_tbox.h:35-37",
+    "src/d/actor/d_a_tbox.cpp:326",
+    "src/d/actor/d_a_tbox.cpp:864",
+    "src/d/actor/d_a_tbox.cpp:396-405",
+    "out/rip/GZLE01/stages/Omasao/Omasao_report.json:actors"
+   ],
+   "notes": "The rip records this chest with room = null because it lives in the stage-level TRES chunk rather than a room chunk."
+  },
+  {
+   "id": "house_omasao_dead_layers",
+   "stage": "Omasao",
+   "room": 0,
+   "layer": 11,
+   "trigger": {
+    "kind": "item",
+    "detail": "Omasao carries three loose `item` actors and one shelf spread over three layers. Decoding per include/d/actor/d_a_item.h:138-145 (itemNo = params & 0xFF, itemBitNo = (params >> 8) & 0xFF, switchNo2 = (params >> 16) & 0xFF): layer -1 item 0x03FFFF01 at (-281, 0, 689) = GREEN_RUPEE with itemBitNo 0xFF (masked to 0x7F = no save slot); layer 7 Otana shelf at (-615, 171, 974) plus item 0x03FFFF02 at (-460, 63, 995) = BLUE_RUPEE; layer 11 item 0x03FFFF01 at (-215, 0, 690) = GREEN_RUPEE. Layers 7 and 11 can never be selected for this stage, so those two are dead data - gcrip/data/ww_layers.json says outright that layers 10 and 11 are never produced by any story rule."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "include/d/actor/d_a_item.h:138-145",
+    "src/d/actor/d_a_item.cpp:219-232",
+    "src/d/d_com_inf_game.cpp:184-268",
+    "gcrip/data/ww_layers.json:caveats",
+    "out/rip/GZLE01/stages/Omasao/Omasao_report.json:actors"
+   ],
+   "notes": "itemBitNo is masked to 0x7F and checked with fopAcM_isItem(this, bit) - the per-room collected-item save, a different array from the event flags."
+  },
+  {
+   "id": "house_onobuta_enter",
+   "stage": "Onobuta",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "Rose's house on Outset. In from sea room 44's SCLS at (-188838.5, 1275, 320761.6) -> Onobuta spawn 0 at (302, 0, 1370), params 0xFFFFB000. A second spawn, id 1 at (150, 638, 1075) params 0xFFFF5000, is the upper floor arrival. Neither carries an event byte. Like Omasao, Onobuta has NO EVNT table and zero story-looking scripts out of 70 - the whole house runs on DEFAULT_TALK."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Onobuta/Onobuta_report.json",
+    "out/rip/GZLE01/stages/sea/sea_report.json:exits",
+    "tools/ww_story_mine.py Onobuta"
+   ],
+   "notes": "Exit back to sea spawn 4, room 44. The one AttTag, at (353, 341, 640) with type 2 / swSave 225, is a camera marker and orders nothing."
+  },
+  {
+   "id": "house_onobuta_day_and_night_residents",
+   "stage": "Onobuta",
+   "room": 0,
+   "layer": 0,
+   "trigger": {
+    "kind": "talk",
+    "detail": "Onobuta is the clearest day/night pair in this chapter, and because it has no getLayerNo story rule the two rosters mean nothing but the clock. LAYER 0 (day, 06:00-18:00): Ob1 (Rose) at (259, 0, 496) params 0x00FF0001, Ko1 (Joel & Zill) at (43, 0, 594) params 0x00FF0003, Ko2 at (156, 0, 594) params 0x00FF0002 - all three clustered around the ground-floor table. LAYER 1 (night): Ob1 moved to (817, 0, 749) params 0x00FF0002, Ko2 at (1041, 80, 619) and Ko1 at (920, 80, 620) both params 0x00FF0003/0x00FF0004 and both raised to y = 80 (the beds), plus Ym2 at (-23, 0, 922) params 0x00000003, who is present ONLY at night."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/d_com_inf_game.cpp:184-268",
+    "src/d/actor/d_a_npc_ob1.cpp:1-4",
+    "src/d/actor/d_a_npc_ko1.cpp:1-4",
+    "out/rip/GZLE01/stages/Onobuta/Onobuta_report.json:actors",
+    "gcrip/data/ww_layers.json:time_of_day"
+   ],
+   "notes": "A fourth ACT7 actor, a Kkiba at (354, 400, 645), never loads for the usual layer reason. d_a_npc_ob1.cpp (73 stubs) and d_a_npc_ko1.cpp (134 stubs) are both entirely /* Nonmatching */, so the params that pick Joel vs Zill, and every line of their dialogue, are not recoverable from the decomp."
+  },
+  {
+   "id": "house_linkug_is_unused",
+   "stage": "LinkUG",
+   "room": null,
+   "layer": -1,
+   "trigger": {
+    "kind": "chest",
+    "detail": "\"Underneath Link's House\" is an UNUSED stage. Evidence: (1) it has no SCLS exits at all, so once loaded there would be no way out; (2) no stage in the rip has an exit whose dest_stage is \"LinkUG\"; (3) the string \"LinkUG\" does not occur anywhere in src/ or include/ - not even in the audio scene table src/JAZelAudio/JAIZelScene.cpp, which does list Abesso, Ojhous, Ojhous2, Omasao, Onobuta, Ocrogh, Pdrgsh and Orichh. It contains exactly ONE placed object: a takara2 chest at (-70, -150, 264), params 0xFF000280, rot (0, -32768, 1791) -> item = 1791 >> 8 = 0x06 = dItemNo_ORANGE_RUPEE_e, tboxNo 5, swNo 0, funcType 0. Two PLYR spawns exist (id 0 at (-160, 0, -358), id 1 at (279, 0, -340)), neither auto-playing an event, and the stage has no EVNT table and no story-looking scripts."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "0x06 (dItemNo_ORANGE_RUPEE_e) - unobtainable",
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/LinkUG/LinkUG_report.json",
+    "include/d/actor/d_a_tbox.h:35-37",
+    "include/d/d_item_data.h:13",
+    "src/JAZelAudio/JAIZelScene.cpp",
+    "tools/ww_story_mine.py LinkUG"
+   ],
+   "notes": "A 200-rupee chest in a crawlspace under Link's house that the shipped game never opens. gcrip/data/ww_stages.py:73 already carries the name."
+  },
+  {
+   "id": "house_ocrogh_walk_start",
+   "stage": "Ocrogh",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "Hollo's potion shop. Spawn 0 at (-31, 0, 414), params 0x00FF1000, carries EVNT index 0 = \"WALK_START\"; the table's other entry is the boilerplate MapToolCamera. Its only placed actor is Bj7 at (-121, 0, 158), params 0x00010000. Like LinkUG the stage has NO SCLS exits in either direction, but unlike LinkUG it IS in the audio scene table (JAIZelScene.cpp:319) and IS special-cased by the weather code, so it is reached by something other than an SCLS door."
+   },
+   "event": "WALK_START",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Ocrogh/Ocrogh_report.json",
+    "src/d/d_kankyo_rain.cpp:866-867",
+    "src/d/d_kyeff.cpp:155",
+    "src/JAZelAudio/JAIZelScene.cpp:319",
+    "tools/ww_story_mine.py Ocrogh"
+   ],
+   "notes": "ww_story_windfall.json step wf_hollo_shop_is_not_windfall already establishes that Ocrogh belongs to Forest Haven, not Windfall, and that d_a_npc_bj1.cpp is 119 /* Nonmatching */ stubs. Not repeated here. The stage's two story-looking scripts, Get_Blu_Btl (get blue bottle) and Mak_Drg (make drug/potion), exist only in event_list.dat - neither name occurs anywhere in src/, so what orders them is event data."
+  },
+  {
+   "id": "house_pdrgsh_next_link",
+   "stage": "Pdrgsh",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "The Chu Jelly Juice Shop on Windfall. Spawn 1 at (-85, 0, 35), params 0x00FF0000, carries EVNT index 0 = \"next_link\", the stage's only table entry; spawn 0 at (-12, 0, 651), params 0xFFFFB000, is the door and plays nothing. Ds1 (Doc Bandam) stands at (-148, 0, -135), params 0xFFFFFF00. The exit returns to sea room 11 spawn 7."
+   },
+   "event": "next_link",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Pdrgsh/Pdrgsh_report.json",
+    "src/d/actor/d_a_npc_ds1.cpp:1-4",
+    "tools/ww_story_mine.py Pdrgsh"
+   ],
+   "notes": "Cross-reference: ww_story_windfall.json step wf_chu_jelly_juice_shop covers the shop's CREATE_DRUG / GET_DRUG / PUT_ITEM / PUT_ITEM_FAIL / DAI_ITEM scripts and records that d_a_npc_ds1.cpp is entirely /* Nonmatching */. This step exists so the stage is present in the houses chapter and so the two steps below can hang off it."
+  },
+  {
+   "id": "house_pdrgsh_display_stands",
+   "stage": "Pdrgsh",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "show_item",
+    "detail": "Two Fdai decoration stands flank the counter at (-198, 10, 524) params 0xFFFFFF24 and (195, 10, 524) params 0xFFFFFF25. daDai_c::mSaveID is fopAcM_GetParam truncated to u8, so those are stand ids 0x24 and 0x25, and m_savelabel[N] = 0xF8FF - N*0x100 maps them to the full-byte event REGISTERS 0xD4FF and 0xD3FF. Sequence: neither stand exists until Link owns the Delivery Bag (_create returns cPhs_ERROR_e otherwise); XyCheckCB accepts an offered item only if isDaizaItem(itemNo) and the register is 0; showing it orders the DAI_ITEM event, and when that event ENDS the register is written with the item id, the reserve item is cleared and the placed decoration is parented to the stand. Talking to an occupied stand shows message 0xF0D and offers to take it back, which zeroes the register and pushes the item back into the bag (unless the bag already holds 3)."
+   },
+   "event": "DAI_ITEM",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0xD4FF",
+    "0xD3FF"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_dai.cpp:96-116",
+    "src/d/actor/d_a_dai.cpp:123-125",
+    "src/d/actor/d_a_dai.cpp:178-210",
+    "src/d/actor/d_a_dai.cpp:216-225",
+    "src/d/actor/d_a_dai.cpp:285-330",
+    "src/d/d_com_static.cpp:198-230",
+    "out/rip/GZLE01/stages/Pdrgsh/Pdrgsh_report.json:actors"
+   ],
+   "notes": "sets_bits lists both registers because both stands run the same routine; each placement writes only its own. These are REGISTERS (low byte 0xFF = full-byte mask), so a remake must model them as one byte holding a dItemNo, not as a boolean. The twelve decoration models the stand can wear are listed in daStandItem_c::m_bmdidx (src/d/actor/d_a_dai_item.cpp:15-28): TOWN_FLOWER, SEA_FLOWER, EXOTIC_FLOWER, HEROS_FLAG, BIG_CATCH_FLAG, BIG_SALE_FLAG, PINWHEEL, SICKLE_MOON_FLAG, SKULL_TOWER_IDOL, FOUNTAIN_IDOL, POSTMAN_STATUE, SHOP_GURU_STATUE."
+  },
+  {
+   "id": "house_pdrgsh_shelf_items",
+   "stage": "Pdrgsh",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "item",
+    "detail": "Two loose `item` actors sit on the shop's shelves: 0x03FF1A02 at (254, 264, 400) = itemNo 0x02 (BLUE_RUPEE) with itemBitNo 0x1A, and 0x03FF1B01 at (-277, 264, 103) = itemNo 0x01 (GREEN_RUPEE) with itemBitNo 0x1B. Both use switchNo2 0xFF (none). Unlike Omasao's shelf rupees these carry real itemBitNo values, so once taken they are remembered via fopAcM_isItem(this, bit) - the per-room collected-item save, not an event bit."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "include/d/actor/d_a_item.h:138-145",
+    "src/d/actor/d_a_item.cpp:219-232",
+    "out/rip/GZLE01/stages/Pdrgsh/Pdrgsh_report.json:actors"
+   ],
+   "notes": "The shop's other furniture - two Fdai, two Otana shelves, three Ostool stools, six Paper notices all with params 0x00000321, seven MPot and four MKoppu - is scenery."
+  },
+  {
+   "id": "house_orichh_auction_is_night_only",
+   "stage": "Orichh",
+   "room": 0,
+   "layer": 1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "NEW FACT this chapter adds to ww_story_windfall.json's wf_auction: the House of Wealth auction is NIGHT-ONLY, and the placement data says so outright. All eight auction actors - Auc7 (params 0x00000000) at (218, 0, 871), Auc1 0x01000000 at (-285, 0, 649), Auc2 0x02000000 at (-190, 0, 761), Auc3 0x03000000 at (-103, 0, 858), Auc4 0x04000000 at (101, 0, 823), Auc5 0x05000000 at (199, 0, 743), Auc6 0x06000000 at (289, 0, 677) and Auc0 0x07000000 at (309, 217, 218), the auctioneer's box - are placed in Orichh's ACT1 chunk. Orichh has no getLayerNo story rule and never gets an explicit layer override, so ACT1 is selected exactly when dKy_getdaytime_hour() is outside 06:00-18:00 (or endless night is on). By day the room is empty of bidders and spawn 5's \"Auction\" event has nobody to run."
+   },
+   "event": "Auction",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/d_com_inf_game.cpp:184-268",
+    "src/d/d_stage.cpp:2071-2151",
+    "gcrip/data/ww_layers.json:time_of_day,explicit_layer_override",
+    "out/rip/GZLE01/stages/Orichh/Orichh_report.json:actors,spawns"
+   ],
+   "notes": "Orichh's three PLYR spawns: 0 at (0, 0, 1775) and 1 at (0, 900, 1994) are the two doors (params 0xFFFFB000, no event) and 5 at (2, 0, 737) params 0x00FF0000 carries EVNT index 0 = \"Auction\". Its two SCLS exits both return to sea room 11, spawn points 3 and 4. The lot table, the bidder AI parameters and the six lot event bits are already recorded in ww_story_windfall.json (wf_auction, wf_auction_lots) and are not repeated."
+  },
+  {
+   "id": "house_orichh_residents",
+   "stage": "Orichh",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "talk",
+    "detail": "Four NPCs live in the House of Wealth on the unlayered chunk, i.e. they are there day and night: Gp1 (Maggie's Father) at (251, 900, 1352) params 0x000200FF, Kp1 (Maggie) at (74, 900, -867) params 0xFFFFFFFF, Kf1 (Mila's Father) at (578, 900, -367) params 0x000004FF, and Bm4 (a Generic Rito) at (-289, 900, 1353) params 0x0001FF01. Every one of them is at y = 900 - the upper floor - while the auction runs on the ground floor at y = 0. Orichh's event_list.dat carries the scripts for their quests: GET_MAGYS_LTTR (get Maggie's letter), GET_KAKERA_HRT (get heart-piece fragment), Gp1_Get_Itm, Giv_Rupee, rupee_age, Kaere_Kaere ('go home, go home'), bensyou (compensation) and angry, alongside the six AUCTION_* scripts and DAI_ITEM."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "out/rip/GZLE01/stages/Orichh/Orichh_report.json:actors",
+    "out/rip/GZLE01/godot/events/Orichh.json",
+    "src/d/actor/d_a_npc_gp1.cpp:1-4",
+    "src/d/actor/d_a_npc_kp1.cpp:1-4",
+    "src/d/actor/d_a_npc_kf1.cpp:1-4",
+    "include/d/actor/d_a_npc_kf1.h:83"
+   ],
+   "notes": "Confidence is medium because NOT ONE of those eight script names occurs anywhere in src/ - they are ordered from event data - and all three rich-resident actors are /* Nonmatching */ stubs (Gp1 66, Kp1 46, Kf1 90). The one surviving hint is the declared member daNpc_Kf1_c::orderTsuboEvent: 'tsubo' is a pot, and Orichh is lined with eight Ptubo pots at y = 50 along the ground-floor walls, which matches Mila's father demanding 'bensyou' (compensation) for smashed pots. That reading is inference, not decompiled code. No event bit for any of these quests could be assigned."
+  },
+  {
+   "id": "house_orichh_display_stands",
+   "stage": "Orichh",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "show_item",
+    "detail": "Eleven Fdai decoration stands are spread through the House of Wealth, more than any other interior in the game. By stand id (params & 0xFF) -> register (0xF8FF - id*0x100) -> position: 0x0F -> 0xE9FF at (843, 900, -600); 0x11 -> 0xE7FF at (548, 900, -739); 0x12 -> 0xE6FF at (-244, 0, 1591); 0x13 -> 0xE5FF at (239, 0, 1591); 0x1B -> 0xDDFF at (-698, 900, -650); 0x1E -> 0xDAFF at (-183, 156, 128); 0x1F -> 0xD9FF at (167, 156, 128); 0x20 -> 0xD8FF at (-452, 0, 493); 0x21 -> 0xD7FF at (442, 0, 502); 0x22 -> 0xD6FF at (-37, 977, -395); 0x23 -> 0xD5FF at (698, 900, -667). Same mechanic as the Chu Jelly shop's pair: gated on the Delivery Bag, offered with the item button, ordered as DAI_ITEM, and the chosen decoration's dItemNo is written into that stand's register when the event ends."
+   },
+   "event": "DAI_ITEM",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [
+    "0xE9FF",
+    "0xE7FF",
+    "0xE6FF",
+    "0xE5FF",
+    "0xDDFF",
+    "0xDAFF",
+    "0xD9FF",
+    "0xD8FF",
+    "0xD7FF",
+    "0xD6FF",
+    "0xD5FF"
+   ],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "src/d/actor/d_a_dai.cpp:96-116",
+    "src/d/actor/d_a_dai.cpp:178-210",
+    "src/d/actor/d_a_dai.cpp:285-330",
+    "src/d/d_com_static.cpp:198-230",
+    "out/rip/GZLE01/stages/Orichh/Orichh_report.json:actors"
+   ],
+   "notes": "daDai_c also keeps two static counters, mNowDaizaNum (stands seen) and mNowItemNum (stands occupied), incremented on create and read back through getMaxDaiza / getDaizaSetItemNum (src/d/d_com_static.cpp:196-250). d_a_npc_people uses them, so how decorated the room is feeds back into what Windfall's townsfolk say. The eleven stands here are the largest single cluster of that system."
+  },
+  {
+   "id": "house_orichh_chest",
+   "stage": "Orichh",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "chest",
+    "detail": "A takara2 chest at (651, 156, 280), params 0xFF000180, rot (0, -16384, 1279): item = 1279 >> 8 = 0x04 = dItemNo_RED_RUPEE_e, tboxNo = (params >> 7) & 0x1F = 3, swNo 0, funcType 0 (NORMAL). Remembered with dComIfGs_onTbox(3) for this stage."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": "0x04 (dItemNo_RED_RUPEE_e)",
+   "confidence": "high",
+   "sources": [
+    "include/d/actor/d_a_tbox.h:35-37",
+    "src/d/actor/d_a_tbox.cpp:326,864",
+    "out/rip/GZLE01/stages/Orichh/Orichh_report.json:actors"
+   ],
+   "notes": "Already mentioned in passing in ww_story_windfall.json's wf_auction notes; recorded properly here with its tboxNo."
+  },
+  {
+   "id": "house_ebesso_is_empty",
+   "stage": "Ebesso",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "EMPTY / UNUSED. Ebesso has ZERO placed actors, zero tag volumes, no EVNT table and no SCLS exits. Its one PLYR spawn (room 0, id 0 at (-700, 150, 2050), params 0xFFFF0000) plays nothing. No stage in the rip exits to it and the string \"Ebesso\" occurs nowhere in src/ or include/ - not even in the audio scene table src/JAZelAudio/JAIZelScene.cpp, which does list its sibling Abesso at line 368. 'Besso' is villa/cabana, so Ebesso is a second cabana that was never populated."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Ebesso/Ebesso_report.json",
+    "src/JAZelAudio/JAIZelScene.cpp:368",
+    "tools/ww_story_mine.py Ebesso"
+   ],
+   "notes": "The giveaway is its event_list.dat: 26 scripts, of which nine are StartCamera, Ji1_linkmove, Ji1_Speak, Ji1_StartSpeak, Ji1_BadSpeak, Ji1_EndSpeak, Ji1_kaiten, Ji1_kaiten_exp and ANGRY - Orca's sword-lesson scripts, copied wholesale from Orca's house and never replaced. Nothing here can be ordered, because nothing places an actor to order it."
+  },
+  {
+   "id": "house_tincle_is_empty",
+   "stage": "tincle",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "EMPTY / UNUSED, and effectively the same file as Ebesso. Zero placed actors, zero tags, no EVNT table, no exits, one PLYR spawn at (7, 0, 129) params 0xFFFF0000 that plays nothing. No exit anywhere targets it and \"tincle\" does not appear in src/, include/ or the audio scene table. Its event_list.dat is Ebesso's minus the ANGRY entry: 25 scripts, eight of them Orca's StartCamera / Ji1_* template."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/tincle/tincle_report.json",
+    "out/rip/GZLE01/godot/events/tincle.json",
+    "tools/ww_story_mine.py tincle"
+   ],
+   "notes": "Despite the name, this is not Tingle's island as shipped - Tingle's Island is a sea room, and Tingle's cell is in the Windfall jail. This stage is an empty shell that never got past the copy-the-template stage. Nothing about Tingle can be mined from it."
+  },
+  {
+   "id": "house_mukao_is_empty",
+   "stage": "Mukao",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "EMPTY / UNUSED. Zero placed actors, zero tags, no EVNT table, no exits, one PLYR spawn at (-194, 69, 1900) params 0xFFFF0000 that plays nothing. No exit anywhere targets it; \"Mukao\" appears nowhere in src/, include/ or the audio scene table. Its 71 event scripts are the complete standard boilerplate set (barrel2_brk, DEFAULT_*, KNOB_*, SHUTTER_*, TACT_WINDOW*, TIMEWARP, MapToolCamera ...) with not one stage-specific name among them - tools/ww_story_mine.py classes 0 of 71 as story-looking."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/Mukao/Mukao_report.json",
+    "out/rip/GZLE01/godot/events/Mukao.json",
+    "tools/ww_story_mine.py Mukao"
+   ],
+   "notes": "The 71-script boilerplate list is byte-identical to the one Abesso and morocam carry, so Mukao is a stage skeleton created from the standard template and left empty. What it was meant to be could not be determined - the name is not a recognisable Japanese word in this context and no other file references it."
+  },
+  {
+   "id": "house_kazan_is_empty",
+   "stage": "kazan",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "spawn",
+    "detail": "EMPTY / UNUSED. Zero placed actors, zero tags, no EVNT table, no exits, one PLYR spawn at (950, 50, -1300) params 0xFFFF0000. No exit targets it and \"kazan\" appears nowhere in src/, include/ or the audio scene table. Its event_list.dat is the SMALL boilerplate set - only 17 scripts, ending in DUMMY - which is the minimal skeleton, thinner even than Ebesso's 26."
+   },
+   "event": null,
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "high",
+   "sources": [
+    "out/rip/GZLE01/stages/kazan/kazan_report.json",
+    "out/rip/GZLE01/godot/events/kazan.json",
+    "tools/ww_story_mine.py kazan"
+   ],
+   "notes": "'kazan' (\u706b\u5c71) is Japanese for volcano, which suggests a Dragon Roost interior study, but nothing in the shipped data confirms that and the stage carries no geometry-specific actors to check it against. Recorded as unused."
+  },
+  {
+   "id": "house_morocam_is_a_moblin_camera_test",
+   "stage": "morocam",
+   "room": 0,
+   "layer": -1,
+   "trigger": {
+    "kind": "tag",
+    "detail": "A DEVELOPER TEST STAGE, not a house, and the only stage in this chapter with working TagEv wiring. Six TagEv volumes sit in a ring at y = 0, each with a kotubo pot marker at the identical position, and each orders a different EVNT entry: params 0x01FF03FF at (-1700, 0, -1200) -> index 1, switch 3; 0x02FF04FF at (-1700, 0, 600) -> index 2, switch 4; 0x03FF05FF at (-450, 0, 1600) -> index 3, switch 5; 0x04FF06FF at (950, 0, 1600) -> index 4, switch 6; 0x05FF07FF at (1750, 0, 600) -> index 5, switch 7; 0x05FF08FF at (1700, 0, -1200) -> index 5 again, switch 8. All six use type 0xFF, which is not a valid daTag_Event_c::Action_e value (the enum runs 0x0-0xB), another sign this is scratch data. PLYR spawn 0 sits at the origin and carries EVNT index 0 = moro_scam. Eight lwood trees are laid out in two rows as the set dressing."
+   },
+   "event": "moro_scam",
+   "stb": null,
+   "requires_bits": [],
+   "sets_bits": [],
+   "gives_item": null,
+   "confidence": "medium",
+   "sources": [
+    "out/rip/GZLE01/stages/morocam/morocam_report.json:tags,spawns,actors,event_table",
+    "out/rip/GZLE01/godot/events/morocam.json",
+    "src/d/actor/d_a_tag_event.cpp:18-45",
+    "tools/ww_story_mine.py morocam"
+   ],
+   "notes": "TOOL BUG, flagged rather than papered over: the ripper mis-reads morocam's EVNT table. It returns ['moro_scam', '_warp', 'h', '', '\\ufffd', '_TestM'] - entry 0 is right and entries 1-5 are truncated reads at drifting offsets. The stage's event_list.dat gives exactly six stage-specific scripts in order - moro_scam, moro_warp, moro_high, moro_rcam, moro_proll, moro_proll2 - which matches the table's length, so indices 1-5 are almost certainly those five names, but the fragment '_TestM' printed for indices 4 and 5 corresponds to no script in the stage and is NOT explained. Confidence is medium for that reason. 'moro' is the Moblin (the actor mo2, as in majroom's moro_cam), so this is a camera-and-roll test rig for the Moblin: 'scam'/'rcam' cameras, 'warp', 'high', and two 'proll' (player roll) takes. \"morocam\" occurs nowhere in src/, include/ or the audio scene table, and no stage exits to it."
+  }
+ ]
+}
