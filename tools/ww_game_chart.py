@@ -215,6 +215,10 @@ def subsystems() -> list[tuple[str, str, str]]:
         ("Enemies", "partial",
          f"{len(solid)} fully mined, {len(thin)} stubbed in the decomp ({', '.join(thin)})"),
         ("Actor models", "ok", f"{len(models)} animated models with clips and head attachment"),
+        ("Particles", "partial",
+         "common.jpc parsed (193 effects, 96 textures through the existing BTI decoder) and"
+         " driven by Game.fx with the mix(env, prm, mask) TEV preset; enemy deaths use the real"
+         " SIBOUBAKUEN + SIBOUFLASH set. One bank of 58, no child emitters, no FLD1 fields yet"),
         ("Cel shading", "partial",
          "the game's own toon.bti ramp (256x8 I4, flat to 119, rise to 137, flat after) drives"
          " a shader that reproduces WW's TEV recipe albedo * mix(C0, K0, ramp), with C0/K0"
@@ -227,8 +231,10 @@ def subsystems() -> list[tuple[str, str, str]]:
          f"{len(ruled)} villagers with story-conditional rules, chosen at talk time"),
         ("Music", "partial",
          f"{songs} stage songs with vibrato, per-track fx send and the pitch oscillator mined"
-         " from JAudio; the scene-level reverb amount is still a chosen constant, and no sound"
-         " effects at all (ww_sound_effects.json maps the banks and the 28 footstep surfaces)"),
+         " from JAudio; footsteps play the real Footnote bank waves for the 28 ground materials"
+         " (the collision is split by sound_id so the ray hit names the surface). Every other"
+         " effect (sword, items, voices) is still silent: seStart is a stub, so their"
+         " id -> bank/program mapping is not recoverable from source"),
         ("Sailing", "partial",
          "boat physics, sail, wind, wave_max from the real MULT values, and RTBL room streaming:"
          " the game's own table keeps exactly {sea floor, one island} resident, so the sea"
@@ -253,7 +259,7 @@ def mermaid_systems(rows: list[tuple[str, str, str]]) -> str:
         "World": ["Stages", "Doors", "Day / night", "Sailing"],
         "Link": ["Player movement", "Items (X)"],
         "Actors": ["Enemies", "Actor models", "NPC dialogue"],
-        "Presentation": ["Cutscenes (.stb)", "Music", "Cel shading"],
+        "Presentation": ["Cutscenes (.stb)", "Music", "Cel shading", "Particles"],
         "Progress": ["Events (event_list)", "Save / story bits", "Dungeons"],
     }
     status = {name: st for name, st, _ in rows}

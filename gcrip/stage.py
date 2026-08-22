@@ -631,7 +631,24 @@ def _build_collision(disc, stage_name, room_nos, out_dir, offset) -> dict:
         except (ValueError, IndexError) as e:
             stats[f"error_room{room_no}"] = str(e)
             continue
-        for surface in ("solid", "water", "lava", "poison"):
+        # solid ground is split by footstep material as well as by surface class, so the
+        # collider Link stands on names its sound_id (Room3_solid_s13 = stone) and the
+        # player can pick the right footstep wave straight off the ray hit
+        solid_mask = d.surface_mask("solid") & ((d.tri_pass & dzb_mod.PASS_LINK) == 0)
+        snd = d.tri_sound
+        for m in sorted({int(v) for v in snd[solid_mask]}):
+            sv, st_ = d.mesh_by(solid_mask & (snd == m))
+            if len(st_) == 0:
+                continue
+            col.add_mesh(
+                f"Room{room_no}_solid_s{m}",
+                sv,
+                st_,
+                translation=(float(-offset[0]), 0.0, float(-offset[2])),
+                extras={"gcrip_surface": "solid", "gcrip_sound": m},
+            )
+            stats["solid"] += len(st_)
+        for surface in ("water", "lava", "poison"):
             verts, tris = d.mesh(surface)
             if not len(tris):
                 continue

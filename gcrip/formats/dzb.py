@@ -197,6 +197,11 @@ class Dzb:
     def tri_attribute(self) -> np.ndarray:
         return self._prop_array("attribute_code")
 
+    @property
+    def tri_sound(self) -> np.ndarray:
+        # inf0 bits 8-12: dBgS::GetMtrlSndId, the footstep material (0..27 on the retail disc)
+        return self._prop_array("sound_id")
+
     def _world_matrices(self) -> list[np.ndarray]:
         worlds: list[np.ndarray | None] = [None] * len(self.groups)
 

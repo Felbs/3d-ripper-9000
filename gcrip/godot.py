@@ -540,6 +540,7 @@ func _lockon_tick() -> void:
     var d := _to_sph(cam_eye - cam_center)
     # center: between Link and the target, height eased with a ground/air cushion
     lock_cush += ((0.28 if is_on_floor() else 1.0) - lock_cush) * 0.2
+    _footstep_tick()
     var h_tgt := attn.y + lerpf(-22.5, 5.0, t)
     lock_base_y += lock_cush * (h_tgt - lock_base_y)
     var a := minf(absf(wrapf(d.z + PI - ts.z, -PI, PI)), absf(ts.y * 1.3))
@@ -688,6 +689,33 @@ func _camera_tick() -> void:
 func cam_yaw_angle() -> float:
     var f := cam_center - cam_eye
     return atan2(f.x, f.z)
+
+# footsteps: walk.bck fires FT_WALK at frames 3 and 19 (ww_sound_effects.json, read off the
+# disc) - one per foot.  The material comes from the collider under Link.
+const FOOTFALL_FRAMES := [3.0, 19.0]
+var _foot_last_frame := -1.0
+var _foot_side := 0
+
+func _footstep_tick() -> void:
+    if anim == null or not is_on_floor():
+        _foot_last_frame = -1.0
+        return
+    if current_clip != "walk" and current_clip != "dash":
+        _foot_last_frame = -1.0
+        return
+    var frame := anim.current_animation_position * 30.0
+    if _foot_last_frame >= 0.0:
+        for f in FOOTFALL_FRAMES:
+            var crossed: bool = (_foot_last_frame < f and frame >= f) \
+                or (frame < _foot_last_frame and frame >= f)   # looped
+            if crossed:
+                var m := Game.ground_material(global_position)
+                if m < 0:
+                    m = 13          # stone, the most walked surface on the disc
+                Game.play_sfx("foot_%d_%d" % [m, _foot_side], global_position,
+                    -6.0 if current_clip == "walk" else -3.0)
+                _foot_side = 1 - _foot_side
+    _foot_last_frame = frame
 
 func play_clip(name: String, blend := ANIM_BLEND, rate := 1.0) -> void:
     if anim == null:
@@ -5755,6 +5783,155 @@ var toon_ramp: Texture2D = null
 var toon_on := true
 var _toon_cache: Dictionary = {}     # source material -> the ShaderMaterial built from it
 
+# ---- particles (JPA) -------------------------------------------------------------------
+var _fx_defs: Dictionary = {}
+var _fx_mats: Dictionary = {}
+var fx_on := true
+
+func fx_def(id: int) -> Dictionary:
+    if _fx_defs.has(id):
+        return _fx_defs[id]
+    var path := "res://fx/%04x.json" % id
+    var d := {}
+    var f := FileAccess.open(path, FileAccess.READ)
+    if f:
+        var parsed = JSON.parse_string(f.get_as_text())
+        if parsed is Dictionary:
+            d = parsed
+    _fx_defs[id] = d
+    return d
+
+func _fx_material(d: Dictionary) -> ShaderMaterial:
+    var key := str(d.get("id", 0))
+    if _fx_mats.has(key):
+        return _fx_mats[key]
+    var m := ShaderMaterial.new()
+    if ResourceLoader.exists("res://fx.gdshader"):
+        m.shader = load("res://fx.gdshader")
+    var tp := "res://fx/tex/%s.png" % str(d.get("texture", ""))
+    if ResourceLoader.exists(tp):
+        m.set_shader_parameter("mask_tex", load(tp))
+    var prm: Array = d.get("prm", [255, 255, 255, 255])
+    var env: Array = d.get("env", [0, 0, 0, 255])
+    m.set_shader_parameter("prm_color", Color(prm[0] / 255.0, prm[1] / 255.0, prm[2] / 255.0, prm[3] / 255.0))
+    m.set_shader_parameter("env_color", Color(env[0] / 255.0, env[1] / 255.0, env[2] / 255.0, env[3] / 255.0))
+    m.set_shader_parameter("additive", bool(d.get("additive", false)))
+    _fx_mats[key] = m
+    return m
+
+func fx(id: int, at: Vector3, scale := 1.0) -> bool:
+    # dComIfGp_particle_set, for a one-shot effect: build the emitter from the bank's own
+    # numbers.  Every JPA time is 30 fps frames; base size is already in world units.
+    if not fx_on:
+        return false
+    var d := fx_def(id)
+    if d.is_empty():
+        return false
+    var cs := get_tree().current_scene
+    if cs == null:
+        return false
+    var life := maxf(float(d.get("life_frames", 30)) / 30.0, 0.05)
+    var span := maxf(float(d.get("max_frames", 1)), 1.0) / 30.0
+    var gp := GPUParticles3D.new()
+    var n := int(ceil(float(d.get("rate", 1.0)) * maxf(float(d.get("max_frames", 1)), 1.0)))
+    gp.amount = clampi(n, 1, 200)
+    gp.lifetime = life
+    gp.one_shot = true
+    gp.explosiveness = 1.0 if span <= life * 0.5 else 0.3
+    gp.local_coords = false
+    var pm := ParticleProcessMaterial.new()
+    var sz: Array = d.get("base_size", [25.0, 25.0])
+    var vol := float(d.get("volume_size", 0)) * scale
+    pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_SPHERE
+    pm.emission_sphere_radius = maxf(vol, 1.0)
+    var v0 := (float(d.get("vel_omni", 0.0)) + float(d.get("vel_axis", 0.0))) * 30.0 * scale
+    var vr := float(d.get("vel_rndm", 0.0)) * 30.0 * scale
+    pm.initial_velocity_min = maxf(v0 - vr, 0.0)
+    pm.initial_velocity_max = v0 + vr
+    pm.spread = clampf(float(d.get("spread", 1.0)) * 180.0, 0.0, 180.0)
+    pm.direction = Vector3.UP
+    pm.gravity = Vector3(0, -300.0 if bool(d.get("fields", false)) else 0.0, 0)
+    var sc: Array = d.get("scale", [0.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+    pm.scale_min = maxf(float(sc[2]), 0.05) * scale
+    pm.scale_max = maxf(float(sc[2]), 0.05) * scale
+    var curve := Curve.new()
+    var al: Array = d.get("alpha", [0.0, 1.0, 0.0, 1.0, 0.0])
+    curve.add_point(Vector2(0.0, float(al[2])))
+    curve.add_point(Vector2(clampf(float(al[0]), 0.0, 1.0), float(al[3])))
+    curve.add_point(Vector2(clampf(float(al[1]), 0.0, 1.0), float(al[3])))
+    curve.add_point(Vector2(1.0, float(al[4])))
+    var ct := CurveTexture.new()
+    ct.curve = curve
+    pm.alpha_curve = ct
+    gp.process_material = pm
+    var quad := QuadMesh.new()
+    quad.size = Vector2(float(sz[0]), float(sz[1])) * scale
+    quad.material = _fx_material(d)
+    gp.draw_pass_1 = quad
+    cs.add_child(gp)
+    gp.global_position = at
+    gp.emitting = true
+    gp.finished.connect(gp.queue_free)
+    return true
+
+# ---- sound effects --------------------------------------------------------------------
+var _sfx_pool: Array = []
+var _sfx_cache: Dictionary = {}
+var sfx_on := true
+
+func sfx_stream(name: String) -> AudioStream:
+    if _sfx_cache.has(name):
+        return _sfx_cache[name]
+    var path := "res://sfx/%s.wav" % name
+    var st: AudioStream = load(path) if ResourceLoader.exists(path) else null
+    _sfx_cache[name] = st
+    return st
+
+func play_sfx(name: String, at: Vector3, volume_db := 0.0) -> bool:
+    if not sfx_on:
+        return false
+    var st := sfx_stream(name)
+    if st == null:
+        return false
+    var cs := get_tree().current_scene
+    if cs == null:
+        return false
+    var pl: AudioStreamPlayer3D = null
+    for p in _sfx_pool:
+        if is_instance_valid(p) and not p.playing:
+            pl = p
+            break
+    if pl == null:
+        if _sfx_pool.size() >= 12:
+            return false
+        pl = AudioStreamPlayer3D.new()
+        pl.max_distance = 3000.0
+        pl.unit_size = 300.0
+        _sfx_pool.append(pl)
+    if pl.get_parent() != cs:
+        if pl.get_parent():
+            pl.get_parent().remove_child(pl)
+        cs.add_child(pl)
+    pl.global_position = at
+    pl.stream = st
+    pl.volume_db = volume_db
+    pl.play()
+    return true
+
+func ground_material(p: Vector3) -> int:
+    # the footstep material under a point: the solid collider is named Room{n}_solid_s{m}
+    var under := ground_under(p)
+    var i := under.find("_solid_s")
+    if i < 0:
+        return -1
+    var rest := under.substr(i + 8)
+    var digits := ""
+    for ch in rest:
+        if ch < "0" or ch > "9":
+            break
+        digits += ch
+    return int(digits) if digits != "" else -1
+
 func toon_ready() -> bool:
     if not toon_on:
         return false
@@ -7958,6 +8135,33 @@ func _physics_process(_delta: float) -> void:
     Game.run_event(ev)
 """
 
+_FX_SHADER = """shader_type spatial;
+render_mode unshaded, blend_mix, depth_draw_never, cull_disabled, billboard_keep_scale, particle_trails;
+// gcrip: the JPA TEV preset that 634 of 1091 Wind Waker effects use -
+//   out = mix(envColor, prmColor, texture)
+// The particle textures are greyscale MASKS (1785 of 1874); the mask is a mix factor between
+// two authored colours, not a tint.  Alpha comes from the texture's own alpha times the
+// per-particle envelope the CPU side feeds through COLOR.a.
+
+uniform sampler2D mask_tex : source_color, filter_linear;
+uniform vec4 prm_color : source_color = vec4(1.0);
+uniform vec4 env_color : source_color = vec4(0.0, 0.0, 0.0, 1.0);
+uniform bool additive = false;
+
+void fragment() {
+    vec4 t = texture(mask_tex, UV);
+    vec3 rgb = mix(env_color.rgb, prm_color.rgb, t.r);
+    float a = t.a * COLOR.a * prm_color.a;
+    if (additive) {
+        ALBEDO = rgb * a;
+        ALPHA = a;
+    } else {
+        ALBEDO = rgb;
+        ALPHA = a;
+    }
+}
+"""
+
 _TOON_SHADER = """shader_type spatial;
 render_mode unshaded, cull_back, depth_draw_opaque;
 // gcrip: Wind Waker's cel shading, as the game actually builds it.
@@ -9263,7 +9467,7 @@ func _physics_process(_delta: float) -> void:
             queue_free()
 """
 
-_ACTOR_ENEMY_GD = 'extends CharacterBody3D\n# gcrip: data-driven enemy (melee / flying / ranged) for the actors that are not worth their\n# own script yet. Constants come from enemies.json (data/ww_enemies_*.json mined from the\n# decomp); anything missing falls back to the Bokoblin-like defaults below. Per-frame units.\n\nconst DEFAULTS := {\n    "hp": 3, "radius": 40.0, "height": 100.0, "notice": 1000.0, "lose": 1800.0,\n    "walk": 3.0, "run": 10.0, "gravity": -3.0, "terminal": -50.0, "turn_s16": 0x600,\n    "attack_range": 110.0, "attack_frames": 30, "hit_frame": 14, "damage": 2,\n    "knockback": 8.0, "flinch_frames": 12, "flying": false, "hover": 250.0, "fly_speed": 8.0,\n    "ranged": null, "clips": {},\n}\n\nconst RANGED_DEFAULTS := {"speed": 40.0, "range": 1200.0, "cooldown": 90, "damage": 1}\n\nenum Act { STAND, APPROACH, ATTACK, DAMAGE, DEAD, RETURN }\nvar room := 0        # which room placed it, so a room-clear can be counted\nvar dead := false    # true the instant hp runs out, before the death animation ends\nvar act: int = Act.STAND\nvar actor := ""\nvar cfg: Dictionary = {}\nvar hp := 3\nvar facing := 0.0\nvar speed := 0.0\nvar timer := 0\nvar cooldown := 0\nvar hit_done := false\nvar mesh: Node3D = null\nvar anim: AnimationPlayer = null\nvar home := Vector3.ZERO\nvar bob := 0.0\nvar dive_from := Vector3.ZERO\nvar dive_to := Vector3.ZERO\nvar clips: Dictionary = {}\n\nfunc setup(actor_name: String, _p: int, mesh_node: Node3D, rot_y_deg: float) -> void:\n    actor = actor_name\n    cfg = DEFAULTS.duplicate(true)\n    var table: Dictionary = Game.enemies.get(actor, {})\n    for k in table:\n        if table[k] != null:\n            cfg[k] = table[k]\n    # a few enemies are mined "low confidence" because their decomp bodies are stubs: their\n    # ranged block exists but its numbers are null, and float(null) throws every frame\n    if cfg.get("ranged") is Dictionary:\n        var r: Dictionary = (cfg["ranged"] as Dictionary).duplicate()\n        for k2 in RANGED_DEFAULTS:\n            if r.get(k2) == null:\n                r[k2] = RANGED_DEFAULTS[k2]\n        cfg["ranged"] = r\n    mesh = mesh_node\n    home = global_position\n    facing = deg_to_rad(rot_y_deg)\n    hp = int(cfg["hp"])\n    collision_layer = 1 | 8\n    collision_mask = 1\n    var shape := CollisionShape3D.new()\n    var cyl := CylinderShape3D.new()\n    cyl.radius = float(cfg["radius"])\n    cyl.height = float(cfg["height"])\n    shape.shape = cyl\n    shape.position.y = float(cfg["height"]) / 2.0\n    add_child(shape)\n    add_to_group("enemy")\n    if bool(cfg["flying"]):\n        motion_mode = CharacterBody3D.MOTION_MODE_FLOATING\n    anim = mesh.find_child("AnimationPlayer", true, false) if mesh else null\n    if anim:\n        var wanted: Dictionary = cfg.get("clips", {})\n        var names := anim.get_animation_list()\n        for key in ["wait", "walk", "run", "notice", "attack", "damage", "dead", "fly"]:\n            var want := str(wanted.get(key, ""))\n            if want != "" and anim.has_animation(want):\n                clips[key] = want\n        for n in names:\n            var l := n.to_lower()\n            for key in ["wait", "walk", "run", "attack", "damage", "dead", "fly", "hakken"]:\n                var k2: String = "notice" if key == "hakken" else key\n                if key in l and not clips.has(k2):\n                    clips[k2] = n\n        for key in ["wait", "walk", "run", "fly"]:\n            if clips.has(key):\n                anim.get_animation(clips[key]).loop_mode = Animation.LOOP_LINEAR\n        _play("fly" if bool(cfg["flying"]) and clips.has("fly") else "wait")\n\nfunc _play(key: String, blend := 0.2) -> void:\n    if anim and clips.has(key) and anim.current_animation != clips[key]:\n        anim.play(clips[key], blend)\n\nfunc take_hit(damage: int, from: Vector3) -> void:\n    if act == Act.DEAD:\n        return\n    hp -= damage\n    var away := global_position - from\n    away.y = 0.0\n    if away.length() > 0.01:\n        facing = atan2(-away.x, -away.z)\n    if hp <= 0:\n        act = Act.DEAD\n        dead = true\n        timer = 40\n        _play("dead", 0.1)\n        Game.burst(global_position + Vector3(0, float(cfg["height"]) * 0.5, 0), Color(0.502, 0.125, 0.392))\n        # a dungeon boss writes a per-stage save field rather than an event bit, so the\n        # story is told which of the two this death was\n        Game.story_enemy_defeated(actor, bool(cfg.get("boss", false)))\n        Game.story_room_cleared(room)\n        return\n    act = Act.DAMAGE\n    timer = int(cfg["flinch_frames"])\n    speed = -float(cfg["knockback"])\n    _play("damage", 0.05)\n\nfunc _turn_to(t: float) -> void:\n    var max_step := int(cfg["turn_s16"]) * PI / 32768.0\n    facing += clampf(wrapf(t - facing, -PI, PI), -max_step, max_step)\n\nfunc _physics_process(_delta: float) -> void:\n    var link := Game.player()\n    var to_link := Vector3.ZERO\n    var dist := 1.0e9\n    if link:\n        to_link = link.global_position - global_position\n        to_link.y = 0.0\n        dist = to_link.length()\n    var flying := bool(cfg["flying"])\n    var ranged = cfg.get("ranged")\n    var has_ranged: bool = ranged is Dictionary\n    if cooldown > 0:\n        cooldown -= 1\n    match act:\n        Act.STAND:\n            speed = 0.0\n            _play("fly" if flying and clips.has("fly") else "wait")\n            if link and dist < float(cfg["notice"]) and Game.line_of_sight(global_position + Vector3(0, 80, 0), link.global_position + Vector3(0, 80, 0)):\n                act = Act.APPROACH\n                _play("notice" if clips.has("notice") else ("fly" if flying else "run"), 0.1)\n        Act.APPROACH:\n            _turn_to(atan2(to_link.x, to_link.z))\n            if has_ranged and dist < float(ranged.get("range", 1200.0)) and dist > float(cfg["attack_range"]):\n                speed = 0.0\n                _play("wait")\n                if cooldown <= 0 and link:\n                    _shoot(ranged, link)\n            else:\n                speed = float(cfg["fly_speed"] if flying else cfg["run"])\n                _play("fly" if flying and clips.has("fly") else "run")\n            if dist < float(cfg["attack_range"]) and link:\n                act = Act.ATTACK\n                timer = int(cfg["attack_frames"])\n                hit_done = false\n                speed = 0.0\n                dive_from = global_position\n                dive_to = link.global_position + Vector3(0, 60.0, 0)\n                _play("attack", 0.1)\n            elif dist > float(cfg["lose"]):\n                act = Act.RETURN\n        Act.ATTACK:\n            timer -= 1\n            var n := int(cfg["attack_frames"])\n            if flying:\n                # swoop: dive at Link\'s body and climb back out over the attack\'s frames\n                var k := 1.0 - float(timer) / maxf(float(n), 1.0)\n                var arc := sin(k * PI)\n                global_position = dive_from.lerp(dive_to, minf(k * 2.0, 1.0)) + Vector3(0, (1.0 - arc) * 0.0, 0)\n                if k > 0.5:\n                    global_position = dive_to.lerp(dive_from + Vector3(0, float(cfg["hover"]), 0), (k - 0.5) * 2.0)\n            if timer == n - int(cfg["hit_frame"]) and not hit_done and link and link.global_position.distance_to(global_position) < float(cfg["attack_range"]) + 40.0:\n                hit_done = true\n                link.call("take_damage", int(cfg["damage"]), global_position)\n            if timer <= 0:\n                act = Act.APPROACH\n        Act.DAMAGE:\n            timer -= 1\n            speed = minf(speed + 1.0, 0.0)\n            if timer <= 0:\n                act = Act.APPROACH\n        Act.RETURN:\n            var to_home := home - global_position\n            to_home.y = 0.0\n            _turn_to(atan2(to_home.x, to_home.z))\n            speed = float(cfg["walk"] if not flying else cfg["fly_speed"])\n            _play("walk" if clips.has("walk") else "run")\n            if to_home.length() < 40.0:\n                act = Act.STAND\n            elif link and dist < float(cfg["notice"]) * 0.8:\n                act = Act.APPROACH\n        Act.DEAD:\n            timer -= 1\n            if mesh:\n                mesh.scale = mesh.scale * 0.92\n            if timer <= 0:\n                queue_free()\n            return\n    if flying:\n        if act != Act.ATTACK:\n            bob += 0.12\n            var target_y := Game.ground_height(global_position) + float(cfg["hover"]) + sin(bob) * 15.0\n            var dy := clampf(target_y - global_position.y, -6.0, 6.0)\n            velocity = (Vector3(sin(facing) * speed, dy, cos(facing) * speed)) * 30.0\n            move_and_slide()\n    else:\n        var vy := velocity.y / 30.0 + float(cfg["gravity"])\n        vy = maxf(vy, float(cfg["terminal"]))\n        velocity = Vector3(sin(facing) * speed, vy, cos(facing) * speed) * 30.0\n        move_and_slide()\n        if is_on_floor():\n            velocity.y = 0.0\n    if mesh:\n        mesh.rotation.y = facing\n\nfunc _shoot(r: Dictionary, link: Node3D) -> void:\n    cooldown = int(r.get("cooldown", 90))\n    var shot := Area3D.new()\n    shot.set_script(load("res://items/enemy_shot.gd"))\n    get_tree().current_scene.add_child(shot)\n    var from := global_position + Vector3(0, float(cfg["height"]) * 0.6, 0)\n    var aim := (link.global_position + Vector3(0, 80.0, 0)) - from\n    shot.launch(from, aim.normalized(), float(r.get("speed", 30.0)), float(r.get("range", 1500.0)), int(r.get("damage", 2)))\n    _play("attack", 0.1)\n'
+_ACTOR_ENEMY_GD = 'extends CharacterBody3D\n# gcrip: data-driven enemy (melee / flying / ranged) for the actors that are not worth their\n# own script yet. Constants come from enemies.json (data/ww_enemies_*.json mined from the\n# decomp); anything missing falls back to the Bokoblin-like defaults below. Per-frame units.\n\nconst DEFAULTS := {\n    "hp": 3, "radius": 40.0, "height": 100.0, "notice": 1000.0, "lose": 1800.0,\n    "walk": 3.0, "run": 10.0, "gravity": -3.0, "terminal": -50.0, "turn_s16": 0x600,\n    "attack_range": 110.0, "attack_frames": 30, "hit_frame": 14, "damage": 2,\n    "knockback": 8.0, "flinch_frames": 12, "flying": false, "hover": 250.0, "fly_speed": 8.0,\n    "ranged": null, "clips": {},\n}\n\nconst RANGED_DEFAULTS := {"speed": 40.0, "range": 1200.0, "cooldown": 90, "damage": 1}\n\nenum Act { STAND, APPROACH, ATTACK, DAMAGE, DEAD, RETURN }\nvar room := 0        # which room placed it, so a room-clear can be counted\nvar dead := false    # true the instant hp runs out, before the death animation ends\nvar act: int = Act.STAND\nvar actor := ""\nvar cfg: Dictionary = {}\nvar hp := 3\nvar facing := 0.0\nvar speed := 0.0\nvar timer := 0\nvar cooldown := 0\nvar hit_done := false\nvar mesh: Node3D = null\nvar anim: AnimationPlayer = null\nvar home := Vector3.ZERO\nvar bob := 0.0\nvar dive_from := Vector3.ZERO\nvar dive_to := Vector3.ZERO\nvar clips: Dictionary = {}\n\nfunc setup(actor_name: String, _p: int, mesh_node: Node3D, rot_y_deg: float) -> void:\n    actor = actor_name\n    cfg = DEFAULTS.duplicate(true)\n    var table: Dictionary = Game.enemies.get(actor, {})\n    for k in table:\n        if table[k] != null:\n            cfg[k] = table[k]\n    # a few enemies are mined "low confidence" because their decomp bodies are stubs: their\n    # ranged block exists but its numbers are null, and float(null) throws every frame\n    if cfg.get("ranged") is Dictionary:\n        var r: Dictionary = (cfg["ranged"] as Dictionary).duplicate()\n        for k2 in RANGED_DEFAULTS:\n            if r.get(k2) == null:\n                r[k2] = RANGED_DEFAULTS[k2]\n        cfg["ranged"] = r\n    mesh = mesh_node\n    home = global_position\n    facing = deg_to_rad(rot_y_deg)\n    hp = int(cfg["hp"])\n    collision_layer = 1 | 8\n    collision_mask = 1\n    var shape := CollisionShape3D.new()\n    var cyl := CylinderShape3D.new()\n    cyl.radius = float(cfg["radius"])\n    cyl.height = float(cfg["height"])\n    shape.shape = cyl\n    shape.position.y = float(cfg["height"]) / 2.0\n    add_child(shape)\n    add_to_group("enemy")\n    if bool(cfg["flying"]):\n        motion_mode = CharacterBody3D.MOTION_MODE_FLOATING\n    anim = mesh.find_child("AnimationPlayer", true, false) if mesh else null\n    if anim:\n        var wanted: Dictionary = cfg.get("clips", {})\n        var names := anim.get_animation_list()\n        for key in ["wait", "walk", "run", "notice", "attack", "damage", "dead", "fly"]:\n            var want := str(wanted.get(key, ""))\n            if want != "" and anim.has_animation(want):\n                clips[key] = want\n        for n in names:\n            var l := n.to_lower()\n            for key in ["wait", "walk", "run", "attack", "damage", "dead", "fly", "hakken"]:\n                var k2: String = "notice" if key == "hakken" else key\n                if key in l and not clips.has(k2):\n                    clips[k2] = n\n        for key in ["wait", "walk", "run", "fly"]:\n            if clips.has(key):\n                anim.get_animation(clips[key]).loop_mode = Animation.LOOP_LINEAR\n        _play("fly" if bool(cfg["flying"]) and clips.has("fly") else "wait")\n\nfunc _play(key: String, blend := 0.2) -> void:\n    if anim and clips.has(key) and anim.current_animation != clips[key]:\n        anim.play(clips[key], blend)\n\nfunc take_hit(damage: int, from: Vector3) -> void:\n    if act == Act.DEAD:\n        return\n    hp -= damage\n    var away := global_position - from\n    away.y = 0.0\n    if away.length() > 0.01:\n        facing = atan2(-away.x, -away.z)\n    if hp <= 0:\n        act = Act.DEAD\n        dead = true\n        timer = 40\n        _play("dead", 0.1)\n        # the real death set: SIBOUBAKUEN 0x0013 (the big smoke) + SIBOUFLASH 0x0016; the\n        # burst stays as the fallback when no bank is exported\n        var dp := global_position + Vector3(0, float(cfg["height"]) * 0.5, 0)\n        if not Game.fx(0x0013, dp):\n            Game.burst(dp, Color(0.502, 0.125, 0.392))\n        Game.fx(0x0016, dp)\n        # a dungeon boss writes a per-stage save field rather than an event bit, so the\n        # story is told which of the two this death was\n        Game.story_enemy_defeated(actor, bool(cfg.get("boss", false)))\n        Game.story_room_cleared(room)\n        return\n    act = Act.DAMAGE\n    timer = int(cfg["flinch_frames"])\n    speed = -float(cfg["knockback"])\n    _play("damage", 0.05)\n\nfunc _turn_to(t: float) -> void:\n    var max_step := int(cfg["turn_s16"]) * PI / 32768.0\n    facing += clampf(wrapf(t - facing, -PI, PI), -max_step, max_step)\n\nfunc _physics_process(_delta: float) -> void:\n    var link := Game.player()\n    var to_link := Vector3.ZERO\n    var dist := 1.0e9\n    if link:\n        to_link = link.global_position - global_position\n        to_link.y = 0.0\n        dist = to_link.length()\n    var flying := bool(cfg["flying"])\n    var ranged = cfg.get("ranged")\n    var has_ranged: bool = ranged is Dictionary\n    if cooldown > 0:\n        cooldown -= 1\n    match act:\n        Act.STAND:\n            speed = 0.0\n            _play("fly" if flying and clips.has("fly") else "wait")\n            if link and dist < float(cfg["notice"]) and Game.line_of_sight(global_position + Vector3(0, 80, 0), link.global_position + Vector3(0, 80, 0)):\n                act = Act.APPROACH\n                _play("notice" if clips.has("notice") else ("fly" if flying else "run"), 0.1)\n        Act.APPROACH:\n            _turn_to(atan2(to_link.x, to_link.z))\n            if has_ranged and dist < float(ranged.get("range", 1200.0)) and dist > float(cfg["attack_range"]):\n                speed = 0.0\n                _play("wait")\n                if cooldown <= 0 and link:\n                    _shoot(ranged, link)\n            else:\n                speed = float(cfg["fly_speed"] if flying else cfg["run"])\n                _play("fly" if flying and clips.has("fly") else "run")\n            if dist < float(cfg["attack_range"]) and link:\n                act = Act.ATTACK\n                timer = int(cfg["attack_frames"])\n                hit_done = false\n                speed = 0.0\n                dive_from = global_position\n                dive_to = link.global_position + Vector3(0, 60.0, 0)\n                _play("attack", 0.1)\n            elif dist > float(cfg["lose"]):\n                act = Act.RETURN\n        Act.ATTACK:\n            timer -= 1\n            var n := int(cfg["attack_frames"])\n            if flying:\n                # swoop: dive at Link\'s body and climb back out over the attack\'s frames\n                var k := 1.0 - float(timer) / maxf(float(n), 1.0)\n                var arc := sin(k * PI)\n                global_position = dive_from.lerp(dive_to, minf(k * 2.0, 1.0)) + Vector3(0, (1.0 - arc) * 0.0, 0)\n                if k > 0.5:\n                    global_position = dive_to.lerp(dive_from + Vector3(0, float(cfg["hover"]), 0), (k - 0.5) * 2.0)\n            if timer == n - int(cfg["hit_frame"]) and not hit_done and link and link.global_position.distance_to(global_position) < float(cfg["attack_range"]) + 40.0:\n                hit_done = true\n                link.call("take_damage", int(cfg["damage"]), global_position)\n            if timer <= 0:\n                act = Act.APPROACH\n        Act.DAMAGE:\n            timer -= 1\n            speed = minf(speed + 1.0, 0.0)\n            if timer <= 0:\n                act = Act.APPROACH\n        Act.RETURN:\n            var to_home := home - global_position\n            to_home.y = 0.0\n            _turn_to(atan2(to_home.x, to_home.z))\n            speed = float(cfg["walk"] if not flying else cfg["fly_speed"])\n            _play("walk" if clips.has("walk") else "run")\n            if to_home.length() < 40.0:\n                act = Act.STAND\n            elif link and dist < float(cfg["notice"]) * 0.8:\n                act = Act.APPROACH\n        Act.DEAD:\n            timer -= 1\n            if mesh:\n                mesh.scale = mesh.scale * 0.92\n            if timer <= 0:\n                queue_free()\n            return\n    if flying:\n        if act != Act.ATTACK:\n            bob += 0.12\n            var target_y := Game.ground_height(global_position) + float(cfg["hover"]) + sin(bob) * 15.0\n            var dy := clampf(target_y - global_position.y, -6.0, 6.0)\n            velocity = (Vector3(sin(facing) * speed, dy, cos(facing) * speed)) * 30.0\n            move_and_slide()\n    else:\n        var vy := velocity.y / 30.0 + float(cfg["gravity"])\n        vy = maxf(vy, float(cfg["terminal"]))\n        velocity = Vector3(sin(facing) * speed, vy, cos(facing) * speed) * 30.0\n        move_and_slide()\n        if is_on_floor():\n            velocity.y = 0.0\n    if mesh:\n        mesh.rotation.y = facing\n\nfunc _shoot(r: Dictionary, link: Node3D) -> void:\n    cooldown = int(r.get("cooldown", 90))\n    var shot := Area3D.new()\n    shot.set_script(load("res://items/enemy_shot.gd"))\n    get_tree().current_scene.add_child(shot)\n    var from := global_position + Vector3(0, float(cfg["height"]) * 0.6, 0)\n    var aim := (link.global_position + Vector3(0, 80.0, 0)) - from\n    shot.launch(from, aim.normalized(), float(r.get("speed", 30.0)), float(r.get("range", 1500.0)), int(r.get("damage", 2)))\n    _play("attack", 0.1)\n'
 
 _ENEMY_SHOT_GD = 'extends Area3D\n# gcrip: a simple enemy projectile (Octorok rock, Wizzrobe fire ball): straight flight, hurts\n# Link within 40 units, stops on the world.\n\nvar vel := Vector3.ZERO\nvar left := 0.0\nvar damage := 2\nvar mesh: MeshInstance3D = null\n\nfunc launch(from: Vector3, dir: Vector3, speed: float, range_units: float, dmg: int) -> void:\n    global_position = from\n    vel = dir * speed\n    left = range_units\n    damage = dmg\n    mesh = MeshInstance3D.new()\n    var sph := SphereMesh.new()\n    sph.radius = 14.0\n    sph.height = 28.0\n    mesh.mesh = sph\n    var mat := StandardMaterial3D.new()\n    mat.albedo_color = Color(0.9, 0.4, 0.1)\n    mat.emission_enabled = true\n    mat.emission = Color(1.0, 0.5, 0.1)\n    mesh.material_override = mat\n    add_child(mesh)\n\nfunc _physics_process(_delta: float) -> void:\n    var old := global_position\n    var next := old + vel\n    var space := get_world_3d().direct_space_state\n    var q := PhysicsRayQueryParameters3D.create(old, next, 1)\n    if space.intersect_ray(q):\n        queue_free()\n        return\n    global_position = next\n    left -= vel.length()\n    var link := Game.player()\n    if link and link.global_position.distance_to(global_position - Vector3(0, 60.0, 0)) < 45.0:\n        link.call("take_damage", damage, global_position)\n        queue_free()\n        return\n    if left <= 0.0:\n        queue_free()\n'
 
@@ -10180,6 +10384,136 @@ def _godot_glb(stage_gltf: Path, out_glb: Path, *, suffix_rooms: bool = True) ->
     return n_col
 
 
+def _write_particles(rip_dir: Path, out_dir: Path) -> None:
+    """fx/<id>.json + fx/tex/<name>.png for every effect in common.jpc."""
+    try:
+        from gcrip.formats import jpa
+        from gcrip.stage import _Disc, _find_iso
+
+        disc = _Disc(_find_iso(rip_dir, None))
+        try:
+            e = disc.entries.get("res/Particle/common.jpc")
+            if e is None:
+                print("  particles: common.jpc not on this disc")
+                return
+            bank = jpa.parse(disc.img.read(e.offset, e.size))
+        finally:
+            disc.close()
+        fx = out_dir / "fx"
+        tex_dir = fx / "tex"
+        tex_dir.mkdir(parents=True, exist_ok=True)
+        written_tex: set[str] = set()
+        for name, tex in bank.textures:
+            if name in written_tex:
+                continue
+            try:
+                img = tex.decode()
+                try:
+                    from PIL import Image
+
+                    Image.fromarray(img, "RGBA").save(tex_dir / f"{name}.png")
+                except ImportError:
+                    continue
+                written_tex.add(name)
+            except Exception:
+                continue
+        n = 0
+        for ef in bank.effects:
+            if ef.shape is None or ef.dynamics is None:
+                continue
+            ti = ef.texture_index
+            tname = bank.textures[ti][0] if ti is not None and ti < len(bank.textures) else ""
+            sh, dy, en = ef.shape, ef.dynamics, ef.envelope
+            rec = {
+                "id": ef.res_id,
+                "texture": tname,
+                "base_size": [sh.base_size[0] * 25.0, sh.base_size[1] * 25.0],
+                "additive": sh.additive,
+                "multiply": sh.multiply,
+                "prm": list(sh.prm_color),
+                "env": list(sh.env_color),
+                "life_frames": int(dy.life_time),
+                "max_frames": int(dy.max_frame),
+                "rate": float(dy.rate),
+                "volume_type": dy.volume_type,
+                "volume_size": int(dy.volume_size),
+                "vel_omni": float(dy.init_vel_omni),
+                "vel_axis": float(dy.init_vel_axis),
+                "vel_rndm": float(dy.init_vel_rndm),
+                "spread": float(dy.spread),
+                "children": ef.has_children,
+                "fields": ef.has_fields,
+            }
+            if en is not None:
+                rec["alpha"] = [en.alpha_in_timing, en.alpha_out_timing, en.alpha_in_value,
+                                en.alpha_base_value, en.alpha_out_value]
+                rec["scale"] = [en.scale_in_timing, en.scale_out_timing, en.scale_in_x,
+                                en.scale_out_x, en.scale_in_y, en.scale_out_y]
+            (fx / f"{ef.res_id:04x}.json").write_text(json.dumps(rec), encoding="utf-8")
+            n += 1
+        print(f"  particles: {n} effects, {len(written_tex)} textures -> fx/")
+    except Exception as exc:
+        print(f"  particles not written: {exc}")
+
+
+def _write_wav(path: Path, pcm, rate: int) -> None:
+    import struct
+    import wave
+
+    import numpy as np
+
+    data = np.asarray(pcm, dtype=np.int16).tobytes()
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(int(rate) if rate else 32000)
+        w.writeframes(data)
+    _ = struct
+
+
+def _write_footsteps(rip_dir: Path, out_dir: Path) -> None:
+    """sfx/foot_{material}_{foot}.wav for all 28 materials, from IBNK bank 131 program 0.
+
+    key = 12 + 2*m is one foot, 13 + 2*m the other (ww_sound_effects.json, confirmed by the
+    bank having exactly 56 key regions).  Decoded through the existing wsys decoder - no new
+    sample-format code.
+    """
+    sfx = out_dir / "sfx"
+    try:
+        from gcrip.music import JAudioBanks
+        from gcrip.stage import _Disc, _find_iso
+
+        disc = _Disc(_find_iso(rip_dir, None))
+        try:
+            banks = JAudioBanks(disc)
+            bank = banks.banks.get(131)
+            if bank is None:
+                return
+            prog = bank.program(0)
+            if prog is None or not hasattr(prog, "region"):
+                return
+            sfx.mkdir(parents=True, exist_ok=True)
+            written = 0
+            for m in range(28):
+                for foot in (0, 1):
+                    r = prog.region(12 + 2 * m + foot, 100)
+                    if r is None:
+                        continue
+                    found = banks.lookup(131, r.wave_id)
+                    if found is None:
+                        continue
+                    wave, pcm = found
+                    if len(pcm) == 0:
+                        continue
+                    _write_wav(sfx / f"foot_{m}_{foot}.wav", pcm, wave.rate)
+                    written += 1
+            print(f"  footsteps: {written} waves -> sfx/")
+        finally:
+            disc.close()
+    except Exception as exc:  # sound is a nicety; never fail an export over it
+        print(f"  footsteps not written: {exc}")
+
+
 def _write_toon_ramp(rip_dir: Path, out_dir: Path) -> None:
     """The game's own cel ramp: res/Object/System.arc :: archive/dat/toon.bti, 256x8 I4.
 
@@ -10766,6 +11100,9 @@ def export_godot(
     (out_dir / "player.tscn").write_text(_player_tscn(has_model), encoding="utf-8")
     (out_dir / "game.gd").write_text(_GAME_GD, encoding="utf-8")
     (out_dir / "toon.gdshader").write_text(_TOON_SHADER, encoding="utf-8")
+    _write_footsteps(rip_dir, out_dir)
+    _write_particles(rip_dir, out_dir)
+    (out_dir / "fx.gdshader").write_text(_FX_SHADER, encoding="utf-8")
     _write_toon_ramp(rip_dir, out_dir)
     (out_dir / "warp.gd").write_text(_WARP_GD, encoding="utf-8")
     (out_dir / "event_runner.gd").write_text(_EVENT_GD, encoding="utf-8")
