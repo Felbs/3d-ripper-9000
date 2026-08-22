@@ -41,7 +41,7 @@ flowchart LR
     class G3_0 ok;
     G3 --> G3_1["Music<br/><i>167 stage songs with vibrato, per-track fx send and the pitch os</i>"]
     class G3_1 partial;
-    G3 --> G3_2["Cel shading<br/><i>the game's own toon.bti ramp (256x8 I4, flat to 119, rise to 137</i>"]
+    G3 --> G3_2["Shading looks<br/><i>five looks on one F6 cycle (--shade=toon|hybrid|clay|paper|pbr):</i>"]
     class G3_2 partial;
     G3 --> G3_3["Particles<br/><i>common.jpc parsed (193 effects, 96 textures through the existing</i>"]
     class G3_3 partial;
@@ -63,7 +63,7 @@ flowchart LR
 | Enemies | partial | 36 fully mined, 16 stubbed in the decomp (Gnd, PW, bable, bbaba, magtail, nezumi, Sss, Puti, gmos, wiz_r, Oq, p_hat, Ji1, Ss, pow, Oqw) |
 | Actor models | ok | 52 animated models with clips and head attachment |
 | Particles | partial | common.jpc parsed (193 effects, 96 textures through the existing BTI decoder) and driven by Game.fx with the mix(env, prm, mask) TEV preset; enemy deaths use the real SIBOUBAKUEN + SIBOUFLASH set. One bank of 58, no child emitters, no FLD1 fields yet |
-| Cel shading | partial | the game's own toon.bti ramp (256x8 I4, flat to 119, rise to 137, flat after) drives a shader that reproduces WW's TEV recipe albedo * mix(C0, K0, ramp), with C0/K0 following the clock. NOT yet seen by human eyes - headless has no viewport - and BTK/BRK material animation is still unparsed, so water does not move |
+| Shading looks | partial | five looks on one F6 cycle (--shade=toon|hybrid|clay|paper|pbr): the game's own toon.bti ramp, untouched; hybrid = that ramp as diffuse + GGX specular, Schlick Fresnel, a Charlie/Ashikhmin sheen lobe (KHR_materials_sheen - Godot has none, so it is written) and clearcoat, by material class from ww_materials.json with metal curated only; clay and paper as wrapped-diffuse looks with procedural grain. NOT yet seen by human eyes, and BTK material animation is still unparsed |
 | Cutscenes (.stb) | ok | 48 baked and played end to end |
 | Events (event_list) | ok | interpreter runs staff/cut timelines: camera, dialogue, actor animation |
 | NPC dialogue | ok | 11 villagers with story-conditional rules, chosen at talk time |

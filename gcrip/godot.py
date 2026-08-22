@@ -3166,8 +3166,11 @@ var doors_report: Array = []
 # --models: load every animated actor model and report the ones with no mesh, no clips, or a
 # head model that does not resolve.  --cutscenes: play every baked .stb through to its end.
 var models_test: bool = "--models" in OS.get_cmdline_user_args()
-# --no-toon : load without the cel shader, so the two looks can be compared
+# --no-toon : load without any shading override at all
 var no_toon: bool = "--no-toon" in OS.get_cmdline_user_args()
+# --shade=toon|hybrid|clay|paper|pbr : the look to start in (F6 cycles them in play)
+var shade_arg := ""
+
 # --hitsw[=<kind>] : strike every hit switch in this stage with that attack kind
 var hitsw_test := ""
 # --dungeon : report every locked door in this stage, then try each one with and without its key
@@ -3331,6 +3334,8 @@ func _ready() -> void:
             hitsw_test = a.substr(8) if a.length() > 8 else "sword"
         elif a.begins_with("--salvage="):
             salvage_test = int(a.substr(10))
+        elif a.begins_with("--shade="):
+            shade_arg = a.substr(8)
         elif a.begins_with("--island="):
             island_test = int(a.substr(9))
         elif a.begins_with("--timer="):
@@ -3387,6 +3392,8 @@ func _ready() -> void:
     Input.joy_connection_changed.connect(func(_id, _c): _apply_saved_pad_mappings())
     if no_toon:
         toon_on = false
+    if shade_arg != "" and SHADE_MODES.has(shade_arg):
+        shade_mode = shade_arg
     var dgf := FileAccess.open("res://dungeons.json", FileAccess.READ)
     if dgf:
         var dgp = JSON.parse_string(dgf.get_as_text())
@@ -3394,6 +3401,8 @@ func _ready() -> void:
             dungeons = dgp
     if load_game():
         print("gcrip: save file loaded (", str(save.get("saved_at", "?")), ")")
+        if shade_arg == "" and SHADE_MODES.has(str(save.get("shade_mode", ""))):
+            shade_mode = str(save["shade_mode"])
         if start_stage == "" and not selftest and shot_actor == "" and not door_test and not story_test and menu_test == "" and event_test == "" and not newgame_test and talk_test == "" and not dialogue_test and not clock_test:
             _continue_saved.call_deferred()
     bgm_player = AudioStreamPlayer.new()
@@ -5779,8 +5788,14 @@ const DUNGEON_BIG_KEY := 4         # bit 2
 
 # ---- cel shading -----------------------------------------------------------------------
 var toon_shader: Shader = null
+var lit_shader: Shader = null
 var toon_ramp: Texture2D = null
 var toon_on := true
+# the look the whole world is drawn in.  "toon" is the game's own recipe, untouched; the others
+# all run ww_material.gdshader with a different `look` uniform.
+const SHADE_MODES := ["toon", "hybrid", "clay", "paper", "pbr"]
+var shade_mode := "toon"
+var material_classes: Dictionary = {}   # materials.json
 var _toon_cache: Dictionary = {}     # source material -> the ShaderMaterial built from it
 
 # ---- particles (JPA) -------------------------------------------------------------------
@@ -5932,23 +5947,91 @@ func ground_material(p: Vector3) -> int:
         digits += ch
     return int(digits) if digits != "" else -1
 
+func shade_look() -> int:
+    return SHADE_MODES.find(shade_mode)
+
+func _load_material_classes() -> void:
+    if not material_classes.is_empty():
+        return
+    var f := FileAccess.open("res://materials.json", FileAccess.READ)
+    if f:
+        var parsed = JSON.parse_string(f.get_as_text())
+        if parsed is Dictionary:
+            material_classes = parsed
+
+func classify_material(src: Material, archive: String) -> Dictionary:
+    # (1) curated (archive, material substring) pairs - the only route to metal;
+    # (2) name substrings; (3) default, dielectric and rough
+    _load_material_classes()
+    var classes: Dictionary = material_classes.get("classes", {})
+    var mname := (src.resource_name if src else "").to_lower()
+    var tname := ""
+    if src is StandardMaterial3D and (src as StandardMaterial3D).albedo_texture:
+        tname = (src as StandardMaterial3D).albedo_texture.resource_path.get_file().to_lower()
+    var cls := "default"
+    var curated: Dictionary = material_classes.get("curated", {})
+    var arc := archive
+    if curated.has(arc):
+        for pair in curated[arc]:
+            var sub := str(pair[0]).to_lower()
+            if sub == "" or mname.find(sub) >= 0 or tname.find(sub) >= 0:
+                cls = str(pair[1])
+                break
+    if cls == "default":
+        var by_name: Dictionary = material_classes.get("by_name", {})
+        for key in by_name:
+            if str(key).begins_with("_"):
+                continue
+            if mname.find(str(key)) >= 0 or tname.find(str(key)) >= 0:
+                cls = str(by_name[key])
+                break
+    var out: Dictionary = (classes.get(cls, classes.get("default", {})) as Dictionary).duplicate()
+    out["class"] = cls
+    return out
+
 func toon_ready() -> bool:
     if not toon_on:
         return false
+    if lit_shader == null and ResourceLoader.exists("res://ww_material.gdshader"):
+        lit_shader = load("res://ww_material.gdshader")
     if toon_shader == null and ResourceLoader.exists("res://toon.gdshader"):
         toon_shader = load("res://toon.gdshader")
     if toon_ramp == null and ResourceLoader.exists("res://toon_ramp.png"):
         toon_ramp = load("res://toon_ramp.png")
     return toon_shader != null and toon_ramp != null
 
+var _shade_archive := ""     # set by toonify() so classify_material knows where a surface came from
+
 func _toon_material(src: Material) -> ShaderMaterial:
     # one ShaderMaterial per source material, shared by every surface that used it
     var key := src.resource_path if src and src.resource_path != "" else str(src)
+    key += "|" + shade_mode
     if _toon_cache.has(key):
         return _toon_cache[key]
     var m := ShaderMaterial.new()
-    m.shader = toon_shader
+    var lit: bool = shade_mode != "toon" and lit_shader != null
+    m.shader = lit_shader if lit else toon_shader
     m.set_shader_parameter("toon_ramp", toon_ramp)
+    if lit:
+        var cls := classify_material(src, _shade_archive)
+        m.set_shader_parameter("look", shade_look())
+        m.set_shader_parameter("metallic", float(cls.get("metallic", 0.0)))
+        m.set_shader_parameter("roughness", float(cls.get("roughness", 0.75)))
+        m.set_shader_parameter("specular", float(cls.get("specular", 0.4)))
+        var sh: Array = cls.get("sheen", [0, 0, 0])
+        m.set_shader_parameter("sheen_color", Vector3(float(sh[0]), float(sh[1]), float(sh[2])))
+        m.set_shader_parameter("sheen_roughness", float(cls.get("sheen_roughness", 0.35)))
+        m.set_shader_parameter("clearcoat", float(cls.get("clearcoat", 0.0)))
+        m.set_shader_parameter("clearcoat_roughness", float(cls.get("clearcoat_roughness", 0.05)))
+        m.set_shader_parameter("backlight", float(cls.get("backlight", 0.0)))
+        # the looks that are about the surface grain
+        var grain := 0.0
+        if shade_mode == "clay":
+            grain = 0.35
+        elif shade_mode == "paper":
+            grain = 0.5
+        m.set_shader_parameter("micro_normal", grain)
+        m.set_shader_parameter("grain_scale", 18.0 if shade_mode == "clay" else 9.0)
     var tex: Texture2D = null
     var col := Color(1, 1, 1, 1)
     var scissor := 0.0
@@ -5967,10 +6050,11 @@ func _toon_material(src: Material) -> ShaderMaterial:
     _toon_cache[key] = m
     return m
 
-func toonify(root: Node) -> int:
+func toonify(root: Node, archive := "") -> int:
     # walk a freshly instanced model and swap each surface for the ramp shader
     if root == null or not toon_ready():
         return 0
+    _shade_archive = archive
     var n := 0
     var stack: Array = [root]
     while not stack.is_empty():
@@ -5995,6 +6079,20 @@ func set_toon(on: bool) -> void:
     save["toon"] = on
     print("gcrip toon: cel shading ", "on" if on else "off", " - reload the stage to see it")
 
+func set_shade_mode(mode: String) -> void:
+    if not SHADE_MODES.has(mode):
+        return
+    shade_mode = mode
+    save["shade_mode"] = mode
+    _toon_cache.clear()
+    print("gcrip shade: ", mode, " - ", {
+        "toon": "the game's own ramp, unlit",
+        "hybrid": "the ramp as diffuse + physical specular / sheen / Fresnel where the class asks",
+        "clay": "matte stop-motion clay: wrapped diffuse, warm terminator, fingerprint grain",
+        "paper": "papercraft: fibre grain, rim-lit edges, light through the sheet",
+        "pbr": "straight Burley / GGX, the comparison case",
+    }[mode])
+
 func toon_sun_colors() -> Array:
     # C0 / K0 come from the time-of-day palette every frame in the real game
     # (d_kankyo.cpp:1821, :1827). The Great Sea's Actor_K0 runs (255,222,163) at noon to
@@ -6009,8 +6107,11 @@ func toon_sun_colors() -> Array:
 
 func toon_input(event: InputEvent) -> void:
     # F6 flips cel shading so the two looks can be compared without relaunching
-    if event is InputEventKey and event.pressed and not event.echo             and (event as InputEventKey).keycode == KEY_F6:
-        set_toon(not toon_on)
+    if event is InputEventKey and event.pressed and not event.echo and (event as InputEventKey).keycode == KEY_F6:
+        # F6 cycles the looks: toon -> hybrid -> clay -> paper -> pbr -> toon
+        var i := SHADE_MODES.find(shade_mode)
+        set_shade_mode(SHADE_MODES[(i + 1) % SHADE_MODES.size()])
+        show_text("Look: %s  (F6 cycles)" % shade_mode)
         var cs := get_tree().current_scene
         if cs:
             get_tree().reload_current_scene()
@@ -6023,6 +6124,17 @@ func toon_tick() -> void:
         var m: ShaderMaterial = _toon_cache[k]
         m.set_shader_parameter("c0", Vector3(cs[0].r, cs[0].g, cs[0].b))
         m.set_shader_parameter("k0", Vector3(cs[1].r, cs[1].g, cs[1].b))
+
+func shade_report() -> Dictionary:
+    # which classes the current stage's surfaces landed in - the --shade harness prints it
+    var counts := {}
+    for k in _toon_cache:
+        var m: ShaderMaterial = _toon_cache[k]
+        var look = m.get_shader_parameter("look")
+        var met = m.get_shader_parameter("metallic")
+        var key := "metal" if met != null and float(met) > 0.5 else ("lit" if look != null else "toon")
+        counts[key] = int(counts.get(key, 0)) + 1
+    return counts
 
 func dungeon_slot(stage := "") -> int:
     var key := stage if stage != "" else current_stage_key().split("_r")[0]
@@ -9008,8 +9120,14 @@ func _stream_update(force := false) -> void:
 
 
 func _apply_toon() -> void:
-    # cel shading: every surface in this stage goes through the game's own ramp
-    var n := Game.toonify(self)
+    # shading: every surface in this stage goes through the chosen look.  Actors are walked
+    # with their archive name so the material table can recognise a sword or a sail.
+    var n := Game.toonify(get_node_or_null("Level"), "")
+    for a in get_children():
+        if not (a is Node3D) or not String(a.name).begins_with("A_"):
+            continue
+        var arc := str(a.get_meta("archive")) if a.has_meta("archive") else ""
+        n += Game.toonify(a, arc)
     if n > 0:
         print("gcrip: cel shading on ", n, " surfaces in ", name)
 
@@ -9282,6 +9400,7 @@ func _wrap_actors() -> void:
         var s: Script = load(script_path)
         var node: Node3D = s.new()
         node.name = "A_" + node_name
+        node.set_meta("archive", str(rec.get("model", "")).get_file().get_basename())
         add_child(node)
         node.global_transform = Transform3D(Basis(), xf.origin)
         var parent := mesh.get_parent()
@@ -11237,6 +11356,13 @@ def export_godot(
     (out_dir / "player.tscn").write_text(_player_tscn(has_model), encoding="utf-8")
     (out_dir / "game.gd").write_text(_GAME_GD, encoding="utf-8")
     (out_dir / "toon.gdshader").write_text(_TOON_SHADER, encoding="utf-8")
+    (out_dir / "ww_material.gdshader").write_text(
+        (Path(__file__).parent / "data" / "ww_material.gdshader").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    mats_src = Path(__file__).parent / "data" / "ww_materials.json"
+    if mats_src.exists():
+        (out_dir / "materials.json").write_text(mats_src.read_text(encoding="utf-8"), encoding="utf-8")
     _write_footsteps(rip_dir, out_dir)
     _write_particles(rip_dir, out_dir)
     (out_dir / "fx.gdshader").write_text(_FX_SHADER, encoding="utf-8")
