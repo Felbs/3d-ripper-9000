@@ -74,6 +74,36 @@ class ShipPoint:  # SHIP entry: where the King of Red Lions can be moored (sea r
 
 
 @dataclass
+class CameraRegion:
+    """One CAMR (stage) or RCAM (room) entry: which camera type a region switches to."""
+
+    cam_type: str          # strcmp'd against dCamera_c::types[].name; "Keep" = no change
+    arrow_idx: int         # into the AROB/RARO table; >= that table's length means "none"
+    unknown_11: int        # no reader in the decomp
+    fov_deg: int           # 0xFF = use the style's own field of view
+    transition_frames: int  # 0xFF = derive it from the distance moved
+
+
+@dataclass
+class CameraArrow:
+    """One AROB (stage) or RARO (room) entry: a fixed eye point and orientation."""
+
+    pos: tuple[float, float, float]
+    pitch: int             # angle.x - NEGATED where the engine uses it
+    yaw: int               # angle.y
+    roll: int              # angle.z - unused by every camera engine
+    unknown_12: int        # no reader in the decomp
+
+    @property
+    def yaw_deg(self) -> float:
+        return self.yaw * 180.0 / 0x8000
+
+    @property
+    def pitch_deg(self) -> float:
+        return self.pitch * 180.0 / 0x8000
+
+
+@dataclass
 class Dzs:
     chunks: dict[str, tuple[int, int]] = field(default_factory=dict)  # fourcc -> (n, offset)
     placements: list[Placement] = field(default_factory=list)
@@ -81,6 +111,8 @@ class Dzs:
     scls: list[Exit] = field(default_factory=list)  # exit table (doors index into it)
     ships: list[ShipPoint] = field(default_factory=list)  # SHIP: boat mooring points
     events: list[str] = field(default_factory=list)  # EVNT: event names tag actors index into
+    cameras: list[CameraRegion] = field(default_factory=list)  # CAMR (stage) / RCAM (room)
+    cam_arrows: list[CameraArrow] = field(default_factory=list)  # AROB (stage) / RARO (room)
 
 
 def _canonical(fourcc: str) -> tuple[str, int]:
@@ -131,6 +163,17 @@ def parse(data: bytes) -> Dzs:
                 x, y, z, ry, sid = struct.unpack_from(">3fHB", data, off + k * 0x10)
                 ry = ry - 0x10000 if ry >= 0x8000 else ry
                 out.ships.append(ShipPoint((x, y, z), ry, sid))
+        elif fourcc in ("CAMR", "RCAM"):
+            for k in range(n):
+                base = off + k * 0x14
+                ct = data[base : base + 16].split(b"\0")[0].decode("latin-1", "replace")
+                arrow, f11, f12, f13 = struct.unpack_from(">4B", data, base + 16)
+                out.cameras.append(CameraRegion(ct, arrow, f11, f12, f13))
+        elif fourcc in ("AROB", "RARO"):
+            for k in range(n):
+                base = off + k * 0x14
+                x, y, z, ax, ay, az, f12 = struct.unpack_from(">3f4h", data, base)
+                out.cam_arrows.append(CameraArrow((x, y, z), ax, ay, az, f12))
         elif fourcc == "SCLS":
             for k in range(n):
                 base = off + k * 0x0C

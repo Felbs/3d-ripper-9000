@@ -13,19 +13,22 @@ Layout (all big-endian), verified against the USA disc and the game's own reader
           0x06 s16 item_price        shop messages
           0x08 u16 next_message_id   0 = none; chained when the box is dismissed
           0x0A u16 unknown_0a
-          0x0C u8  text_box_type     0 dialog, 1 special, 2 wood sign, 5 demo, 9 item get,
-                                     0xA hint stone, 0xC credits/password, 0xD centred,
-                                     0xE Wind Waker song
-          0x0D u8  draw_type         0 normal, 1 instant, 2 slow
-          0x0E u8  text_box_position
+          0x0C u8  text_box_type     see TEXT_BOX_TYPES; the screen each one loads is
+                                     chosen in dMsg_Execute
+          0x0D u8  draw_type         0 types out (A/B skips), 1 instant, 2 types out and
+                                     CANNOT be skipped
+          0x0E u8  text_box_position 0 auto (project the speaker's eye against y=240),
+                                     1 bottom, 2 centre, 3 top
           0x0F u8  item_image        icon shown in item-get boxes
-          0x10 u8  text_alignment    3 = centred, 4 = bottom
+          0x10 u8  text_alignment    0, 1 or 3; the USA build forces everything except
+                                     exactly 3 (or box type 0xD) to left-aligned
           0x11 u8  initial_sound     voice clip played when the box opens
           0x12 u8  initial_camera
           0x13 u8  initial_animation speaker animation
           0x14 u8  unknown_14
-          0x15 u16 lines_per_box
-          0x17 u8  unknown_17
+          0x15 u8  unknown_15        0 in every entry on the USA disc
+          0x16 u8  lines_per_box     `if (lineCount >= mesgEntry->field_0x16)`
+          0x17 u8  unknown_17        0 in every entry on the USA disc
   DAT1  NUL-terminated strings; offset 0 is an empty string.
   MID1  (optional, not in Wind Waker) u16 count u8 format u8 info pad[4] then u32 ids.
 
@@ -56,33 +59,45 @@ from dataclasses import dataclass, field
 
 MAGIC = b"MESGbmg1"
 
+# Counts are from the USA disc's zel_00.bmg (4411 entries), so every type here really occurs.
 TEXT_BOX_TYPES = {
-    0: "dialog",
-    1: "special",
-    2: "wood",
-    5: "demo",
-    9: "item_get",
-    0xA: "hint",
-    0xC: "credits",
-    0xD: "centered",
-    0xE: "wind_waker_song",
+    0: "dialog",            # 3319
+    1: "special",           # 38
+    2: "wood",              # 24 - its own MSG2 process and its own palette
+    5: "demo",              # 22
+    6: "wood2",             # 6  - MSG2, like type 2
+    7: "wood3",             # 27 - MSG2, like type 2
+    8: "type_8",            # 13 - no separate screen; meaning not established
+    9: "item_get",          # 193
+    0xA: "talk_unfollowed",  # 550 - an ordinary talk box that does NOT follow the actor
+    0xB: "type_b",          # 181 - overrides the colour palette
+    0xC: "credits",         # 15
+    0xD: "centered",        # 14 - the one type that keeps its own alignment
+    0xE: "wind_waker_song",  # 9
 }
 
-DRAW_TYPES = {0: "normal", 1: "instant", 2: "slow"}
+# draw_type, from the box driver: 0 types out and A/B skips it, 1 draws instantly unless a hard
+# wait is pending, 2 types out and cannot be skipped at all.  The old names had 0 and 2 swapped.
+DRAW_TYPES = {0: "typed", 1: "instant", 2: "typed_unskippable"}
 
-# group 0xFF code 0: index into the game's colour table (d_mesg.cpp colorTable /
-# color.bmc). RGBA from the decomp: FFFFFF, FF5A5A, 78FF78, 7878FF, FFFF32, 82FFFF,
-# DC6EFF, A0A0A0, FF8200.
+# text_box_position, dMsg_Execute
+BOX_POSITIONS = {0: "auto", 1: "bottom", 2: "center", 3: "top"}
+
+# group 0xFF code 0: an index into the message box's palette.  This is color.bmc's CLT1
+# table, NOT d_mesg.cpp's colorTable - that belongs to the other renderer and has different
+# values.  Box types 2/6/7, box type 0xB, and messages 0x42-0x4B each override the palette.
+# CLT1: FFFFFF, FF6400, 00FF00, 7878FF, FFFF3C, 00FFFF, FF00FF, 828282, FF8000.
+# On the disc index 0 is used 2574 times and index 1 2544 times; 2-8 total 114.
 COLORS = {
-    0: "default",
-    1: "red",
+    0: "white",
+    1: "orange",
     2: "green",
     3: "blue",
     4: "yellow",
     5: "cyan",
-    6: "purple",
+    6: "magenta",
     7: "gray",
-    8: "orange",
+    8: "dark_orange",
 }
 
 # group 0 codes (f_op_msg_mng.cpp enum MsgControlCodes). Values are (tag name, kind):
@@ -287,9 +302,10 @@ def _entry_attrs(e: bytes) -> dict:
         camera,
         anim,
         unk_14,
+        unk_15,
         lines,
         unk_17,
-    ) = struct.unpack(">hHHBBBBBBBBBHB", e[6:0x18])
+    ) = struct.unpack(">hHHBBBBBBBBBBBB", e[6:0x18])
     attrs = {
         "item_price": price,
         "next_message_id": next_id,
@@ -299,12 +315,14 @@ def _entry_attrs(e: bytes) -> dict:
         "draw_type": draw_type,
         "draw_type_name": DRAW_TYPES.get(draw_type, f"draw_{draw_type}"),
         "text_box_position": box_pos,
+        "text_box_position_name": BOX_POSITIONS.get(box_pos, f"pos_{box_pos}"),
         "item_image": item_image,
         "text_alignment": align,
         "initial_sound": sound,
         "initial_camera": camera,
         "initial_animation": anim,
         "unknown_14": unk_14,
+        "unknown_15": unk_15,
         "lines_per_box": lines,
         "unknown_17": unk_17,
     }

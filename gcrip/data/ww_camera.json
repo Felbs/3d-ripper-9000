@@ -1,0 +1,8464 @@
+{
+ "_source": {
+  "what": "The Wind Waker camera system mined from the zeldaret/tww decompilation, for the Godot remake in gcrip. Covers the type/style tables, how the stage authors camera regions, lock-on framing, and the special-case cameras.",
+  "decomp_root": "Z:/memRip/sources/tww",
+  "decomp_version": "USA/PAL retail (VERSION > VERSION_JPN, VERSION > VERSION_DEMO). Version-guarded rows are marked.",
+  "files_read": [
+   "src/d/d_camera.cpp (5735 lines)",
+   "include/d/d_camera.h",
+   "src/d/d_cam_type.cpp (the 65-row type table)",
+   "src/d/d_cam_type2.cpp (mvBGTypes[35])",
+   "src/d/d_cam_style.cpp (the style table)",
+   "src/d/d_cam_param.cpp",
+   "include/d/d_cam_param.h",
+   "src/d/d_ev_camera.cpp (event-camera cut types; every body is /* Nonmatching */ and empty)",
+   "src/d/d_attention.cpp",
+   "include/d/d_attention.h",
+   "src/d/d_att_dist.cpp",
+   "src/d/d_bg_s.cpp (per-polygon camera id accessors)",
+   "include/d/d_stage.h",
+   "src/d/d_stage.cpp"
+  ],
+  "ripper_files_read": [
+   "Z:/3d ripper/gcrip/formats/dzs.py",
+   "Z:/3d ripper/gcrip/formats/dzb.py",
+   "Z:/3d ripper/gcrip/godot.py (read only)",
+   "Z:/3d ripper/out/rip/GZLE01/stages/*/*_report.json"
+  ],
+  "spec_reviewed": "Z:/memRip/knowledge/gamecube/camera-spec.md (partial spec, written 2026-08-21)",
+  "units": {
+   "distance": "game units; Link mHeight = 125.0 (d_a_player_main.cpp:12201)",
+   "angle": "s16, 0x8000 = 180 deg; DEG2S_CONSTANT = 182.04445 (c_angle.h:8)",
+   "tick": "30 fps; every rate below is per 1/30 s",
+   "fov": "vertical FOV in degrees for a 4:3 frame",
+   "yaw": "atan2(x, z); forward = (sin yaw, 0, cos yaw)",
+   "pitch": "cSGlobe field mAzimuth; pitch > 0 means the eye is ABOVE the center (camera looks down)",
+   "camera_facing_yaw": "mDirection.yaw + 180 deg (dCam_getAngleY = U().Inv(), d_camera.cpp:5322)"
+  },
+  "decomp_caveat": "Run, nextMode, followCamera, lockonCamera, subjectCamera, fixedFrameCamera, fixedPositionCamera are marked /* Nonmatching */: their literal float constants are reliable, their control flow and cSGlobe U()/V() accessor letters are sometimes garbled. talktoCamera, towerCamera, rideCamera, hungCamera, vomitCamera, shieldCamera, manualCamera, hookshotCamera, tornadoCamera, demoCamera and every *EvCamera have EMPTY bodies - only their style rows are known.",
+  "written": "2026-08-21"
+ },
+ "_camera_spec_review": {
+  "spec_path": "Z:/memRip/knowledge/gamecube/camera-spec.md",
+  "verdict": "The spec's numeric claims are accurate: every style-table row, every dCamSetup_c / dCamBGChk_c / dCstick_c constant and every engine index I re-derived from source matched. Its structural claims about type selection and mode selection are incomplete or mis-ordered, and it left as 'unknown' two CAMR bytes that are in fact fully determined.",
+  "confirmed": [
+   {
+    "claim": "CAMR/RCAM entry = {char m_cam_type[16]; u8 m_arrow_idx; u8 field_0x11; u8 field_0x12; u8 field_0x13;} size 0x14",
+    "at": "include/d/d_stage.h:166-173",
+    "confidence": "high"
+   },
+   {
+    "claim": "AROB/RARO entry = {cXyz position; csXyz angle; s16 field_0x12;} size 0x14",
+    "at": "include/d/d_stage.h:180-185",
+    "confidence": "high"
+   },
+   {
+    "claim": "CAMR/RCAM -> dStage_cameraInit, AROB/RARO -> dStage_arrowInit in the stage loader; the room loader has RCAM -> dStage_RoomCameraInit",
+    "at": "src/d/d_stage.cpp:2168-2170 (stage), 2182-2185 (room)",
+    "confidence": "high"
+   },
+   {
+    "claim": "style table = 145 rows for USA/PAL; each row = {4-char tag, engine enum, f32[30], flags}; -99999.99 marks unused",
+    "at": "src/d/d_cam_style.cpp:11ff",
+    "note": "147 rows are physically present; 2 are #if VERSION <= VERSION_JPN (MM03, FN38) and 3 are #if VERSION > VERSION_JPN (MM03, MM23, FN38)",
+    "confidence": "high"
+   },
+   {
+    "claim": "engine_tbl 20 entries, indices 0..19 exactly as the spec lists (letCamera .. demoCamera); followCamera2 just calls followCamera",
+    "at": "src/d/d_camera.cpp:118-138, 2612-2614",
+    "confidence": "high"
+   },
+   {
+    "claim": "mvBGTypes[35] name list drives the collision 'camera move BG' id",
+    "at": "src/d/d_cam_type2.cpp:9-45",
+    "note": "spec summarised 18..33 as 'boss/special'; the full list is now enumerated in _types.mv_bg_types",
+    "confidence": "high"
+   },
+   {
+    "claim": "all dCamBGChk_c constants (FloorMargin 32, FwdCushion 0.1, probe pairs 1.0/25/0.4/0.8 and 3.0/15/0.5/0.3, FwdBackMargin 10, GazeBackMargin 10, WallCushion 0.25, WallBackCushion 0.08, WallUpDistance 80, CornerCushion 0.75, CornerAngleMax 120)",
+    "at": "src/d/d_cam_param.cpp:118-146",
+    "confidence": "high"
+   },
+   {
+    "claim": "all dCamSetup_c constants (m060 80, m05C -60, m0A4 27, m0A8 20, ChargeLatitude 2.0, ChargeTimer 60, ChargeBRatio 0.15, DMCValue 0.1, DMCAngle 30, m098 60 retail / 70 demo, m09C 0.3, m0A0 0.2, ParallelDist 60, ForceLockOffDist 1800, ForceLockOffTimer 120, LockonChangeCushion 100, CusCus 0.2, m028 0.33, m044 0.005, DrawNear 1 / DrawFar 100000)",
+    "at": "src/d/d_cam_param.cpp:265-356",
+    "confidence": "high"
+   },
+   {
+    "claim": "dCstick_c thresholds m00 = 0.2 (re-arm), m04 = 0.95 (C-stick-up), m08 = 6",
+    "at": "src/d/d_cam_param.cpp:106-111",
+    "confidence": "high"
+   },
+   {
+    "claim": "rationalBezierRatio / customRBRatio / ratiof / zoomFovy / DefaultRadius / RadiusRatio behave as the spec's GDScript port describes",
+    "at": "src/d/d_cam_param.cpp:13-58, 60-64, 188-200, 202-245",
+    "confidence": "high"
+   },
+   {
+    "claim": "FN01/FN02/FN03/FN08/FN14/FN09, LL01/LL02/LL04, LA01, MM01/MM03, SS01, SN15 parameter rows: every value the spec tabulates is correct",
+    "at": "src/d/d_cam_style.cpp",
+    "confidence": "high"
+   },
+   {
+    "claim": "Field/Dungeon/Room/Water/Plain/Boat type rows are correct",
+    "at": "src/d/d_cam_type.cpp",
+    "confidence": "high"
+   },
+   {
+    "claim": "lock-on t = clamp(|target.attn - link.attn| / attn.LockonReleaseDistanse(), 0, 1); Lockon{Longitude,Latitude} lerp as cSAngle, Lockon{Fovy,CenterHeight} lerp as f32",
+    "at": "src/d/d_camera.cpp:3377,3395-3399; src/d/d_cam_param.cpp:275-300",
+    "confidence": "high"
+   },
+   {
+    "claim": "bumpCheck frustum-fit: +-50 unit padding, 95% of the frustum, cap 3500, ease-in 0.33 / decay 0.08, faded over the first 10 frames, only with camera flag 0x2000",
+    "at": "src/d/d_camera.cpp:1676-1765, 2118-2137",
+    "confidence": "high"
+   },
+   {
+    "claim": "Run() pipeline: checkSpecialArea -> checkGroundInfo -> updatePad -> nextType -> nextMode -> style change -> forwardCheckAngle -> engine -> bank decay 0.05 -> shakeCamera -> collision flags from style flags 0x001/0x002/0x400 -> floor clamp center.y >= ground+32 -> bumpCheck -> up vector",
+    "at": "src/d/d_camera.cpp:675-914",
+    "confidence": "high"
+   },
+   {
+    "claim": "Mode 1 sets camera flag 0x100000; a refused manual entry plays JA_SE_MAN_CAMERA_NG",
+    "at": "src/d/d_camera.cpp:1189-1206",
+    "confidence": "high"
+   },
+   {
+    "claim": "first person / aim: yaw offset limit = Val24 (90 deg), pitch limit = Val19 (70 deg), rate Val21 = 0.04, stick dead-band 0.7, ease Val20 (0.45 SS01/SX01, 0.6 SY01, 0.75 SN15), FOV Val25, telescope zoom scale = z*8+1 (1..9x) through dCamMath::zoomFovy, C-stick fully down twice (< -0.74) exits",
+    "at": "src/d/d_camera.cpp:3720-3854, 4137-4200",
+    "confidence": "high"
+   }
+  ],
+  "corrected": [
+   {
+    "spec_said": "'the map-tool camera ID from the ground Link stands on' (one id).",
+    "actually": "There are TWO camera-index sources and the STAGE one wins. nextType uses mStageMapToolCameraIdx if it is not 0xFF (that indexes the stage-level CAMR table, roomNo = -1), otherwise mRoomMapToolCameraIdx, which checkGroundInfo fills from the collision and which indexes the ROOM's RCAM table with roomNo = GetRoomId(poly). mStageMapToolCameraIdx is only ever written once, to 0xFF in initialize(), and has no other writer anywhere in src/ - so in the retail build the stage override is dead and the room path always runs.",
+    "at": "src/d/d_camera.cpp:1294-1300, 214, 2545-2575; include/d/d_camera.h:178",
+    "confidence": "high"
+   },
+   {
+    "spec_said": "CAMR bytes field_0x11..0x13 'are tested by crawlCamera; their meaning for other engines is unknown' (spec open question 6).",
+    "actually": "field_0x12 = FOV OVERRIDE in degrees (0xFF = use style Val25). field_0x13 = TRANSITION LENGTH IN FRAMES (0xFF = compute it). field_0x11 is read by nothing in the whole tree. fixedPositionCamera: fov = (field_0x12 == 0xFF) ? Val25 : field_0x12; frames = (field_0x13 == 0xFF) ? (int)(Val24 * sqrt(dist/linkHeight)) + 1 : field_0x13. fixedFrameCamera does the same. crawlCamera only uses field_0x12 as a != 0xFF gate for snapping to the arrow position.",
+    "at": "src/d/d_camera.cpp:4497-4499 (fixedFrame), 4587-4598 (fixedPos), 4267 (crawl)",
+    "confidence": "high",
+    "consequence": "This is what separates the type names 'FixdPos' (PN05, Val24 = 0 -> frames = 1 -> hard cut) from 'SmoothFixdPos' (PN12, Val24 = 10 -> a distance-scaled blend). The stage author can override both per CAMR entry."
+   },
+   {
+    "spec_said": "'if m_arrow_idx != 0xFF loads the AROB/RARO arrow'.",
+    "actually": "The code tests `arrowIdx != -1 && arrowIdx < arrow->num`. m_arrow_idx is u8 so the first half is always true; the real gate is the bounds check, and there is no NULL guard on `arrow`. Practically identical (0xFF fails the bounds test) but port the bounds check, not the sentinel.",
+    "at": "src/d/d_camera.cpp:1509-1516",
+    "confidence": "high"
+   },
+   {
+    "spec_said": "nextMode condition table listed in mode-number order, implying that order of evaluation.",
+    "actually": "The real first-match-wins order is: curMode==12&&m144 -> 0; telescope/pictobox -> 14; S0(UNK80000000|UNK80) -> 17; S0(UNK800000) -> 12 if m144==0 else 18; S1(UNK10) -> 15; S0(SUBJECT) -> 4; aim(rope|hookshot|bow) && !Lockon -> 10; boomerang aim && !Lockon -> 11; m144==0 -> 12 (MANUAL); S1(UNK2) -> 5; S1(UNK4) -> 6; S0(UNK40|UNK20) -> 6; S0(UNK40|UNK20|UNK1) -> 5; S0(UNK400|UNK4|UNK2) && curMode!=12 && target -> 8; LockonTruth && !S0(CRAWL|UNK4000000) -> 2; Lockon() -> 1; boomerang in flight -> 2; guarding -> 19; forced lock -> 2; else 0. Two consequences the spec misses: manual camera (12) OUTRANKS Z-targeting, and attack-with-target (8) outranks plain lock-on (2).",
+    "at": "src/d/d_camera.cpp:1093-1170",
+    "confidence": "high"
+   },
+   {
+    "spec_said": "'the 145-row style table' / engine list treats FN13, LN01, LN17 as odd cases.",
+    "actually": "The tag prefix does NOT determine the engine; the row carries an explicit dCamAlgorythmn_e. FN13 and LN01 are LOCKON_CAMERA rows, LN17 is a CRAWL_CAMERA row, GN01 is FOLLOW_CAMERA2, HP16 is a second HUNG row, FP38 a follow row. The full engine-per-tag mapping is in _types.styles.",
+    "at": "src/d/d_cam_style.cpp",
+    "confidence": "high"
+   },
+   {
+    "spec_said": "'talktoCamera, manualCamera, towerCamera, ... are empty stubs' listed as a caveat only.",
+    "actually": "Confirmed, and the list is complete and worth quoting exactly: letCamera, talktoCamera, towerCamera, rideCamera, hungCamera, manualCamera, hookshotCamera, tornadoCamera, vomitCamera, shieldCamera, demoCamera and all 28 *EvCamera bodies are /* Nonmatching */ with no body. DECOMPILED and usable: followCamera, lockonCamera, subjectCamera, CalcSubjectAngle, crawlCamera, fixedPositionCamera, fixedFrameCamera, nonOwnerCamera, bumpCheck, checkGroundInfo, forwardCheckAngle, radiusActorInSight, nextType, nextMode, Run, GetCameraTypeFromMapToolID.",
+    "at": "src/d/d_camera.cpp:3705, 4208, 4368-4400, 4915; src/d/d_ev_camera.cpp",
+    "confidence": "high"
+   },
+   {
+    "spec_said": "first person: 'yaw = -RB(sx,1.0)*Val21(0.04) accumulated each frame'.",
+    "actually": "In the decomp the yaw fraction is ASSIGNED (`m384 = -RB(sx,w) * Val21`) while the pitch fraction is ACCUMULATED (`m388 += RB(sy,w) * Val21`). Assignment cannot be right: it would cap the yaw offset at 0.04 * 90 deg = 3.6 deg, and the very next lines clamp m384 to +-1 which only makes sense for an accumulator. Treat BOTH as accumulators (`m384 -= RB(sx,w)*Val21`), which is what the spec's port already does.",
+    "at": "src/d/d_camera.cpp:3808-3838",
+    "confidence": "medium",
+    "note": "flagged as a decomp transcription artifact, not verified against the binary"
+   },
+   {
+    "spec_said": "mvBGTypes 'if that is 0: swimming -> Water, else the stage default type'.",
+    "actually": "Correct, but the id is also range-checked (0 < id < 35) and there is a special case: when the move-BG id is 0x11 (MajTower) the camera additionally calls GetCameraTypeFromMapToolID(0, fopAcM_GetRoomNo(player)) purely for its side effect of loading RCAM entry 0 and its arrow.",
+    "at": "src/d/d_camera.cpp:1311-1324",
+    "confidence": "high"
+   },
+   {
+    "spec_said": "Type table rows sampled; count not given.",
+    "actually": "There are exactly 65 rows, and two NAMES ARE DUPLICATED: 'DungeonUp' at index 27 and 63, 'Water' at index 41 and 64. GetCameraTypeFromCameraName does a linear strcmp and returns the FIRST match, so index 63 and 64 are unreachable by name - they are only reachable through a CAMR entry (GetCameraTypeFromMapToolID also returns the first match, so in practice they are dead rows).",
+    "at": "src/d/d_cam_type.cpp; src/d/d_camera.cpp:1495-1504, 1521-1540",
+    "confidence": "high"
+   }
+  ],
+  "could_not_check": [
+   "manualCamera (the C-stick free camera): body is empty. Its style rows are captured here; the orbit rate, the C-stick-Y-to-zoom mapping and the real meaning of the `mDirection.R() < 60` exit test at d_camera.cpp:1063 remain unknown. Spec open question 1 stands.",
+   "rideCamera (King of Red Lions), talktoCamera, towerCamera, hungCamera, vomitCamera, shieldCamera, hookshotCamera, tornadoCamera: bodies empty. Only the style parameter rows are known - they are all included here, but the algorithms are not.",
+   "Every event-camera cut type (28 of them): d_ev_camera.cpp has no bodies at all. Only the dispatch order and the 28 action names are known; the per-cut parameters live in the event .dat files, not in code.",
+   "Val15 in lockonCamera (spec open question 2): still unresolved. The values 0/2/10/30 across styles multiply customRBRatio and are added to an angle; the scaling is lost in the nonmatching decomp.",
+   "The airborne pitch target in followCamera (spec open question 3): the decomp still assigns the yaw delta there. Unresolved without a runtime test.",
+   "STAG.mCameraMapToolID is a u8 compared against -1 (an acknowledged bug at d_camera.cpp:204), so the stage-default type override never triggers on a real disc unless the byte is 0xFF... which then indexes CAMR[255]. I could not determine what real stages actually put there without reading disc bytes.",
+   "AROB/RARO field_0x12 (the trailing s16): no reader found anywhere in src/.",
+   "I did not read any DZS bytes off the disc - the CAMR/AROB counts per stage are not in the ripper's reports (see _regions.ripper_status), so I cannot say how many regions each stage actually has."
+  ]
+ },
+ "_types": {
+  "how_it_works": "Three orthogonal selectors pick the algorithm each frame (Run, d_camera.cpp:733-760). TYPE = 'where you are' (a row of dCamera_c::types[], chosen by nextType from the stage CAMR/RCAM tables and the collision). MODE = 'what Link is doing' (0..19, chosen by nextMode from Link's status bits). STYLE = types[type].mStyles[mode], a 4-char tag indexing dCamParam_c::styles[]. A style = {engine, f32 param[30], flags}. If the type has no style for the wanted mode the mode change is refused and mode falls back to 0.",
+  "engine_table": {
+   "at": "src/d/d_camera.cpp:118-138 (enum dCamAlgorythmn_e, d_cam_param.h:316-337)",
+   "entries": [
+    {
+     "idx": 0,
+     "engine": "letCamera",
+     "decomp": "empty"
+    },
+    {
+     "idx": 1,
+     "engine": "followCamera",
+     "decomp": "decompiled (nonmatching)"
+    },
+    {
+     "idx": 2,
+     "engine": "lockonCamera",
+     "decomp": "decompiled (nonmatching)"
+    },
+    {
+     "idx": 3,
+     "engine": "talktoCamera",
+     "decomp": "empty"
+    },
+    {
+     "idx": 4,
+     "engine": "subjectCamera",
+     "decomp": "decompiled (nonmatching)"
+    },
+    {
+     "idx": 5,
+     "engine": "fixedPositionCamera",
+     "decomp": "decompiled (nonmatching)"
+    },
+    {
+     "idx": 6,
+     "engine": "fixedFrameCamera",
+     "decomp": "decompiled (nonmatching)"
+    },
+    {
+     "idx": 7,
+     "engine": "towerCamera",
+     "decomp": "empty"
+    },
+    {
+     "idx": 8,
+     "engine": "rideCamera",
+     "decomp": "empty"
+    },
+    {
+     "idx": 9,
+     "engine": "hungCamera",
+     "decomp": "empty"
+    },
+    {
+     "idx": 10,
+     "engine": "manualCamera",
+     "decomp": "empty"
+    },
+    {
+     "idx": 11,
+     "engine": "eventCamera",
+     "decomp": "dispatcher decompiled, all 28 cut types empty"
+    },
+    {
+     "idx": 12,
+     "engine": "crawlCamera",
+     "decomp": "decompiled"
+    },
+    {
+     "idx": 13,
+     "engine": "hookshotCamera",
+     "decomp": "empty"
+    },
+    {
+     "idx": 14,
+     "engine": "tornadoCamera",
+     "decomp": "empty"
+    },
+    {
+     "idx": 15,
+     "engine": "vomitCamera",
+     "decomp": "empty"
+    },
+    {
+     "idx": 16,
+     "engine": "shieldCamera",
+     "decomp": "empty"
+    },
+    {
+     "idx": 17,
+     "engine": "nonOwnerCamera",
+     "decomp": "decompiled (cannon minigame)"
+    },
+    {
+     "idx": 18,
+     "engine": "followCamera2",
+     "decomp": "tail-calls followCamera (d_camera.cpp:2612)"
+    },
+    {
+     "idx": 19,
+     "engine": "demoCamera",
+     "decomp": "empty"
+    }
+   ]
+  },
+  "mode_slots": {
+   "at": "src/d/d_camera.cpp:1093-1206 (nextMode), column meanings from d_cam_type.cpp",
+   "note": "evaluation is first-match-wins in the order given by 'rank'",
+   "slots": [
+    {
+     "mode": 0,
+     "meaning": "normal follow",
+     "field_style": "FN01",
+     "rank": 20,
+     "enter": "default / fall-through"
+    },
+    {
+     "mode": 1,
+     "meaning": "Z or L held with NO target - recenter behind Link",
+     "field_style": "FN01",
+     "rank": 16,
+     "enter": "attn.Lockon() true but LockonTruth() false; sets camera flag 0x100000"
+    },
+    {
+     "mode": 2,
+     "meaning": "Z-target with a target",
+     "field_style": "LL01",
+     "rank": 15,
+     "enter": "attn.LockonTruth() && !S0(CRAWL|UNK4000000); also boomerang-in-flight (rank 17) and forced lock (rank 19)"
+    },
+    {
+     "mode": 3,
+     "meaning": "talking",
+     "field_style": "TT01",
+     "rank": null,
+     "enter": "NEVER set by nextMode; driven by the message/event system"
+    },
+    {
+     "mode": 4,
+     "meaning": "first person (C-stick up)",
+     "field_style": "SS01",
+     "rank": 6,
+     "enter": "S0(SUBJECT)"
+    },
+    {
+     "mode": 5,
+     "meaning": "ship, sail down / wall-hide",
+     "field_style": "LW01",
+     "rank": 10,
+     "enter": "S1(UNK2), or S0(UNK40|UNK20|UNK1)"
+    },
+    {
+     "mode": 6,
+     "meaning": "ship idle / wall-hide peeking",
+     "field_style": "LE01",
+     "rank": 11,
+     "enter": "S1(UNK4) or S0(UNK40|UNK20)"
+    },
+    {
+     "mode": 7,
+     "meaning": "(LH slot)",
+     "field_style": "LH01",
+     "rank": null,
+     "enter": "unreachable from nextMode"
+    },
+    {
+     "mode": 8,
+     "meaning": "attacking with a lock-on target",
+     "field_style": "LA01",
+     "rank": 14,
+     "enter": "S0(UNK400|UNK4|UNK2) && curMode != 12 && mpLockonTarget"
+    },
+    {
+     "mode": 9,
+     "meaning": "(LB slot)",
+     "field_style": "LB01",
+     "rank": null,
+     "enter": "unreachable from nextMode"
+    },
+    {
+     "mode": 10,
+     "meaning": "aiming bow / hookshot / grapple",
+     "field_style": "SX01",
+     "rank": 7,
+     "enter": "S0(ROPE_AIM|HOOKSHOT_AIM|BOW_AIM) && !attn.Lockon()"
+    },
+    {
+     "mode": 11,
+     "meaning": "aiming boomerang",
+     "field_style": "SY01",
+     "rank": 8,
+     "enter": "S0(BOOMERANG_AIM) && !attn.Lockon()"
+    },
+    {
+     "mode": 12,
+     "meaning": "manual C-stick free camera",
+     "field_style": "MM01",
+     "rank": 9,
+     "enter": "m144 == 0, set when the C-stick is pushed with y <= 0 and magnitude > m09C (0.3); exits when the C-stick releases (< 0.01) and mDirection.R() < m098 (60), or on an L-trigger rising edge (> m0A0 = 0.2), or camera flag 0x80000000. NOTE this outranks Z-targeting."
+    },
+    {
+     "mode": 13,
+     "meaning": "crawling",
+     "field_style": "CC01",
+     "rank": null,
+     "enter": "NEVER set by nextMode; reached via onTypeChange forcing mode 0 on a CRAWL_CAMERA type"
+    },
+    {
+     "mode": 14,
+     "meaning": "telescope / picto box",
+     "field_style": "SN15",
+     "rank": 2,
+     "enter": "S0(TELESCOPE_LOOK) || S1(PICTO_BOX_AIM)"
+    },
+    {
+     "mode": 15,
+     "meaning": "hookshot flight",
+     "field_style": "JN05",
+     "rank": 5,
+     "enter": "S1(UNK10)"
+    },
+    {
+     "mode": 16,
+     "meaning": "cutscene",
+     "field_style": "EN00",
+     "rank": null,
+     "enter": "dComIfGp_evmng_cameraPlay() or camera flag 0x20000000; handled by nextType -> 'Event' type"
+    },
+    {
+     "mode": 17,
+     "meaning": "being spat out / thrown",
+     "field_style": "HN18",
+     "rank": 3,
+     "enter": "S0(UNK80000000|UNK80)"
+    },
+    {
+     "mode": 18,
+     "meaning": "grapple-rope swing",
+     "field_style": "HN16",
+     "rank": 4,
+     "enter": "S0(UNK800000) when m144 != 0 (if manual is armed, mode 12 wins instead)"
+    },
+    {
+     "mode": 19,
+     "meaning": "guarding with the shield",
+     "field_style": "DD01",
+     "rank": 18,
+     "enter": "isPlayerGuarding() = S1(UNK80000), or riding Medli"
+    }
+   ]
+  },
+  "mode_change": "onModeChange (d_camera.cpp:1208-1259) resets the per-mode frame counter m108, the transition-done flags m100/m101/m102, and sets m110 = 1 (blend) except when swapping 0<->1 onto the same style. onStyleChange (:1417-1468) sets camera flag 0x8000 (skip transition) when the new style uses the same follow/ride engine. onTypeChange (:1370-1400) additionally FORCES mode 0 and disarms manual (m144 = 1) when the new type's mode-0 style uses FIXED_POSITION / FIXED_FRAME / EVENT / CRAWL / HOOKSHOT.",
+  "style_param_index_names": {
+   "at": "include/d/d_cam_param.h:165-197 (enum dCamStyleParam_e)",
+   "named": {
+    "5": "CENTER_HEIGHT_BASE",
+    "6": "CENTER_HEIGHT_UPPER",
+    "7": "CENTER_HEIGHT_LOWER",
+    "8": "LOCKON_CENTER_HEIGHT_MIN",
+    "9": "LOCKON_CENTER_HEIGHT_MAX",
+    "18": "LOCKON_LATITUDE_MIN",
+    "19": "LOCKON_LATITUDE_MAX",
+    "23": "LOCKON_LONGITUDE_MIN",
+    "24": "LOCKON_LONGITUDE_MAX",
+    "25": "FOVY_BASE",
+    "26": "FOVY_UPPER",
+    "27": "FOVY_LOWER",
+    "28": "LOCKON_FOVY_MIN",
+    "29": "LOCKON_FOVY_MAX"
+   },
+   "note": "only 14 of the 30 indices have real names in the decomp; the rest are UNKn and their meaning depends on the engine reading them (see _types.param_meaning_by_engine)."
+  },
+  "style_flags": {
+   "at": "include/d/d_cam_param.h:339-350 (enum dCamParamFlag_e); consumed in Run d_camera.cpp:805-823",
+   "bits": {
+    "0x001": "bumpCheck flag set = 0x3F (full wall handling incl. corner detection and wall-up)",
+    "0x002": "bumpCheck flag set = 0x0F",
+    "0x004": "enable the slope look-ahead forwardCheckAngle (m148)",
+    "0x010": "telescope/picto zoom path in subjectCamera; also drops bumpCheck bit 8 in first person",
+    "0x020": "subjectCamera: raw stick -> angle, no rational-bezier shaping (CalcSubjectAngle d_camera.cpp:3803)",
+    "0x040": "fixedPosition/fixedFrame/crawl: use the AROB/RARO arrow entry",
+    "0x080": "crawlCamera: 'tunnel' variant (radius forced to 2.0); subjectCamera: SS01/SN15 marker",
+    "0x100": "subjectCamera: SX aim variant marker",
+    "0x200": "(no reader found)",
+    "0x400": "bumpCheck |= 0x40 (bush / foliage top avoidance)"
+   }
+  },
+  "param_meaning_by_engine": {
+   "follow": {
+    "at": "src/d/d_camera.cpp:2632-2653",
+    "p": {
+     "0": "center forward offset z, Link-local",
+     "1": "center side offset x, Link-local",
+     "3": "center horizontal follow rate (used when Link faces the camera; 0.1 otherwise)",
+     "4": "center vertical follow rate",
+     "5": "center height above Link's attention point",
+     "10": "max radius",
+     "11": "min radius",
+     "13": "radius cushion when outside [min,max]",
+     "14": "rate at which the live min/max radius and pitch targets ease to the style values",
+     "15": "target pitch, deg",
+     "16": "min pitch, deg",
+     "17": "max pitch, deg",
+     "18": "bezier weight for the pitch blend while airborne",
+     "19": "pitch easing rate toward target",
+     "20": "yaw-follow gain multiplier",
+     "23": "stick-X shaping weight, stick pushed forward",
+     "24": "stick-X shaping weight, stick pulled back",
+     "25": "FOV deg",
+     "29": "FOV easing-rate target"
+    }
+   },
+   "lockon": {
+    "at": "src/d/d_camera.cpp:3310-3667",
+    "p": {
+     "3": "center-offset yaw blend rate",
+     "4": "center-offset radius blend rate",
+     "8": "LOCKON_CENTER_HEIGHT_MIN (target close)",
+     "9": "LOCKON_CENTER_HEIGHT_MAX (target far)",
+     "10": "RadiusRatio center",
+     "11": "RadiusRatio min",
+     "12": "RadiusRatio max",
+     "13": "radius clamp A",
+     "14": "radius clamp B (DefaultRadius uses min/max of the pair)",
+     "15": "near-zone yaw gain",
+     "16": "pitch clamp min while on the ship",
+     "17": "pitch clamp max while on the ship",
+     "18": "LOCKON_LATITUDE_MIN deg (target close)",
+     "19": "LOCKON_LATITUDE_MAX deg (target far)",
+     "20": "yaw easing rate, far zone",
+     "21": "(read but effect uncertain)",
+     "23": "LOCKON_LONGITUDE_MIN deg (target close)",
+     "24": "LOCKON_LONGITUDE_MAX deg (target far)",
+     "28": "LOCKON_FOVY_MIN (close)",
+     "29": "LOCKON_FOVY_MAX (far)"
+    }
+   },
+   "subject": {
+    "at": "src/d/d_camera.cpp:3720-3854, 3857-4207",
+    "p": {
+     "0": "eye offset z from the center (Link-local)",
+     "1": "eye offset x",
+     "5": "eye offset y",
+     "10": "radius (center->eye distance; 20 for SS01/SN15, 40 for SX, 120 for SY)",
+     "19": "max pitch magnitude, deg",
+     "20": "per-frame easing rate of the direction",
+     "21": "per-frame stick->angle-fraction rate (0.04 everywhere)",
+     "24": "max yaw offset from Link's body yaw, deg",
+     "25": "FOV deg",
+     "26": "telescope zoom rate (SN15 0.2) / FOV for the aim styles"
+    }
+   },
+   "fixed_position": {
+    "at": "src/d/d_camera.cpp:4548-4706",
+    "p": {
+     "0": "center forward offset z",
+     "1": "center side offset x",
+     "5": "center height offset",
+     "3": "center horizontal ease rate (steady state)",
+     "4": "center vertical ease rate",
+     "10": "max radius clamp",
+     "11": "min radius clamp",
+     "23": "steady-state direction/FOV ease rate",
+     "24": "transition-length coefficient: frames = (int)(Val24 * sqrt(dist/linkHeight)) + 1, so Val24 = 0 (PN05) gives a hard cut and Val24 = 10 (PN12/PN13) a smooth blend",
+     "25": "default FOV (overridden by CAMR field_0x12)"
+    }
+   },
+   "fixed_frame": {
+    "at": "src/d/d_camera.cpp:4458-4547",
+    "p": {
+     "24": "transition-length coefficient (0 for XN06 -> hard cut)",
+     "25": "default FOV (overridden by CAMR field_0x12)"
+    }
+   },
+   "crawl": {
+    "at": "src/d/d_camera.cpp:4213-4367",
+    "p": {
+     "0": "center forward offset",
+     "1": "center side offset",
+     "5": "center height",
+     "3": "center h rate",
+     "4": "center v rate",
+     "10": "radius (forced to 2.0 when style flag 0x080)",
+     "25": "FOV"
+    }
+   },
+   "non_owner": {
+    "at": "src/d/d_camera.cpp:4403-4457",
+    "p": {
+     "0": "eye offset z from the cannon",
+     "1": "eye offset x",
+     "5": "eye offset y",
+     "10": "radius",
+     "15": "pitch deg",
+     "18": "weight on the cannon's shape_angle.x",
+     "20": "ease rate",
+     "23": "weight on the cannon's yaw",
+     "25": "FOV"
+    }
+   },
+   "ride_talkto_tower_hung_vomit_shield_manual_hookshot_tornado": "UNKNOWN - those engines have no body in the decomp. The rows are listed in _types.styles so they can be transplanted once the algorithm is reconstructed."
+  },
+  "mv_bg_types": {
+   "at": "src/d/d_cam_type2.cpp:9-45",
+   "what": "dCamera_c::mvBGTypes[35]: the per-polygon 'camera move BG' id in the DZB indexes this name list, and the name is looked up in the type table. Index 0 = '????' = none.",
+   "names": [
+    "????",
+    "Field",
+    "Dungeon",
+    "Plain",
+    "DungeonDown",
+    "DungeonUp",
+    "DungeonCorner",
+    "Jump",
+    "DungeonWide",
+    "Room",
+    "FieldCushion",
+    "OverLook",
+    "Corridor",
+    "Subject",
+    "DungeonPassage",
+    "Cliff",
+    "Cliff2",
+    "MajTower",
+    "Boss01",
+    "Boss02",
+    "Gamoss",
+    "MiniIsland",
+    "Amoss",
+    "Cafe",
+    "P_Ganon1",
+    "P_Ganon2",
+    "WindBoss",
+    "P_Ganon3",
+    "G_BedRoom",
+    "G_Roof",
+    "G_BedRoom2",
+    "Boss04",
+    "WindHall",
+    "BigBird",
+    "DStairs"
+   ]
+  },
+  "types": {
+   "at": "src/d/d_cam_type.cpp",
+   "count": 65,
+   "duplicate_names": [
+    "DungeonUp (indices 27 and 63)",
+    "Water (indices 41 and 64)"
+   ],
+   "columns": "modes[0..19]; null = dCamStyle_NONE_e (this type refuses that mode)",
+   "rows": [
+    {
+     "index": 0,
+     "name": "Empty",
+     "modes": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null
+     ]
+    },
+    {
+     "index": 1,
+     "name": "Plain",
+     "modes": [
+      "FN03",
+      "FN03",
+      "LL03",
+      "TT03",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH01",
+      "LA01",
+      "LB01",
+      "SX01",
+      "SY01",
+      "MM01",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 2,
+     "name": "Keep",
+     "modes": [
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      "EN00",
+      null,
+      null,
+      null
+     ]
+    },
+    {
+     "index": 3,
+     "name": "Event",
+     "modes": [
+      "EN00",
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      "EN00",
+      null,
+      null,
+      null
+     ]
+    },
+    {
+     "index": 4,
+     "name": "Boss01",
+     "modes": [
+      "FN15",
+      "FN15",
+      "LL05",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH02",
+      "LA01",
+      "LB01",
+      "SX02",
+      "SY01",
+      "MM05",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 5,
+     "name": "Cliff",
+     "modes": [
+      "FN19",
+      "FN19",
+      "LL06",
+      "TT02",
+      "SS01",
+      "LW02",
+      "LE01",
+      "LH02",
+      "LA02",
+      "LB02",
+      "SX01",
+      "SY01",
+      "MM04",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 6,
+     "name": "PlaySlide",
+     "modes": [
+      "FN20",
+      "FN20",
+      "LL01",
+      "TT01",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH01",
+      "LA01",
+      "LB01",
+      "SX01",
+      "SY01",
+      "MM01",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 7,
+     "name": "Field",
+     "modes": [
+      "FN01",
+      "FN01",
+      "LL01",
+      "TT01",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH01",
+      "LA01",
+      "LB01",
+      "SX01",
+      "SY01",
+      "MM01",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 8,
+     "name": "ThrowUp",
+     "modes": [
+      "FN21",
+      "FN21",
+      "LL01",
+      "TT01",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH01",
+      "LA01",
+      "LB01",
+      "SX01",
+      "SY01",
+      "MM09",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 9,
+     "name": "Gamoss",
+     "modes": [
+      "FN23",
+      "FN23",
+      "LL09",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH02",
+      "LA02",
+      "LB02",
+      "SX01",
+      "SY01",
+      "MM03",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 10,
+     "name": "MiniIsland",
+     "modes": [
+      "FN24",
+      "FN24",
+      "LL01",
+      "TT01",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH01",
+      "LA01",
+      "LB01",
+      "SX01",
+      "SY01",
+      "MM10",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 11,
+     "name": "Cliff2",
+     "modes": [
+      "FN26",
+      "FN07",
+      "LL07",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH01",
+      "LA02",
+      "LB02",
+      "SX01",
+      "SY01",
+      "MM08",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 12,
+     "name": "FieldCushion",
+     "modes": [
+      "FN10",
+      "FN10",
+      "LL01",
+      "TT01",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH01",
+      "LA01",
+      "LB01",
+      "SX01",
+      "SY01",
+      "MM01",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 13,
+     "name": "FixdPos",
+     "modes": [
+      "PN05",
+      "FN02",
+      "LL02",
+      "TT02",
+      "SS01",
+      null,
+      null,
+      "LH02",
+      "LA01",
+      "LB01",
+      "SX01",
+      "SY01",
+      "MM01",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 14,
+     "name": "SmoothFixdPos",
+     "modes": [
+      "PN12",
+      "FN02",
+      "LL02",
+      "TT02",
+      "SS01",
+      null,
+      null,
+      "LH02",
+      "LA01",
+      "LB01",
+      "SX01",
+      "SY01",
+      "MM01",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 15,
+     "name": "WaterBattle",
+     "modes": [
+      "FN25",
+      "FN25",
+      "LL11",
+      "TT02",
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      "MM15",
+      null,
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 16,
+     "name": "SmoothFixdPosC",
+     "modes": [
+      "PN13",
+      "FN02",
+      "LL02",
+      "TT02",
+      "SS01",
+      null,
+      null,
+      "LH02",
+      "LA01",
+      "LB01",
+      "SX01",
+      "SY01",
+      "MM01",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 17,
+     "name": "ThrowInto",
+     "modes": [
+      "FN29",
+      "FN29",
+      "LL01",
+      "TT01",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH01",
+      "LA01",
+      "LB01",
+      "SX01",
+      "SY01",
+      "MM09",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 18,
+     "name": "Boss03",
+     "modes": [
+      "FN30",
+      "FN30",
+      "LL12",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH02",
+      "LA01",
+      "LB01",
+      "SX02",
+      "SY01",
+      "MM01",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 19,
+     "name": "P_Ganon1",
+     "modes": [
+      "FN31",
+      "FN31",
+      "LL13",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH02",
+      "LA01",
+      "LB01",
+      "SX02",
+      "SY01",
+      "MM01",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 20,
+     "name": "P_Ganon2",
+     "modes": [
+      "FN32",
+      "FN32",
+      "LL14",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH02",
+      "LA01",
+      "LB01",
+      "SX02",
+      "SY01",
+      "MM01",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 21,
+     "name": "WindBoss",
+     "modes": [
+      "FN33",
+      "FN33",
+      "LL15",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH02",
+      "LA02",
+      "LB02",
+      "SX01",
+      "SY01",
+      "MM03",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 22,
+     "name": "P_Ganon3",
+     "modes": [
+      "FN34",
+      "FN34",
+      "LL14",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH02",
+      "LA01",
+      "LB01",
+      "SX02",
+      "SY01",
+      "MM01",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 23,
+     "name": "Test01",
+     "modes": [
+      "FN27",
+      "FN27",
+      "LL10",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH02",
+      "LA01",
+      "LB01",
+      "SX02",
+      "SY01",
+      "MM01",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 24,
+     "name": "Amoss",
+     "modes": [
+      "FN35",
+      "FN35",
+      "LL16",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH02",
+      "LA01",
+      "LB01",
+      "SX02",
+      "SY01",
+      "MM01",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 25,
+     "name": "Dungeon",
+     "modes": [
+      "FN02",
+      "FN02",
+      "LL02",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH02",
+      "LA02",
+      "LB02",
+      "SX01",
+      "SY01",
+      "MM03",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD02"
+     ]
+    },
+    {
+     "index": 26,
+     "name": "Jump",
+     "modes": [
+      "FN08",
+      "FN08",
+      "LL02",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH02",
+      "LA02",
+      "LB02",
+      "SX01",
+      "SY01",
+      "MM03",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD02"
+     ]
+    },
+    {
+     "index": 27,
+     "name": "DungeonUp",
+     "modes": [
+      "FN04",
+      "FN04",
+      "LL06",
+      "TT02",
+      "SS01",
+      "LW02",
+      "LE01",
+      "LH02",
+      "LA02",
+      "LB02",
+      "SX01",
+      "SY01",
+      "MM02",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD02"
+     ]
+    },
+    {
+     "index": 28,
+     "name": "DungeonCorner",
+     "modes": [
+      "FN06",
+      "FN06",
+      "LL08",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH02",
+      "LA02",
+      "LB02",
+      "SX01",
+      "SY01",
+      "MM03",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD02"
+     ]
+    },
+    {
+     "index": 29,
+     "name": "DungeonWide",
+     "modes": [
+      "FN07",
+      "FN07",
+      "LL07",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH01",
+      "LA02",
+      "LB02",
+      "SX01",
+      "SY01",
+      "MM08",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD02"
+     ]
+    },
+    {
+     "index": 30,
+     "name": "CannonGame",
+     "modes": [
+      "ZZ00",
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      "EN00",
+      null,
+      null,
+      null
+     ]
+    },
+    {
+     "index": 31,
+     "name": "FieldFOX",
+     "modes": [
+      "GN01",
+      "GN01",
+      "LL01",
+      "TT01",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH01",
+      "LA01",
+      "LB01",
+      "SX01",
+      "SY01",
+      "MM01",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 32,
+     "name": "G_Roof",
+     "modes": [
+      "FN82",
+      "FN82",
+      "LL82",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH02",
+      "LA01",
+      "LB01",
+      "SX02",
+      "SY01",
+      "MM82",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 33,
+     "name": "G_BedRoom",
+     "modes": [
+      "FN81",
+      "FN81",
+      "LL81",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH02",
+      "LA01",
+      "LB01",
+      "SX02",
+      "SY01",
+      "MM81",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 34,
+     "name": "G_BedRoom2",
+     "modes": [
+      "FN81",
+      "FN81",
+      "LL81",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH02",
+      "LA01",
+      "LB01",
+      "SX02",
+      "SY01",
+      "MM83",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 35,
+     "name": "TowerUp",
+     "modes": [
+      "IN02",
+      "FN24",
+      "LL01",
+      "TT01",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH01",
+      "LA01",
+      "LB01",
+      "SX01",
+      "SY01",
+      "MM01",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 36,
+     "name": "MajTower",
+     "modes": [
+      "IN03",
+      "FN02",
+      "IN03",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH02",
+      "LA02",
+      "LB02",
+      "SX01",
+      "SY01",
+      "MM03",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 37,
+     "name": "Tower",
+     "modes": [
+      "IN01",
+      "FN24",
+      "IN02",
+      "TT01",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH01",
+      "LA01",
+      "LB01",
+      "SX01",
+      "SY01",
+      "MM01",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 38,
+     "name": "Boat",
+     "modes": [
+      "BN07",
+      "BP07",
+      "LL11",
+      "TT01",
+      "SS01",
+      "BW07",
+      "BE07",
+      null,
+      null,
+      null,
+      "SX01",
+      "SY01",
+      "MM07",
+      null,
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 39,
+     "name": "BoatBattle",
+     "modes": [
+      "BN08",
+      "BP08",
+      "LL17",
+      "TT01",
+      "SS01",
+      "BW07",
+      "BE07",
+      null,
+      null,
+      null,
+      "SX01",
+      "SY01",
+      "MM07",
+      null,
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 40,
+     "name": "Water",
+     "modes": [
+      "FN14",
+      "FN14",
+      "LL02",
+      "TT02",
+      "SS01",
+      null,
+      null,
+      null,
+      null,
+      null,
+      "SX01",
+      "SY01",
+      "MM14",
+      "CC01",
+      "SN15",
+      null,
+      "EN00",
+      null,
+      null,
+      null
+     ]
+    },
+    {
+     "index": 41,
+     "name": "WindHall",
+     "modes": [
+      "FN38",
+      "FP38",
+      "LL07",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH01",
+      "LA02",
+      "LB02",
+      "SX01",
+      "SY01",
+      "MM08",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD02"
+     ]
+    },
+    {
+     "index": 42,
+     "name": "Tornado",
+     "modes": [
+      "QN07",
+      "BP07",
+      "LL11",
+      "TT01",
+      "SS01",
+      "BW07",
+      "BE08",
+      null,
+      null,
+      null,
+      "SX01",
+      "SY01",
+      null,
+      null,
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 43,
+     "name": "OverLook",
+     "modes": [
+      "FN11",
+      "FN11",
+      "LL01",
+      "TT04",
+      "SS01",
+      "LW02",
+      "LE01",
+      "LH01",
+      "LA01",
+      "LB01",
+      "SX01",
+      "SY01",
+      "MM02",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD02"
+     ]
+    },
+    {
+     "index": 44,
+     "name": "Dome",
+     "modes": [
+      "FN39",
+      "FN05",
+      "LL02",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH02",
+      "LA02",
+      "LB02",
+      "SX01",
+      "SY01",
+      "MM02",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD02"
+     ]
+    },
+    {
+     "index": 45,
+     "name": "ForceFixdPos",
+     "modes": [
+      "PN05",
+      null,
+      null,
+      null,
+      "SS01",
+      null,
+      null,
+      null,
+      null,
+      null,
+      "SX01",
+      "SY01",
+      null,
+      "CC01",
+      "SN15",
+      null,
+      "EN00",
+      null,
+      null,
+      null
+     ]
+    },
+    {
+     "index": 46,
+     "name": "FixdFrm",
+     "modes": [
+      "XN06",
+      null,
+      null,
+      null,
+      "SS01",
+      null,
+      null,
+      null,
+      null,
+      null,
+      "SX01",
+      "SY01",
+      null,
+      "CC01",
+      "SN15",
+      null,
+      "EN00",
+      null,
+      null,
+      null
+     ]
+    },
+    {
+     "index": 47,
+     "name": "DStairs",
+     "modes": [
+      "FN02",
+      "FN02",
+      "LL02",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH02",
+      "LA02",
+      "LB02",
+      "SX01",
+      "SY01",
+      "MM16",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD02"
+     ]
+    },
+    {
+     "index": 48,
+     "name": "Boss02",
+     "modes": [
+      "FN40",
+      "FN40",
+      "LL05",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH02",
+      "LA01",
+      "LB01",
+      "SX02",
+      "SY01",
+      "MM01",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 49,
+     "name": "Seagal",
+     "modes": [
+      "FN36",
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      "MM01",
+      null,
+      null,
+      null,
+      "EN00",
+      null,
+      null,
+      null
+     ]
+    },
+    {
+     "index": 50,
+     "name": "SmallRoom",
+     "modes": [
+      "FN41",
+      "FN41",
+      "LL04",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH02",
+      "LA01",
+      "LB01",
+      "SX01",
+      "SY01",
+      "MM17",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 51,
+     "name": "DanMae",
+     "modes": [
+      "FN42",
+      "FN42",
+      "LL02",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH02",
+      "LA02",
+      "LB02",
+      "SX01",
+      "SY01",
+      "MM19",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD02"
+     ]
+    },
+    {
+     "index": 52,
+     "name": "Cafe",
+     "modes": [
+      "FN28",
+      "FN28",
+      "LL04",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH02",
+      "LA01",
+      "LB01",
+      "SX01",
+      "SY01",
+      "MM20",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 53,
+     "name": "DungeonPassage",
+     "modes": [
+      "FN17",
+      "FN17",
+      "LL08",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH02",
+      "LA02",
+      "LB02",
+      "SX01",
+      "SY01",
+      "MM20",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD02"
+     ]
+    },
+    {
+     "index": 54,
+     "name": "Corridor",
+     "modes": [
+      "FN12",
+      "FN12",
+      "LL07",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH01",
+      "LA02",
+      "LB02",
+      "SX01",
+      "SY01",
+      "MM20",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD02"
+     ]
+    },
+    {
+     "index": 55,
+     "name": "Subject",
+     "modes": [
+      "LN17",
+      null,
+      null,
+      null,
+      "SS01",
+      null,
+      null,
+      null,
+      null,
+      null,
+      "SX01",
+      "SY01",
+      null,
+      "CC02",
+      "SN15",
+      null,
+      "EN00",
+      null,
+      null,
+      null
+     ]
+    },
+    {
+     "index": 56,
+     "name": "BigBird",
+     "modes": [
+      "FN43",
+      "FN43",
+      "LL18",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH02",
+      "LA01",
+      "LB01",
+      "SX02",
+      "SY01",
+      "MM01",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 57,
+     "name": "Room",
+     "modes": [
+      "FN09",
+      "FN09",
+      "LL04",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH02",
+      "LA01",
+      "LB01",
+      "SX01",
+      "SY01",
+      "MM18",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 58,
+     "name": "DungeonDown",
+     "modes": [
+      "FN05",
+      "FN05",
+      "LL02",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH02",
+      "LA02",
+      "LB02",
+      "SX01",
+      "SY01",
+      "MM21",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD02"
+     ]
+    },
+    {
+     "index": 59,
+     "name": "Boss04",
+     "modes": [
+      "FN37",
+      "FN05",
+      "LL02",
+      "TT02",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH02",
+      "LA02",
+      "LB02",
+      "SX01",
+      "SY01",
+      "MM02",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD04"
+     ]
+    },
+    {
+     "index": 60,
+     "name": "UnderTheEaves",
+     "modes": [
+      "FN01",
+      "FN01",
+      "LL01",
+      "TT01",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH01",
+      "LA01",
+      "LB01",
+      "SX01",
+      "SY01",
+      "MM22",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 61,
+     "name": "Restrict",
+     "modes": [
+      "LN01",
+      null,
+      null,
+      null,
+      "SS01",
+      null,
+      null,
+      null,
+      null,
+      null,
+      "SX01",
+      "SY01",
+      null,
+      "CC01",
+      "SN15",
+      null,
+      "EN00",
+      null,
+      null,
+      null
+     ]
+    },
+    {
+     "index": 62,
+     "name": "DungeonUp",
+     "modes": [
+      "FN04",
+      "FN04",
+      "LL06",
+      "TT02",
+      "SS01",
+      "LW02",
+      "LE01",
+      "LH02",
+      "LA02",
+      "LB02",
+      "SX01",
+      "SY01",
+      "MM08",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD02"
+     ]
+    },
+    {
+     "index": 63,
+     "name": "Block",
+     "modes": [
+      "FN01",
+      "FN01",
+      "LL01",
+      "TT01",
+      "SS01",
+      "LW01",
+      "LE01",
+      "LH01",
+      "LA01",
+      "LB01",
+      "SX01",
+      "SY01",
+      "MM23",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      "HN18",
+      "HN16",
+      "DD01"
+     ]
+    },
+    {
+     "index": 64,
+     "name": "Water",
+     "modes": [
+      "FN14",
+      "FN14",
+      "LL02",
+      "TT02",
+      "SS01",
+      null,
+      null,
+      null,
+      null,
+      null,
+      "SX01",
+      "SY01",
+      "MM14",
+      "CC01",
+      "SN15",
+      "JN05",
+      "EN00",
+      null,
+      null,
+      null
+     ]
+    }
+   ]
+  },
+  "styles": {
+   "at": "src/d/d_cam_style.cpp",
+   "count_usa_pal": 145,
+   "note": "keys are the 4-char style tags. 'p' holds only the indices that are NOT the -99999.99 'unused' sentinel. Keys ending in '#jpn' are the JPN-only variants of a tag that USA/PAL redefines.",
+   "rows": {
+    "NN00": {
+     "engine": "LET_CAMERA",
+     "flags": [],
+     "src": "src/d/d_cam_style.cpp:12",
+     "version": "all",
+     "p": {}
+    },
+    "FN08": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:18",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 5.0,
+      "10": 450.0,
+      "11": 300.0,
+      "13": 0.66,
+      "14": 0.05,
+      "15": 25.0,
+      "16": -40.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.2,
+      "23": 1.0,
+      "24": 0.2,
+      "25": 55.0,
+      "29": 0.05
+     }
+    },
+    "PN05": {
+     "engine": "FIXED_POSITION_CAMERA",
+     "flags": [
+      "0x040"
+     ],
+     "src": "src/d/d_cam_style.cpp:24",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": -20.0,
+      "10": 1000.0,
+      "11": 50.0,
+      "23": 0.75,
+      "24": 0.0,
+      "25": 50.0
+     }
+    },
+    "PN12": {
+     "engine": "FIXED_POSITION_CAMERA",
+     "flags": [
+      "0x040"
+     ],
+     "src": "src/d/d_cam_style.cpp:30",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": -20.0,
+      "10": 1000.0,
+      "11": 50.0,
+      "23": 0.75,
+      "24": 10.0,
+      "25": 50.0
+     }
+    },
+    "EN00": {
+     "engine": "EVENT_CAMERA",
+     "flags": [],
+     "src": "src/d/d_cam_style.cpp:36",
+     "version": "all",
+     "p": {}
+    },
+    "FN12": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:42",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": -15.0,
+      "10": 220.0,
+      "11": 180.0,
+      "13": 0.66,
+      "14": 0.05,
+      "15": 12.0,
+      "16": -40.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.08,
+      "20": 1.0,
+      "23": 1.0,
+      "24": 0.2,
+      "25": 55.0,
+      "29": 0.05
+     }
+    },
+    "TT01": {
+     "engine": "TALKTO_CAMERA",
+     "flags": [
+      "0x001"
+     ],
+     "src": "src/d/d_cam_style.cpp:48",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.0,
+      "5": -40.0,
+      "6": 0.0,
+      "7": 0.0,
+      "8": 0.0,
+      "9": 0.0,
+      "10": 300.0,
+      "11": 80.0,
+      "12": 0.0,
+      "13": 0.0,
+      "14": 0.0,
+      "15": 10.0,
+      "16": 0.0,
+      "17": 0.0,
+      "18": -15.0,
+      "19": 35.0,
+      "20": 0.0,
+      "21": 0.0,
+      "23": 0.0,
+      "24": 30.0,
+      "25": 40.0,
+      "26": 45.0,
+      "27": 0.0,
+      "28": 0.0,
+      "29": 0.0
+     }
+    },
+    "TT02": {
+     "engine": "TALKTO_CAMERA",
+     "flags": [
+      "0x001"
+     ],
+     "src": "src/d/d_cam_style.cpp:54",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.6,
+      "4": 0.0,
+      "5": -30.0,
+      "6": 0.0,
+      "7": 0.0,
+      "8": 0.0,
+      "9": 0.0,
+      "10": 280.0,
+      "11": 80.0,
+      "12": 0.0,
+      "13": 0.0,
+      "14": 0.0,
+      "15": 10.0,
+      "16": 0.0,
+      "17": 0.0,
+      "18": -15.0,
+      "19": 40.0,
+      "20": 0.0,
+      "21": 0.0,
+      "23": 0.0,
+      "24": 30.0,
+      "25": 40.0,
+      "26": 45.0,
+      "27": 0.0,
+      "28": 0.0,
+      "29": 0.0
+     }
+    },
+    "TT03": {
+     "engine": "TALKTO_CAMERA",
+     "flags": [
+      "0x001"
+     ],
+     "src": "src/d/d_cam_style.cpp:60",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.6,
+      "4": 0.0,
+      "5": 0.0,
+      "6": 0.0,
+      "7": 0.0,
+      "8": 0.0,
+      "9": 0.0,
+      "10": 300.0,
+      "11": 80.0,
+      "12": 0.0,
+      "13": 0.0,
+      "14": 0.0,
+      "15": 10.0,
+      "16": 0.0,
+      "17": 0.0,
+      "18": 0.0,
+      "19": 40.0,
+      "20": 0.0,
+      "21": 0.0,
+      "23": 0.0,
+      "24": 30.0,
+      "25": 40.0,
+      "26": 45.0,
+      "27": 0.0,
+      "28": 0.0,
+      "29": 0.0
+     }
+    },
+    "LA03": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:66",
+     "version": "all",
+     "p": {
+      "3": 0.2,
+      "4": 0.4,
+      "5": 0.0,
+      "6": -17.5,
+      "7": 20.0,
+      "8": -17.5,
+      "9": 0.0,
+      "10": 375.0,
+      "11": 125.0,
+      "12": 750.0,
+      "13": 425.0,
+      "14": 350.0,
+      "15": 18.0,
+      "16": -40.0,
+      "17": 40.0,
+      "18": 20.0,
+      "19": 15.0,
+      "20": 0.03,
+      "21": 0.0,
+      "23": 40.0,
+      "24": 40.0,
+      "25": 55.0,
+      "26": 52.5,
+      "27": 54.5,
+      "28": 50.0,
+      "29": 60.0
+     }
+    },
+    "LP01": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:72",
+     "version": "all",
+     "p": {
+      "3": 0.05,
+      "4": 0.2,
+      "5": -30.0,
+      "6": 12.5,
+      "7": 20.0,
+      "8": -30.0,
+      "9": -30.0,
+      "10": 220.0,
+      "11": 125.0,
+      "12": 625.0,
+      "13": 220.0,
+      "14": 220.0,
+      "15": 0.0,
+      "16": -40.0,
+      "17": 30.0,
+      "18": -10.0,
+      "19": 10.0,
+      "20": 0.1,
+      "21": 0.05,
+      "23": 0.0,
+      "24": 0.0,
+      "25": 55.0,
+      "26": 55.0,
+      "27": 55.0,
+      "28": 50.0,
+      "29": 60.0
+     }
+    },
+    "LA02": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:78",
+     "version": "all",
+     "p": {
+      "3": 0.3,
+      "4": 0.1,
+      "5": -7.5,
+      "6": -17.5,
+      "7": 20.0,
+      "8": -22.5,
+      "9": -2.5,
+      "10": 400.0,
+      "11": 125.0,
+      "12": 750.0,
+      "13": 450.0,
+      "14": 350.0,
+      "15": 30.0,
+      "16": -40.0,
+      "17": 40.0,
+      "18": 35.0,
+      "19": 10.0,
+      "20": 0.04,
+      "21": 0.0,
+      "23": 80.0,
+      "24": 40.0,
+      "25": 55.0,
+      "26": 52.5,
+      "27": 54.5,
+      "28": 50.0,
+      "29": 60.0
+     }
+    },
+    "FN13": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x001",
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:84",
+     "version": "all",
+     "p": {
+      "3": 0.2,
+      "4": 0.4,
+      "5": 7.5,
+      "6": -17.5,
+      "7": 20.0,
+      "8": -22.5,
+      "9": -2.5,
+      "10": 400.0,
+      "11": 125.0,
+      "12": 750.0,
+      "13": 450.0,
+      "14": 350.0,
+      "15": 0.0,
+      "16": -40.0,
+      "17": 40.0,
+      "18": 30.0,
+      "19": -5.0,
+      "20": 0.0,
+      "21": 0.0,
+      "23": 80.0,
+      "24": 60.0,
+      "25": 55.0,
+      "26": 52.5,
+      "27": 54.5,
+      "28": 50.0,
+      "29": 60.0
+     }
+    },
+    "LH01": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x001",
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:90",
+     "version": "all",
+     "p": {
+      "3": 0.9,
+      "4": 0.1,
+      "5": -50.0,
+      "6": 3.8,
+      "7": 20.0,
+      "8": -50.0,
+      "9": -50.0,
+      "10": 350.0,
+      "11": 125.0,
+      "12": 875.0,
+      "13": 325.0,
+      "14": 375.0,
+      "15": 50.0,
+      "16": -20.0,
+      "17": 60.0,
+      "18": 55.0,
+      "19": 20.0,
+      "20": 0.2,
+      "21": 0.05,
+      "23": 10.0,
+      "24": 5.0,
+      "25": 55.0,
+      "26": 55.0,
+      "27": 55.0,
+      "28": 50.0,
+      "29": 65.0
+     }
+    },
+    "LH02": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:96",
+     "version": "all",
+     "p": {
+      "3": 0.9,
+      "4": 0.1,
+      "5": -50.0,
+      "6": 3.8,
+      "7": 20.0,
+      "8": -50.0,
+      "9": -50.0,
+      "10": 350.0,
+      "11": 125.0,
+      "12": 375.0,
+      "13": 350.0,
+      "14": 350.0,
+      "15": 50.0,
+      "16": -20.0,
+      "17": 60.0,
+      "18": 55.0,
+      "19": 23.0,
+      "20": 0.2,
+      "21": 0.05,
+      "23": 10.0,
+      "24": 5.0,
+      "25": 55.0,
+      "26": 50.0,
+      "27": 65.0,
+      "28": 50.0,
+      "29": 65.0
+     }
+    },
+    "LB02": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:102",
+     "version": "all",
+     "p": {
+      "3": 0.2,
+      "4": 0.4,
+      "5": -12.5,
+      "6": -17.5,
+      "7": 20.0,
+      "8": -17.5,
+      "9": -7.5,
+      "10": 400.0,
+      "11": 125.0,
+      "12": 750.0,
+      "13": 450.0,
+      "14": 350.0,
+      "15": 0.0,
+      "16": -40.0,
+      "17": 40.0,
+      "18": 10.0,
+      "19": -5.0,
+      "20": 0.01,
+      "21": 0.0,
+      "23": 170.0,
+      "24": 160.0,
+      "25": 55.0,
+      "26": 52.5,
+      "27": 54.5,
+      "28": 50.0,
+      "29": 60.0
+     }
+    },
+    "LP02": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:108",
+     "version": "all",
+     "p": {
+      "3": 0.05,
+      "4": 0.2,
+      "5": -30.0,
+      "6": 12.5,
+      "7": 20.0,
+      "8": -30.0,
+      "9": -30.0,
+      "10": 200.0,
+      "11": 125.0,
+      "12": 750.0,
+      "13": 200.0,
+      "14": 200.0,
+      "15": 0.0,
+      "16": -40.0,
+      "17": 40.0,
+      "18": -10.0,
+      "19": 10.0,
+      "20": 0.1,
+      "21": 0.05,
+      "23": 0.0,
+      "24": 0.0,
+      "25": 52.5,
+      "26": 52.5,
+      "27": 52.5,
+      "28": 50.0,
+      "29": 60.0
+     }
+    },
+    "LP03": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:114",
+     "version": "all",
+     "p": {
+      "3": 0.1,
+      "4": 0.4,
+      "5": -30.0,
+      "6": 12.5,
+      "7": 20.0,
+      "8": -30.0,
+      "9": -30.0,
+      "10": 220.0,
+      "11": 125.0,
+      "12": 220.0,
+      "13": 220.0,
+      "14": 220.0,
+      "15": 5.0,
+      "16": -40.0,
+      "17": 30.0,
+      "18": -10.0,
+      "19": 10.0,
+      "20": 0.1,
+      "21": 0.05,
+      "23": 0.0,
+      "24": 0.0,
+      "25": 55.0,
+      "26": 55.0,
+      "27": 55.0,
+      "28": 55.0,
+      "29": 55.0
+     }
+    },
+    "LP04": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:120",
+     "version": "all",
+     "p": {
+      "3": 0.1,
+      "4": 0.4,
+      "5": -25.0,
+      "6": 15.0,
+      "7": 20.0,
+      "8": -25.0,
+      "9": -25.0,
+      "10": 200.0,
+      "11": 200.0,
+      "12": 320.0,
+      "13": 250.0,
+      "14": 350.0,
+      "15": 5.0,
+      "16": -10.0,
+      "17": 20.0,
+      "18": 5.0,
+      "19": 5.0,
+      "20": 0.2,
+      "21": 0.05,
+      "23": 0.0,
+      "24": 0.0,
+      "25": 45.0,
+      "26": 45.0,
+      "27": 45.0,
+      "28": 45.0,
+      "29": 45.0
+     }
+    },
+    "CC01": {
+     "engine": "CRAWL_CAMERA",
+     "flags": [
+      "0x002",
+      "0x080"
+     ],
+     "src": "src/d/d_cam_style.cpp:126",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.6,
+      "4": 0.2,
+      "5": 10.0,
+      "10": 145.0,
+      "11": 145.0,
+      "12": 145.0,
+      "13": 0.1,
+      "14": 0.25,
+      "15": 0.0,
+      "18": 0.25,
+      "19": 0.25,
+      "23": 0.1,
+      "24": 0.8,
+      "25": 50.0,
+      "28": 0.5,
+      "29": 0.5
+     }
+    },
+    "CC02": {
+     "engine": "CRAWL_CAMERA",
+     "flags": [
+      "0x002",
+      "0x040",
+      "0x080"
+     ],
+     "src": "src/d/d_cam_style.cpp:132",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.6,
+      "4": 0.2,
+      "5": 10.0,
+      "10": 145.0,
+      "11": 145.0,
+      "12": 145.0,
+      "13": 0.1,
+      "14": 0.25,
+      "15": 0.0,
+      "18": 0.25,
+      "19": 0.25,
+      "23": 0.1,
+      "24": 0.8,
+      "25": 50.0,
+      "28": 0.5,
+      "29": 0.5
+     }
+    },
+    "LL06": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:138",
+     "version": "all",
+     "p": {
+      "3": 0.5,
+      "4": 0.25,
+      "5": 0.0,
+      "6": -17.5,
+      "7": 20.0,
+      "8": -17.5,
+      "9": 0.0,
+      "10": 375.0,
+      "11": 125.0,
+      "12": 750.0,
+      "13": 425.0,
+      "14": 350.0,
+      "15": 15.0,
+      "16": -70.0,
+      "17": 70.0,
+      "18": 20.0,
+      "19": 12.0,
+      "20": 0.01,
+      "21": 0.0,
+      "23": 70.0,
+      "24": 50.0,
+      "25": 55.0,
+      "26": 52.5,
+      "27": 54.5,
+      "28": 50.0,
+      "29": 60.0
+     }
+    },
+    "LL08": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:144",
+     "version": "all",
+     "p": {
+      "3": 0.4,
+      "4": 0.2,
+      "5": 6.5,
+      "6": -17.5,
+      "7": 20.0,
+      "8": -5.0,
+      "9": 5.0,
+      "10": 420.0,
+      "11": 125.0,
+      "12": 350.0,
+      "13": 380.0,
+      "14": 280.0,
+      "15": 2.0,
+      "16": -70.0,
+      "17": 70.0,
+      "18": -5.0,
+      "19": 0.0,
+      "20": 0.08,
+      "21": 0.0,
+      "23": 60.0,
+      "24": 5.0,
+      "25": 55.0,
+      "26": 52.5,
+      "27": 54.5,
+      "28": 52.0,
+      "29": 56.0
+     }
+    },
+    "LL07": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:150",
+     "version": "all",
+     "p": {
+      "3": 0.4,
+      "4": 0.2,
+      "5": 7.5,
+      "6": -17.5,
+      "7": 20.0,
+      "8": -22.5,
+      "9": 5.0,
+      "10": 450.0,
+      "11": 125.0,
+      "12": 750.0,
+      "13": 480.0,
+      "14": 420.0,
+      "15": 0.0,
+      "16": -70.0,
+      "17": 70.0,
+      "18": 25.0,
+      "19": 10.0,
+      "20": 0.04,
+      "21": 0.0,
+      "23": 75.0,
+      "24": 20.0,
+      "25": 55.0,
+      "26": 52.5,
+      "27": 54.5,
+      "28": 48.0,
+      "29": 62.0
+     }
+    },
+    "LP10": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:156",
+     "version": "all",
+     "p": {
+      "0": -10000.0,
+      "1": -10000.0,
+      "3": 0.05,
+      "4": 0.2,
+      "5": -30.0,
+      "6": 12.5,
+      "7": 20.0,
+      "8": -30.0,
+      "9": 0.0,
+      "10": 320.0,
+      "11": 200.0,
+      "12": 750.0,
+      "13": 200.0,
+      "14": 200.0,
+      "15": 0.0,
+      "16": -40.0,
+      "17": 40.0,
+      "18": -10.0,
+      "19": -20.0,
+      "20": 0.1,
+      "21": 0.05,
+      "23": 0.0,
+      "24": 0.0,
+      "25": 52.5,
+      "26": 52.5,
+      "27": 52.5,
+      "28": 50.0,
+      "29": 60.0
+     }
+    },
+    "SN15": {
+     "engine": "SUBJECT_CAMERA",
+     "flags": [
+      "0x002",
+      "0x010",
+      "0x080"
+     ],
+     "src": "src/d/d_cam_style.cpp:162",
+     "version": "all",
+     "p": {
+      "0": 20.0,
+      "1": 0.0,
+      "5": 0.0,
+      "10": 20.0,
+      "19": 70.0,
+      "20": 0.75,
+      "21": 0.04,
+      "24": 90.0,
+      "25": 50.0,
+      "26": 0.2
+     }
+    },
+    "BW07": {
+     "engine": "RIDE_CAMERA",
+     "flags": [
+      "0x001"
+     ],
+     "src": "src/d/d_cam_style.cpp:168",
+     "version": "all",
+     "p": {
+      "0": 120.0,
+      "1": 80.0,
+      "3": 0.2,
+      "4": 0.15,
+      "5": 40.0,
+      "8": -60.0,
+      "10": 800.0,
+      "13": -500.0,
+      "14": 40.0,
+      "15": 40.0,
+      "16": 30.0,
+      "17": 50.0,
+      "18": -10.0,
+      "20": 1.0,
+      "21": 0.1,
+      "25": 50.0,
+      "28": 20.0,
+      "29": -5.0
+     }
+    },
+    "FN18": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:174",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": -25.0,
+      "10": 900.0,
+      "11": 800.0,
+      "13": 0.66,
+      "14": 0.05,
+      "15": 78.0,
+      "16": 75.0,
+      "17": 80.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.01,
+      "21": 0.01,
+      "23": 0.8,
+      "24": 0.1,
+      "25": 60.0,
+      "29": 0.05
+     }
+    },
+    "JN05": {
+     "engine": "HOOKSHOT_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:180",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": -20.0,
+      "10": 900.0,
+      "11": 50.0,
+      "14": 1000.0,
+      "23": 0.75,
+      "24": 0.0,
+      "25": 50.0
+     }
+    },
+    "XN06": {
+     "engine": "FIXED_FRAME_CAMERA",
+     "flags": [
+      "0x040"
+     ],
+     "src": "src/d/d_cam_style.cpp:186",
+     "version": "all",
+     "p": {
+      "24": 0.0,
+      "25": 50.0
+     }
+    },
+    "LB01": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:192",
+     "version": "all",
+     "p": {
+      "3": 0.2,
+      "4": 0.4,
+      "5": -12.5,
+      "6": -17.5,
+      "7": 20.0,
+      "8": -17.5,
+      "9": -7.5,
+      "10": 400.0,
+      "11": 125.0,
+      "12": 750.0,
+      "13": 460.0,
+      "14": 400.0,
+      "15": 0.0,
+      "16": -40.0,
+      "17": 40.0,
+      "18": 10.0,
+      "19": -5.0,
+      "20": 0.01,
+      "21": 0.0,
+      "23": 170.0,
+      "24": 160.0,
+      "25": 55.0,
+      "26": 52.5,
+      "27": 54.5,
+      "28": 48.0,
+      "29": 62.0
+     }
+    },
+    "LA01": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:198",
+     "version": "all",
+     "p": {
+      "3": 0.3,
+      "4": 0.1,
+      "5": -7.5,
+      "6": -17.5,
+      "7": 20.0,
+      "8": -22.5,
+      "9": -2.5,
+      "10": 400.0,
+      "11": 125.0,
+      "12": 750.0,
+      "13": 480.0,
+      "14": 420.0,
+      "15": 30.0,
+      "16": -40.0,
+      "17": 40.0,
+      "18": 30.0,
+      "19": 20.0,
+      "20": 0.06,
+      "21": 0.0,
+      "23": 60.0,
+      "24": 40.0,
+      "25": 55.0,
+      "26": 52.5,
+      "27": 54.5,
+      "28": 55.0,
+      "29": 65.0
+     }
+    },
+    "BP07": {
+     "engine": "RIDE_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:204",
+     "version": "all",
+     "p": {
+      "0": 120.0,
+      "1": 200.0,
+      "3": 0.75,
+      "4": 0.15,
+      "5": 40.0,
+      "8": -60.0,
+      "10": 900.0,
+      "13": -500.0,
+      "14": 40.0,
+      "15": 10.0,
+      "16": -5.0,
+      "17": 30.0,
+      "18": -10.0,
+      "20": 1.0,
+      "21": 0.1,
+      "25": 60.0,
+      "28": 20.0,
+      "29": -5.0
+     }
+    },
+    "LW02": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:210",
+     "version": "all",
+     "p": {
+      "3": 0.3,
+      "4": 0.1,
+      "5": -20.0,
+      "6": -20.0,
+      "7": 0.0,
+      "8": -20.0,
+      "9": -60.0,
+      "10": 250.0,
+      "11": 125.0,
+      "12": 450.0,
+      "13": 650.0,
+      "14": 650.0,
+      "15": 0.0,
+      "16": -20.0,
+      "17": 40.0,
+      "18": -10.0,
+      "19": 45.0,
+      "20": 0.2,
+      "21": 0.05,
+      "23": 0.0,
+      "24": 0.0,
+      "25": 60.0,
+      "26": 60.0,
+      "27": 60.0,
+      "28": 60.0,
+      "29": 60.0
+     }
+    },
+    "HP16": {
+     "engine": "HUNG_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:216",
+     "version": "all",
+     "p": {
+      "0": 20.0,
+      "1": 10.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": -70.0,
+      "10": 200.0,
+      "11": 200.0,
+      "13": 1.0,
+      "14": 1.0,
+      "15": 60.0,
+      "16": 60.0,
+      "18": 0.05,
+      "19": 1.0,
+      "25": 55.0,
+      "29": 0.25
+     }
+    },
+    "HN16": {
+     "engine": "HUNG_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:222",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.5,
+      "4": 0.25,
+      "5": -60.0,
+      "10": 350.0,
+      "11": 320.0,
+      "13": 0.3,
+      "14": 0.3,
+      "15": 25.0,
+      "16": 25.0,
+      "18": 0.5,
+      "19": 0.25,
+      "25": 62.5,
+      "29": 0.25
+     }
+    },
+    "BN07": {
+     "engine": "RIDE_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:228",
+     "version": "all",
+     "p": {
+      "0": 90.0,
+      "1": 150.0,
+      "3": 0.65,
+      "4": 0.15,
+      "5": 10.0,
+      "8": 5.0,
+      "10": 800.0,
+      "13": -430.0,
+      "14": 40.0,
+      "15": 5.0,
+      "16": -10.0,
+      "17": 30.0,
+      "18": -5.0,
+      "20": 0.2,
+      "21": 0.1,
+      "25": 70.0,
+      "28": 20.0,
+      "29": -5.0
+     }
+    },
+    "LP05": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:234",
+     "version": "all",
+     "p": {
+      "3": 0.05,
+      "4": 0.2,
+      "5": 0.0,
+      "6": 12.5,
+      "7": 20.0,
+      "8": 0.0,
+      "9": 0.0,
+      "10": 220.0,
+      "11": 125.0,
+      "12": 625.0,
+      "13": 220.0,
+      "14": 220.0,
+      "15": 0.0,
+      "16": -40.0,
+      "17": 30.0,
+      "18": -10.0,
+      "19": 10.0,
+      "20": 0.1,
+      "21": 0.05,
+      "23": 0.0,
+      "24": 0.0,
+      "25": 55.0,
+      "26": 55.0,
+      "27": 55.0,
+      "28": 50.0,
+      "29": 60.0
+     }
+    },
+    "LP06": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:240",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 32.0,
+      "6": 32.0,
+      "7": 32.0,
+      "8": 32.0,
+      "9": 32.0,
+      "10": 1250.0,
+      "11": 1000.0,
+      "12": 1100.0,
+      "13": 1250.0,
+      "14": 1250.0,
+      "15": 0.0,
+      "16": -10.0,
+      "17": 10.0,
+      "18": 2.0,
+      "19": 0.5,
+      "20": 0.01,
+      "21": 0.1,
+      "23": 0.1,
+      "24": 0.1,
+      "25": 55.0,
+      "26": 52.5,
+      "27": 54.5,
+      "28": 60.0,
+      "29": 70.0
+     }
+    },
+    "HN18": {
+     "engine": "VOMIT_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:246",
+     "version": "all",
+     "p": {
+      "0": 80.0,
+      "1": 0.0,
+      "3": 0.8,
+      "4": 0.15,
+      "5": 150.0,
+      "7": 500.0,
+      "10": 520.0,
+      "11": 80.0,
+      "13": 0.25,
+      "14": 0.7,
+      "15": 50.0,
+      "16": 5.0,
+      "18": 0.75,
+      "19": 0.15,
+      "25": 90.0,
+      "29": 0.25
+     }
+    },
+    "FN25": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001"
+     ],
+     "src": "src/d/d_cam_style.cpp:252",
+     "version": "all",
+     "p": {
+      "0": 0.5,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 80.0,
+      "10": 850.0,
+      "11": 500.0,
+      "13": 0.66,
+      "14": 0.05,
+      "15": 30.0,
+      "16": 0.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.1,
+      "23": 1.0,
+      "24": 0.2,
+      "25": 60.0,
+      "29": 0.05
+     }
+    },
+    "BP08": {
+     "engine": "RIDE_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:258",
+     "version": "all",
+     "p": {
+      "0": 90.0,
+      "1": 250.0,
+      "3": 0.75,
+      "4": 0.15,
+      "5": 120.0,
+      "8": 1.0,
+      "10": 1000.0,
+      "13": 0.0,
+      "14": 40.0,
+      "15": 20.0,
+      "16": -5.0,
+      "17": 30.0,
+      "18": 0.0,
+      "20": 1.0,
+      "21": 0.1,
+      "25": 60.0,
+      "28": 0.0,
+      "29": -5.0
+     }
+    },
+    "BN08": {
+     "engine": "RIDE_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:264",
+     "version": "all",
+     "p": {
+      "0": 90.0,
+      "1": 250.0,
+      "3": 0.75,
+      "4": 0.15,
+      "5": 120.0,
+      "8": 10.0,
+      "10": 1000.0,
+      "13": 0.0,
+      "14": 40.0,
+      "15": 20.0,
+      "16": -5.0,
+      "17": 30.0,
+      "18": 0.0,
+      "20": 0.2,
+      "21": 0.1,
+      "25": 60.0,
+      "28": 0.0,
+      "29": -5.0
+     }
+    },
+    "FN29": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:270",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 10.0,
+      "10": 550.0,
+      "11": 450.0,
+      "13": 0.66,
+      "14": 0.05,
+      "15": 40.0,
+      "16": -50.0,
+      "17": 70.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.16,
+      "23": 1.0,
+      "24": 0.2,
+      "25": 55.0,
+      "29": 0.05
+     }
+    },
+    "SX01": {
+     "engine": "SUBJECT_CAMERA",
+     "flags": [
+      "0x002",
+      "0x100"
+     ],
+     "src": "src/d/d_cam_style.cpp:276",
+     "version": "all",
+     "p": {
+      "0": 20.0,
+      "1": 0.0,
+      "5": -2.0,
+      "10": 40.0,
+      "19": 70.0,
+      "20": 0.45,
+      "21": 0.04,
+      "24": 90.0,
+      "25": 50.0,
+      "26": 50.0
+     }
+    },
+    "SY01": {
+     "engine": "SUBJECT_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:282",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 30.0,
+      "5": 30.0,
+      "10": 120.0,
+      "19": 70.0,
+      "20": 0.6,
+      "21": 0.04,
+      "24": 90.0,
+      "25": 60.0,
+      "26": 60.0
+     }
+    },
+    "SX02": {
+     "engine": "SUBJECT_CAMERA",
+     "flags": [
+      "0x002",
+      "0x100"
+     ],
+     "src": "src/d/d_cam_style.cpp:288",
+     "version": "all",
+     "p": {
+      "0": 20.0,
+      "1": 0.0,
+      "5": -2.0,
+      "10": 40.0,
+      "19": 60.0,
+      "20": 0.45,
+      "21": 0.04,
+      "24": 90.0,
+      "25": 60.0,
+      "26": 60.0
+     }
+    },
+    "MM06": {
+     "engine": "MANUAL_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:294",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.8,
+      "4": 0.8,
+      "5": 80.0,
+      "6": 80.0,
+      "7": 20.0,
+      "8": 0.0,
+      "9": 1.92,
+      "10": 250.0,
+      "11": 200.0,
+      "12": 800.0,
+      "13": 0.0,
+      "14": 16.0,
+      "15": 0.0,
+      "16": -55.0,
+      "17": 70.0,
+      "18": 0.0,
+      "19": 2.0,
+      "20": 0.33,
+      "21": 0.5,
+      "23": 0.0,
+      "24": 8.0,
+      "25": 90.0,
+      "26": 80.0,
+      "27": 90.0,
+      "28": 0.0,
+      "29": 0.48
+     }
+    },
+    "MM05": {
+     "engine": "MANUAL_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:300",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.7,
+      "4": 0.25,
+      "5": -20.0,
+      "6": -20.0,
+      "7": 20.0,
+      "8": 0.0,
+      "9": 1.92,
+      "10": 250.0,
+      "11": 150.0,
+      "12": 320.0,
+      "13": 0.0,
+      "14": 15.0,
+      "15": 0.0,
+      "16": -40.0,
+      "17": 40.0,
+      "18": 0.0,
+      "19": 2.0,
+      "20": 0.33,
+      "21": 0.5,
+      "23": 0.0,
+      "24": 8.0,
+      "25": 55.0,
+      "26": 60.0,
+      "27": 70.0,
+      "28": 0.0,
+      "29": 0.48
+     }
+    },
+    "MM09": {
+     "engine": "MANUAL_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:306",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.7,
+      "4": 0.25,
+      "5": 40.0,
+      "6": 50.0,
+      "7": 40.0,
+      "8": 0.0,
+      "9": 0.2,
+      "10": 320.0,
+      "11": 150.0,
+      "12": 800.0,
+      "13": 0.0,
+      "14": 30.0,
+      "15": 0.0,
+      "16": -30.0,
+      "17": 10.0,
+      "18": 0.0,
+      "19": 1.8,
+      "20": 0.33,
+      "21": 0.5,
+      "23": 0.0,
+      "24": 8.0,
+      "25": 60.0,
+      "26": 65.0,
+      "27": 60.0,
+      "28": 0.0,
+      "29": 0.2
+     }
+    },
+    "MM04": {
+     "engine": "MANUAL_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:312",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.7,
+      "4": 0.25,
+      "5": -20.0,
+      "6": -20.0,
+      "7": -40.0,
+      "8": 0.0,
+      "9": 1.0,
+      "10": 320.0,
+      "11": 150.0,
+      "12": 950.0,
+      "13": 0.0,
+      "14": 29.0,
+      "15": 0.0,
+      "16": 0.0,
+      "17": 5.0,
+      "18": 0.0,
+      "19": 0.2,
+      "20": 0.33,
+      "21": 0.5,
+      "23": 0.0,
+      "24": 8.0,
+      "25": 55.0,
+      "26": 50.0,
+      "27": 60.0,
+      "28": 0.0,
+      "29": 0.48
+     }
+    },
+    "LN17": {
+     "engine": "CRAWL_CAMERA",
+     "flags": [
+      "0x002",
+      "0x040"
+     ],
+     "src": "src/d/d_cam_style.cpp:318",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.6,
+      "4": 0.2,
+      "5": 10.0,
+      "10": 145.0,
+      "11": 145.0,
+      "12": 145.0,
+      "13": 0.1,
+      "14": 0.25,
+      "15": 0.0,
+      "18": 0.25,
+      "19": 0.25,
+      "23": 0.1,
+      "24": 0.8,
+      "25": 50.0,
+      "28": 0.5,
+      "29": 0.5
+     }
+    },
+    "QN07": {
+     "engine": "TORNADO_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:324",
+     "version": "all",
+     "p": {
+      "0": -120.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.15,
+      "5": 50.0,
+      "8": 80.0,
+      "10": 800.0,
+      "13": 200.0,
+      "14": 40.0,
+      "15": 0.0,
+      "16": -5.0,
+      "17": 60.0,
+      "18": 20.0,
+      "20": 0.1,
+      "21": 0.1,
+      "25": 60.0,
+      "28": -15.0,
+      "29": -5.0
+     }
+    },
+    "LE01": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x200",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:330",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 75.0,
+      "3": 0.15,
+      "4": 0.15,
+      "5": -30.0,
+      "10": 300.0,
+      "11": 250.0,
+      "13": 0.66,
+      "14": 0.05,
+      "15": 5.0,
+      "16": -40.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.15,
+      "20": 0.3,
+      "21": 0.05,
+      "23": 0.8,
+      "24": 0.15,
+      "25": 40.0,
+      "29": 0.15
+     }
+    },
+    "LN01": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:336",
+     "version": "all",
+     "p": {
+      "3": 0.25,
+      "4": 0.2,
+      "5": -15.0,
+      "6": -17.5,
+      "7": 20.0,
+      "8": -22.5,
+      "9": -10.0,
+      "10": 450.0,
+      "11": 125.0,
+      "12": 750.0,
+      "13": 480.0,
+      "14": 420.0,
+      "15": 7.5,
+      "16": -60.0,
+      "17": 60.0,
+      "18": 10.0,
+      "19": 5.0,
+      "20": 0.08,
+      "21": 0.0,
+      "23": 40.0,
+      "24": 5.0,
+      "25": 42.5,
+      "26": 52.5,
+      "27": 54.5,
+      "28": 40.0,
+      "29": 45.0
+     }
+    },
+    "LW01": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x200",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:342",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.15,
+      "4": 0.15,
+      "5": -25.0,
+      "10": 450.0,
+      "11": 400.0,
+      "13": 0.5,
+      "14": 0.15,
+      "15": 20.0,
+      "16": -40.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.15,
+      "20": 0.3,
+      "21": 0.05,
+      "23": 0.8,
+      "24": 0.15,
+      "25": 60.0,
+      "29": 0.15
+     }
+    },
+    "GN01": {
+     "engine": "FOLLOW_CAMERA2",
+     "flags": [
+      "0x001",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:348",
+     "version": "all",
+     "p": {
+      "0": 5.0,
+      "1": 0.0,
+      "3": 0.5,
+      "4": 0.25,
+      "5": 30.0,
+      "6": 50.0,
+      "10": 400.0,
+      "11": 400.0,
+      "13": 0.66,
+      "14": 0.05,
+      "15": 10.0,
+      "16": -60.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.0,
+      "23": 1.0,
+      "24": 0.18,
+      "25": 55.0,
+      "29": 0.05
+     }
+    },
+    "MM01": {
+     "engine": "MANUAL_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:354",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.7,
+      "4": 0.25,
+      "5": 0.0,
+      "6": 0.0,
+      "7": 30.0,
+      "8": 0.0,
+      "9": 1.0,
+      "10": 320.0,
+      "11": 240.0,
+      "12": 700.0,
+      "13": 0.0,
+      "14": 20.0,
+      "15": 0.0,
+      "16": 0.0,
+      "17": 30.0,
+      "18": 0.0,
+      "19": 0.6,
+      "20": 0.33,
+      "21": 0.66,
+      "23": 0.0,
+      "24": 8.0,
+      "25": 55.0,
+      "26": 50.0,
+      "27": 60.0,
+      "28": 0.0,
+      "29": 0.4
+     }
+    },
+    "MM03#jpn": {
+     "engine": "MANUAL_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:361",
+     "version": "jpn_only",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.7,
+      "4": 0.25,
+      "5": 10.0,
+      "6": 0.0,
+      "7": 40.0,
+      "8": 0.0,
+      "9": 2.0,
+      "10": 320.0,
+      "11": 250.0,
+      "12": 700.0,
+      "13": 0.0,
+      "14": 27.0,
+      "15": 0.0,
+      "16": -5.0,
+      "17": 30.0,
+      "18": 0.0,
+      "19": 0.6,
+      "20": 0.33,
+      "21": 0.5,
+      "23": 0.0,
+      "24": 8.0,
+      "25": 55.0,
+      "26": 50.0,
+      "27": 62.0,
+      "28": 0.0,
+      "29": 0.45
+     }
+    },
+    "MM02": {
+     "engine": "MANUAL_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:368",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.7,
+      "4": 0.25,
+      "5": 0.0,
+      "6": 10.0,
+      "7": 35.0,
+      "8": 0.0,
+      "9": 1.92,
+      "10": 320.0,
+      "11": 250.0,
+      "12": 950.0,
+      "13": 0.0,
+      "14": 27.0,
+      "15": 0.0,
+      "16": -5.0,
+      "17": 30.0,
+      "18": 0.0,
+      "19": 0.9,
+      "20": 0.33,
+      "21": 0.5,
+      "23": 0.0,
+      "24": 8.0,
+      "25": 55.0,
+      "26": 52.5,
+      "27": 60.0,
+      "28": 0.0,
+      "29": 0.4
+     }
+    },
+    "MM10": {
+     "engine": "MANUAL_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:374",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.7,
+      "4": 0.25,
+      "5": 15.0,
+      "6": 10.0,
+      "7": 20.0,
+      "8": 0.0,
+      "9": 0.45,
+      "10": 320.0,
+      "11": 300.0,
+      "12": 2000.0,
+      "13": 0.0,
+      "14": 45.0,
+      "15": 10.0,
+      "16": 5.0,
+      "17": 35.0,
+      "18": 0.0,
+      "19": 0.42,
+      "20": 0.33,
+      "21": 0.5,
+      "23": 0.0,
+      "24": 4.0,
+      "25": 55.0,
+      "26": 52.0,
+      "27": 62.0,
+      "28": 0.0,
+      "29": 0.48
+     }
+    },
+    "MM08": {
+     "engine": "MANUAL_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:380",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.7,
+      "4": 0.25,
+      "5": -20.0,
+      "6": 50.0,
+      "7": 50.0,
+      "8": 0.0,
+      "9": 0.0,
+      "10": 400.0,
+      "11": 350.0,
+      "12": 800.0,
+      "13": 0.0,
+      "14": 34.0,
+      "15": 0.0,
+      "16": -20.0,
+      "17": 50.0,
+      "18": 0.0,
+      "19": 3.6,
+      "20": 0.33,
+      "21": 0.5,
+      "23": 0.0,
+      "24": 8.0,
+      "25": 55.0,
+      "26": 55.0,
+      "27": 55.0,
+      "28": 0.0,
+      "29": 0.0
+     }
+    },
+    "MM83": {
+     "engine": "MANUAL_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:386",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 0.0,
+      "6": 20.0,
+      "7": 300.0,
+      "8": 0.0,
+      "9": 5.0,
+      "10": 320.0,
+      "11": 350.0,
+      "12": 1500.0,
+      "13": 0.0,
+      "14": 40.0,
+      "15": 0.0,
+      "16": 0.0,
+      "17": 15.0,
+      "18": 0.0,
+      "19": 1.0,
+      "20": 0.33,
+      "21": 0.2,
+      "23": 0.0,
+      "24": 8.0,
+      "25": 55.0,
+      "26": 65.0,
+      "27": 55.0,
+      "28": 0.0,
+      "29": 1.0
+     }
+    },
+    "FP01": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:392",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.7,
+      "4": 0.25,
+      "5": 50.0,
+      "10": 480.0,
+      "11": 280.0,
+      "13": 0.66,
+      "14": 0.05,
+      "15": 10.0,
+      "16": -60.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.2,
+      "23": 1.0,
+      "24": 0.18,
+      "25": 60.0,
+      "29": 0.05
+     }
+    },
+    "ZZ00": {
+     "engine": "NON_OWNER_CAMERA",
+     "flags": [],
+     "src": "src/d/d_cam_style.cpp:398",
+     "version": "all",
+     "p": {
+      "0": 10.0,
+      "1": 0.0,
+      "5": 200.0,
+      "10": 320.0,
+      "15": 3.0,
+      "18": 0.3,
+      "20": 0.33,
+      "23": 1.0,
+      "25": 60.0
+     }
+    },
+    "PN13": {
+     "engine": "FIXED_POSITION_CAMERA",
+     "flags": [
+      "0x002",
+      "0x040"
+     ],
+     "src": "src/d/d_cam_style.cpp:404",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.15,
+      "4": 0.15,
+      "5": -20.0,
+      "10": 1000.0,
+      "11": 50.0,
+      "23": 0.75,
+      "24": 10.0,
+      "25": 50.0
+     }
+    },
+    "FN82": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:410",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 30.0,
+      "10": 1200.0,
+      "11": 350.0,
+      "13": 0.66,
+      "14": 0.05,
+      "15": 15.0,
+      "16": -40.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.1,
+      "23": 1.0,
+      "24": 0.01,
+      "25": 55.0,
+      "29": 0.05
+     }
+    },
+    "IN01": {
+     "engine": "TOWER_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:416",
+     "version": "all",
+     "p": {
+      "0": 50.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 20.0,
+      "6": 20.0,
+      "10": 680.0,
+      "11": 250.0,
+      "13": 0.66,
+      "14": 0.05,
+      "15": 12.0,
+      "16": -40.0,
+      "17": 60.0,
+      "19": 0.05,
+      "20": 0.4,
+      "21": 0.05,
+      "23": 45.0,
+      "24": 45.0,
+      "25": 62.0,
+      "27": 2.5,
+      "29": 0.05
+     }
+    },
+    "IN02": {
+     "engine": "TOWER_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:422",
+     "version": "all",
+     "p": {
+      "0": 50.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 20.0,
+      "6": 20.0,
+      "10": 750.0,
+      "11": 450.0,
+      "13": 0.66,
+      "14": 0.05,
+      "15": 35.0,
+      "16": -40.0,
+      "17": 60.0,
+      "19": 0.05,
+      "20": 0.4,
+      "21": 0.05,
+      "23": 10.0,
+      "24": 10.0,
+      "25": 65.0,
+      "27": 2.0,
+      "29": 0.05
+     }
+    },
+    "MM82": {
+     "engine": "MANUAL_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:428",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 0.0,
+      "6": 20.0,
+      "7": 100.0,
+      "8": 0.0,
+      "9": 45.0,
+      "10": 320.0,
+      "11": 200.0,
+      "12": 1500.0,
+      "13": 30.0,
+      "14": 50.0,
+      "15": 30.0,
+      "16": -10.0,
+      "17": 30.0,
+      "18": 0.0,
+      "19": 1.5,
+      "20": 0.33,
+      "21": 0.2,
+      "23": 0.0,
+      "24": 6.0,
+      "25": 55.0,
+      "26": 55.0,
+      "27": 55.0,
+      "28": 0.0,
+      "29": 1.0
+     }
+    },
+    "LL11": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:434",
+     "version": "all",
+     "p": {
+      "3": 0.4,
+      "4": 0.2,
+      "5": 7.5,
+      "6": -17.5,
+      "7": 20.0,
+      "8": 20.0,
+      "9": 40.0,
+      "10": 1000.0,
+      "11": 300.0,
+      "12": 2000.0,
+      "13": 800.0,
+      "14": 1500.0,
+      "15": 0.0,
+      "16": -10.0,
+      "17": 40.0,
+      "18": 30.0,
+      "19": 40.0,
+      "20": 0.04,
+      "21": 0.02,
+      "23": 80.0,
+      "24": 30.0,
+      "25": 60.0,
+      "26": 50.0,
+      "27": 80.0,
+      "28": 52.0,
+      "29": 70.0
+     }
+    },
+    "LL01": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:440",
+     "version": "all",
+     "p": {
+      "3": 0.4,
+      "4": 0.2,
+      "5": 7.5,
+      "6": -17.5,
+      "7": 20.0,
+      "8": -22.5,
+      "9": 5.0,
+      "10": 450.0,
+      "11": 125.0,
+      "12": 750.0,
+      "13": 480.0,
+      "14": 420.0,
+      "15": 0.0,
+      "16": -60.0,
+      "17": 60.0,
+      "18": 20.0,
+      "19": -5.0,
+      "20": 0.04,
+      "21": 0.02,
+      "23": 75.0,
+      "24": 20.0,
+      "25": 55.0,
+      "26": 52.5,
+      "27": 54.5,
+      "28": 48.0,
+      "29": 62.0
+     }
+    },
+    "LL02": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:446",
+     "version": "all",
+     "p": {
+      "3": 0.4,
+      "4": 0.2,
+      "5": 6.5,
+      "6": -17.5,
+      "7": 20.0,
+      "8": -22.5,
+      "9": -2.5,
+      "10": 420.0,
+      "11": 125.0,
+      "12": 350.0,
+      "13": 450.0,
+      "14": 400.0,
+      "15": 2.0,
+      "16": -60.0,
+      "17": 60.0,
+      "18": 15.0,
+      "19": 0.0,
+      "20": 0.05,
+      "21": 0.02,
+      "23": 80.0,
+      "24": 15.0,
+      "25": 55.0,
+      "26": 52.5,
+      "27": 54.5,
+      "28": 45.0,
+      "29": 60.0
+     }
+    },
+    "LL03": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:452",
+     "version": "all",
+     "p": {
+      "3": 0.4,
+      "4": 0.2,
+      "5": 0.0,
+      "6": -17.5,
+      "7": 20.0,
+      "8": -17.5,
+      "9": 0.0,
+      "10": 375.0,
+      "11": 125.0,
+      "12": 750.0,
+      "13": 425.0,
+      "14": 350.0,
+      "15": 15.0,
+      "16": -60.0,
+      "17": 60.0,
+      "18": 20.0,
+      "19": 12.0,
+      "20": 0.01,
+      "21": 0.01,
+      "23": 70.0,
+      "24": 50.0,
+      "25": 55.0,
+      "26": 52.5,
+      "27": 54.5,
+      "28": 50.0,
+      "29": 60.0
+     }
+    },
+    "LL04": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:458",
+     "version": "all",
+     "p": {
+      "3": 0.1,
+      "4": 0.4,
+      "5": -10.0,
+      "6": 15.0,
+      "7": 20.0,
+      "8": -12.5,
+      "9": -12.5,
+      "10": 350.0,
+      "11": 200.0,
+      "12": 400.0,
+      "13": 300.0,
+      "14": 400.0,
+      "15": 10.0,
+      "16": -10.0,
+      "17": 20.0,
+      "18": 0.0,
+      "19": 0.0,
+      "20": 0.06,
+      "21": 0.02,
+      "23": 80.0,
+      "24": 10.0,
+      "25": 47.0,
+      "26": 47.0,
+      "27": 47.0,
+      "28": 47.0,
+      "29": 47.0
+     }
+    },
+    "LL05": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:464",
+     "version": "all",
+     "p": {
+      "0": -10000.0,
+      "1": -10000.0,
+      "3": 0.2,
+      "4": 0.4,
+      "5": 6.5,
+      "6": -17.5,
+      "7": 20.0,
+      "8": -40.0,
+      "9": -50.0,
+      "10": 280.0,
+      "11": 125.0,
+      "12": 350.0,
+      "13": 300.0,
+      "14": 100.0,
+      "15": 2.0,
+      "16": -40.0,
+      "17": 40.0,
+      "18": -15.0,
+      "19": -5.0,
+      "20": 0.08,
+      "21": 0.08,
+      "23": 10.0,
+      "24": 5.0,
+      "25": 55.0,
+      "26": 52.5,
+      "27": 54.5,
+      "28": 65.0,
+      "29": 70.0
+     }
+    },
+    "LL10": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:470",
+     "version": "all",
+     "p": {
+      "3": 0.2,
+      "4": 0.4,
+      "5": 6.5,
+      "6": -17.5,
+      "7": 20.0,
+      "8": -40.0,
+      "9": 0.0,
+      "10": 1000.0,
+      "11": 750.0,
+      "12": 1100.0,
+      "13": 700.0,
+      "14": 350.0,
+      "15": 2.0,
+      "16": -40.0,
+      "17": 40.0,
+      "18": -8.0,
+      "19": 0.0,
+      "20": 0.08,
+      "21": 0.05,
+      "23": 40.0,
+      "24": 10.0,
+      "25": 55.0,
+      "26": 52.5,
+      "27": 54.5,
+      "28": 60.0,
+      "29": 70.0
+     }
+    },
+    "LL09": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:476",
+     "version": "all",
+     "p": {
+      "3": 0.4,
+      "4": 0.2,
+      "5": 60.0,
+      "6": -20.0,
+      "7": 120.0,
+      "8": 0.0,
+      "9": -10.0,
+      "10": 420.0,
+      "11": 300.0,
+      "12": 350.0,
+      "13": 650.0,
+      "14": 800.0,
+      "15": 2.0,
+      "16": -60.0,
+      "17": 60.0,
+      "18": 15.0,
+      "19": 5.0,
+      "20": 0.04,
+      "21": 0.01,
+      "23": 80.0,
+      "24": 15.0,
+      "25": 55.0,
+      "26": 52.5,
+      "27": 54.5,
+      "28": 45.0,
+      "29": 60.0
+     }
+    },
+    "LL12": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:482",
+     "version": "all",
+     "p": {
+      "0": -10000.0,
+      "1": -10000.0,
+      "3": 0.2,
+      "4": 0.4,
+      "5": 500.0,
+      "6": -7.5,
+      "7": 500.0,
+      "8": 300.0,
+      "9": 300.0,
+      "10": 550.0,
+      "11": 500.0,
+      "12": 600.0,
+      "13": 400.0,
+      "14": 500.0,
+      "15": 2.0,
+      "16": -40.0,
+      "17": 40.0,
+      "18": -15.0,
+      "19": -15.0,
+      "20": 0.08,
+      "21": 0.08,
+      "23": 10.0,
+      "24": 5.0,
+      "25": 55.0,
+      "26": 52.5,
+      "27": 54.5,
+      "28": 65.0,
+      "29": 70.0
+     }
+    },
+    "LL13": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:488",
+     "version": "all",
+     "p": {
+      "0": -10000.0,
+      "1": -10000.0,
+      "3": 0.4,
+      "4": 0.2,
+      "5": 7.5,
+      "6": -17.5,
+      "7": 20.0,
+      "8": 0.0,
+      "9": 22.5,
+      "10": 550.0,
+      "11": 125.0,
+      "12": 750.0,
+      "13": 530.0,
+      "14": 580.0,
+      "15": -7.5,
+      "16": -60.0,
+      "17": 60.0,
+      "18": 5.0,
+      "19": -15.0,
+      "20": 0.04,
+      "21": 0.04,
+      "23": 60.0,
+      "24": 20.0,
+      "25": 55.0,
+      "26": 52.5,
+      "27": 54.5,
+      "28": 65.0,
+      "29": 70.0
+     }
+    },
+    "LL14": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:494",
+     "version": "all",
+     "p": {
+      "0": -10000.0,
+      "1": -10000.0,
+      "3": 0.4,
+      "4": 0.2,
+      "5": 0.0,
+      "6": -17.5,
+      "7": 20.0,
+      "8": 0.0,
+      "9": 60.0,
+      "10": 600.0,
+      "11": 125.0,
+      "12": 350.0,
+      "13": 500.0,
+      "14": 700.0,
+      "15": 0.0,
+      "16": -60.0,
+      "17": 60.0,
+      "18": 0.0,
+      "19": -10.0,
+      "20": 0.05,
+      "21": 0.05,
+      "23": 30.0,
+      "24": 15.0,
+      "25": 55.0,
+      "26": 52.5,
+      "27": 54.5,
+      "28": 53.0,
+      "29": 57.0
+     }
+    },
+    "LL15": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:500",
+     "version": "all",
+     "p": {
+      "3": 0.4,
+      "4": 0.2,
+      "5": 10.0,
+      "6": -17.5,
+      "7": 20.0,
+      "8": -22.5,
+      "9": -2.5,
+      "10": 420.0,
+      "11": 125.0,
+      "12": 800.0,
+      "13": 599.0,
+      "14": 799.0,
+      "15": 30.0,
+      "16": 0.0,
+      "17": 60.0,
+      "18": 20.0,
+      "19": 40.0,
+      "20": 0.05,
+      "21": 0.05,
+      "23": 80.0,
+      "24": 15.0,
+      "25": 55.0,
+      "26": 52.5,
+      "27": 54.5,
+      "28": 45.0,
+      "29": 60.0
+     }
+    },
+    "LL16": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:506",
+     "version": "all",
+     "p": {
+      "3": 0.2,
+      "4": 0.4,
+      "5": 30.0,
+      "6": 0.0,
+      "7": 50.0,
+      "8": 30.0,
+      "9": 10.0,
+      "10": 750.0,
+      "11": 650.0,
+      "12": 1000.0,
+      "13": 600.0,
+      "14": 350.0,
+      "15": -10.0,
+      "16": -40.0,
+      "17": 40.0,
+      "18": -8.0,
+      "19": 0.0,
+      "20": 0.08,
+      "21": 0.08,
+      "23": 40.0,
+      "24": 10.0,
+      "25": 55.0,
+      "26": 52.5,
+      "27": 54.5,
+      "28": 60.0,
+      "29": 70.0
+     }
+    },
+    "LL82": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:512",
+     "version": "all",
+     "p": {
+      "3": 0.75,
+      "4": 0.25,
+      "5": 0.0,
+      "6": 0.0,
+      "7": 0.0,
+      "8": -15.0,
+      "9": 0.0,
+      "10": 0.0,
+      "11": 0.0,
+      "12": 0.0,
+      "13": 600.0,
+      "14": 400.0,
+      "15": 0.0,
+      "16": 0.0,
+      "17": 0.0,
+      "18": -10.0,
+      "19": 30.0,
+      "20": 0.1,
+      "21": 0.0,
+      "23": 60.0,
+      "24": 0.0,
+      "25": 0.0,
+      "26": 0.0,
+      "27": 0.0,
+      "28": 60.0,
+      "29": 60.0
+     }
+    },
+    "FN01": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:518",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.7,
+      "4": 0.25,
+      "5": 10.0,
+      "10": 480.0,
+      "11": 280.0,
+      "13": 0.66,
+      "14": 0.08,
+      "15": 10.0,
+      "16": -60.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.2,
+      "23": 1.0,
+      "24": 0.18,
+      "25": 60.0,
+      "29": 0.05
+     }
+    },
+    "FN02": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:524",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 0.0,
+      "10": 360.0,
+      "11": 240.0,
+      "13": 0.66,
+      "14": 0.1,
+      "15": 10.0,
+      "16": -40.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.3,
+      "21": 0.05,
+      "23": 0.8,
+      "24": 0.1,
+      "25": 58.0,
+      "29": 0.05
+     }
+    },
+    "FN03": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:530",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": -5.0,
+      "10": 350.0,
+      "11": 260.0,
+      "13": 0.66,
+      "14": 0.08,
+      "15": 14.0,
+      "16": 10.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.3,
+      "23": 1.0,
+      "24": 0.2,
+      "25": 60.0,
+      "29": 0.05
+     }
+    },
+    "FN04": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:536",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.1,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 0.0,
+      "10": 480.0,
+      "11": 350.0,
+      "13": 0.66,
+      "14": 0.1,
+      "15": 18.0,
+      "16": 15.0,
+      "17": 25.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.39,
+      "23": 1.0,
+      "24": 0.2,
+      "25": 55.0,
+      "29": 0.05
+     }
+    },
+    "FN06": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:542",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": -25.0,
+      "10": 230.0,
+      "11": 240.0,
+      "13": 0.2,
+      "14": 0.05,
+      "15": 5.0,
+      "16": -40.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.01,
+      "23": 1.0,
+      "24": 0.2,
+      "25": 55.0,
+      "29": 0.05
+     }
+    },
+    "FN09": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:548",
+     "version": "all",
+     "p": {
+      "0": 0.5,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": -10.0,
+      "10": 460.0,
+      "11": 210.0,
+      "13": 0.66,
+      "14": 0.09,
+      "15": 15.0,
+      "16": -40.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.08,
+      "23": 2.0,
+      "24": 0.3,
+      "25": 52.0,
+      "29": 0.05
+     }
+    },
+    "FN07": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:554",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 0.0,
+      "10": 430.0,
+      "11": 280.0,
+      "13": 0.66,
+      "14": 0.1,
+      "15": 13.0,
+      "16": -40.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.35,
+      "23": 1.0,
+      "24": 0.2,
+      "25": 55.0,
+      "29": 0.05
+     }
+    },
+    "FN10": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:560",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 15.0,
+      "10": 420.0,
+      "11": 250.0,
+      "13": 0.66,
+      "14": 0.08,
+      "15": 5.0,
+      "16": -60.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.25,
+      "23": 1.0,
+      "24": 0.1,
+      "25": 60.0,
+      "29": 0.05
+     }
+    },
+    "FN14": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001"
+     ],
+     "src": "src/d/d_cam_style.cpp:566",
+     "version": "all",
+     "p": {
+      "0": 0.5,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 10.0,
+      "10": 450.0,
+      "11": 300.0,
+      "13": 0.66,
+      "14": 0.12,
+      "15": 15.0,
+      "16": 0.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.1,
+      "23": 1.0,
+      "24": 0.2,
+      "25": 55.0,
+      "29": 0.05
+     }
+    },
+    "FN15": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:572",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 32.0,
+      "6": -10000.0,
+      "7": -10000.0,
+      "8": -10000.0,
+      "9": -10000.0,
+      "10": 320.0,
+      "11": 200.0,
+      "12": -10000.0,
+      "13": 0.66,
+      "14": 0.08,
+      "15": -23.0,
+      "16": -20.0,
+      "17": 10.0,
+      "18": 2.0,
+      "19": 0.5,
+      "20": 0.01,
+      "21": 0.1,
+      "23": 0.1,
+      "24": 0.1,
+      "25": 55.0,
+      "26": -10000.0,
+      "27": -10000.0,
+      "28": -10000.0,
+      "29": 0.05
+     }
+    },
+    "FN17": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:578",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": -5.0,
+      "10": 380.0,
+      "11": 200.0,
+      "13": 0.66,
+      "14": 0.1,
+      "15": 10.0,
+      "16": -40.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.08,
+      "20": 0.18,
+      "21": 0.05,
+      "23": 2.0,
+      "24": 0.1,
+      "25": 55.0,
+      "29": 0.05
+     }
+    },
+    "FN20": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x200",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:584",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": -20.0,
+      "10": 330.0,
+      "11": 280.0,
+      "13": 0.66,
+      "14": 0.15,
+      "15": 12.0,
+      "16": -40.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.2,
+      "23": 1.0,
+      "24": 0.1,
+      "25": 60.0,
+      "29": 0.05
+     }
+    },
+    "FN21": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:590",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.8,
+      "4": 0.25,
+      "5": 8.0,
+      "10": 340.0,
+      "11": 220.0,
+      "13": 0.66,
+      "14": 0.08,
+      "15": 6.0,
+      "16": -40.0,
+      "17": 70.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.16,
+      "23": 1.0,
+      "24": 0.2,
+      "25": 64.0,
+      "29": 0.05
+     }
+    },
+    "FN22": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:596",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": -25.0,
+      "10": 1500.0,
+      "11": 1200.0,
+      "13": 0.66,
+      "14": 0.08,
+      "15": 35.0,
+      "16": 30.0,
+      "17": 40.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.1,
+      "21": -10000.0,
+      "23": 2.0,
+      "24": 0.05,
+      "25": 60.0,
+      "29": 0.05
+     }
+    },
+    "FN23": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:602",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 32.0,
+      "10": 1000.0,
+      "11": 800.0,
+      "13": 0.66,
+      "14": 0.1,
+      "15": 20.0,
+      "16": 15.0,
+      "17": 25.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.1,
+      "21": -10000.0,
+      "23": 2.0,
+      "24": 0.05,
+      "25": 50.0,
+      "29": 0.05
+     }
+    },
+    "FN24": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:608",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 0.0,
+      "10": 600.0,
+      "11": 350.0,
+      "13": 0.66,
+      "14": 0.09,
+      "15": 25.0,
+      "16": -60.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.33,
+      "23": 1.0,
+      "24": 0.2,
+      "25": 60.0,
+      "29": 0.05
+     }
+    },
+    "FN26": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:614",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": -25.0,
+      "10": 800.0,
+      "11": 800.0,
+      "13": 0.66,
+      "14": 0.1,
+      "15": 35.0,
+      "16": 30.0,
+      "17": 40.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.1,
+      "21": -10000.0,
+      "23": 2.0,
+      "24": 0.05,
+      "25": 60.0,
+      "29": 0.05
+     }
+    },
+    "FN27": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:620",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 32.0,
+      "10": 1250.0,
+      "11": 1000.0,
+      "13": 0.66,
+      "14": 0.09,
+      "15": 0.0,
+      "16": -10.0,
+      "17": 10.0,
+      "18": 2.0,
+      "19": 0.5,
+      "20": 0.01,
+      "21": 0.1,
+      "23": 0.1,
+      "24": 0.1,
+      "25": 55.0,
+      "29": 0.05
+     }
+    },
+    "FN28": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:626",
+     "version": "all",
+     "p": {
+      "0": 0.5,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 5.0,
+      "10": 330.0,
+      "11": 250.0,
+      "13": 0.66,
+      "14": 0.09,
+      "15": 8.0,
+      "16": -40.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.06,
+      "23": 2.0,
+      "24": 0.3,
+      "25": 52.0,
+      "29": 0.05
+     }
+    },
+    "FN30": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:632",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 300.0,
+      "6": -10000.0,
+      "7": -10000.0,
+      "8": -10000.0,
+      "9": -10000.0,
+      "10": 1000.0,
+      "11": 900.0,
+      "12": -10000.0,
+      "13": 0.66,
+      "14": 0.08,
+      "15": -15.0,
+      "16": -15.0,
+      "17": 10.0,
+      "18": 2.0,
+      "19": 0.5,
+      "20": 0.01,
+      "21": 0.1,
+      "23": 0.1,
+      "24": 0.1,
+      "25": 55.0,
+      "26": -10000.0,
+      "27": -10000.0,
+      "28": -10000.0,
+      "29": 0.05
+     }
+    },
+    "FN31": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:638",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 30.0,
+      "6": -10000.0,
+      "7": -10000.0,
+      "8": -10000.0,
+      "9": -10000.0,
+      "10": 420.0,
+      "11": 250.0,
+      "12": -10000.0,
+      "13": 0.66,
+      "14": 0.08,
+      "15": 0.0,
+      "16": -60.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.25,
+      "21": -10000.0,
+      "23": 1.0,
+      "24": 0.1,
+      "25": 55.0,
+      "26": -10000.0,
+      "27": -10000.0,
+      "28": -10000.0,
+      "29": 0.05
+     }
+    },
+    "FN32": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:644",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 30.0,
+      "6": -10000.0,
+      "7": -10000.0,
+      "8": -10000.0,
+      "9": -10000.0,
+      "10": 360.0,
+      "11": 220.0,
+      "12": -10000.0,
+      "13": 0.66,
+      "14": 0.08,
+      "15": -5.0,
+      "16": -60.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.25,
+      "21": 0.05,
+      "23": 0.8,
+      "24": 0.1,
+      "25": 58.0,
+      "26": -10000.0,
+      "27": -10000.0,
+      "28": -10000.0,
+      "29": 0.05
+     }
+    },
+    "FN33": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:650",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 0.0,
+      "10": 1300.0,
+      "11": 1000.0,
+      "12": 1350.0,
+      "13": 0.66,
+      "14": 0.05,
+      "15": 30.0,
+      "16": 0.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.09,
+      "20": 0.3,
+      "21": 0.05,
+      "23": 0.8,
+      "24": 0.1,
+      "25": 58.0,
+      "29": 0.05
+     }
+    },
+    "FN34": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:656",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 30.0,
+      "6": -10000.0,
+      "7": -10000.0,
+      "8": -10000.0,
+      "9": -10000.0,
+      "10": 1000.0,
+      "11": 900.0,
+      "12": -10000.0,
+      "13": 0.66,
+      "14": 0.08,
+      "15": 45.0,
+      "16": -60.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.25,
+      "21": 0.05,
+      "23": 0.8,
+      "24": 0.1,
+      "25": 58.0,
+      "26": -10000.0,
+      "27": -10000.0,
+      "28": -10000.0,
+      "29": 0.05
+     }
+    },
+    "FN35": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:662",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 50.0,
+      "10": 1250.0,
+      "11": 1000.0,
+      "13": 0.66,
+      "14": 0.09,
+      "15": 0.0,
+      "16": -15.0,
+      "17": 10.0,
+      "18": 0.0,
+      "19": 0.5,
+      "20": 0.01,
+      "21": 0.1,
+      "23": 0.1,
+      "24": 0.1,
+      "25": 55.0,
+      "29": 0.05
+     }
+    },
+    "LL17": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:668",
+     "version": "all",
+     "p": {
+      "3": 0.4,
+      "4": 0.2,
+      "5": 7.5,
+      "6": -17.5,
+      "7": 20.0,
+      "8": 20.0,
+      "9": 40.0,
+      "10": 1000.0,
+      "11": 300.0,
+      "12": 2000.0,
+      "13": 800.0,
+      "14": 1600.0,
+      "15": 0.0,
+      "16": -10.0,
+      "17": 40.0,
+      "18": 30.0,
+      "19": 40.0,
+      "20": 0.04,
+      "21": 0.03,
+      "23": 80.0,
+      "24": 30.0,
+      "25": 60.0,
+      "26": 50.0,
+      "27": 80.0,
+      "28": 52.0,
+      "29": 45.0
+     }
+    },
+    "FN37": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:674",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 15.0,
+      "10": 1050.0,
+      "11": 950.0,
+      "13": 0.66,
+      "14": 0.05,
+      "15": 20.0,
+      "16": 15.0,
+      "17": 45.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.12,
+      "23": 1.0,
+      "24": 0.2,
+      "25": 60.0,
+      "29": 0.05
+     }
+    },
+    "FN38#jpn": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:681",
+     "version": "jpn_only",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 40.0,
+      "10": 800.0,
+      "11": 600.0,
+      "13": 0.66,
+      "14": 0.15,
+      "15": 15.0,
+      "16": -40.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.3,
+      "21": 0.05,
+      "23": 0.8,
+      "24": 0.1,
+      "25": 62.0,
+      "29": 0.05
+     }
+    },
+    "BE08": {
+     "engine": "RIDE_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:688",
+     "version": "all",
+     "p": {
+      "0": 100.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.15,
+      "5": 80.0,
+      "8": 0.0,
+      "10": 500.0,
+      "13": 0.0,
+      "14": 40.0,
+      "15": 20.0,
+      "16": -80.0,
+      "17": 80.0,
+      "18": 0.0,
+      "20": 0.1,
+      "21": 0.1,
+      "25": 78.0,
+      "28": 0.0,
+      "29": -5.0
+     }
+    },
+    "BE07": {
+     "engine": "RIDE_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:694",
+     "version": "all",
+     "p": {
+      "0": 100.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.15,
+      "5": 240.0,
+      "8": 0.0,
+      "10": 750.0,
+      "13": 0.0,
+      "14": 40.0,
+      "15": 15.0,
+      "16": -80.0,
+      "17": 80.0,
+      "18": 0.0,
+      "20": 0.1,
+      "21": 0.1,
+      "25": 66.0,
+      "28": 0.0,
+      "29": -5.0
+     }
+    },
+    "TT04": {
+     "engine": "TALKTO_CAMERA",
+     "flags": [
+      "0x001"
+     ],
+     "src": "src/d/d_cam_style.cpp:700",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.6,
+      "4": 0.0,
+      "5": 5.0,
+      "6": 0.0,
+      "7": 0.0,
+      "8": 0.0,
+      "9": 0.0,
+      "10": 290.0,
+      "11": 80.0,
+      "12": 0.0,
+      "13": 0.0,
+      "14": 0.0,
+      "15": 10.0,
+      "16": 0.0,
+      "17": 0.0,
+      "18": 15.0,
+      "19": 30.0,
+      "20": 0.0,
+      "21": 0.0,
+      "23": 0.0,
+      "24": 30.0,
+      "25": 42.0,
+      "26": 45.0,
+      "27": 0.0,
+      "28": 0.0,
+      "29": 0.0
+     }
+    },
+    "FP38": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:706",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 40.0,
+      "10": 800.0,
+      "11": 600.0,
+      "13": 0.66,
+      "14": 0.15,
+      "15": 45.0,
+      "16": -40.0,
+      "17": 80.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.3,
+      "21": 0.05,
+      "23": 0.8,
+      "24": 0.1,
+      "25": 62.0,
+      "29": 0.05
+     }
+    },
+    "FN39": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x002",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:712",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": -20.0,
+      "10": 380.0,
+      "11": 300.0,
+      "13": 0.66,
+      "14": 0.05,
+      "15": 0.0,
+      "16": -20.0,
+      "17": 20.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.12,
+      "23": 1.0,
+      "24": 0.2,
+      "25": 60.0,
+      "29": 0.05
+     }
+    },
+    "MM16": {
+     "engine": "MANUAL_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:718",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.7,
+      "4": 0.25,
+      "5": 10.0,
+      "6": 20.0,
+      "7": 40.0,
+      "8": 0.0,
+      "9": 1.0,
+      "10": 320.0,
+      "11": 250.0,
+      "12": 500.0,
+      "13": 0.0,
+      "14": 28.0,
+      "15": 20.0,
+      "16": 20.0,
+      "17": 30.0,
+      "18": 0.0,
+      "19": 0.3,
+      "20": 0.33,
+      "21": 0.5,
+      "23": 0.0,
+      "24": 8.0,
+      "25": 55.0,
+      "26": 50.0,
+      "27": 62.0,
+      "28": 0.0,
+      "29": 0.45
+     }
+    },
+    "MM14": {
+     "engine": "MANUAL_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:724",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.55,
+      "4": 0.15,
+      "5": 10.0,
+      "6": 5.0,
+      "7": 20.0,
+      "8": 0.0,
+      "9": 0.5,
+      "10": 320.0,
+      "11": 180.0,
+      "12": 700.0,
+      "13": 0.0,
+      "14": 30.0,
+      "15": 10.0,
+      "16": 5.0,
+      "17": 40.0,
+      "18": 0.0,
+      "19": 1.7,
+      "20": 0.33,
+      "21": 0.5,
+      "23": 0.0,
+      "24": 3.0,
+      "25": 55.0,
+      "26": 50.0,
+      "27": 60.0,
+      "28": 0.0,
+      "29": 0.42
+     }
+    },
+    "MM15": {
+     "engine": "MANUAL_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:730",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.55,
+      "4": 0.15,
+      "5": 10.0,
+      "6": 5.0,
+      "7": 20.0,
+      "8": 0.0,
+      "9": 0.5,
+      "10": 320.0,
+      "11": 200.0,
+      "12": 1000.0,
+      "13": 0.0,
+      "14": 40.0,
+      "15": 10.0,
+      "16": 5.0,
+      "17": 40.0,
+      "18": 0.0,
+      "19": 1.7,
+      "20": 0.33,
+      "21": 0.66,
+      "23": 0.0,
+      "24": 3.0,
+      "25": 55.0,
+      "26": 50.0,
+      "27": 60.0,
+      "28": 0.0,
+      "29": 0.42
+     }
+    },
+    "MM07": {
+     "engine": "MANUAL_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:736",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.55,
+      "4": 0.15,
+      "5": 90.0,
+      "6": 80.0,
+      "7": 180.0,
+      "8": 0.0,
+      "9": 4.0,
+      "10": 750.0,
+      "11": 500.0,
+      "12": 1000.0,
+      "13": 0.0,
+      "14": 32.0,
+      "15": 0.0,
+      "16": -5.0,
+      "17": 23.0,
+      "18": 0.0,
+      "19": 1.65,
+      "20": 0.33,
+      "21": 0.5,
+      "23": 0.0,
+      "24": 8.0,
+      "25": 60.0,
+      "26": 55.0,
+      "27": 70.0,
+      "28": 0.0,
+      "29": 1.5
+     }
+    },
+    "FN81": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:742",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 100.0,
+      "10": 600.0,
+      "11": 600.0,
+      "13": 0.9,
+      "14": 0.01,
+      "15": 0.0,
+      "16": 0.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.0,
+      "23": 0.8,
+      "24": 0.1,
+      "25": 55.0,
+      "29": 0.05
+     }
+    },
+    "FN40": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:748",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 70.0,
+      "6": -10000.0,
+      "7": -10000.0,
+      "8": -10000.0,
+      "9": -10000.0,
+      "10": 800.0,
+      "11": 500.0,
+      "12": -10000.0,
+      "13": 0.66,
+      "14": 0.08,
+      "15": -5.0,
+      "16": -20.0,
+      "17": 20.0,
+      "18": 2.0,
+      "19": 0.5,
+      "20": 0.01,
+      "21": 0.1,
+      "23": 0.1,
+      "24": 0.1,
+      "25": 58.0,
+      "26": -10000.0,
+      "27": -10000.0,
+      "28": -10000.0,
+      "29": 0.05
+     }
+    },
+    "FN41": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:754",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 12.0,
+      "10": 350.0,
+      "11": 100.0,
+      "13": 0.66,
+      "14": 0.09,
+      "15": 15.0,
+      "16": -40.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.1,
+      "23": 2.0,
+      "24": 0.3,
+      "25": 60.0,
+      "29": 0.05
+     }
+    },
+    "FN19": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x002",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:760",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.1,
+      "3": 0.75,
+      "4": 0.25,
+      "5": -25.0,
+      "10": 480.0,
+      "11": 250.0,
+      "13": 0.66,
+      "14": 0.12,
+      "15": -2.0,
+      "16": -15.0,
+      "17": 25.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.39,
+      "23": 1.0,
+      "24": 0.2,
+      "25": 55.0,
+      "29": 0.05
+     }
+    },
+    "LL81": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:766",
+     "version": "all",
+     "p": {
+      "3": 0.75,
+      "4": 0.25,
+      "5": 0.0,
+      "6": 0.0,
+      "7": 0.0,
+      "8": 50.0,
+      "9": 200.0,
+      "10": 0.0,
+      "11": 0.0,
+      "12": 0.0,
+      "13": 600.0,
+      "14": 600.0,
+      "15": 0.0,
+      "16": 0.0,
+      "17": 0.0,
+      "18": 0.0,
+      "19": 0.0,
+      "20": 1.0,
+      "21": 1.0,
+      "23": 0.0,
+      "24": 0.0,
+      "25": 0.0,
+      "26": 0.0,
+      "27": 0.0,
+      "28": 60.0,
+      "29": 60.0
+     }
+    },
+    "DD01": {
+     "engine": "SHIELD_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:772",
+     "version": "all",
+     "p": {
+      "0": 60.0,
+      "1": 0.0,
+      "3": 0.03,
+      "4": 0.03,
+      "5": 50.0,
+      "10": 550.0,
+      "11": 450.0,
+      "15": 5.0,
+      "18": 0.2,
+      "20": 0.15,
+      "23": 0.33,
+      "25": 55.0
+     }
+    },
+    "MM19": {
+     "engine": "MANUAL_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:778",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.7,
+      "4": 0.25,
+      "5": 0.0,
+      "6": 10.0,
+      "7": 35.0,
+      "8": 0.0,
+      "9": 1.88,
+      "10": 320.0,
+      "11": 250.0,
+      "12": 600.0,
+      "13": 0.0,
+      "14": 20.0,
+      "15": 0.0,
+      "16": -5.0,
+      "17": 70.0,
+      "18": 0.0,
+      "19": 2.8,
+      "20": 0.33,
+      "21": 0.5,
+      "23": 0.0,
+      "24": 8.0,
+      "25": 55.0,
+      "26": 52.5,
+      "27": 60.0,
+      "28": 0.0,
+      "29": 0.4
+     }
+    },
+    "DD02": {
+     "engine": "SHIELD_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:784",
+     "version": "all",
+     "p": {
+      "0": 80.0,
+      "1": 0.0,
+      "3": 0.03,
+      "4": 0.03,
+      "5": 50.0,
+      "10": 550.0,
+      "11": 450.0,
+      "15": 5.0,
+      "18": 0.33,
+      "20": 0.15,
+      "23": 0.5,
+      "25": 55.0
+     }
+    },
+    "FN42": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:790",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 25.0,
+      "10": 380.0,
+      "11": 300.0,
+      "13": 0.66,
+      "14": 0.05,
+      "15": 15.0,
+      "16": -20.0,
+      "17": 80.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.12,
+      "23": 1.0,
+      "24": 0.2,
+      "25": 60.0,
+      "29": 0.05
+     }
+    },
+    "IN03": {
+     "engine": "TOWER_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:796",
+     "version": "all",
+     "p": {
+      "0": -180.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 0.0,
+      "6": 10.0,
+      "10": 880.0,
+      "11": 500.0,
+      "13": 0.66,
+      "14": 0.05,
+      "15": 50.0,
+      "16": -40.0,
+      "17": 60.0,
+      "19": 0.05,
+      "20": 0.75,
+      "21": 0.05,
+      "23": 115.0,
+      "24": 115.0,
+      "25": 75.0,
+      "27": 0.5,
+      "29": 0.05
+     }
+    },
+    "FN43": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:802",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 200.0,
+      "6": -10000.0,
+      "7": -10000.0,
+      "8": -10000.0,
+      "9": -500.0,
+      "10": 900.0,
+      "11": 800.0,
+      "12": -10000.0,
+      "13": 0.66,
+      "14": 0.08,
+      "15": -3.0,
+      "16": -20.0,
+      "17": 20.0,
+      "18": 2.0,
+      "19": 0.5,
+      "20": 0.01,
+      "21": 0.1,
+      "23": 0.1,
+      "24": 0.1,
+      "25": 58.0,
+      "26": -10000.0,
+      "27": -10000.0,
+      "28": -10000.0,
+      "29": 0.05
+     }
+    },
+    "FN11": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:808",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 5.0,
+      "10": 410.0,
+      "11": 300.0,
+      "13": 0.66,
+      "14": 0.08,
+      "15": 22.0,
+      "16": 15.0,
+      "17": 30.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.07,
+      "23": 1.0,
+      "24": 0.2,
+      "25": 60.0,
+      "29": 0.05
+     }
+    },
+    "MM21": {
+     "engine": "MANUAL_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:814",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.7,
+      "4": 0.25,
+      "5": 0.0,
+      "6": 20.0,
+      "7": 35.0,
+      "8": 0.0,
+      "9": 1.2,
+      "10": 320.0,
+      "11": 250.0,
+      "12": 750.0,
+      "13": 0.0,
+      "14": 27.0,
+      "15": 0.0,
+      "16": -30.0,
+      "17": 30.0,
+      "18": 0.0,
+      "19": 2.2,
+      "20": 0.33,
+      "21": 0.5,
+      "23": 0.0,
+      "24": 8.0,
+      "25": 55.0,
+      "26": 52.5,
+      "27": 60.0,
+      "28": 0.0,
+      "29": 0.4
+     }
+    },
+    "MM20": {
+     "engine": "MANUAL_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:820",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.7,
+      "4": 0.25,
+      "5": 10.0,
+      "6": 0.0,
+      "7": 30.0,
+      "8": 0.0,
+      "9": 2.0,
+      "10": 320.0,
+      "11": 250.0,
+      "12": 500.0,
+      "13": 0.0,
+      "14": 26.0,
+      "15": 0.0,
+      "16": -5.0,
+      "17": 20.0,
+      "18": 0.0,
+      "19": 1.2,
+      "20": 0.33,
+      "21": 0.5,
+      "23": 0.0,
+      "24": 8.0,
+      "25": 55.0,
+      "26": 50.0,
+      "27": 64.0,
+      "28": 0.0,
+      "29": 0.9
+     }
+    },
+    "FN05": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:826",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 20.0,
+      "10": 400.0,
+      "11": 300.0,
+      "13": 0.66,
+      "14": 0.05,
+      "15": -5.0,
+      "16": 0.0,
+      "17": 20.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.12,
+      "23": 1.0,
+      "24": 0.2,
+      "25": 62.0,
+      "29": 0.05
+     }
+    },
+    "FN36": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:832",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.25,
+      "4": 0.1,
+      "5": -10.0,
+      "10": 460.0,
+      "11": 350.0,
+      "13": 0.66,
+      "14": 0.12,
+      "15": 5.0,
+      "16": -60.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.5,
+      "23": 1.0,
+      "24": 0.18,
+      "25": 66.0,
+      "29": 0.05
+     }
+    },
+    "MM81": {
+     "engine": "MANUAL_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:838",
+     "version": "all",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 0.0,
+      "6": 30.0,
+      "7": 50.0,
+      "8": 0.0,
+      "9": 5.0,
+      "10": 320.0,
+      "11": 250.0,
+      "12": 1950.0,
+      "13": 0.0,
+      "14": 55.0,
+      "15": 0.0,
+      "16": -15.0,
+      "17": 90.0,
+      "18": 0.0,
+      "19": 3.0,
+      "20": 0.33,
+      "21": 0.2,
+      "23": 0.0,
+      "24": 6.0,
+      "25": 55.0,
+      "26": 65.0,
+      "27": 55.0,
+      "28": 0.0,
+      "29": 1.5
+     }
+    },
+    "SS01": {
+     "engine": "SUBJECT_CAMERA",
+     "flags": [
+      "0x002",
+      "0x080"
+     ],
+     "src": "src/d/d_cam_style.cpp:844",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "5": -10.0,
+      "10": 20.0,
+      "19": 70.0,
+      "20": 0.45,
+      "21": 0.04,
+      "24": 90.0,
+      "25": 50.0,
+      "26": 0.2
+     }
+    },
+    "LL18": {
+     "engine": "LOCKON_CAMERA",
+     "flags": [
+      "0x002",
+      "0x004"
+     ],
+     "src": "src/d/d_cam_style.cpp:850",
+     "version": "all",
+     "p": {
+      "0": -10000.0,
+      "1": -10000.0,
+      "3": 0.2,
+      "4": 0.4,
+      "5": 6.5,
+      "6": -17.5,
+      "7": 20.0,
+      "8": -80.0,
+      "9": 0.0,
+      "10": 280.0,
+      "11": 125.0,
+      "12": 350.0,
+      "13": 800.0,
+      "14": 1200.0,
+      "15": 2.0,
+      "16": -40.0,
+      "17": 40.0,
+      "18": 20.0,
+      "19": -15.0,
+      "20": 0.3,
+      "21": 0.0,
+      "23": 10.0,
+      "24": 35.0,
+      "25": 65.0,
+      "26": 65.0,
+      "27": 70.0,
+      "28": 60.0,
+      "29": 70.0
+     }
+    },
+    "DD04": {
+     "engine": "SHIELD_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:856",
+     "version": "all",
+     "p": {
+      "0": 80.0,
+      "1": 0.0,
+      "3": 0.03,
+      "4": 0.03,
+      "5": 60.0,
+      "10": 450.0,
+      "11": 400.0,
+      "15": -4.0,
+      "18": 0.33,
+      "20": 0.0,
+      "23": -45.0,
+      "25": 45.0
+     }
+    },
+    "MM22": {
+     "engine": "MANUAL_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:862",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.7,
+      "4": 0.25,
+      "5": 0.0,
+      "6": 0.0,
+      "7": 30.0,
+      "8": 0.0,
+      "9": 3.0,
+      "10": 320.0,
+      "11": 240.0,
+      "12": 600.0,
+      "13": 0.0,
+      "14": 19.0,
+      "15": 0.0,
+      "16": 0.0,
+      "17": 15.0,
+      "18": 0.0,
+      "19": 0.7,
+      "20": 0.33,
+      "21": 0.66,
+      "23": 0.0,
+      "24": 8.0,
+      "25": 55.0,
+      "26": 50.0,
+      "27": 60.0,
+      "28": 0.0,
+      "29": 0.5
+     }
+    },
+    "MM18": {
+     "engine": "MANUAL_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:868",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.7,
+      "4": 0.25,
+      "5": 20.0,
+      "6": 30.0,
+      "7": 25.0,
+      "8": 0.0,
+      "9": 0.5,
+      "10": 300.0,
+      "11": 210.0,
+      "12": 480.0,
+      "13": 0.0,
+      "14": 18.0,
+      "15": 20.0,
+      "16": 35.0,
+      "17": 0.0,
+      "18": 0.0,
+      "19": 2.1,
+      "20": 0.33,
+      "21": 0.66,
+      "23": 0.0,
+      "24": 8.0,
+      "25": 55.0,
+      "26": 55.0,
+      "27": 58.0,
+      "28": 0.0,
+      "29": 0.45
+     }
+    },
+    "MM17": {
+     "engine": "MANUAL_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:874",
+     "version": "all",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.7,
+      "4": 0.25,
+      "5": 30.0,
+      "6": 25.0,
+      "7": 30.0,
+      "8": 0.0,
+      "9": 0.5,
+      "10": 250.0,
+      "11": 160.0,
+      "12": 420.0,
+      "13": 0.0,
+      "14": 20.0,
+      "15": 20.0,
+      "16": 40.0,
+      "17": 5.0,
+      "18": 0.0,
+      "19": 2.4,
+      "20": 0.33,
+      "21": 0.66,
+      "23": 0.0,
+      "24": 8.0,
+      "25": 55.0,
+      "26": 55.0,
+      "27": 58.0,
+      "28": 0.0,
+      "29": 0.45
+     }
+    },
+    "MM03": {
+     "engine": "MANUAL_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:881",
+     "version": "usa_pal_only",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.7,
+      "4": 0.25,
+      "5": 10.0,
+      "6": 0.0,
+      "7": 30.0,
+      "8": 0.0,
+      "9": 5.2,
+      "10": 320.0,
+      "11": 260.0,
+      "12": 660.0,
+      "13": 0.0,
+      "14": 25.0,
+      "15": 0.0,
+      "16": -10.0,
+      "17": 30.0,
+      "18": 0.0,
+      "19": 2.0,
+      "20": 0.33,
+      "21": 0.5,
+      "23": 0.0,
+      "24": 8.0,
+      "25": 55.0,
+      "26": 50.0,
+      "27": 62.0,
+      "28": 0.0,
+      "29": 1.5
+     }
+    },
+    "MM23": {
+     "engine": "MANUAL_CAMERA",
+     "flags": [
+      "0x002"
+     ],
+     "src": "src/d/d_cam_style.cpp:887",
+     "version": "usa_pal_only",
+     "p": {
+      "0": 0.0,
+      "1": 0.0,
+      "3": 0.7,
+      "4": 0.25,
+      "5": 0.0,
+      "6": 0.0,
+      "7": 30.0,
+      "8": 0.0,
+      "9": 4.0,
+      "10": 320.0,
+      "11": 240.0,
+      "12": 900.0,
+      "13": 0.0,
+      "14": 34.0,
+      "15": 0.0,
+      "16": -5.0,
+      "17": 60.0,
+      "18": 0.0,
+      "19": 2.6,
+      "20": 0.33,
+      "21": 0.66,
+      "23": 0.0,
+      "24": 8.0,
+      "25": 55.0,
+      "26": 50.0,
+      "27": 60.0,
+      "28": 0.0,
+      "29": 0.8
+     }
+    },
+    "FN38": {
+     "engine": "FOLLOW_CAMERA",
+     "flags": [
+      "0x001",
+      "0x004",
+      "0x400"
+     ],
+     "src": "src/d/d_cam_style.cpp:893",
+     "version": "usa_pal_only",
+     "p": {
+      "0": 1.0,
+      "1": 0.0,
+      "3": 0.75,
+      "4": 0.25,
+      "5": 30.0,
+      "10": 800.0,
+      "11": 600.0,
+      "13": 0.66,
+      "14": 0.15,
+      "15": 15.0,
+      "16": -40.0,
+      "17": 60.0,
+      "18": 2.0,
+      "19": 0.05,
+      "20": 0.3,
+      "21": 0.05,
+      "23": 0.8,
+      "24": 0.1,
+      "25": 62.0,
+      "29": 0.05
+     }
+    }
+   }
+  }
+ },
+ "_regions": {
+  "summary": "Wind Waker's stage-authored cameras are NOT volumes. A camera 'region' is a set of collision POLYGONS carrying an 8-bit camera id; the id indexes the room's RCAM (or the stage's CAMR) table, which names a camera TYPE by string and optionally points at an AROB/RARO arrow that supplies a fixed eye position + orientation. Link's camera type is re-evaluated every frame from the polygon he is standing on.",
+  "chunks": {
+   "CAMR": {
+    "where": "stage-level DZS",
+    "size": "0x14",
+    "entry": "char m_cam_type[16]; u8 m_arrow_idx; u8 field_0x11; u8 field_0x12; u8 field_0x13",
+    "at": "include/d/d_stage.h:166-173; loader src/d/d_stage.cpp:2168",
+    "fields": {
+     "m_cam_type": "NUL-padded ASCII, strcmp'd against dCamera_c::types[].name; 'Keep' means 'do not change type'",
+     "m_arrow_idx": "index into AROB/RARO; used only if < arrow->num, else no arrow (mCurArrowIdx = 0xFF)",
+     "field_0x11": "NO READER anywhere in the decomp",
+     "field_0x12": "FOV override in degrees; 0xFF = use the style's Val25. crawlCamera instead uses !=0xFF as a snap-to-arrow gate.",
+     "field_0x13": "transition length in frames; 0xFF = compute from distance"
+    }
+   },
+   "RCAM": {
+    "where": "room-level DZR; identical layout to CAMR",
+    "at": "src/d/d_stage.cpp:2169 (stage loader, dStage_cameraInit) and 2182 (room loader, dStage_RoomCameraInit)"
+   },
+   "AROB": {
+    "where": "stage-level DZS",
+    "size": "0x14",
+    "entry": "cXyz position (3xf32); csXyz angle (3xs16); s16 field_0x12",
+    "at": "include/d/d_stage.h:180-185; loader src/d/d_stage.cpp:2171",
+    "fields": {
+     "position": "the fixed eye point for fixedPositionCamera; the rail origin for fixedFrameCamera; the snap point for crawlCamera",
+     "angle": "angle.x = pitch (NEGATED when used: cSGlobe(3000, -angle.x, angle.y)), angle.y = yaw, angle.z unused. fixedPositionCamera ignores the angle entirely and only uses position.",
+     "field_0x12": "NO READER found"
+    }
+   },
+   "RARO": {
+    "where": "room-level DZR; identical layout to AROB",
+    "at": "src/d/d_stage.cpp:2172, 2183"
+   },
+   "STAG": {
+    "where": "stage-level DZS",
+    "relevant_fields": "f32 mNearPlane; f32 mFarPlane; u8 mCameraMapToolID at 0x08",
+    "at": "include/d/d_stage.h:66-77",
+    "note": "mCameraMapToolID indexes the stage CAMR table to pick the stage-default camera type (mMapToolType). d_camera.cpp:204 compares this u8 against -1, an acknowledged bug, so the guard never rejects."
+   }
+  },
+  "dzb_polygon_camera_bits": {
+   "what": "the per-polygon property words in the DZB collision file; the camera reads three of them",
+   "at": "src/d/d_bg_s.cpp:97-99, 252-276 (dBgS::GetPolyCamId / GetCamMoveBG / GetRoomCamId / GetRoomPathId / GetRoomPathPntNo)",
+   "bits": [
+    {
+     "name": "cam_id",
+     "word": "inf0",
+     "mask": "0x000000FF",
+     "shift": 0,
+     "default": 255,
+     "accessor": "GetPolyCamId",
+     "meaning": "index into the ROOM's RCAM table; 0xFF = none"
+    },
+    {
+     "name": "cam_move_bg",
+     "word": "inf2",
+     "mask": "0x000000FF",
+     "shift": 0,
+     "default": 255,
+     "accessor": "GetCamMoveBG",
+     "meaning": "index into mvBGTypes[35]; 0 = none"
+    },
+    {
+     "name": "room_cam_id",
+     "word": "inf2",
+     "mask": "0x0000FF00",
+     "shift": 8,
+     "default": 255,
+     "accessor": "GetRoomCamId",
+     "meaning": "the room-level camera index; tried BEFORE cam_id"
+    },
+    {
+     "name": "room_path_id",
+     "word": "inf2",
+     "mask": "0x00FF0000",
+     "shift": 16,
+     "default": 255,
+     "accessor": "GetRoomPathId",
+     "meaning": "path camera id (not read by dCamera_c)"
+    },
+    {
+     "name": "room_path_point",
+     "word": "inf2",
+     "mask": "0xFF000000",
+     "shift": 24,
+     "default": 255,
+     "accessor": "GetRoomPathPntNo",
+     "meaning": "path point (not read by dCamera_c)"
+    }
+   ],
+   "room_number": "dBgS::GetRoomId (d_bg_s.cpp:277-299) = dBgW->mRoomNo, or the triangle group's room if mRoomNo == 0xFFFF. This is the roomNo passed to GetCameraTypeFromMapToolID."
+  },
+  "ground_probe": {
+   "at": "src/d/d_camera.cpp:2427-2610 (checkGroundInfo), runs at the top of every Run()",
+   "steps": [
+    "cast a ground ray from Link's HEAD (pos.y + linkHeight), not his feet; also a roof check from his feet",
+    "m360 (on-ground) = (footHeight - groundY) <= FloorMargin(32.0)",
+    "m350 = GetCamMoveBG(groundPoly), or 0 if no ground",
+    "mRoomNo = -1 by default",
+    "if swimming and there is ground under the FEET ray: mRoomMapToolCameraIdx = GetPolyCamId(feet poly)",
+    "else if airborne (m360 == 0): mRoomMapToolCameraIdx = 0x1FF (a sentinel, not a real index)",
+    "else: mRoomMapToolCameraIdx = GetRoomCamId(head poly); if that is 0xFF fall back to GetPolyCamId(head poly); if it was not 0xFF also set mRoomNo = GetRoomId(poly)",
+    "moving-BG (platform) polys additionally drag mCenter/mEye through MoveBgMatrixCrrPos so the camera rides moving platforms; the pirate ship gets an extra vertical follow at 0.66"
+   ]
+  },
+  "type_selection_order": {
+   "at": "src/d/d_camera.cpp:1262-1367 (nextType)",
+   "order": [
+    {
+     "rank": 1,
+     "cond": "dComIfGp_evmng_cameraPlay() || camera flag 0x20000000",
+     "result": "type 'Event' (style EN00); the previous type is pushed and restored afterwards"
+    },
+    {
+     "rank": 2,
+     "cond": "daNpc_kam_c::m_hyoi_kamome (riding the seagull)",
+     "result": "type 'Seagal'"
+    },
+    {
+     "rank": 3,
+     "cond": "S0(UNK1000000|SHIP_RIDE) || S1(UNK80), and no SetTypeForce pending",
+     "result": "type 'Boat'"
+    },
+    {
+     "rank": 4,
+     "cond": "an actor called SetTypeForce() this frame (m524 != 0xFF)",
+     "result": "that type, latched for one frame; may also force the lock-on target"
+    },
+    {
+     "rank": 5,
+     "cond": "mStageMapToolCameraIdx != 0xFF",
+     "result": "GetCameraTypeFromMapToolID(idx, roomNo = -1) -> the STAGE CAMR table. Dead in retail: nothing ever writes this field."
+    },
+    {
+     "rank": 6,
+     "cond": "idx = mRoomMapToolCameraIdx == 0xFF (no camera id on the polygon)",
+     "result": "fall back to the collision move-BG id m350: if 0 < m350 < 35 use mvBGTypes[m350] by name (unless it resolves to 'Keep'); if m350 == 0x11 (MajTower) also load RCAM entry 0 for its arrow. If m350 == 0: swimming -> 'Water', else the stage default mMapToolType."
+    },
+    {
+     "rank": 7,
+     "cond": "idx == 0x1FF (airborne)",
+     "result": "keep the current type, except: Deku-leaf gliding -> stage default; swimming -> 'Water'; and if the current type is 'Boat' or 'BoatBattle' -> 'Water' (this is how leaving the boat works)"
+    },
+    {
+     "rank": 8,
+     "cond": "otherwise",
+     "result": "GetCameraTypeFromMapToolID(idx, roomNo). 'Keep' -> keep the current type; 0xFF (no such entry / name not in the type table) -> stage default mMapToolType; else that type, and mCurRoomCamEntry / mCurRoomArrowEntry / mCurArrowIdx are latched."
+    }
+   ],
+   "lookup": {
+    "at": "src/d/d_camera.cpp:1471-1517 (GetCameraTypeFromMapToolID)",
+    "algorithm": "pick stage-level tables when roomNo == -1, else dComIfGp_getRoomCamera(roomNo) / dComIfGp_getRoomArrow(roomNo). Bounds-check the index against camera->num. Linear strcmp of m_cam_type against every types[].name; no match -> 0xFF. Then copy the CAMR entry into mCurRoomCamEntry and, if m_arrow_idx < arrow->num, copy the arrow into mCurRoomArrowEntry and set mCurArrowIdx."
+   }
+  },
+  "ripper_status": {
+   "verdict": "ON THE DISC BUT DROPPED. The stage camera chunks are present in every DZS/DZR and the ripper sees them, counts them, and throws them away.",
+   "dzs": {
+    "file": "Z:/3d ripper/gcrip/formats/dzs.py",
+    "parses": "ACTR/TGOB/TRES/PLYR (+ layered ACT0..ACTb, TRE0..TREb), SCOB/TGSC/DOOR/TGDR (+ SCO0..SCOb), MULT, EVNT, SHIP, SCLS",
+    "camr": "NOT PARSED. parse() records every fourCC as Dzs.chunks[fourcc] = (count, offset) at dzs.py:100 but no consumer ever reads Dzs.chunks, so CAMR/RCAM/AROB/RARO are counted and discarded."
+   },
+   "dzb": {
+    "file": "Z:/3d ripper/gcrip/formats/dzb.py",
+    "camr": "PARSED BUT UNUSED. PolyProperty.decode (dzb.py:105-123) already decodes cam_id, cam_move_bg, room_cam_id, room_path_id, room_path_point with exactly the bit layout d_bg_s.cpp uses (verified field by field). Dzb only exposes tri_wall / tri_special / tri_ground / tri_attribute, so nothing downstream can see them. PASS_CAMERA = 0x01 is defined at dzb.py:53 and never referenced."
+   },
+   "reports": {
+    "path": "Z:/3d ripper/out/rip/GZLE01/stages/<stage>/<stage>_report.json",
+    "stages": 160,
+    "finding": "the report has no chunk inventory at all - no 'chunks', 'unknown_chunks' or 'skipped_chunks' key - so CAMR/RCAM/AROB/RARO appear nowhere. The 'collision' key is a DZB tag histogram with no camera entry (sea: solid/water/ladder/ladder_top/nohang/hookshot/climb). Telling detail: 'event_table' is full of 'MapToolCamera' entries in both sea and kaze, i.e. the EVNT names that drive the map-tool camera survive while the camera tables themselves do not."
+   },
+   "godot": {
+    "file": "Z:/3d ripper/gcrip/godot.py (read only)",
+    "has": "a single hardcoded FN01 follow rig, an LL01-parameterised lock-on, a first-person / subject camera, a BN07-flavoured boat camera, and an event-camera hook fed by the cutscene player. Bump handling is one ray with a 10.5 margin and a 40-unit minimum.",
+    "missing": "no CAMR/RCAM types, no AROB/RARO arrows, no per-polygon camera ids, no style table, no type table, no fixed-position / fixed-frame / crawl / talk engines."
+   }
+  },
+  "how_to_add_it": [
+   "1. dzs.py: decode CAMR/RCAM as '>16sBBBB' and AROB/RARO as '>3f3hh'. Both are 0x14 bytes. Strip the m_cam_type at the first NUL.",
+   "2. dzb.py: expose tri_cam_id / tri_room_cam_id / tri_cam_move_bg alongside the existing tri_wall etc. The decode is already correct - only the accessor is missing.",
+   "3. Bake per-triangle camera ids into the exported collision (a Godot face-index -> cam_id array, or one collision shape per distinct id) so the runtime can answer 'which cam_id is Link standing on'.",
+   "4. At runtime reproduce checkGroundInfo + nextType from _regions.type_selection_order, then select the style with _types.types[type].modes[mode] and drive the engine with _types.styles[tag].p.",
+   "5. Report the CAMR/RCAM/AROB/RARO counts per stage so it is visible how much of the game actually authors cameras."
+  ]
+ },
+ "_lockon": {
+  "engine": "lockonCamera, src/d/d_camera.cpp:3310-3667 (/* Nonmatching */)",
+  "entry": "The lock camera does NOT blend in: its first frame sets m100 = m101 = m102 = 1 (d_camera.cpp:3326-3328). The per-frame easing rates below are the whole transition.",
+  "t_parameter": {
+   "formula": "t = clamp(|target.attention_info.position - link.attention_info.position| / attn.LockonReleaseDistanse(), 0, 1)",
+   "at": "src/d/d_camera.cpp:3377, 3395-3399",
+   "meaning": "the ONLY per-target quantity the framing scales with. A boss with a big dist_table row makes the camera behave as though the target were proportionally closer.",
+   "drives": [
+    "LockonLongitude(t) = lerp(p23, p24) as an angle  (d_cam_param.cpp:275-279)",
+    "LockonLatitude(t)  = lerp(p18, p19) as an angle  (d_cam_param.cpp:282-286)",
+    "LockonCenterHeight(t) = lerp(p8, p9) as a float   (d_cam_param.cpp:296-300)",
+    "LockonFovy(t) = lerp(p28, p29) as a float         (d_cam_param.cpp:289-293)"
+   ],
+   "reading": "Close target -> camera high (LATITUDE_MIN, e.g. 20 deg), swung wide to the side (LONGITUDE_MIN, e.g. 75 deg), narrow FOV (48). Far target -> flat (-5 deg), nearly behind Link (20 deg), wide FOV (62)."
+  },
+  "center": {
+   "at": "src/d/d_camera.cpp:3465-3500",
+   "pseudo": [
+    "base.xz = linkAttn.xz",
+    "cushion += ((onGround ? 0.28 : 1.0) - cushion) * 0.2      # mBaseCushion / mJumpCushion",
+    "hTgt = linkAttn.y + LockonCenterHeight(t) + (25.0 if Link is on screen and unobstructed else 0)",
+    "base.y += cushion * (hTgt - base.y)",
+    "toTgt = targetAttn - linkAttn        # spherical (R_t, pitch_t, yaw_t)",
+    "a = min(|camYaw - yaw_t|, 1.3 * pitch_t)",
+    "shift.R   += p4 * ((R_t - R_t*0.1) * |cos(a)*-0.5+0.5| + R_t*0.05 - shift.R)",
+    "shift.yaw += p3 * (yaw_t - shift.yaw)",
+    "center = base + spherical(shift.R, 0, shift.yaw)"
+   ],
+   "reading": "the look-at point slides from Link toward the target by up to about half the Link-target distance when the camera is looking along that line, less across it."
+  },
+  "desired_yaw": {
+   "at": "src/d/d_camera.cpp:3408-3429",
+   "pseudo": [
+    "lon = LockonLongitude(t)",
+    "if frames < ChargeTimer(60): lon *= frames/60   # the swing widens over the first 2 s",
+    "side = sign(camYaw+180 - yaw_t)                 # stay on the side the camera is already on",
+    "yawDesired = yaw_t + side*lon + 180"
+   ]
+  },
+  "yaw_easing": {
+   "at": "src/d/d_camera.cpp:3529-3578",
+   "pseudo": [
+    "err = yawDesired - yaw",
+    "if no target:        rate = 0.33",
+    "elif still charging: rate = blend(0.15, p15 * customRB(-err/lon, 0.005), frames/60)",
+    "elif |err| < lon:    rate = p15 * customRB(-err/lon, 0.005)",
+    "else:                rate = p20 * RB(err/lon, 0.005), extra * RB(horizDist/100, 1) when the target is < 100 units away",
+    "yaw += err * rate"
+   ],
+   "caveat": "p15 (0 for LL01, 2 for LL02, 10 for LL04, 30 for LA02) is added to an angle after a customRBRatio; a raw multiplier of 30 would be unstable, so a scaling step is lost in the nonmatching decomp. For LL01 p15 = 0 means NO correction inside the +-lon dead zone.",
+   "confidence": "medium"
+  },
+  "pitch": {
+   "at": "src/d/d_camera.cpp:3580-3640",
+   "pseudo": [
+    "if charging a spin attack: pitch -> m0A4 (27 deg) over m0A8 (20) frames, weight 2.0",
+    "elif recovering (Link off screen or a wall between): pitch -= (pitch_t*0.7 + pitch) * 0.1",
+    "elif entered from a hang (camera flag 0x10): pitch += (LockonLatitude(t) - pitch) * 0.05",
+    "elif airborne and not attacking: pitch += (curPitch - pitch) * |cStickY| * |cos(shift.pitch)|",
+    "else: pitch += (LockonLatitude(t) - pitch) * 0.33",
+    "clamp: on the ship -> [p16, p17]; otherwise CheckLatitudeRange -> [-60, 80] deg"
+   ]
+  },
+  "radius_and_fov": {
+   "at": "src/d/d_camera.cpp:3642-3668",
+   "pseudo": [
+    "R += (DefaultRadius(R) - R) * 0.05     # clamps R into [min(p13,p14), max(p13,p14)]",
+    "fov += (LockonFovy(t) - fov) * 0.33",
+    "setFlag(0x2000)                        # enables the frustum-fit extension in bumpCheck"
+   ],
+   "recovery": "if Link's attention point projects outside the viewport (pointInSight, :1657-1666) or a wall blocks eye->center->Link, a 60-frame recovery runs: R -> 280 at 0.05."
+  },
+  "framing_big_vs_small": {
+   "verdict": "THERE IS NO 'big target' FLAG. attention_info has exactly three fields (u8 distances[8], cXyz position, u32 flags) and none of them encodes size. Big targets are expressed two ways only.",
+   "at": "include/f_op/f_op_actor.h:219-223",
+   "mechanism_1": {
+    "name": "a large dist_table row",
+    "how": "a big boss picks a row with a huge acquire/release radius, which inflates LockonReleaseDistanse(), which shrinks t, which pushes the framing toward the 'close target' end (high, wide, narrow-FOV) even from far away.",
+    "examples": [
+     "row 0x2A = 2500/2600/+2500: Helmaroc King (d_a_bdk.cpp:4190)",
+     "row 0x22 = 500/600/+4500: Big Octo eye, Gohdan-family (d_a_bgn.cpp:2929, d_a_daiocta_eye.cpp:419)",
+     "row 0x04 = 500/600/+1500, weightDivisor 10.0: the generic boss attention proxy (d_a_att.cpp:205)",
+     "row 0x26 = 15000/15000: the largest row in the table"
+    ]
+   },
+   "mechanism_2": {
+    "name": "the frustum-fit pull-back (this is the real 'boss framing')",
+    "at": "src/d/d_camera.cpp:1676-1765 (radiusActorInSight) + 2118-2137 (bumpCheck)",
+    "how": [
+     "take Link's and the target's attention_info.position",
+     "push them APART by 50.0 units each along the line between them (padding)",
+     "build half-angle cones fovY*0.5*(scissorH/480)*0.95 vertical and (scissorW/640)*(fovY*aspect*0.5)*0.95 horizontal (i.e. fit inside 95% of the frame)",
+     "return the extra radius needed so both padded points fit; 0 if they already do",
+     "clamp to 3500, ease in m14C += (need - m14C)*0.33, decay m14C -= m14C*0.08 when 0",
+     "fade in over the first 10 frames, then direction.R += m14C"
+    ],
+    "note": "only runs when camera flag 0x2000 is set, which lockonCamera sets every frame it runs."
+   },
+   "per_actor_special_cases": [
+    "fpcNm_BDK_e (Helmaroc King): the lock vector uses current.pos.x/z instead of attention_info.x/z (d_camera.cpp:3389-3392)",
+    "bumpCheck wall-up distance while CARRYING an actor: NPC_MD 130, Obj_Try 200, TSUBO 150/110, default 110 (d_camera.cpp:2077-2110) - carried-object framing, not lock-on"
+   ]
+  },
+  "acquisition": {
+   "at": "src/d/d_attention.cpp",
+   "world_space_only": "there is no screen-space term in target selection; screen space appears only in the camera (pointInSight, radiusActorInSight)",
+   "steps": [
+    "every frame, iterate EVERY actor in the world (fopAcIt_Executor(select_attention), :460-486) - there is no broad phase; the dist_table row is the only range filter",
+    "gate: playerFlags & categoryMask & actorFlags (:348), then check_event_condition (:229-250)",
+    "cone test check_flontofplayer (:254-291) using mFrontAngleCheckBits",
+    "distance test check_distace (:310-323): reject if dy <= dYmin or dy >= dYmax; allowed XZ = mDistXZMax + mDistXZAngleAdjust * (1 - |angle|/180deg)^2",
+    "score = distace_weight(dist, angle, 0.5) / mWeightDivisor, where distace_weight(d,a,r) = d * ((1-r) + r*(a/0x8000)^2) - straight ahead halves the effective distance. LOWER score wins.",
+    "keep the best 8 (mLockOnList[8]), bubble sort ascending, mLockOnList[0] is the target"
+   ],
+   "release": "chaseAttention (:563-608) re-scores the current target each frame using mDistXZMaxRelease instead of mDistXZMax. There is no timer and no hysteresis beyond the acquire/release radius pair.",
+   "switch_target": "nextAttention (:540-550) rebuilds and re-sorts the list; if the old target is still rank 0 and count > 1 it sets mLockOnOffset = 1 - i.e. 'switch' means 'take the second best'. There is NO directional (stick-direction) target pick. In switch mode the stick must satisfy CPad_GET_STICK_POS_Y > -0.9 (:778).",
+   "modes": "dComIfGs_getOptAttentionType() 0 = hold-to-lock (judgementStatusHd, :805-844), non-0 = toggle (judgementStatusSw, :765-802)"
+  },
+  "flags": {
+   "LockonTruth": "mLockOnState == LOCK || (RELEASE && LockonTarget(0) != NULL) - an actual target is locked (d_attention.cpp:1049-1051)",
+   "Lockon": "LockonTruth() || chkFlag(0x20000000) - Z-mode engaged, target or not (d_attention.h:216). The 0x20000000 bit is set when Z is pressed with nothing to target (d_attention.cpp:883); that is exactly what puts the camera in mode 1 (recenter behind Link).",
+   "ForceLockOn": "a CAMERA function, not an attention function (d_camera.cpp:5284-5300). Sets mLockOnActorId; dropped when attn.Lockon() becomes true, or after mForceLockOffTimer (120) frames, or beyond mForceLockOffDist (1800) units (checkForceLockTarget, d_camera.cpp:651-672).",
+   "actor_flags": {
+    "0x00000001": "LOCKON_MISC",
+    "0x00000002": "LOCKON_TALK",
+    "0x00000004": "LOCKON_BATTLE",
+    "0x00000008": "ACTION_SPEAK",
+    "0x00000010": "ACTION_CARRY",
+    "0x00000020": "ACTION_DOOR",
+    "0x00000040": "ACTION_TREASURE",
+    "0x00000080": "ACTION_SHIP",
+    "0x02000000": "TALKFLAG_NOTALK",
+    "0x04000000": "ENEMYFLAG_NOLOCKON",
+    "0x08000000": "TALKFLAG_LOOK",
+    "0x20000000": "TALKFLAG_CHECK",
+    "0x40000000": "TALKFLAG_READ"
+   },
+   "attention_types": "fopAc_AttentionType_e (f_op_actor.h:62-71): MISC 0, TALK 1, BATTLE 2, SPEAK 3, CARRY 4, DOOR 5, TREASURE 6, SHIP 7. Each actor stores ONE dist_table index per type."
+  },
+  "dist_table": {
+   "at": "src/d/d_att_dist.cpp:9-196 (186 rows, 0x00..0xB9)",
+   "columns": [
+    "idx",
+    "mDistXZMax (acquire)",
+    "mDistXZMaxRelease (release)",
+    "mDistXZAngleAdjust",
+    "mDeltaYMax",
+    "mDeltaYMin",
+    "mWeightDivisor",
+    "mFrontAngleCheckBits"
+   ],
+   "struct_at": "include/d/d_attention.h:245-253",
+   "angle_bits": {
+    "at": "src/d/d_attention.cpp:254-291 (check_flontofplayer)",
+    "note": "angle1 = target relative to the player's facing; angle2 = player relative to the target's facing. A set bit REJECTS when the angle exceeds the limit. 0x0000 = no cone at all.",
+    "limits": {
+     "0x004": "|angle1| > 90 deg",
+     "0x001": "|angle1| > 45 deg",
+     "0x002": "|angle1| > 15 deg",
+     "0x008": "|angle2| > 15 deg",
+     "0x010": "|angle2| > 45 deg",
+     "0x020": "|angle2| > 60 deg",
+     "0x040": "|angle2| > 90 deg",
+     "0x080": "|angle2| > ~110 deg",
+     "0x100": "|angle2| > 135 deg"
+    }
+   },
+   "specific_rows": [
+    [
+     0,
+     0.0,
+     0.0,
+     0.0,
+     0.0,
+     0.0,
+     0.01,
+     0
+    ],
+    [
+     1,
+     250.0,
+     375.0,
+     500.0,
+     400.0,
+     -400.0,
+     0.5,
+     0
+    ],
+    [
+     2,
+     187.5,
+     250.0,
+     312.5,
+     300.0,
+     -300.0,
+     1.0,
+     0
+    ],
+    [
+     3,
+     375.0,
+     625.0,
+     500.0,
+     500.0,
+     -500.0,
+     10.0,
+     0
+    ],
+    [
+     4,
+     500.0,
+     600.0,
+     1500.0,
+     2000.0,
+     -2000.0,
+     10.0,
+     0
+    ],
+    [
+     5,
+     150.0,
+     200.0,
+     0.0,
+     100.0,
+     -100.0,
+     2.0,
+     17
+    ],
+    [
+     6,
+     150.0,
+     200.0,
+     0.0,
+     100.0,
+     -100.0,
+     1.0,
+     17
+    ],
+    [
+     7,
+     187.5,
+     250.0,
+     312.5,
+     300.0,
+     -300.0,
+     1.0,
+     0
+    ],
+    [
+     8,
+     80.0,
+     80.0,
+     0.0,
+     30.0,
+     -130.0,
+     1.0,
+     1
+    ],
+    [
+     9,
+     100.0,
+     100.0,
+     0.0,
+     50.0,
+     -120.0,
+     1.0,
+     1
+    ],
+    [
+     10,
+     100.0,
+     100.0,
+     0.0,
+     45.0,
+     -125.0,
+     1.0,
+     1
+    ],
+    [
+     11,
+     100.0,
+     100.0,
+     0.0,
+     40.0,
+     -130.0,
+     1.0,
+     1
+    ],
+    [
+     12,
+     80.0,
+     80.0,
+     0.0,
+     40.0,
+     -110.0,
+     1.0,
+     1
+    ],
+    [
+     13,
+     80.0,
+     80.0,
+     0.0,
+     10.0,
+     -130.0,
+     1.0,
+     1
+    ],
+    [
+     14,
+     200.0,
+     200.0,
+     0.0,
+     100.0,
+     -120.0,
+     1.0,
+     1
+    ],
+    [
+     15,
+     150.0,
+     150.0,
+     0.0,
+     200.0,
+     -200.0,
+     1.0,
+     4
+    ],
+    [
+     16,
+     100.0,
+     120.0,
+     300.0,
+     300.0,
+     -200.0,
+     1.0,
+     4
+    ],
+    [
+     17,
+     100.0,
+     100.0,
+     0.0,
+     20.0,
+     -120.0,
+     1.0,
+     0
+    ],
+    [
+     18,
+     200.0,
+     200.0,
+     0.0,
+     400.0,
+     -120.0,
+     1.0,
+     1
+    ],
+    [
+     19,
+     450.0,
+     500.0,
+     0.0,
+     300.0,
+     -300.0,
+     1.0,
+     0
+    ],
+    [
+     20,
+     450.0,
+     500.0,
+     0.0,
+     300.0,
+     -300.0,
+     1.0,
+     0
+    ],
+    [
+     21,
+     1200.0,
+     1700.0,
+     0.0,
+     2000.0,
+     -2000.0,
+     1.0,
+     1
+    ],
+    [
+     22,
+     1200.0,
+     1700.0,
+     0.0,
+     2000.0,
+     -2000.0,
+     1.0,
+     1
+    ],
+    [
+     23,
+     120.0,
+     120.0,
+     0.0,
+     195.0,
+     25.0,
+     1.0,
+     1
+    ],
+    [
+     24,
+     340.0,
+     340.0,
+     0.0,
+     100.0,
+     -120.0,
+     1.0,
+     1
+    ],
+    [
+     25,
+     340.0,
+     340.0,
+     0.0,
+     180.0,
+     -40.0,
+     1.0,
+     1
+    ],
+    [
+     26,
+     1200.0,
+     1250.0,
+     0.0,
+     1000.0,
+     -1000.0,
+     1.0,
+     0
+    ],
+    [
+     27,
+     600.0,
+     700.0,
+     0.0,
+     300.0,
+     -300.0,
+     1.0,
+     4
+    ],
+    [
+     28,
+     600.0,
+     700.0,
+     0.0,
+     300.0,
+     -300.0,
+     1.0,
+     0
+    ],
+    [
+     29,
+     150.0,
+     200.0,
+     0.0,
+     170.0,
+     -100.0,
+     2.0,
+     17
+    ],
+    [
+     30,
+     150.0,
+     200.0,
+     0.0,
+     170.0,
+     -100.0,
+     1.0,
+     17
+    ],
+    [
+     31,
+     150.0,
+     200.0,
+     0.0,
+     180.0,
+     -100.0,
+     2.0,
+     17
+    ],
+    [
+     32,
+     150.0,
+     200.0,
+     0.0,
+     180.0,
+     -100.0,
+     1.0,
+     17
+    ],
+    [
+     33,
+     1000.0,
+     1050.0,
+     0.0,
+     1000.0,
+     -1000.0,
+     1.0,
+     1
+    ],
+    [
+     34,
+     500.0,
+     600.0,
+     4500.0,
+     2000.0,
+     -2000.0,
+     1.0,
+     0
+    ],
+    [
+     35,
+     150.0,
+     200.0,
+     0.0,
+     250.0,
+     -100.0,
+     2.0,
+     17
+    ],
+    [
+     36,
+     150.0,
+     200.0,
+     0.0,
+     250.0,
+     -100.0,
+     1.0,
+     17
+    ],
+    [
+     37,
+     350.0,
+     350.0,
+     0.0,
+     700.0,
+     -700.0,
+     1.0,
+     1
+    ],
+    [
+     38,
+     15000.0,
+     15000.0,
+     0.0,
+     10000.0,
+     -10000.0,
+     1.0,
+     0
+    ],
+    [
+     39,
+     100.0,
+     100.0,
+     0.0,
+     60.0,
+     -125.0,
+     1.0,
+     1
+    ],
+    [
+     40,
+     300.0,
+     350.0,
+     0.0,
+     250.0,
+     -400.0,
+     2.0,
+     17
+    ],
+    [
+     41,
+     400.0,
+     450.0,
+     200.0,
+     500.0,
+     -500.0,
+     1.0,
+     0
+    ],
+    [
+     42,
+     2500.0,
+     2600.0,
+     2500.0,
+     2000.0,
+     -2000.0,
+     1.0,
+     0
+    ],
+    [
+     43,
+     5000.0,
+     5500.0,
+     0.0,
+     2000.0,
+     -2000.0,
+     1.0,
+     0
+    ],
+    [
+     44,
+     5000.0,
+     5500.0,
+     0.0,
+     2000.0,
+     -2000.0,
+     1.0,
+     0
+    ],
+    [
+     45,
+     260.0,
+     280.0,
+     0.0,
+     100.0,
+     -120.0,
+     1.0,
+     1
+    ]
+   ],
+   "generated_rows": {
+    "what": "rows 0x2E..0xB9 are a generated ladder: acquire == release, dYmax 300, dYmin -300, weightDivisor 1.0, radius = 50 * ((idx - blockStart) + 1) stepping 50..1000 in 20 rows",
+    "blocks": [
+     {
+      "range": "0x2E-0x41",
+      "bits": "0x000C"
+     },
+     {
+      "range": "0x42-0x55",
+      "bits": "0x0014"
+     },
+     {
+      "range": "0x56-0x69",
+      "bits": "0x0024"
+     },
+     {
+      "range": "0x6A-0x7D",
+      "bits": "0x0044"
+     },
+     {
+      "range": "0x7E-0x91",
+      "bits": "0x0084"
+     },
+     {
+      "range": "0x92-0xA5",
+      "bits": "0x0104"
+     },
+     {
+      "range": "0xA6-0xB9",
+      "bits": "0x0004"
+     }
+    ]
+   }
+  },
+  "remake_gap": "godot.py currently uses LOCK_ACQUIRE_DIST 1000 / LOCK_RELEASE_DIST 1400 for everything and a dot-product cone of 0.3 against the CAMERA forward. The game uses per-actor table rows, cones measured against LINK's and the TARGET's facings, a weighted score, and the frustum-fit pull-back. Porting the frustum-fit is the single highest-value change for boss fights."
+ },
+ "_special": {
+  "boat": {
+   "engine": "rideCamera (d_camera.cpp:4378-4381) - EMPTY BODY, algorithm unknown",
+   "types": [
+    "Boat (index 38): modes 0/1/2/5/6 = BN07 / BP07 / LL11 / BW07 / BE07, manual MM07",
+    "BoatBattle (index 39): BN08 / BP08 / LL17 / BW07 / BE07, manual MM07",
+    "Tornado (index 42): QN07 / BP07 / LL11 / BW07 / BE08 (engine tornadoCamera, also empty)"
+   ],
+   "entry": "nextType rank 3: S0(UNK1000000|SHIP_RIDE) || S1(UNK80) -> 'Boat'. Leaving: while airborne (cam idx 0x1FF) a current type of Boat or BoatBattle becomes 'Water'.",
+   "known": "only the style rows. BN07 (sailing) radius p10 = 800, pitch p15 = 5 deg, clamp p16/p17 = -10..30, FOV p25 = 70, offsets p0/p1/p5 = 90/150/10, ease p20 = 0.2. BP07 (paddling) radius 900, pitch 10, FOV 60, ease 1.0. BW07 (sail down) radius 800, pitch 40, clamp 30..50, FOV 50. BE07 (idle) radius 750, offset y 240, pitch 15, clamp -80..80, FOV 66. Note p13 = -500 / -430 in the BN/BP/BW rows: a negative value in the radius-clamp slot, so rideCamera clearly reads p13 as something else (probably a forward look-ahead).",
+   "confidence": "parameters high, behaviour unknown"
+  },
+  "first_person": {
+   "engine": "subjectCamera (d_camera.cpp:3857-4207) + CalcSubjectAngle (:3720-3854) - DECOMPILED",
+   "styles": {
+    "SS01": "first person via C-stick up. p0/p1/p5 offsets 0/0/-10, radius p10 = 20, pitch limit p19 = 70 deg, ease p20 = 0.45, rate p21 = 0.04, yaw limit p24 = 90 deg, FOV p25 = 50",
+    "SX01": "bow / hookshot / grapple aim. offsets 20/0/-2, radius 40, pitch 70, ease 0.45, yaw 90, FOV 50. Style flag 0x100.",
+    "SX02": "boss-arena variant of SX01: pitch limit 60, FOV 60",
+    "SY01": "boomerang aim. offsets 0/30/30, radius 120, pitch 70, ease 0.6, yaw 90, FOV 60",
+    "SN15": "telescope / picto box. offsets 20/0/0, radius 20, pitch 70, ease 0.75, yaw 90, FOV 50, zoom rate p26 = 0.2. Style flags 0x002|0x010|0x080."
+   },
+   "angles": {
+    "at": "src/d/d_camera.cpp:3775-3845",
+    "dead_band": "stick is remapped f = clamp(stick / 0.7, -1, 1)",
+    "shaping": "RB(f, mCamSetup.CurveWeight() = 1.0) unless style flag 0x020, which uses the raw f",
+    "accumulate": "pitchFrac += RB(stickY)*p21 (clamped +-1); yawFrac likewise (see _camera_spec_review.corrected: the decomp writes '=' for the yaw, which is almost certainly a transcription artifact)",
+    "output": "yaw = p24 * yawFrac + link.shape_angle.y ; pitch = p19 * pitchFrac (absolute, not body-relative)",
+    "clamps": "stickY is forced to 0 while crawling, and while the eye is within 5 units of the water surface or the ground and you are pushing further into it"
+   },
+   "zoom": {
+    "at": "src/d/d_camera.cpp:4141-4180",
+    "only_with": "style flag 0x010 (SN15)",
+    "formula": "zoomFrac += p26 * (-RB(cStickY, CurveWeight)) * 0.1, clamped 0..1; scale = zoomFrac*8 + 1 (so 1x..9x); fovy += p20 * (2 * dCamMath::zoomFovy(baseFov*0.5, scale) - fovy)",
+    "zoomFovy": "zoomFovy(deg, y) = r2d(atan2(sin(deg), cos(deg) * y))  (d_cam_param.cpp:60-64)",
+    "side_effects": "setComZoomScale, setComZoomForcus, mDoGph_gInf_c::mAutoForcus = 0; also raises the TELESCOPE_LOOK / PICTO_BOX_AIM attention status bits"
+   },
+   "exit": "in SUBJECT mode only: the C-stick must go below -0.001 then below -0.74 (a two-step latch, mWork.subject.m3C4) to raise attention status 0x2000 (d_camera.cpp:4183-4200)",
+   "entry_blend": "7 frames (10 for the telescope), d_camera.cpp:3878-3900",
+   "aim_vs_lockon": "modes 10/11 (aim) only engage when !attn.Lockon(). Holding Z while aiming keeps the lock-on camera instead (d_camera.cpp:1116-1119)."
+  },
+  "telescope": {
+   "style": "SN15",
+   "note": "see _special.first_person.zoom; the telescope is the same engine with style flag 0x010 and a 1x..9x zoom on the C-stick Y.",
+   "mode": "14, entered on S0(TELESCOPE_LOOK) || S1(PICTO_BOX_AIM) - rank 2, so it beats almost everything"
+  },
+  "swimming": {
+   "type": "'Water' (type index 41; a duplicate dead row exists at 64)",
+   "modes": "FN14 / FN14 / LL02 / TT02 / SS01 / - / - / - / - / - / SX01 / SY01 / MM14 / CC01 / SN15 / JN05 / EN00 / - / - / -",
+   "entry": "nextType: when the polygon carries no camera id AND the move-BG id is 0, S0(SWIM) -> 'Water'; also while airborne if swimming, and when leaving the boat.",
+   "style_FN14": "follow with p0 = 0.5 forward offset, p5 = +10 height, radius 300..450, target pitch 15 deg, MIN PITCH 0 (the camera may never go below the horizontal while swimming), max 60, ease p14 = 0.12, yaw gain p20 = 0.1 (half of Field), FOV 55. Style flags = 0x001 only: NO slope look-ahead and NO foliage avoidance.",
+   "swim_probe": "while swimming, checkGroundInfo takes the camera id from the poly under Link's FEET (GetPolyCamId on the feet ray) rather than GetRoomCamId under his head (d_camera.cpp:2545-2549)",
+   "water_clamps": [
+    "the follow center is raised to the water/sea-wave surface (getWaterSurfaceHeight, :2366-2402)",
+    "bumpCheck step 4: eye.y = max(eye.y, waterSurface + 5 / seaWave + 20) (:2355-2361)",
+    "crawling/swimming force the follow min pitch to >= 4 deg and p5 >= -10"
+   ],
+   "confidence": "high"
+  },
+  "event_camera": {
+   "dispatcher": {
+    "at": "src/d/d_camera.cpp:4707-4914 (eventCamera) - decompiled",
+    "note": "the 28 cut functions live in src/d/d_ev_camera.cpp and EVERY ONE has an empty body. Only the dispatch order and the action names are recoverable."
+   },
+   "entry": "nextType rank 1: dComIfGp_evmng_cameraPlay() || camera flag 0x20000000 -> type 'Event'. The previous type is pushed (pushPos, :1543) and restored when the event ends. Run() delegates to NotRun() -> eventCamera when the camera is otherwise stopped (:915-935).",
+   "cut_types": [
+    {
+     "idx": 0,
+     "fn": "pauseEvCamera",
+     "name": "PAUSE"
+    },
+    {
+     "idx": 1,
+     "fn": "pauseEvCamera",
+     "name": "WAIT"
+    },
+    {
+     "idx": 2,
+     "fn": "talktoEvCamera",
+     "name": "TALK"
+    },
+    {
+     "idx": 3,
+     "fn": "fixedPositionEvCamera",
+     "name": "FIXEDPOS"
+    },
+    {
+     "idx": 4,
+     "fn": "fixedFrameEvCamera",
+     "name": "FIXEDFRM"
+    },
+    {
+     "idx": 5,
+     "fn": "uniformTransEvCamera",
+     "name": "UNITRANS"
+    },
+    {
+     "idx": 6,
+     "fn": "watchActorEvCamera",
+     "name": "WATCHACTOR"
+    },
+    {
+     "idx": 7,
+     "fn": "restorePosEvCamera",
+     "name": "RESTOREPOS"
+    },
+    {
+     "idx": 8,
+     "fn": "getItemEvCamera",
+     "name": "GETITEM"
+    },
+    {
+     "idx": 9,
+     "fn": "gameOverEvCamera",
+     "name": "GAMEOVER"
+    },
+    {
+     "idx": 10,
+     "fn": "turnToActorEvCamera",
+     "name": "TURNTOACTOR"
+    },
+    {
+     "idx": 11,
+     "fn": "rollingEvCamera",
+     "name": "ROLLING"
+    },
+    {
+     "idx": 12,
+     "fn": "tactEvCamera",
+     "name": "TACT"
+    },
+    {
+     "idx": 13,
+     "fn": "windDirectionEvCamera",
+     "name": "WINDDIR"
+    },
+    {
+     "idx": 14,
+     "fn": "tornadoWarpEvCamera",
+     "name": "TORNADO"
+    },
+    {
+     "idx": 15,
+     "fn": "styleEvCamera",
+     "name": "STYLE"
+    },
+    {
+     "idx": 16,
+     "fn": "saveEvCamera",
+     "name": "SAVE"
+    },
+    {
+     "idx": 17,
+     "fn": "loadEvCamera",
+     "name": "LOAD"
+    },
+    {
+     "idx": 18,
+     "fn": "useItem0EvCamera",
+     "name": "USEITEM0"
+    },
+    {
+     "idx": 19,
+     "fn": "useItem1EvCamera",
+     "name": "USEITEM1"
+    },
+    {
+     "idx": 20,
+     "fn": "fixedFramesEvCamera",
+     "name": "FIXEDFRMS"
+    },
+    {
+     "idx": 21,
+     "fn": "bSplineEvCamera",
+     "name": "BSPLINE"
+    },
+    {
+     "idx": 22,
+     "fn": "possessedEvCamera",
+     "name": "POSSESSED"
+    },
+    {
+     "idx": 23,
+     "fn": "twoActor0EvCamera",
+     "name": "TWOACTOR0"
+    },
+    {
+     "idx": 24,
+     "fn": "stokerEvCamera",
+     "name": "STOKER"
+    },
+    {
+     "idx": 25,
+     "fn": "uniformBrakeEvCamera",
+     "name": "UNIBRAKE"
+    },
+    {
+     "idx": 26,
+     "fn": "uniformAcceleEvCamera",
+     "name": "UNIACCELE"
+    },
+    {
+     "idx": 27,
+     "fn": "maptoolIdEvCamera",
+     "name": "MAPTOOL"
+    }
+   ],
+   "arg_readers": "StartEventCamera / EndEventCamera / getEvIntData / getEvFloatData / getEvXyzData / getEvStringData / getEvActor (d_ev_camera.cpp:11-68) - all empty. The parameters come from the event .dat files, keyed by name, not from code.",
+   "note_for_remake": "'MAPTOOL' (idx 27) is the cut type that switches the camera to a CAMR/RCAM map-tool id from inside a cutscene. gcrip's stage reports already show 'MapToolCamera' EVNT entries in sea and kaze, so the hooks are visible in the ripped data even though the tables are not parsed."
+  },
+  "fixed_position_camera": {
+   "engine": "fixedPositionCamera, d_camera.cpp:4548-4706 - DECOMPILED, and the single most valuable missing engine for the remake because it is what CAMR + AROB actually drive",
+   "styles": {
+    "PN05": "type 'FixdPos' and 'ForceFixdPos'. offsets p0/p1/p5 = 1/0/-20, center rates p3/p4 = 0.75/0.25, radius clamp p11..p10 = 50..1000, steady ease p23 = 0.75, transition coeff p24 = 0 -> HARD CUT, FOV p25 = 50, flag 0x040",
+    "PN12": "type 'SmoothFixdPos'. identical but p24 = 10 -> distance-scaled blend",
+    "PN13": "type 'SmoothFixdPosC'. p24 = 10, and center rates lowered to 0.15/0.15, flags 0x002|0x040"
+   },
+   "algorithm": [
+    "eye = AROB/RARO arrow position (requires style flag 0x040 and mCurArrowIdx != 0xFF); if there is no arrow the current eye is used and the camera just tracks",
+    "center target = Link's attention point + rotY(linkYaw) * (p1, p5, p0)",
+    "fov = CAMR field_0x12 if != 0xFF else p25",
+    "transition frames n = CAMR field_0x13 if != 0xFF, else (int)(p24 * sqrt(d / linkHeight)) + 1 where d = clamp(|arrow - eye|, .., p10) and at least the center displacement, and linkHeight is floored at 10",
+    "during the transition a triangular weight schedule w_k = (n-k) / (n(n+1)/2) is used (same trick as the follow camera's mode-entry blend); with an explicit field_0x13 the weight is a flat 1/n instead",
+    "steady state: center += (target - center) * (p3, p4, p3); direction R/pitch/yaw each ease at p23 toward the arrow; R clamped into [p11, p10]; fov eases at p23",
+    "the arrow position is also compared frame to frame - when it changes, setDMCAngle() is called so Link's stick control re-latches to the new camera angle"
+   ],
+   "confidence": "high (the function is decompiled; only the exact transition bookkeeping is nonmatching)"
+  },
+  "fixed_frame_camera": {
+   "engine": "fixedFrameCamera, d_camera.cpp:4458-4547 - decompiled but garbled",
+   "style": "XN06 (type 'FixdFrm'): only p24 = 0 (hard cut) and p25 = 50 (FOV) are set; flag 0x040",
+   "algorithm": [
+    "requires an arrow; returns false with no arrow",
+    "P = arrow.position; F = P + spherical(3000, -arrow.angle.x, arrow.angle.y) - a 3000-unit rail",
+    "project Link's attention point onto the segment F->P; the projection slides along the rail",
+    "the camera direction is taken from (P - projection) and the center eases toward F",
+    "fov = CAMR field_0x12 if != 0xFF else p25; frames = CAMR field_0x13 if != 0xFF else (int)(p24 * sqrt(|P - eye| / linkHeight)) + 1",
+    "a lineBGCheck from eye to center pulls the center to the crossing point if a wall is in the way",
+    "camera flag m530 (on the pirate ship) forces a minimum rail radius of 350"
+   ],
+   "caveat": "this is the reading of a /* Nonmatching */ body and the roles of 'center' and 'eye' are ambiguous in the decomp. Treat as 'a rail camera driven by the AROB arrow' and verify against video before shipping.",
+   "confidence": "medium",
+   "also": "THIS is where AROB angle semantics are proven: cSGlobe(3000, -angle.x, angle.y) means angle.x is a pitch that must be NEGATED and angle.y is the yaw."
+  },
+  "crawl": {
+   "engine": "crawlCamera, d_camera.cpp:4213-4367 - DECOMPILED",
+   "styles": {
+    "CC01": "flags 0x002|0x080",
+    "CC02": "flags 0x002|0x040|0x080 (uses the arrow)",
+    "LN17": "type 'Subject' mode 0; flags 0x002|0x040",
+    "LN01": "type 'Restrict' mode 0 - NOTE this row is a LOCKON_CAMERA, not a crawl camera"
+   },
+   "params": "p0/p1/p5 = 0/0/10, center rates p3/p4 = 0.6/0.2, radius p10 = 145 (forced to 2.0 when style flag 0x080 - i.e. the camera sits basically ON Link inside a tunnel), FOV p25 = 50, transition 10 frames (6 when already crawling)",
+   "behaviour": [
+    "m388 picks whether the camera looks along Link's facing or its inverse, hysteretically: flip to 'behind' outside +-135 deg, to 'in front' inside +-75 deg",
+    "with style flag 0x040 and CAMR field_0x12 != 0xFF and an arrow, the camera snaps to the arrow position when the camera yaw is within 90 deg of the arrow yaw",
+    "pitch follows Link's shape_angle.x directly"
+   ],
+   "confidence": "high"
+  },
+  "cannon_minigame": {
+   "engine": "nonOwnerCamera, d_camera.cpp:4403-4457 - DECOMPILED",
+   "style": "ZZ00",
+   "type": "CannonGame",
+   "note": "the only engine whose target is not the player: it frames daCanon_c::getCanonPtr(). params p0/p1/p5 = 10/0/200, radius p10 = 320, pitch p15 = 3 deg, p18 = 0.3 weight on the cannon's pitch, p20 = 0.33 ease, p23 = 1.0 weight on the cannon's yaw, FOV 60."
+  },
+  "unknown_engines": {
+   "what": "engines with an empty body; only their style rows are recoverable (see _types.styles)",
+   "list": {
+    "talktoCamera": {
+     "styles": [
+      "TT01",
+      "TT02",
+      "TT03",
+      "TT04"
+     ],
+     "at": "d_camera.cpp:3705",
+     "hint": "getMsgCmdCut (:3690-3703) reads dComIfGp_getMesgCameraInfo()->mBasicID / mID and returns any value outside 1..10 as a 'cut' id, so the talk camera is driven by per-message camera cues in the BMG."
+    },
+    "towerCamera": {
+     "styles": [
+      "IN01",
+      "IN02",
+      "IN03"
+     ],
+     "at": "d_camera.cpp:4208",
+     "hint": "types Tower / TowerUp / MajTower (Tower of the Gods spiral)"
+    },
+    "rideCamera": {
+     "styles": [
+      "BN07",
+      "BN08",
+      "BP07",
+      "BP08",
+      "BW07",
+      "BE07",
+      "BE08"
+     ],
+     "at": "d_camera.cpp:4378"
+    },
+    "hungCamera": {
+     "styles": [
+      "HN16",
+      "HP16"
+     ],
+     "at": "d_camera.cpp:4383"
+    },
+    "vomitCamera": {
+     "styles": [
+      "HN18"
+     ],
+     "at": "d_camera.cpp:4388"
+    },
+    "shieldCamera": {
+     "styles": [
+      "DD01",
+      "DD02",
+      "DD04"
+     ],
+     "at": "d_camera.cpp:4393"
+    },
+    "manualCamera": {
+     "styles": [
+      "MM01..MM23, MM81..MM83 (24 rows)"
+     ],
+     "at": "d_camera.cpp:4398",
+     "hint": "p10/p11/p12 are the RadiusRatio center/min/max -> the zoom range (Field MM01: 240..700 around 320); p25/p26/p27 are FOVY base/upper/lower (55/50/60) fed through ratiof with weight 0.25, so zooming in narrows the FOV to 50 and out widens it to 60"
+    },
+    "hookshotCamera": {
+     "styles": [
+      "JN05"
+     ],
+     "at": "d_camera.cpp:4368"
+    },
+    "tornadoCamera": {
+     "styles": [
+      "QN07"
+     ],
+     "at": "d_camera.cpp:4373"
+    },
+    "demoCamera": {
+     "styles": [],
+     "at": "d_camera.cpp:4915"
+    }
+   }
+  }
+ },
+ "_priority": [
+  {
+   "rank": 1,
+   "item": "Parse CAMR/RCAM and AROB/RARO in dzs.py and surface the counts in the stage report",
+   "why": "These chunks are on every disc stage and the ripper currently counts them into Dzs.chunks and throws them away. Until they are parsed nothing else on this list is possible. Layout is fully known and fixed-size.",
+   "how": "CAMR/RCAM: '>16sBBBB' per 0x14-byte entry (name, arrow_idx, unk11, fov_or_flag, frames). AROB/RARO: '>3f3hh' per 0x14-byte entry (pos xyz, angle xyz as s16, trailing s16). Stage-level chunks come from the DZS, room-level from each room's DZR.",
+   "effort": "small",
+   "confidence": "high"
+  },
+  {
+   "rank": 2,
+   "item": "Expose the per-polygon camera ids from dzb.py and bake them into the exported collision",
+   "why": "cam_id / room_cam_id / cam_move_bg are ALREADY decoded correctly in PolyProperty.decode (the bit layout matches d_bg_s.cpp exactly) but Dzb only exposes tri_wall/tri_special/tri_ground/tri_attribute, so no consumer can reach them. Without them the CAMR table has nothing to select it.",
+   "how": "add tri_cam_id / tri_room_cam_id / tri_cam_move_bg via the existing _prop_array helper, then emit a face-index -> id lookup (or one collision shape per distinct id) into the Godot scene so the runtime can ask 'which id am I standing on'.",
+   "effort": "small",
+   "confidence": "high"
+  },
+  {
+   "rank": 3,
+   "item": "Implement the type/style selector: nextType + the style table",
+   "why": "This is the whole missing layer. Right now godot.py hardcodes one FN01 rig for the entire game, so Dragon Roost's corridors, Windfall's rooms and the Forsaken Fortress all use outdoor Field framing. The tables in _types are complete and copy-pasteable.",
+   "how": "port _regions.type_selection_order (the 8 ranks) and _regions.ground_probe, then look up _types.types[type].modes[mode] and drive the existing follow/lockon code from _types.styles[tag].p instead of the hardcoded constants. Start with the ~12 types the mvBGTypes list can produce plus whatever names the CAMR tables actually contain.",
+   "effort": "medium",
+   "confidence": "high"
+  },
+  {
+   "rank": 4,
+   "item": "Implement fixedPositionCamera (PN05/PN12/PN13)",
+   "why": "The single most visible authored-camera behaviour: every 'the camera is bolted to the corner of the room' shot in houses, shops and small dungeon rooms. It is fully decompiled, it is short, and it is what the AROB arrows exist for. CAMR field_0x12 (FOV) and field_0x13 (transition frames) are per-entry overrides you now know how to read.",
+   "how": "see _special.fixed_position_camera.algorithm",
+   "effort": "medium",
+   "confidence": "high"
+  },
+  {
+   "rank": 5,
+   "item": "Port the lock-on frustum-fit pull-back (radiusActorInSight)",
+   "why": "This is the mechanism that makes boss fights readable, and it is the only place the game reacts to target size. The remake's fixed 420..480 radius will clip a big boss out of frame. The function is decompiled and self-contained.",
+   "how": "see _lockon.framing_big_vs_small.mechanism_2 - pad both attention points by 50, fit inside 95% of the frustum, clamp 3500, ease 0.33 in / 0.08 out, fade over 10 frames.",
+   "effort": "small",
+   "confidence": "high"
+  },
+  {
+   "rank": 6,
+   "item": "Replace the flat lock-on distances with the per-actor dist_table rows",
+   "why": "godot.py uses 1000/1400 for every target and a camera-forward cone of 0.3. The game uses per-actor acquire/release pairs, a facing-angle bonus, dY limits, a weight divisor and cones measured against BOTH facings. This also feeds t, which drives all four lock-on framing lerps - so getting it wrong mis-frames every enemy.",
+   "how": "_lockon.dist_table has the 46 specific rows verbatim plus the generated ladder formula. Map each ripped enemy actor to a row; default to row 4 for bosses and the 0x2E+ ladder for NPCs.",
+   "effort": "medium",
+   "confidence": "high"
+  },
+  {
+   "rank": 7,
+   "item": "Widen the bump check: wall-up, corner slide and the foliage rule",
+   "why": "godot.py does one ray and a 10.5 pull-back. The game slides the eye UP walls by up to 80 units, eases yaw around convex corners at 0.75 (and doubles the yaw gain while doing it), and raises the pitch through bushes. This is most of what 'the Wind Waker camera feels good' means indoors.",
+   "why_now": "cheap relative to the payoff and needs no new ripped data",
+   "how": "d_camera.cpp:2064-2364; the constants are in _camera_spec_review.confirmed and the spec's section 2.4 is accurate.",
+   "effort": "medium",
+   "confidence": "high"
+  },
+  {
+   "rank": 8,
+   "item": "Fix the first-person / aim angle integration",
+   "why": "The remake integrates both axes; the decomp assigns the yaw fraction and accumulates the pitch. Assignment is almost certainly a decomp artifact (see the correction), so the remake is probably already right - but the yaw and pitch LIMITS (p24 = 90 deg from the body yaw, p19 = 70 deg absolute) and the per-style rates (0.45 / 0.6 / 0.75) differ per style and are currently one constant.",
+   "how": "_special.first_person",
+   "effort": "small",
+   "confidence": "medium"
+  },
+  {
+   "rank": 9,
+   "item": "Implement crawlCamera and fixedFrameCamera",
+   "why": "crawl is decompiled and short, and the 'Subject' / 'Restrict' / 'FixdFrm' types are used by the crawlspaces and the rail shots. Lower value than rank 4 because far fewer rooms use them.",
+   "how": "_special.crawl and _special.fixed_frame_camera (the latter is medium confidence - verify against video)",
+   "effort": "medium",
+   "confidence": "medium"
+  },
+  {
+   "rank": 10,
+   "item": "Boat camera from the BN07/BP07/BW07/BE07 rows",
+   "why": "rideCamera has NO body in the decomp, so this can only ever be an approximation. The remake's boat camera already uses the right ballpark (r 800, pitch 5 deg, FOV 70). Adding the sail-down (BW07: radius 800, pitch 40 deg, FOV 50) and idle (BE07: radius 750, offset y 240, FOV 66) variants on modes 5/6 is a real visible improvement for little work; a faithful port is impossible.",
+   "how": "_special.boat",
+   "effort": "small",
+   "confidence": "low"
+  },
+  {
+   "rank": 11,
+   "item": "Event-camera cut types",
+   "why": "LAST, deliberately. All 28 cut functions are empty in the decomp and their parameters live in the event .dat files. Anything built here is invention, not porting. The one cheap win is honouring the MAPTOOL cut (idx 27), which just switches to a CAMR id - and that falls out of rank 3 for free.",
+   "how": "_special.event_camera",
+   "effort": "large",
+   "confidence": "low"
+  }
+ ]
+}

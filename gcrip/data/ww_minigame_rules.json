@@ -1,0 +1,1091 @@
+{
+ "_source": "Mined read-only from the zeldaret/tww decompilation at Z:/memRip/sources/tww and cross-checked against the ripped GZLE01 (Wind Waker USA) placement data at Z:/3d ripper/out/rip/GZLE01/godot/stage_data.json. THIS FILE IS THE RULES LAYER: scoring, timers, thresholds, costs, attempt limits, failure conditions and prize tiers. The STEP layer - which event plays, which trigger fires it, which room it happens in - lives in gcrip/data/ww_story_minigames.json and is NOT repeated here; each entry's story_steps field names the step ids there that it sits underneath. Where a minigame has no step in that file (auction, joy_pendant, beedle_point_card, savage_labyrinth, nintendo_gallery) story_steps is empty and this file is the only record. \n\nHOW WIND WAKER STORES MINIGAME STATE. There is no per-minigame save area. Persistent counters are EVENT REGISTERS: they live in the same 256-byte event-flag array as the event bits (dSv_event_c { u8 mFlags[0x100]; }, include/d/d_save.h:696-710) and are addressed by the same u16 id, but the LOW BYTE of the id is a multi-bit MASK instead of a single-bit mask. src/d/d_save.cpp:1201-1210: setEventReg(id, v) does mFlags[id>>8] = (mFlags[id>>8] & ~(id & 0xFF)) | v, and getEventReg(id) returns mFlags[id>>8] & (id & 0xFF). Neither accessor shifts, so a 0xFF mask is a whole 0-255 byte, a 0x0F mask is a 0-15 value in the low nibble and a 0x03 mask is a 0-3 value in the low two bits. isEventBit() on a register id returns true when ANY masked bit is set, so a remake that models event flags as named booleans will silently corrupt every score in this file; the storage has to be the raw 256-byte array. Registers used below: 0x86FF Beedle points, 0xC0FF Joy Pendants given, 0x7F0F Knight's Crests sold, 0xAAFF Boating Course difficulty, 0xBEFF Sploosh Kaboom record, 0x790F auction winner, 0xCD03 auction item, 0xA9FF last photo shown to Carlov, and the seventeen figurine bytes 0x80FF-0x84FF / 0x8CFF-0x95FF / 0x9CFF / 0xB1FF.\n\nOTHER SAVE AREAS THE RULES TOUCH. dSv_ocean_c { u16 field_0x0[50]; } (include/d/d_save.h:685-694, src/d/d_save.cpp:1163-1183) is 16 bits per sea grid and remembers which salvage points have been emptied. dSv_player_map_c (include/d/d_save.h:410-437, src/d/d_save.cpp:851-960) holds four 128-bit chart arrays - field_0x0[1]=GetMap, [2]=OpenMap, [3]=CompleteMap - plus mFmapBits[49], one byte per sea grid whose bit 0 is 'arrived here' and bit 1 is the GBA-link copy. dSv_player_info_c::mRandomSalvagePoint (include/d/d_save.h:468) is the per-file randomised salvage slot.\n\nHONESTY. Every constant below carries the file:line it was read from. Actors whose bodies are /* Nonmatching */ stubs in the decomp contribute nothing but symbol names, and where that is the case the entry says so and leaves the number out rather than guessing. Nothing in this file was taken from a guide, a wiki or memory.",
+ "_confidence_legend": {
+  "high": "read directly out of a decompiled function body or a static table; the numbers are the game's numbers.",
+  "medium": "the storage, the trigger or the surrounding wiring is decompiled but one link in the chain (usually the NPC that orders the event) is a stub, so the interpretation is inferred.",
+  "low": "the actor is a stub or the data is placement-only; the entry names the actor and the archive and says what could not be recovered."
+ },
+ "_stub_actors": {
+  "note": "Actors that run a minigame but are 100% /* Nonmatching */ in the decomp. Symbol names survive; bodies do not.",
+  "daNpcBmcon_c": "src/d/actor/d_a_npc_bmcon1.cpp - 54 stub bodies. Willi & Obli, the Bird-Man contest.",
+  "daNpc_Kg1_c": "src/d/actor/d_a_npc_kg1.cpp - 25 stub bodies. Salvatore, Sploosh Kaboom.",
+  "daNpc_Kg2_c": "src/d/actor/d_a_npc_kg2.cpp - 34 stub bodies. Salvatore, cannon game.",
+  "daNpc_Sarace_c": "src/d/actor/d_a_npc_sarace.cpp - all stubs. Boating Course attendant.",
+  "daNpc_So_c": "src/d/actor/d_a_npc_so.cpp - 72 stub bodies. The Fishman.",
+  "daMgBoard_c": "src/d/actor/d_a_mgameboard.cpp - 14 stub bodies. The Sploosh Kaboom board (its data class d_seafightgame.cpp IS decompiled).",
+  "daNpcAuction_c": "src/d/actor/d_a_npc_auction.cpp - 41 stub bodies. The six rival bidders' bodies (the auctioneer daAuction_c IS fully decompiled).",
+  "daWarpls_c": "src/d/actor/d_a_warpls.cpp - every body stubbed. The Ysdls00 warp light that moves the player between Savage Labyrinth floors."
+ },
+ "auction": {
+  "name": "The Windfall Island Auction",
+  "stage": "Orichh (Windfall auction house interior). Placement: one Auction actor (the auctioneer) plus eight bidder actors Auc0..Auc7, eleven Fdai pedestals, one takara2 chest, and the NPCs Gp1/Kp1/Kf1/Bm4 (out/rip/GZLE01/godot/stage_data.json:Orichh).",
+  "actor": "daAuction_c, src/d/actor/d_a_auction.cpp - FULLY DECOMPILED, zero stub bodies. The rival bidders' own actor daNpcAuction_c (src/d/actor/d_a_npc_auction.cpp) is a stub but holds no rules; daAuction_c drives the whole auction including every rival's bid.",
+  "cost": "No entry fee. You pay only what you bid, and only if you win: on the winning message the auctioneer calls dComIfGp_setItemRupeeCount(-mCurrBid) (src/d/actor/d_a_auction.cpp:1442-1445). A bid is refused if dComIfGs_getRupee() < the entered amount (src/d/actor/d_a_auction.cpp:1339-1343) or if it is not strictly greater than the current bid (src/d/actor/d_a_auction.cpp:1344-1348); both refusals play JA_SE_AUC_BID_NG.",
+  "rules": [
+   "A round auctions exactly one item. Which item is picked: if event bit 0x4008 is set - meaning the previous round was won by a rival and is being re-run - the item is re-read from register 0xCD03 and the opening bid is raised by 10. Otherwise getItemNo() picks uniformly at random among the entries of l_item_dat whose obtained-bit is not yet set (src/d/actor/d_a_auction.cpp:413-424, 1488-1508).",
+   "getItemNo() has a real off-by-one in the shipped game: the counting loop runs i<4 over all four items but the picking loop runs only i<3, so index 3 (the Piece of Heart) is returned only as the fall-through when the random draw does not land on an earlier unobtained item (src/d/actor/d_a_auction.cpp:1488-1508). Reproduce the loop exactly rather than 'fixing' it.",
+   "The round is a countdown, not a turn limit. eventStartInit() creates a dTimer_c of 60 seconds for a normal auction and 30 seconds for the second-tier auction (m822 == 2) (src/d/actor/d_a_auction.cpp:643-651).",
+   "Six rival bidders (l_npc_dat indices 1..6; index 0 is Link's own row) bid on their own timers. Each rival has a wait rate pair, a bid-increment range and a hard spending limit; a rival stops bidding the moment mCurrBid reaches its limit (src/d/actor/d_a_auction.cpp:67-75, 890-909, 1015-1033).",
+   "A rival's raise is mCurrBid += rate * (mBidIncMin + rndF(mBidIncMax - mBidIncMin)); in the late-auction branch the increment is doubled (src/d/actor/d_a_auction.cpp:908, 1033).",
+   "The seating order of the six rivals is shuffled at construction: 100 random swaps over m80C[1..6] (src/d/actor/d_a_auction.cpp:186-197).",
+   "Link bids by entering a number. It must be <= his rupee count and > the current bid. When Link outbids a rival by a wide margin the rivals hesitate: if the new bid >= mCurrBid * l_after_bet_rate[m82C] AND mCurrBid >= l_after_bet_chk[m82C], the next rival bid is delayed by 60 * (l_after_bet_wait[m82C][0] + rnd(l_after_bet_wait[m82C][1] - [0])) frames (src/d/actor/d_a_auction.cpp:1362-1368).",
+   "Three warning stages fire as the clock runs down, at the l_rest_msg_time1 / l_rest_msg_time2 thresholds in milliseconds, each with its own message and sound (JA_SE_AUC_LAST_SPURT, JA_SE_AUC_FEW_TIME, JA_SE_AUC_5_SEC) (src/d/actor/d_a_auction.cpp:126-151, 935-970, 1044-1079). time1 is used for the 60 s auction, time2 for the 30 s one.",
+   "When the clock hits zero the highest bidder wins. If a rival won (m824 != 0) the auctioneer sets bit 0x4008, stores the winner's model number in register 0x790F and the item index in register 0xCD03, and deletes the item actor - that is the 'someone else bought it, come back' state which makes the next round re-auction the same item 10 rupees dearer. If Link won, bit 0x4008 is cleared (src/d/actor/d_a_auction.cpp:1423-1436).",
+   "On a Link win the item is created by fopAcM_createItemForPresentDemo and its obtained event bit is set, so each of the four prizes can be won exactly once (src/d/actor/d_a_auction.cpp:1194-1212).",
+   "The second-tier auction (m822 == 2, mCurrAuctionItemIndex &= 1) auctions the two statues in l_item_dat2, but hands over the SUBSTITUTE items in l_item_dat22 - Magic Armor for the Postman Statue slot and Treasure Chart 6 for the Shop Guru Statue slot - while still setting the l_item_dat2 obtained-bit (src/d/actor/d_a_auction.cpp:432-441, 1195-1202). That is how the auction pays out once the statues themselves are already owned.",
+   "dComIfGp_startMiniGame(5) marks the play struct while an auction runs (src/d/actor/d_a_auction.cpp:426, 439)."
+  ],
+  "constants": {
+   "timer_normal_seconds": {
+    "value": 60,
+    "file": "src/d/actor/d_a_auction.cpp:649"
+   },
+   "timer_second_tier_seconds": {
+    "value": 30,
+    "file": "src/d/actor/d_a_auction.cpp:647"
+   },
+   "rebid_surcharge_rupees": {
+    "value": 10,
+    "file": "src/d/actor/d_a_auction.cpp:416"
+   },
+   "rival_count": {
+    "value": 6,
+    "file": "src/d/actor/d_a_auction.cpp:186-197"
+   },
+   "l_npc_dat": {
+    "value": [
+     {
+      "idx": 0,
+      "who": "Link's own row (never bids on its own)",
+      "wait_rate": [
+       2.0,
+       2.1
+      ],
+      "bid_inc": [
+       0,
+       0
+      ],
+      "spending_limit": 1000
+     },
+     {
+      "idx": 1,
+      "wait_rate": [
+       0.3,
+       0.5
+      ],
+      "bid_inc": [
+       4,
+       6
+      ],
+      "spending_limit": 450
+     },
+     {
+      "idx": 2,
+      "wait_rate": [
+       0.3,
+       0.6
+      ],
+      "bid_inc": [
+       3,
+       7
+      ],
+      "spending_limit": 500
+     },
+     {
+      "idx": 3,
+      "wait_rate": [
+       0.4,
+       0.7
+      ],
+      "bid_inc": [
+       2,
+       4
+      ],
+      "spending_limit": 250
+     },
+     {
+      "idx": 4,
+      "wait_rate": [
+       0.5,
+       1.0
+      ],
+      "bid_inc": [
+       2,
+       3
+      ],
+      "spending_limit": 998,
+      "note": "998 in USA/JP, 990 in PAL - VERSION_SELECT(998,998,990,990)"
+     },
+     {
+      "idx": 5,
+      "wait_rate": [
+       0.4,
+       0.5
+      ],
+      "bid_inc": [
+       3,
+       4
+      ],
+      "spending_limit": 998,
+      "note": "998 in USA/JP, 990 in PAL"
+     },
+     {
+      "idx": 6,
+      "wait_rate": [
+       0.7,
+       1.2
+      ],
+      "bid_inc": [
+       2,
+       2
+      ],
+      "spending_limit": 150
+     }
+    ],
+    "file": "src/d/actor/d_a_auction.cpp:67-75"
+   },
+   "l_rest_msg_time1_ms": {
+    "value": [
+     30000,
+     10000,
+     5000,
+     -1000
+    ],
+    "file": "src/d/actor/d_a_auction.cpp:126-131"
+   },
+   "l_rest_msg_time2_ms": {
+    "value": [
+     15000,
+     10000,
+     5000,
+     -1000
+    ],
+    "file": "src/d/actor/d_a_auction.cpp:133-138"
+   },
+   "l_after_bet_rate": {
+    "value": [
+     2.0,
+     1.5,
+     1.2,
+     1.1
+    ],
+    "file": "src/d/actor/d_a_auction.cpp:152"
+   },
+   "l_after_bet_chk": {
+    "value": [
+     20,
+     20,
+     40,
+     40
+    ],
+    "file": "src/d/actor/d_a_auction.cpp:154-159"
+   },
+   "l_after_bet_wait_seconds": {
+    "value": [
+     [
+      8,
+      10
+     ],
+     [
+      7,
+      10
+     ],
+     [
+      6,
+      9
+     ],
+     [
+      5,
+      8
+     ]
+    ],
+    "file": "src/d/actor/d_a_auction.cpp:168-172",
+    "note": "multiplied by 60 to get frames"
+   },
+   "camera_positions": {
+    "value": [
+     [
+      [
+       -265.0,
+       48.0,
+       -631.0
+      ],
+      [
+       332.0,
+       232.0,
+       286.0
+      ]
+     ],
+     [
+      [
+       -50.0,
+       202.0,
+       137.0
+      ],
+      [
+       -87.0,
+       239.0,
+       330.0
+      ]
+     ],
+     [
+      [
+       -216.0,
+       205.0,
+       5.0
+      ],
+      [
+       -379.0,
+       238.0,
+       115.0
+      ]
+     ]
+    ],
+    "file": "src/d/actor/d_a_auction.cpp:39-43"
+   },
+   "minigame_type_id": {
+    "value": 5,
+    "file": "src/d/actor/d_a_auction.cpp:426"
+   }
+  },
+  "rewards": {
+   "_storage": "One event bit per prize, set the moment the item is created. Plus register 0x790F (byte 0x79, mask 0x0F) = which rival won the outstanding item, and register 0xCD03 (byte 0xCD, mask 0x03) = which item is outstanding; both only meaningful while bit 0x4008 is set.",
+   "tiers": [
+    {
+     "item": "Joy Pendant",
+     "item_no": "dItemNo_JOY_PENDANT_e = 0x1F",
+     "starting_bid": 40,
+     "name_msg": "0x1D10",
+     "bit": "0x0F01",
+     "file": "src/d/actor/d_a_auction.cpp:51"
+    },
+    {
+     "item": "Treasure Chart 27",
+     "item_no": "dItemNo_COLLECT_MAP_27_e = 0xE4",
+     "starting_bid": 5,
+     "name_msg": "0x1D11",
+     "bit": "0x1080",
+     "file": "src/d/actor/d_a_auction.cpp:52"
+    },
+    {
+     "item": "Treasure Chart 18",
+     "item_no": "dItemNo_COLLECT_MAP_18_e = 0xED",
+     "starting_bid": 60,
+     "name_msg": "0x1D12",
+     "bit": "0x1040",
+     "file": "src/d/actor/d_a_auction.cpp:53"
+    },
+    {
+     "item": "Piece of Heart",
+     "item_no": "dItemNo_HEART_PIECE_e = 0x07",
+     "starting_bid": 80,
+     "name_msg": "0x1D13",
+     "bit": "0x1020",
+     "file": "src/d/actor/d_a_auction.cpp:54"
+    },
+    {
+     "item": "Postman Statue (second-tier slot 0; actually hands over dItemNo_MAGIC_ARMOR_e = 0x2A)",
+     "item_no": "dItemNo_POSTMAN_STATUE_e = 0x96",
+     "starting_bid": 30,
+     "name_msg": "0x1D14",
+     "bit": "0x1008",
+     "file": "src/d/actor/d_a_auction.cpp:58, 62-65, 1196"
+    },
+    {
+     "item": "Shop Guru Statue (second-tier slot 1; actually hands over dItemNo_COLLECT_MAP_06_e = 0xF9)",
+     "item_no": "dItemNo_SHOP_GURU_STATUE_e = 0x97",
+     "starting_bid": 40,
+     "name_msg": "0x1D15",
+     "bit": "0x1004",
+     "file": "src/d/actor/d_a_auction.cpp:59, 62-65, 1196"
+    }
+   ],
+   "register": {
+    "0x790F": "winning rival's model number (byte 0x79, low nibble)",
+    "0xCD03": "outstanding item index 0-3 (byte 0xCD, low two bits)",
+    "0x4008": "bit: an item is outstanding, i.e. a rival won it and it will be re-auctioned"
+   }
+  },
+  "story_steps": [],
+  "confidence": "high",
+  "sources": [
+   "src/d/actor/d_a_auction.cpp:16-21",
+   "src/d/actor/d_a_auction.cpp:39-43",
+   "src/d/actor/d_a_auction.cpp:50-75",
+   "src/d/actor/d_a_auction.cpp:126-172",
+   "src/d/actor/d_a_auction.cpp:186-197",
+   "src/d/actor/d_a_auction.cpp:408-443",
+   "src/d/actor/d_a_auction.cpp:643-670",
+   "src/d/actor/d_a_auction.cpp:880-970",
+   "src/d/actor/d_a_auction.cpp:1010-1080",
+   "src/d/actor/d_a_auction.cpp:1194-1212",
+   "src/d/actor/d_a_auction.cpp:1288-1450",
+   "src/d/actor/d_a_auction.cpp:1488-1508",
+   "include/d/actor/d_a_auction.h:14-19",
+   "include/d/d_save_event_flag.inc:118-124, 489, 498, 579",
+   "include/d/d_item_data.h:7-256",
+   "out/rip/GZLE01/godot/stage_data.json:Orichh"
+  ]
+ },
+ "joy_pendant": {
+  "name": "Mrs. Marie's Joy Pendant collection",
+  "stage": "Nitiyou (the Windfall Island schoolhouse). Mrs. Marie is the only Ho actor there (out/rip/GZLE01/godot/stage_data.json:Nitiyou); a second Ho stands in the test stage K_Test6.",
+  "actor": "daNpc_Ho_c, src/d/actor/d_a_npc_ho.cpp - FULLY DECOMPILED, zero stub bodies.",
+  "cost": "Free. This is a hand-in, not a purchase. Pendants come from Peahats, Boko Babas and the Killer Bees; the stock is the beast counter dBeastIdx_JOY_PENDANT_e (beast index 7).",
+  "rules": [
+   "Two counters, not one. dComIfGs_getBeastNum(dBeastIdx_JOY_PENDANT_e) is how many pendants Link is carrying right now; event register 0xC0FF (byte 0xC0, whole byte) is the running TOTAL ever handed in. The tiers are gated on the total, the payouts on the amount handed over in one go.",
+   "receivePendant(n): reads register 0xC0FF, subtracts n from the beast counter, adds n to the total, CLAMPS the total at 99 and hands the overflow back to the beast counter, then writes the total back (src/d/actor/d_a_npc_ho.cpp:70-82). The clamp means pendant 100 and beyond cannot be given away, and in VERSION_DEMO the overflow was simply destroyed.",
+   "First hand-in is a single pendant, hard-coded: msg 0x273D calls receivePendant(1) and pays a Red Rupee (src/d/actor/d_a_npc_ho.cpp:290-292, 305-309).",
+   "The twenty-pendant offer only appears once Link is CARRYING at least 20: msg 0x273E branches to 0x2741 when getBeastNum >= 20 (src/d/actor/d_a_npc_ho.cpp:293-299). Accepting calls receivePendant(20) and pays the Cabana Deed, setting bit 0x1C08 (src/d/actor/d_a_npc_ho.cpp:310-320).",
+   "The Hero's Charm is offered when the TOTAL register 0xC0FF has reached 40 (0x28) and bit 0x1C04 is not yet set (src/d/actor/d_a_npc_ho.cpp:329-334); accepting sets bit 0x1C04 (src/d/actor/d_a_npc_ho.cpp:349-355).",
+   "After both prizes are taken, every further hand-in gives all carried pendants at once and pays by how many were handed over: fewer than 3 -> Red Rupee, fewer than 5 -> Purple Rupee, 5 or more -> Orange Rupee (src/d/actor/d_a_npc_ho.cpp:336-348).",
+   "Once the total reaches 99 (0x63) the conversation goes to message 0x275E instead of the hand-in branch - the collection is closed (src/d/actor/d_a_npc_ho.cpp:420-423).",
+   "Which conversation opens is chosen by getMsg(): night stops the whole thing (0x2722), the very first ever talk sets bit 0x1E01 and plays 0x2711, and thereafter the greeting is 0x2712 when the total is 0 and 0x2713 when it is not (src/d/actor/d_a_npc_ho.cpp:386-398).",
+   "The pendant Link is wearing is a separate model on Mrs. Marie's backbone joint, drawn only while register 0xC0FF != 0 (src/d/actor/d_a_npc_ho.cpp:763-771).",
+   "Mrs. Marie must first be rescued from the Killer Bees: the whole hand-in branch requires bit 0x1E04 (0x1E02 in the demo build) and the pre-item to be a Joy Pendant (src/d/actor/d_a_npc_ho.cpp:401-404)."
+  ],
+  "constants": {
+   "total_register": {
+    "value": "0xC0FF (byte 0xC0, mask 0xFF, 0-99)",
+    "file": "src/d/actor/d_a_npc_ho.cpp:71-81"
+   },
+   "total_cap": {
+    "value": 99,
+    "file": "src/d/actor/d_a_npc_ho.cpp:76-80"
+   },
+   "beast_index": {
+    "value": "dBeastIdx_JOY_PENDANT_e (7 - the literal 7 is passed to setItemBeastNumCount)",
+    "file": "src/d/actor/d_a_npc_ho.cpp:72"
+   },
+   "cabana_deed_threshold_carried": {
+    "value": 20,
+    "file": "src/d/actor/d_a_npc_ho.cpp:296"
+   },
+   "cabana_deed_pendants_taken": {
+    "value": 20,
+    "file": "src/d/actor/d_a_npc_ho.cpp:312"
+   },
+   "heros_charm_threshold_total": {
+    "value": 40,
+    "file": "src/d/actor/d_a_npc_ho.cpp:329"
+   },
+   "collection_closed_total": {
+    "value": 99,
+    "file": "src/d/actor/d_a_npc_ho.cpp:420"
+   },
+   "rupee_tier_bounds": {
+    "value": [
+     3,
+     5
+    ],
+    "file": "src/d/actor/d_a_npc_ho.cpp:339-345"
+   }
+  },
+  "rewards": {
+   "tiers": [
+    {
+     "when": "first single pendant handed in",
+     "prize": "Red Rupee (dItemNo_RED_RUPEE_e = 0x04, 20 rupees)",
+     "bit": null,
+     "file": "src/d/actor/d_a_npc_ho.cpp:290-292, 305-309"
+    },
+    {
+     "when": "hand over 20 pendants in one go (requires carrying >= 20)",
+     "prize": "Cabana Deed (dItemNo_CABANA_DEED_e = 0x9C)",
+     "bit": "0x1C08 (plus temp bit 0x0104)",
+     "file": "src/d/actor/d_a_npc_ho.cpp:310-320"
+    },
+    {
+     "when": "total handed in reaches 40 and the Cabana Deed is already taken",
+     "prize": "Hero's Charm (dItemNo_HEROS_CHARM_e = 0x43)",
+     "bit": "0x1C04",
+     "file": "src/d/actor/d_a_npc_ho.cpp:329-334, 349-355"
+    },
+    {
+     "when": "afterwards, handing over 1-2 pendants",
+     "prize": "Red Rupee (0x04)",
+     "bit": null,
+     "file": "src/d/actor/d_a_npc_ho.cpp:339-341"
+    },
+    {
+     "when": "afterwards, handing over 3-4 pendants",
+     "prize": "Purple Rupee (dItemNo_PURPLE_RUPEE_e = 0x05, 50 rupees)",
+     "bit": null,
+     "file": "src/d/actor/d_a_npc_ho.cpp:341-343"
+    },
+    {
+     "when": "afterwards, handing over 5 or more pendants",
+     "prize": "Orange Rupee (dItemNo_ORANGE_RUPEE_e = 0x06, 100 rupees)",
+     "bit": null,
+     "file": "src/d/actor/d_a_npc_ho.cpp:343-346"
+    },
+    {
+     "when": "one-off, unrelated to the count: the rescue conversation",
+     "prize": "Purple Rupee (0x05)",
+     "bit": "0x1F80 gates it; 0x2201 and 0x1340 are its prerequisites",
+     "file": "src/d/actor/d_a_npc_ho.cpp:194-210, 240-243"
+    }
+   ],
+   "register": "0xC0FF"
+  },
+  "story_steps": [],
+  "confidence": "high",
+  "sources": [
+   "src/d/actor/d_a_npc_ho.cpp:1-4",
+   "src/d/actor/d_a_npc_ho.cpp:69-82",
+   "src/d/actor/d_a_npc_ho.cpp:188-215",
+   "src/d/actor/d_a_npc_ho.cpp:221-360",
+   "src/d/actor/d_a_npc_ho.cpp:386-425",
+   "src/d/actor/d_a_npc_ho.cpp:763-771",
+   "include/d/d_item_data.h:11-13, 74, 163",
+   "out/rip/GZLE01/godot/stage_data.json:Nitiyou"
+  ]
+ },
+ "beedle_point_card": {
+  "name": "Beedle's Shop Ship membership point card",
+  "stage": "Obshop (the interior of Beedle's shop ship). The exterior hulls are daObjIkada_c ship types (src/d/actor/d_a_obj_ikada.cpp:1-4).",
+  "actor": "daNpc_Bs1_c, src/d/actor/d_a_npc_bs1.cpp - one stub body out of ~2200 lines; the whole point-card path is decompiled. mType 0 is the ordinary Beedle, mType != 0 is Masked Beedle on the Shop Ships (src/d/actor/d_a_npc_bs1.cpp:2142-2151).",
+  "cost": "Whatever the item costs. The point is the by-product: one point per completed purchase, regardless of price.",
+  "rules": [
+   "Register 0x86FF (byte 0x86, whole byte) is the point count. Every completed purchase adds exactly 1 and the total is clamped at 255 (src/d/actor/d_a_npc_bs1.cpp:940-942). There is no per-item point value.",
+   "At exactly 30 points a Silver Membership letter is posted (dLetter_send(LETTER_SILVER_MEMBERSHIP = 0xB003)) and the shopkeeper plays message 0xF50 (src/d/actor/d_a_npc_bs1.cpp:955-962).",
+   "At exactly 60 points a Gold Membership letter is posted (dLetter_send(LETTER_GOLD_MEMBERSHIP = 0xAF03)) and the shopkeeper plays 0xF53 (src/d/actor/d_a_npc_bs1.cpp:944-953).",
+   "Both awards are on the '==' branch only. Points above 60 fall straight through to the ordinary next-purchase message; there is no third tier (src/d/actor/d_a_npc_bs1.cpp:944-947).",
+   "Once points >= 60 the card is treated as full: the greeting, the default message and the 'buy something else?' prompt all branch to the card-full variants (0xF5C/0xF5D, 0xF60, 0xF61) (src/d/actor/d_a_npc_bs1.cpp:691-694, 1055-1060, 1237-1239).",
+   "The message system prints the current point count as a substitution in Beedle's text (src/f_op/f_op_msg_mng.cpp:2545, 4667, 6742, 8591).",
+   "A SEPARATE counter, register 0x7F0F (byte 0x7F, mask 0x0F, so 0-15), counts Knight's Crests sold to Masked Beedle. It is incremented by the number sold and clamped at 15; below 10 the seller gets the ordinary message 0xFD5, and the first time it reaches 10 with bit 0x3B04 clear the bit is set and message 0xFD6 plays - that is the Hurricane Spin hand-over (src/d/actor/d_a_npc_bs1.cpp:585-604, 1013-1018).",
+   "Masked Beedle's stock rotation is driven by register 0xBB07 (byte 0xBB, mask 0x07, so 0-7) (src/d/actor/d_a_npc_bs1.cpp:1108-1125).",
+   "Selling monster parts uses the beast counters, not points: Green/Blue Chu Jelly, Joy Pendants, Golden Feathers and Knight's Crests each have their own message block and their own dBeastIdx (src/d/actor/d_a_npc_bs1.cpp:560-583, 1000-1012).",
+   "One-off: the first time Link owns a Bomb Bag while bombs are in stock, bit 0x1F20 is set and Beedle plays 0xF55 (src/d/actor/d_a_npc_bs1.cpp:1047-1052)."
+  ],
+  "constants": {
+   "point_register": {
+    "value": "0x86FF (byte 0x86, mask 0xFF)",
+    "file": "src/d/actor/d_a_npc_bs1.cpp:940-942"
+   },
+   "points_per_purchase": {
+    "value": 1,
+    "file": "src/d/actor/d_a_npc_bs1.cpp:940"
+   },
+   "point_cap": {
+    "value": 255,
+    "file": "src/d/actor/d_a_npc_bs1.cpp:941"
+   },
+   "silver_threshold": {
+    "value": 30,
+    "file": "src/d/actor/d_a_npc_bs1.cpp:959"
+   },
+   "gold_threshold": {
+    "value": 60,
+    "file": "src/d/actor/d_a_npc_bs1.cpp:949"
+   },
+   "card_full_threshold": {
+    "value": 60,
+    "file": "src/d/actor/d_a_npc_bs1.cpp:691, 1055, 1237"
+   },
+   "knights_crest_register": {
+    "value": "0x7F0F (byte 0x7F, mask 0x0F, cap 15)",
+    "file": "src/d/actor/d_a_npc_bs1.cpp:585-588"
+   },
+   "knights_crest_threshold": {
+    "value": 10,
+    "file": "src/d/actor/d_a_npc_bs1.cpp:592, 1013"
+   },
+   "masked_beedle_stock_register": {
+    "value": "0xBB07 (byte 0xBB, mask 0x07)",
+    "file": "src/d/actor/d_a_npc_bs1.cpp:1108"
+   }
+  },
+  "rewards": {
+   "tiers": [
+    {
+     "when": "point count reaches exactly 30",
+     "prize": "Silver Membership Card, delivered by post",
+     "bit": "LETTER_SILVER_MEMBERSHIP = 0xB003",
+     "file": "src/d/actor/d_a_npc_bs1.cpp:959-962"
+    },
+    {
+     "when": "point count reaches exactly 60",
+     "prize": "Gold Membership Card, delivered by post",
+     "bit": "LETTER_GOLD_MEMBERSHIP = 0xAF03",
+     "file": "src/d/actor/d_a_npc_bs1.cpp:949-953"
+    },
+    {
+     "when": "10 Knight's Crests sold to Masked Beedle",
+     "prize": "message 0xFD6 hand-over (the Hurricane Spin lesson); the item itself is created outside this branch",
+     "bit": "0x3B04",
+     "file": "src/d/actor/d_a_npc_bs1.cpp:592-602"
+    }
+   ],
+   "register": "0x86FF"
+  },
+  "story_steps": [],
+  "confidence": "high",
+  "sources": [
+   "src/d/actor/d_a_npc_bs1.cpp:1-4",
+   "src/d/actor/d_a_npc_bs1.cpp:560-610",
+   "src/d/actor/d_a_npc_bs1.cpp:683-700",
+   "src/d/actor/d_a_npc_bs1.cpp:930-975",
+   "src/d/actor/d_a_npc_bs1.cpp:1000-1070",
+   "src/d/actor/d_a_npc_bs1.cpp:1100-1130",
+   "src/d/actor/d_a_npc_bs1.cpp:1229-1245",
+   "src/d/actor/d_a_npc_bs1.cpp:2142-2151",
+   "include/d/d_save_event_flag.inc:504, 511, 552-553, 562",
+   "src/f_op/f_op_msg_mng.cpp:2545, 4667, 6742, 8591",
+   "out/rip/GZLE01/godot/stage_data.json:Obshop"
+  ]
+ },
+ "nintendo_gallery": {
+  "name": "The Nintendo Gallery figurine quota",
+  "stage": "Eight rooms: Pfigure (the entrance hall, where Carlov works) plus figureA..figureG. Placed Figure actors: figureA 24, figureB 27, figureC 14, figureD 18, figureE 19, figureF 18, figureG 14 = 134 pedestals (out/rip/GZLE01/godot/stage_data.json). Reached through the hatch on Forest Haven's outer rock (src/d/actor/d_a_obj_ohatch.cpp:1-4, src/d/actor/d_a_npc_kamome.cpp:570).",
+  "actor": "daNpcMt_c (Carlov), src/d/actor/d_a_npc_mt.cpp - FULLY DECOMPILED. The pedestals are daObjFigure_c, src/d/actor/d_a_obj_figure.cpp - also fully decompiled; both carry an identical copy of the figure table.",
+  "cost": "Free, but gated on hardware: the pictograph must be in colour. A greyscale shot (GX_TF_I4 or GX_TF_I8, i.e. the plain Picto Box) is rejected outright with the l_msg_mt_no_color table, so the Deluxe Picto Box is the real entry fee (src/d/actor/d_a_npc_mt.cpp:923-926).",
+  "rules": [
+   "There are 0x86 = 134 figurine slots. Ownership is a bitfield spread over seventeen whole-byte event registers, figure N living in bit (N % 8) of register l_figure_comp[N / 8] (src/d/actor/d_a_npc_mt.cpp:14, 304-322, 1351-1374).",
+   "Carlov rejects a photo for four separate reasons, checked in this order: not colour -> l_msg_mt_no_color; subject not in the figure table (index <= DSNAP_TYPE_UNK48 or >= DSNAP_TYPE_UNKCF) -> l_msg_mt_no_figure; that figure already made -> l_msg_mt_maked; framing bad -> l_msg_mt_face_ng when getPictureResultDetail() == 1 and l_msg_mt_body_ng when it == 2 (src/d/actor/d_a_npc_mt.cpp:920-937).",
+   "A shipped bug: getPictureResultDetail() == 3 is never tested, so that detail code falls through into the accept branch (the decomp marks it !@bug at src/d/actor/d_a_npc_mt.cpp:938).",
+   "On accept, bits 0x2F01 and 0x3401 are set and register 0xA9FF stores the accepted photo index so the follow-up dialogue and the 'your figure is in room X' line can name it (src/d/actor/d_a_npc_mt.cpp:940-945, 900).",
+   "setFigure(n) ORs the bit and also sets bit 0x3A01, the 'you have made at least one figurine' flag that switches Carlov's dialogue tables (src/d/actor/d_a_npc_mt.cpp:1366-1375).",
+   "THE QUOTA: isComp() compares getFigureMakeNum() against 0x84 = 132, or against 0x85 = 133 when figure 0x32 has been made. Figure 0x32 is the conditional extra - the gallery is 'complete' at 132 figurines normally, 133 if that one is in it (src/d/actor/d_a_npc_mt.cpp:1390-1401).",
+   "Reaching the quota retires Carlov: on the next load of his room phase_1 sees isComp(), sets bit 0x3D08, calls setFigure(0x40) - which is Carlov's own figurine - and returns cPhs_STOP_e so the NPC is never created again (src/d/actor/d_a_npc_mt.cpp:386-414).",
+   "The 134 placed pedestals against the 132/133 quota is not a contradiction: two placed Figure actors are display-only or belong to the conditional pair, and figure 0x40 is granted by the completion code rather than photographed.",
+   "Each pedestal shows itself only when its own bit is set: daObjFigure_c::_create does mbDisplay = isFigureGet(mFigureNo) (src/d/actor/d_a_obj_figure.cpp:387, 989-999).",
+   "l_figure_room_name maps a figure to the stage it is displayed in: {Pfigure, figureA, figureB, figureC, figureD, figureE, figureF, figureG}, indexed by dSnap_GetFigRoomId(register 0xA9FF) (src/d/actor/d_a_npc_mt.cpp:324-333, 900)."
+  ],
+  "constants": {
+   "TOTAL_FIGURE_COUNT": {
+    "value": 134,
+    "file": "src/d/actor/d_a_npc_mt.cpp:14",
+    "note": "#define TOTAL_FIGURE_COUNT 0x86; the same define is repeated at src/d/actor/d_a_obj_figure.cpp:20"
+   },
+   "completion_quota": {
+    "value": 132,
+    "file": "src/d/actor/d_a_npc_mt.cpp:1392"
+   },
+   "completion_quota_with_figure_0x32": {
+    "value": 133,
+    "file": "src/d/actor/d_a_npc_mt.cpp:1393-1395"
+   },
+   "auto_granted_figure": {
+    "value": "0x40 (Carlov), granted by phase_1 once complete",
+    "file": "src/d/actor/d_a_npc_mt.cpp:409"
+   },
+   "figure_bit_registers": {
+    "value": [
+     "0x95FF",
+     "0x94FF",
+     "0x93FF",
+     "0x92FF",
+     "0x91FF",
+     "0x90FF",
+     "0x8FFF",
+     "0x8EFF",
+     "0x8DFF",
+     "0x8CFF",
+     "0xB1FF",
+     "0x9CFF",
+     "0x84FF",
+     "0x83FF",
+     "0x82FF",
+     "0x81FF",
+     "0x80FF"
+    ],
+    "file": "src/d/actor/d_a_npc_mt.cpp:304-322",
+    "note": "l_figure_comp[N/8]; bit index is N%8. Seventeen bytes = 136 bits for 134 figures. Note the order is descending except for slots 10 and 11."
+   },
+   "last_photo_register": {
+    "value": "0xA9FF (byte 0xA9, mask 0xFF)",
+    "file": "src/d/actor/d_a_npc_mt.cpp:900, 942"
+   },
+   "placed_pedestals": {
+    "value": {
+     "figureA": 24,
+     "figureB": 27,
+     "figureC": 14,
+     "figureD": 18,
+     "figureE": 19,
+     "figureF": 18,
+     "figureG": 14,
+     "total": 134
+    },
+    "file": "out/rip/GZLE01/godot/stage_data.json"
+   }
+  },
+  "rewards": {
+   "tiers": [
+    {
+     "when": "each accepted colour pictograph of a new subject",
+     "prize": "one figurine displayed on its pedestal",
+     "bit": "bit (N%8) of l_figure_comp[N/8]; plus 0x3A01 on the first one",
+     "file": "src/d/actor/d_a_npc_mt.cpp:1366-1375"
+    },
+    {
+     "when": "132 figurines (133 if figure 0x32 is among them)",
+     "prize": "gallery complete - figure 0x40 (Carlov) is granted automatically and Carlov stops spawning",
+     "bit": "0x3D08",
+     "file": "src/d/actor/d_a_npc_mt.cpp:386-414, 1390-1401"
+    }
+   ],
+   "register": "seventeen registers listed under constants.figure_bit_registers"
+  },
+  "story_steps": [],
+  "confidence": "high",
+  "sources": [
+   "src/d/actor/d_a_npc_mt.cpp:1-8",
+   "src/d/actor/d_a_npc_mt.cpp:14",
+   "src/d/actor/d_a_npc_mt.cpp:304-333",
+   "src/d/actor/d_a_npc_mt.cpp:386-414",
+   "src/d/actor/d_a_npc_mt.cpp:896-960",
+   "src/d/actor/d_a_npc_mt.cpp:1340-1401",
+   "src/d/actor/d_a_obj_figure.cpp:1-4, 20, 40-58, 387, 989-999",
+   "src/d/actor/d_a_obj_ohatch.cpp:1-4",
+   "src/d/actor/d_a_npc_kamome.cpp:570",
+   "out/rip/GZLE01/godot/stage_data.json:figureA..figureG"
+  ]
+ },
+ "sinking_ships": {
+  "name": "Sinking Ships / Salvatore's Battleship - 'Sploosh Kaboom' (Kaisen, 'naval battle')",
+  "stage": "Kaisen, one room, reached from two SCLS doors inside Windfall (sea room 11 spawns 8 and 9). Placement is Kg1 at (-16, 0, 148), two KNOB00 doors, three item actors and four Fdai figurine pedestals; the game board is NOT placed and is created at runtime by Kg1 (out/rip/GZLE01/godot/stage_data.json:Kaisen).",
+  "actor": "daNpc_Kg1_c (src/d/actor/d_a_npc_kg1.cpp, 25 stub bodies) runs the counter; daMgBoard_c (src/d/actor/d_a_mgameboard.cpp, 14 stub bodies) is the board actor; but the RULES ENGINE dSeaFightGame_info_c (src/d/d_seafightgame.cpp, include/d/d_seafightgame.h) is FULLY DECOMPILED, and so is the board's small static file src/d/d_a_mgameboard_static.cpp.",
+  "cost": "UNRECOVERABLE. The entry fee is charged by daNpc_Kg1_c, whose every body is a stub. Nothing in src/ deducts rupees for this game. Do not invent a price.",
+  "rules": [
+   "The board is 8x8. mGrid[8][8], cells hold 0 = untouched, 1 = missed shot, 3 = hit, and 102 + shipNo while a squid occupies them (src/d/d_seafightgame.cpp:11-15, 57-73, 105-127; include/d/d_seafightgame.h:23).",
+   "init(bulletNum, scenario) takes the shot allowance and one of three scenarios: scenario 1 = a single 2-cell squid; scenario 2 = a 2-cell and a 3-cell; scenario 3 = a 2-cell, a 3-cell and a 4-cell. mAliveShipNum is set to 1, 2 or 3 accordingly (src/d/d_seafightgame.cpp:10-40).",
+   "Squids are placed by rejection sampling: pick direction = rnd(1000) % 2, x = rnd(8), y = rnd(8), and retry until checkPutShip accepts. checkPutShip rejects when the squid would run off the 8x8 board or overlap a cell already holding a squid (value > 100) (src/d/d_seafightgame.cpp:42-103).",
+   "attack(x, y) returns -2 and costs NOTHING when the cell was already shot at - the game silently refuses to waste a bullet on a repeat. Otherwise it decrements mBulletNum and increments mScore, hit or miss (src/d/d_seafightgame.cpp:105-131).",
+   "THE SCORE IS SHOTS TAKEN, NOT HITS. mScore is incremented on every accepted shot regardless of outcome, so a LOWER score is a better result (src/d/d_seafightgame.cpp:128-129, src/d/d_a_mgameboard_static.cpp:15-17).",
+   "A squid dies when its cell counter field_0x9 reaches 0; mAliveShipNum then drops and mDeadShipNum rises (src/d/d_seafightgame.cpp:112-120).",
+   "The game is won when mAliveShipNum == 0 (daMgBoard_c::checkClearGame, src/d/d_a_mgameboard_static.cpp:9-12) and lost when the bullets run out.",
+   "getNearEnemy(x, y) is the proximity hint: it walks seven concentric square rings around the aimed cell (m_offset_1 .. m_offset_7, Chebyshev radius 1 to 7) and returns 1..7 for the first ring containing a squid, or 0 when the board is empty of squids within 7 cells. That is the 'you're getting warm' feedback (src/d/d_seafightgame.cpp:388-415).",
+   "SHIPPED BUG: m_offset_5 lists {-5,-4} twice where the second entry should be {5,-4}, so one cell of the radius-5 ring is never probed (src/d/d_seafightgame.cpp:259-260, the decomp marks it @bug).",
+   "The board actor allocates 20 hit markers, 32 miss markers, two 2-cell squid models, two 3-cell squid models, one 4-cell squid model and three squid icons (include/d/actor/d_a_mgameboard.h:40-46, 59). Those array sizes bound what a single game can display.",
+   "Cursor movement is a stick-repeat control, STControl mStickControl (include/d/actor/d_a_mgameboard.h:53)."
+  ],
+  "constants": {
+   "grid": {
+    "value": "8 x 8",
+    "file": "include/d/d_seafightgame.h:22"
+   },
+   "scenarios": {
+    "value": {
+     "1": [
+      2
+     ],
+     "2": [
+      2,
+      3
+     ],
+     "3": [
+      2,
+      3,
+      4
+     ]
+    },
+    "file": "src/d/d_seafightgame.cpp:20-37"
+   },
+   "max_squids": {
+    "value": 4,
+    "file": "include/d/d_seafightgame.h:24 (mShips[4]); only 3 are ever used by init()"
+   },
+   "bullet_allowance": {
+    "value": null,
+    "file": "src/d/d_seafightgame.cpp:11 (parameter i_bulletNum)",
+    "note": "NOT RECOVERABLE. The caller is daMgBoard_c::MiniGameInit(), a stub. The only hint is that a fresh save file seeds the record register 0xBEFF with 20 (src/d/d_save_init.cpp:11-14, src/d/d_com_static.cpp:379), which is daNpc_Kg1_c::m_highscore - the only non-stub thing that file contributes."
+   },
+   "record_initial_value": {
+    "value": 20,
+    "file": "src/d/d_com_static.cpp:379"
+   },
+   "hint_rings": {
+    "value": 7,
+    "file": "src/d/d_seafightgame.cpp:388-395"
+   },
+   "hit_marker_slots": {
+    "value": 20,
+    "file": "include/d/actor/d_a_mgameboard.h:40"
+   },
+   "miss_marker_slots": {
+    "value": 32,
+    "file": "include/d/actor/d_a_mgameboard.h:41"
+   }
+  },
+  "rewards": {
+   "_storage": "Event register 0xBEFF - byte 0xBE, whole byte - is the record, in shots used, LOWER IS BETTER. A fresh file starts it at 20. The message system prints it as Salvatore's record.",
+   "tiers": [
+    {
+     "when": "any clear",
+     "prize": "KAISEN_GETITEM plays; the item number comes from the stubbed daNpc_Kg1_c and is UNKNOWN",
+     "bit": null,
+     "file": "out/rip/GZLE01/godot/events/Kaisen.json:KAISEN_GETITEM"
+    },
+    {
+     "when": "a run better than the stored record",
+     "prize": "the record register is updated - but the compare-and-store itself is inside the stub and no setEventReg(0xBEFF, ...) exists anywhere in src/ except the fresh-file initialiser",
+     "bit": "0xBEFF",
+     "file": "src/d/d_save_init.cpp:11-14"
+    }
+   ],
+   "register": "0xBEFF read at src/f_op/f_op_msg_mng.cpp:2142, 4099, 4138, 6161, 7762"
+  },
+  "story_steps": [
+   "mg_squid_enter",
+   "mg_squid_play",
+   "mg_squid_end",
+   "mg_squid_prize"
+  ],
+  "confidence": "high for the board mechanics and the scoring rule; low for the entry fee, the bullet allowance, the scenario schedule and the prize",
+  "sources": [
+   "src/d/d_seafightgame.cpp:1-131",
+   "src/d/d_seafightgame.cpp:133-415",
+   "include/d/d_seafightgame.h:6-31",
+   "src/d/d_a_mgameboard_static.cpp:9-30",
+   "include/d/actor/d_a_mgameboard.h:12-71",
+   "src/d/actor/d_a_npc_kg1.cpp:1-4",
+   "src/d/d_com_static.cpp:379",
+   "src/d/d_save_init.cpp:11-14",
+   "src/d/d_stage.cpp:868",
+   "out/rip/GZLE01/godot/stage_data.json:Kaisen"
+  ]
+ },
+ "cannon_game": {
+  "name": "Salvatore's cannon game (the barrel-shooting game)",
+  "stage": "sea room 10 = dIsleRoom_SpectacleIsland_e (include/d/d_save.h:314). Kg2 stands at (-103529, 1057, -183445) and the Canon actor at (-103381, 1057, -183265), with two Kanban signboards on the beach. NOTE FOR THE BRIEF: this is Spectacle Island, not Bomb Island; there is exactly one Canon actor in the whole sea stage and one more in the E3ROOP demo stage (out/rip/GZLE01/godot/stage_data.json).",
+  "actor": "daCanon_c, src/d/actor/d_a_canon.cpp - FULLY DECOMPILED, zero stub bodies. The NPC that talks you into it and hands out the prize, daNpc_Kg2_c, is 34 stub bodies.",
+  "cost": "UNRECOVERABLE. daCanon_c never touches rupees; the fee is charged by the stubbed daNpc_Kg2_c before it orders the CANON_GAME event. Do not invent a price.",
+  "rules": [
+   "Ten shots, five targets. wait_proc arms the game the moment the event cut named 'Canon_game' starts: it calls createTargetObj(), sets m65A = 0 hits and m65C = 10 shots, teleports the player 200 units back along the cannon's home angle, and calls dComIfGp_startMiniGame(3) (src/d/actor/d_a_canon.cpp:250-281).",
+   "The five targets are barrels dropped on a random 8x8 polar grid in front of the cannon. createTargetObj loops until it has five accepted cells: each candidate is (rnd(8), rnd(8)) and createCheck rejects it if the COLUMN index already belongs to an earlier target - so no two targets ever share a bearing (src/d/actor/d_a_canon.cpp:138-150, 172-184).",
+   "getGridPos maps a grid cell to a world position: distance = row * 1500 + 10500, bearing = home.angle.y + angle_y_tbl[column], and the y is snapped to the sea wave height. angle_y_tbl spans -0x1200 to +0x1200 in eight steps, so the targets occupy a 50-degree fan from 10500 to 21000 units out (src/d/actor/d_a_canon.cpp:29-30, 117-125).",
+   "The targets are Obj_Barrel2 children created with params 0x037F003F: type 3 (the mine/target variant), itemSave 0x7F, itemNo 0x3F which is the 'no item' code, buoy 0 so each carries a marker flag (src/d/actor/d_a_canon.cpp:180; param layout at include/d/actor/d_a_obj_barrel2.h:50-70).",
+   "Aiming (PadMove): yaw is clamped to home.angle.y +/- 0x1200 (about 25 degrees each way) and pitch to the band [home.angle.x, home.angle.x + 0x1000] (about 22.5 degrees). Stick deflection past 0.5 moves the target angle by up to 0x400 per frame in yaw and 512 in pitch, and shape_angle chases it with cLib_addCalcAngleS(.., 4, 0x100, 0x10) (src/d/actor/d_a_canon.cpp:449-489).",
+   "Firing: A fires. The shot's flight time in frames is m652 = ((home.angle.x + 0x1000) - shape_angle.x) / 0x1000 * 56 + 64, i.e. 64 frames at maximum elevation up to 120 frames at minimum - a flatter shot flies longer. The landing distance is the same ratio * 10500 + 10500, so range runs from 10500 to 21000 units, exactly the span the targets occupy (src/d/actor/d_a_canon.cpp:127-136, 328-338).",
+   "The shell follows a parabola: its height above the chord is scaled by 1 - 4*(t - 0.5)^2 where t is the fraction of flight remaining (src/d/actor/d_a_canon.cpp:341-346).",
+   "m65C is decremented at the moment of firing, and the corresponding 2D shot icon is greyed out (src/d/actor/d_a_canon.cpp:337-338).",
+   "Landing: a 30-frame pause. If the shell's collision cylinder hit, m65A is incremented, a target icon is greyed out, and dComIfGp_setMiniGameRupee(m65A) republishes the HIT COUNT - so the on-screen number is hits, not rupees (src/d/actor/d_a_canon.cpp:360-380).",
+   "Three end sounds are played on Kg2: JA_SE_PLAYSPOT_END_S on the fifth hit, JA_SE_PLAYSPOT_END_F when the shots run out, and JA_SE_PLAYSPOT_DESTROY on any ordinary hit (src/d/actor/d_a_canon.cpp:373-390).",
+   "The game continues only while m65C > 0 AND m65A < 5; otherwise end_proc_init runs (src/d/actor/d_a_canon.cpp:400-406).",
+   "OUTCOME: 5 hits out of 5 sets dComIfGp_setMiniGameResult(1) and daNpc_Kg2_c::setCanonGameResult(1). Anything else sets (2, 2). There is no partial-credit tier inside daCanon_c (src/d/actor/d_a_canon.cpp:410-424).",
+   "60 frames later end_proc destroys every remaining target barrel (breakAllObj spawns a bomb on each) and calls dComIfGp_endMiniGame(3) (src/d/actor/d_a_canon.cpp:186-198, 426-447).",
+   "SHIPPED BUG: CreateHeap fills m5AC using ARRAY_SSIZE(m584) = 10 although m5AC has only 5 elements, overrunning the array by five pointers (src/d/actor/d_a_canon.cpp:535-544, the decomp marks it Bug)."
+  ],
+  "constants": {
+   "shots": {
+    "value": 10,
+    "file": "src/d/actor/d_a_canon.cpp:263"
+   },
+   "targets": {
+    "value": 5,
+    "file": "src/d/actor/d_a_canon.cpp:174"
+   },
+   "player_setback_units": {
+    "value": 200.0,
+    "file": "src/d/actor/d_a_canon.cpp:264-266"
+   },
+   "target_grid": {
+    "value": "8 columns x 8 rows",
+    "file": "src/d/actor/d_a_canon.cpp:176-177"
+   },
+   "target_range_units": {
+    "value": [
+     10500,
+     21000
+    ],
+    "file": "src/d/actor/d_a_canon.cpp:120"
+   },
+   "target_row_spacing_units": {
+    "value": 1500.0,
+    "file": "src/d/actor/d_a_canon.cpp:120"
+   },
+   "angle_y_tbl": {
+    "value": [
+     "0xEE00",
+     "0xF324",
+     "0xF895",
+     "0xFD6C",
+     "0x0294",
+     "0x076B",
+     "0x0CDC",
+     "0x1200"
+    ],
+    "file": "src/d/actor/d_a_canon.cpp:30",
+    "note": "signed s16 bearings relative to home.angle.y; -0x1200..+0x1200 is about +/- 25.3 degrees"
+   },
+   "angle_x_tbl": {
+    "value": [
+     "0xF000",
+     "0xF24A",
+     "0xF493",
+     "0xF6DC",
+     "0xF925",
+     "0xFB6E",
+     "0xFDB7",
+     "0x0000"
+    ],
+    "file": "src/d/actor/d_a_canon.cpp:29"
+   },
+   "yaw_limit": {
+    "value": "+/- 0x1200 from home.angle.y",
+    "file": "src/d/actor/d_a_canon.cpp:456, 464"
+   },
+   "pitch_limit": {
+    "value": "home.angle.x .. home.angle.x + 0x1000",
+    "file": "src/d/actor/d_a_canon.cpp:472, 479"
+   },
+   "shot_flight_frames": {
+    "value": "((home.angle.x + 0x1000) - shape_angle.x)/0x1000 * 56 + 64  ->  64..120",
+    "file": "src/d/actor/d_a_canon.cpp:333-334"
+   },
+   "countdown_frames_before_first_shot": {
+    "value": 60,
+    "file": "src/d/actor/d_a_canon.cpp:353"
+   },
+   "pause_frames_after_landing": {
+    "value": 30,
+    "file": "src/d/actor/d_a_canon.cpp:361"
+   },
+   "end_frames": {
+    "value": 60,
+    "file": "src/d/actor/d_a_canon.cpp:411"
+   },
+   "minigame_type_id": {
+    "value": 3,
+    "file": "src/d/actor/d_a_canon.cpp:267"
+   }
+  },
+  "rewards": {
+   "_storage": "Session-only. daNpc_Kg2_c::canon_game_result is a static s8 zeroed by daNpc_Kg2_c::init() (include/d/actor/d_a_npc_kg2.h:12, 45-52). Nothing about this game is written to the save by any decompiled code.",
+   "tiers": [
+    {
+     "when": "5 hits out of 5",
+     "prize": "minigame result 1, canon_game_result 1 -> KG2_CLEAR_DEMO then KG2_GETDEMO; the item number is chosen by the stubbed daNpc_Kg2_c and KG2_GETDEMO's CREATEITEM carries no ItemNo property, so the prize is UNKNOWN",
+     "bit": null,
+     "file": "src/d/actor/d_a_canon.cpp:414-417"
+    },
+    {
+     "when": "fewer than 5 hits, or the ten shots run out",
+     "prize": "minigame result 2, canon_game_result 2 - no prize",
+     "bit": null,
+     "file": "src/d/actor/d_a_canon.cpp:418-422"
+    }
+   ],
+   "register": null
+  },
+  "story_steps": [
+   "mg_cannon_game"
+  ],
+  "confidence": "high for everything daCanon_c does; low for the fee and for what the prize actually is",
+  "sources": [
+   "src/d/actor/d_a_canon.cpp:29-30",
+   "src/d/actor/d_a_canon.cpp:117-150",
+   "src/d/actor/d_a_canon.cpp:172-198",
+   "src/d/actor/d_a_canon.cpp:244-352",
+   "src/d/actor/d_a_canon.cpp:353-447",
+   "src/d/actor/d_a_canon.cpp:449-489",
+   "src/d/actor/d_a_canon.cpp:521-576",
+   "include/d/actor/d_a_canon.h:26, 59-78",
+   "include/d/actor/d_a_npc_kg2.h:12, 45-52",
+   "include/d/actor/d_a_obj_barrel2.h:50-91",
+   "include/d/d_save.h:314",
+   "out/rip/GZLE01/godot/stage_data.json:sea"
+  ]
+ },
+ "boating_course": {
+  "name": "The Boating Course (Spectacle Island's rupee-barrel time trial)",
+  "stage": "Stage 'Ocean', one room, four spawns. Entered from sea room 48 = dIsleRoom_BoatingCourse_e where the attendant Sarace stands at (192340, 376, 280200). Ocean's own placement is one Ship (the King of Red Lions) at (191, -100, -604), 38 Ktarur rupee barrels, 42 Kamome seagulls, one Oyashi and Sarace again (out/rip/GZLE01/godot/stage_data.json:Ocean).",
+  "actor": "daGoal_Flag_c, src/d/actor/d_a_goal_flag.cpp - FULLY DECOMPILED; it is the finish-line flag and it runs the whole race. The barrels are daObjBarrel2 (src/d/actor/d_a_obj_barrel2.cpp), the pickups daRaceItem_c (src/d/d_a_race_item_static.cpp). The attendant daNpc_Sarace_c is entirely stubbed.",
+  "cost": "UNRECOVERABLE. daNpc_Sarace_c charges the fee and it is a stub. daGoal_Flag_c never touches rupees. Do not invent a price.",
+  "rules": [
+   "The race arms itself only on a start-code-1 entry: daGoal_Flag_c::_create checks strcmp(getStartStageName(), \"Ocean\") == 0 && getStartStagePoint() == 1. Ocean spawns 0 and 10 carry no such code, so those are the free practice sail-around (src/d/actor/d_a_goal_flag.cpp:562-594).",
+   "TIME LIMIT: 240 seconds minus 10 seconds per unit of event register 0xAAFF. The register is the difficulty level - each time the course is beaten it presumably rises, but NOTHING in src/ ever writes it (the only two hits for UNK_AAFF in the whole tree are this read and the enum definition), so the progression rule itself is not recoverable (src/d/actor/d_a_goal_flag.cpp:566-568, include/d/actor/d_a_goal_flag.h:24).",
+   "The timer is a dTimer_c created with fopMsgM_Timer_create(fpcNm_TIMER_e, 2, time_limit, 3, 0, 221, 439, 32, 419, NULL); the 3-2-1-GO overlay is a separate process, dMinigame_Starter_c, which loads the Mgst archive and the ship_race1.blo layout (src/d/actor/d_a_goal_flag.cpp:569-587, src/d/d_minigame_starter.cpp:1-4).",
+   "RaceStart drives the race_start_cam event through the Gflag staff's 00_dummy..04_dummy cuts, calls countStart() on cut index 1, starts the clock with timer_p->start(7) once the countdown says GO, and plays JA_BGM_SEA_GAME (src/d/actor/d_a_goal_flag.cpp:744-779).",
+   "THE COURSE IS WORTH EXACTLY 150 RUPEES. The 38 Ktarur barrels in Ocean decode (itemNo = params & 0x3F) to 20 barrels holding a Green Rupee (1), 11 holding a Yellow Rupee (10), 1 holding a Red Rupee (20) and 6 holding item 0x3F = nothing. 20*1 + 11*10 + 1*20 = 150, which is exactly l_HIO.mPerfectRupeeScore. The six empty barrels are type 2, the mine variant, and they are the ones that get a marker flag (prm_get_buoy() == 0) (out/rip/GZLE01/godot/stage_data.json:Ocean; include/d/actor/d_a_obj_barrel2.h:50-70; src/d/actor/d_a_obj_barrel2.cpp:272-296).",
+   "Rupees are counted into the minigame counter, not the wallet: daRaceItem_c::raceItemGet maps green 1, blue 5, yellow 10, red 20, purple 50, orange 100, silver 200 into dComIfGp_plusMiniGameRupee (src/d/d_a_race_item_static.cpp:26-58).",
+   "The finish line is a pair of path points: daGoal_Flag_c reads points 0 and 1 of the path named in params >> 16 into mGoalFlagPolePos[0..1] and remembers which side of that line the player started on (src/d/actor/d_a_goal_flag.cpp:550-600).",
+   "goal_check() returns +1 for crossing the line the right way and -1 for crossing it backwards. The FIRST correct crossing only sets mRaceEndState = 1 (it is the start line); the SECOND correct crossing ends the race - with 0 rupees collected it is a failure (state 2), otherwise a finish (state 3) (src/d/actor/d_a_goal_flag.cpp:795-810).",
+   "Three ways to lose, all ending at race_fail_cam: the clock reaching 0, crossing the line backwards, and crossing the finish having collected nothing. All three play JA_SE_SGAME_TIMER_0 or fall to minigame result 2 and BGM JA_BGM_SEA_FAIL (src/d/actor/d_a_goal_flag.cpp:795-840).",
+   "A finish is classified by rupees: fewer than mPerfectRupeeScore = 150 is finish_type 1, otherwise finish_type 2 = perfect. The MiniGameTerminater is created with (finish_type, remaining_time = getRestTimeMs()/10, rupees_collected) (src/d/actor/d_a_goal_flag.cpp:822-847).",
+   "The results camera can be skipped with A, B or START, but only after l_HIO.mEndCamEarlyFrame = 150 frames (5 seconds). Either way it ends with dComIfGp_setNextStage(\"sea\", 1, dIsleRoom_BoatingCourse_e) - back onto the dock in front of Sarace (src/d/actor/d_a_goal_flag.cpp:864-897).",
+   "A mid-race restart (falling out of the course) is special-cased in the player: daPy_lk_c::startRestartRoom sees minigame type 1, forces the same next stage, plays JA_SE_FORCE_BACK and writes ship_race_result = 3 (src/d/actor/d_a_player_main.cpp:10855-10866).",
+   "DELIBERATE INVERSION: _delete maps minigame result 1 (the ordinary finish) to ship_race_result 2 and result 2 (the failure) to ship_race_result 1, carrying the rupee count across in both cases. Do not 'fix' this when porting (src/d/actor/d_a_goal_flag.cpp:713-729)."
+  ],
+  "constants": {
+   "time_limit_seconds": {
+    "value": 240,
+    "file": "include/d/actor/d_a_goal_flag.h:24"
+   },
+   "time_limit_formula": {
+    "value": "240 - getEventReg(0xAAFF) * 10",
+    "file": "src/d/actor/d_a_goal_flag.cpp:566-568"
+   },
+   "perfect_rupee_score": {
+    "value": 150,
+    "file": "include/d/actor/d_a_goal_flag.h:27"
+   },
+   "end_cam_early_frame": {
+    "value": 150,
+    "file": "include/d/actor/d_a_goal_flag.h:30"
+   },
+   "barrels": {
+    "value": {
+     "total": 38,
+     "green_rupee_1": 20,
+     "yellow_rupee_10": 11,
+     "red_rupee_20": 1,
+     "empty_mine_type2": 6,
+     "sum_of_rupees": 150
+    },
+    "file": "out/rip/GZLE01/godot/stage_data.json:Ocean",
+    "note": "params histogram: 0x017F0101 x15, 0x007F0101 x5, 0x007F0103 x11, 0x007F0104 x1, 0x027F003F x6"
+   },
+   "race_item_values": {
+    "value": {
+     "green": 1,
+     "blue": 5,
+     "yellow": 10,
+     "red": 20,
+     "purple": 50,
+     "orange": 100,
+     "silver": 200
+    },
+    "file": "src/d/d_a_race_item_static.cpp:26-58"
+   },
+   "minigame_type_id": {
+    "value": 1,
+    "file": "src/d/actor/d_a_goal_flag.cpp:589"
+   },
+   "difficulty_register": {
+    "value": "0xAAFF (byte 0xAA, mask 0xFF)",
+    "file": "src/d/actor/d_a_goal_flag.cpp:567"
+   }
+  },
+  "rewards": {
+   "_storage": "Session-only DOL statics daNpc_Sarace_c::ship_race_result and ship_race_rupee (src/d/d_com_static.cpp:267-268), zeroed by dSv_info_c::init (src/d/d_save.cpp:1389-1397). They survive the Ocean -> sea stage change but not a reset. The only persistent thing is register 0xAAFF, and nothing decompiled writes it.",
+   "tiers": [
+    {
+     "when": "finish with 150 rupees (every rupee barrel emptied)",
+     "prize": "finish_type 2 'perfect'; ship_race_result = 2 with ship_race_rupee = 150. What Sarace pays is UNKNOWN - he is a stub",
+     "bit": null,
+     "file": "src/d/actor/d_a_goal_flag.cpp:824-826, 713-720"
+    },
+    {
+     "when": "finish with fewer than 150 rupees",
+     "prize": "finish_type 1; ship_race_result = 2 with the collected count",
+     "bit": null,
+     "file": "src/d/actor/d_a_goal_flag.cpp:824-826"
+    },
+    {
+     "when": "time out, cross backwards, or finish with nothing",
+     "prize": "finish_type 0; ship_race_result = 1",
+     "bit": null,
+     "file": "src/d/actor/d_a_goal_flag.cpp:828-831, 721-724"
+    },
+    {
+     "when": "thrown out of the course mid-race",
+     "prize": "ship_race_result = 3",
+     "bit": null,
+     "file": "src/d/actor/d_a_player_main.cpp:10855-10866"
+    }
+   ],
+   "register": "0xAAFF (difficulty / time reduction) - read only; the writer is invisible"
+  },
+  "story_steps": [
+   "mg_boating_briefing",
+   "mg_boating_enter",
+   "mg_boating_start",
+   "mg_boating_goal",
+   "mg_boating_fail",
+   "mg_boating_reward"
+  ],
+  "confidence": "high for the timer, the scoring and the 150-rupee barrel total; low for the entry fee, the payout table and what raises the difficulty register",
+  "sources": [
+   "src/d/actor/d_a_goal_flag.cpp:550-600",
+   "src/d/actor/d_a_goal_flag.cpp:713-729",
+   "src/d/actor/d_a_goal_flag.cpp:744-779",
+   "src/d/actor/d_a_goal_flag.cpp:781-860",
+   "src/d/actor/d_a_goal_flag.cpp:864-897",
+   "include/d/actor/d_a_goal_flag.h:11-40",
+   "src/d/d_a_race_item_static.cpp:13-58",
+   "src/d/actor/d_a_obj_barrel2.cpp:272-296",
+   "include/d/actor/d_a_obj_barrel2.h:50-91",
+   "src/d/d_minigame_starter.cpp:1-4",
+   "src/d/actor/d_a_player_main.cpp:10855-10866",
+   "src/d/d_com_static.cpp:267-268",
+   "src/d/d_save.cpp:1389-1397",
+   "out/rip/GZLE01/godot/stage_data.json:Ocean"
+  ]
+ },
+ "birdman_contest": {
+  "name": "The Bird-Man Contest (Flight Control Platform)",
+  "stage": "sea room 14 = dIsleRoom_FlightControlPlatform_e (include/d/d_save.h:318). Bmcon1 (Willi) at (311201, 538, -201752) params 0x00090000, Bmcon2 (Obli) at (310201, 1100, -202105) params 0x000A0000; plus one Kanban signboard, a Tpost postbox, five TrFlag flags, an Ah (Old Man Ho Ho) and one ikadaS (out/rip/GZLE01/godot/stage_data.json:sea).",
+  "actor": "daNpcBmcon_c, src/d/actor/d_a_npc_bmcon1.cpp - 54 stub bodies; EVERY function body is /* Nonmatching */. Both brothers share the profile fpcNm_NPC_BMCON1_e, Bmcon1 as subtype 0 and Bmcon2 as subtype 1 (src/d/d_stage.cpp:719-720).",
+  "cost": "UNRECOVERABLE. No rupee deduction for this contest exists anywhere in src/.",
+  "rules": [
+   "RULES UNRECOVERABLE. This is the honest answer for this minigame: the actor that scores it is a complete stub, and the numbers do not exist anywhere else in the tree.",
+   "What DOES survive is the shape of the scoring, as symbol names: daNpcBmcon_c::calcFlyDist(), getFlyDistNow()/setFlyDistNow(short) for the run in progress, getFlyDistMax()/setFlyDistMax(short) for the best so far, chkEndEvent() and isClear() for the pass/fail decision (include/d/actor/d_a_npc_bmcon1.h:64-70). The distance is a signed 16-bit value; its unit is not stated.",
+   "There is no threshold constant, no timer, no attempt limit and no entry fee anywhere in src/ for this contest.",
+   "NOTHING PERSISTS. No event register anywhere in the tree is tied to the Bird-Man contest, and the message-substitution tags that print minigame numbers cover only 0xBEFF, 0x8AFF, 0x86FF, 0xC0FF and 0xBA0F (src/f_op/f_op_msg_mng.cpp). The best available reading is that the fly distance is a per-session actor member and only the one-off prize is saved - but even the prize bit is invisible, because none of the five BMCON_* event scripts carries a PACKAGE PLAY EventFlag.",
+   "The mechanical loop that IS recoverable lives in the stage data, and is written up in the story file: a TagEv at the top of the tower reloads sea room 14 on layer 2 at spawn 1, that spawn auto-plays BirdStart, and BMCON_END / BMCON_END2 reload the room on layer -1 so the trigger comes back for another attempt. There is therefore no attempt limit.",
+   "The five TrFlag flags on the platform are daTori_Flag_c, a pure decoration actor with no event logic at all; the file comment names this platform and Horseshoe Island as its two homes (src/d/actor/d_a_tori_flag.cpp:1-4).",
+   "The prize hand-over BMCON_GET_ITEM carries a GET_ITEM action with NO ItemNo property, so the item number comes from daNpcBmcon_c::eventGetItemInit(), a stub."
+  ],
+  "constants": {
+   "target_distance": {
+    "value": null,
+    "file": "include/d/actor/d_a_npc_bmcon1.h:69 (isClear())",
+    "note": "NOT RECOVERABLE - isClear() is a stub."
+   },
+   "distance_units": {
+    "value": null,
+    "file": "include/d/actor/d_a_npc_bmcon1.h:64-68",
+    "note": "NOT RECOVERABLE - the accessors take/return s16 and nothing states the scale."
+   },
+   "entry_fee": {
+    "value": null,
+    "file": null,
+    "note": "NOT RECOVERABLE."
+   },
+   "attempt_limit": {
+    "value": "none",
+    "file": "out/rip/GZLE01/godot/stage_data.json:sea (the launch TagEv carries switch 0xFF, i.e. it is never remembered and re-fires every time)"
+   }
+  },
+  "rewards": {
+   "_storage": "None found. No event register and no event bit anywhere in src/ is tied to this contest.",
+   "tiers": [
+    {
+     "when": "run classified as a clear by the stubbed isClear()",
+     "prize": "BMCON_END plays (the longer two-message ending); the prize itself comes later via BMCON_GET_ITEM and its item number is UNKNOWN",
+     "bit": null,
+     "file": "out/rip/GZLE01/godot/events/sea.json:BMCON_END, BMCON_GET_ITEM"
+    },
+    {
+     "when": "run classified as a failure",
+     "prize": "BMCON_END2 plays (one message, no prize)",
+     "bit": null,
+     "file": "out/rip/GZLE01/godot/events/sea.json:BMCON_END2"
+    }
+   ],
+   "register": null
+  },
+  "story_steps": [
+   "mg_birdman_look",
+   "mg_birdman_signup",
+   "mg_birdman_launch",
+   "mg_birdman_flight",
+   "mg_birdman_result",
+   "mg_birdman_prize"
+  ],
+  "confidence": "low - rules unrecoverable; the actor, its archive and its symbol list are all that can honestly be given",
+  "sources": [
+   "src/d/actor/d_a_npc_bmcon1.cpp:1-4",
+   "src/d/actor/d_a_npc_bmcon1.cpp:129-266",
+   "include/d/actor/d_a_npc_bmcon1.h:41-70",
+   "src/d/d_stage.cpp:719-720",
+   "src/d/actor/d_a_tori_flag.cpp:1-4",
+   "include/d/d_save.h:318",
+   "out/rip/GZLE01/godot/stage_data.json:sea",
+   "out/rip/GZLE01/godot/events/sea.json:BMCON_NEXT, BMCON_END, BMCON_END2, BMCON_RESULT, BMCON_GET_ITEM, BirdStart, BirdLook"
+  ]
+ }
+}

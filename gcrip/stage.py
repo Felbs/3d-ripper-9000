@@ -267,6 +267,8 @@ def _build(
     tag_recs: list[dict] = []  # invisible trigger actors (TagEv, AttTag, TagMsg...)
     logic_recs: list[dict] = []  # every other model-less actor (switches, salvage, Ajav)
     event_table: list[str] = []  # stage.dzs EVNT names (TagEv params >> 24 indexes them)
+    cameras: list[dict] = []  # CAMR/RCAM: the camera type a region switches to
+    cam_arrows: list[dict] = []  # AROB/RARO: fixed eye points those regions point at
     if "Stage.arc" in stage_arcs:
         raw = disc.read_inner(f"res/Stage/{stage_name}/Stage.arc", "stage.dzs")
         if raw:
@@ -274,6 +276,11 @@ def _build(
             mult = d.mult
             stage_scls = d.scls
             event_table = list(d.events)
+            cameras += [vars(c) for c in d.cameras]
+            cam_arrows += [
+                {**vars(a), "pos": list(a.pos), "yaw_deg": a.yaw_deg, "pitch_deg": a.pitch_deg}
+                for a in d.cam_arrows
+            ]
             own_scls += d.scls
             placements += [(None, p, stage_scls) for p in d.placements]
     room_nos = []
@@ -295,6 +302,14 @@ def _build(
                 {"room": room_no, "id": sp.ship_id, "pos": list(sp.pos),
                  "rot_y_deg": round(sp.rot_y_deg, 2)}
                 for sp in d.ships
+            ]
+            # RCAM/RARO: most authored cameras are per ROOM, not per stage - the stage-level
+            # CAMR/AROB pair is only a fraction of the 574 on the disc
+            cameras += [{**vars(c), "room": room_no} for c in d.cameras]
+            cam_arrows += [
+                {**vars(a), "room": room_no, "pos": list(a.pos),
+                 "yaw_deg": a.yaw_deg, "pitch_deg": a.pitch_deg}
+                for a in d.cam_arrows
             ]
 
     # ---- room geometry (already ripped; MULT places it)
@@ -503,6 +518,11 @@ def _build(
         # counts every model-less name, tags included (it was tallied and then binned)
         "skipped_names": dict(skipped_names.most_common()),
         "event_table": event_table,
+        # authored camera behaviour: a CAMR/RCAM region names a dCamera_c type by string and
+        # may point at an AROB/RARO arrow giving a fixed eye point (d_stage.h:166-185).  Which
+        # region applies comes from the collision polygon Link stands on, not from a volume.
+        "cameras": cameras,
+        "cam_arrows": cam_arrows,
         "wave_max": {str(r): t.wave_max for r, t in mult.items() if r in room_nos},
         "offset": [offset[0], 0.0, offset[2]],
         "gltf": str(out_path),
