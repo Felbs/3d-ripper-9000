@@ -9215,18 +9215,31 @@ func _build_skydome() -> void:
     dome_mat = ShaderMaterial.new()
     dome_mat.shader = load("res://skydome.gdshader")
     var sphere := SphereMesh.new()
-    sphere.radius = 1.0
-    sphere.height = 2.0
+    sphere.radius = 1000.0
+    sphere.height = 2000.0
     sphere.radial_segments = 32
     sphere.rings = 16
     sphere.material = dome_mat
     dome = MeshInstance3D.new()
     dome.name = "SkyDome"
     dome.mesh = sphere
-    dome.extra_cull_margin = 16384.0
+    # the camera lives hundreds of thousands of units from the origin; a dome left at the
+    # origin is frustum-culled and never drawn, which is why the HDR showed through.  It has to
+    # WRAP the camera, so it is recentred on the camera every frame and never culled.
+    dome.extra_cull_margin = 1.0e9
+    dome.ignore_occlusion_culling = true
     dome.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
     add_child(dome)
+    _dome_follow()
     print("gcrip light: sky dome up; HDR slots ", hdri_slots.keys())
+
+func _dome_follow() -> void:
+    if dome == null:
+        return
+    var cam := get_viewport().get_camera_3d()
+    var lk := Game.player()
+    var c: Vector3 = cam.global_position if cam else (lk.global_position if lk else Vector3.ZERO)
+    dome.global_position = c
 
 func _apply_slot(slot: String) -> void:
     if slot == current_slot or not (env_node and env_node.environment):
@@ -9645,6 +9658,7 @@ func _start_bgm() -> void:
         Game.run_event("StartCamera")
 
 func _process(_delta: float) -> void:
+    _dome_follow()
     _ocean_tick()
     if Engine.get_process_frames() % 30 == 0:
         _light_tick()

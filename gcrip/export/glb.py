@@ -17,9 +17,25 @@ CHUNK_JSON = 0x4E4F534A
 CHUNK_BIN = 0x004E4942
 
 
+def _read_text_retry(path: Path, tries: int = 5) -> str:
+    """The rip lives on a drive (OneDrive / network) that intermittently returns a partial
+    read mid-sync - a byte that is not valid UTF-8.  A short retry turns that into a reliable
+    read instead of a failed export."""
+    import time
+
+    last: Exception | None = None
+    for i in range(tries):
+        try:
+            return path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError) as exc:
+            last = exc
+            time.sleep(0.2 * (i + 1))
+    raise last  # type: ignore[misc]
+
+
 def pack(gltf_path: Path) -> bytes:
     gltf_path = Path(gltf_path)
-    g = json.loads(gltf_path.read_text(encoding="utf-8"))
+    g = json.loads(_read_text_retry(gltf_path))
     base = gltf_path.parent
     buffers = g.get("buffers", [])
     if len(buffers) > 1:
