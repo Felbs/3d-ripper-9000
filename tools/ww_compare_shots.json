@@ -1,0 +1,50 @@
+[
+ {
+  "name": "outset_harbour",
+  "note": "Where the game starts: the King of Red Lions moored at Outset's dock. The first thing a player sees.",
+  "hour": 11,
+  "eye": [-2600, 420, 11500],
+  "look": [-1700, 120, 12600],
+  "settle": 900
+ },
+ {
+  "name": "outset_beach",
+  "note": "The shoreline the water fix was for - where the sea meets the sand.",
+  "hour": 11,
+  "eye": [2900, 300, 15400],
+  "look": [1300, 40, 16400],
+  "settle": 240
+ },
+ {
+  "name": "outset_village",
+  "note": "The village from above: grass, paths, houses, the cel ramp on large flat surfaces.",
+  "hour": 12,
+  "eye": [1500, 1200, 15000],
+  "look": [500, 300, 16800],
+  "settle": 240
+ },
+ {
+  "name": "outset_bridge",
+  "note": "The rope bridge span, rebuilt from the stage PATH data.",
+  "hour": 12,
+  "eye": [1638, 3450, 21300],
+  "look": [1638, 3150, 21821],
+  "settle": 240
+ },
+ {
+  "name": "outset_open_sea",
+  "note": "Open water away from the island, where wave_max is the full 30 - the swell, the glint and the horizon.",
+  "hour": 13,
+  "eye": [-6000, 700, 8000],
+  "look": [-2000, 60, 11000],
+  "settle": 900
+ },
+ {
+  "name": "outset_sunset",
+  "note": "The same view at dusk: the sky palette and the sea colour must agree about the hour.",
+  "hour": 17.6,
+  "eye": [-6000, 700, 8000],
+  "look": [-2000, 60, 11000],
+  "settle": 300
+ }
+]
