@@ -45,6 +45,10 @@ IMPLEMENTED = {
                " two-body proximity and the facing test, with a real ERROR branch",
     "npc_tag": "actors/npc_tag.gd - a volume that box-tests one named NPC and never the player."
                " Wired end to end, but not yet seen to fire in an integration test",
+    "salvage": "actors/salvage.gd + Game.try_salvage - all 489 Great Sea points in six kinds"
+               " (chart, switch, free, night-only, decoy, full moon), each with the real"
+               " availability rule; the crane tip is the boat's XZ at l_salvage_depth below"
+               " the water, since the remake has no crane model yet",
     "item": "Game.story_item_collected - picking up or being handed the step's dItemNo",
     "timer": "Game.story_timer_tick - the timed islands (daTagvolcano). The sea-side switch"
              " starts a 300 s clock that survives the warp into the cave and pauses for events;"

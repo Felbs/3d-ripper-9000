@@ -1842,6 +1842,11 @@ func _ship() -> void:
         hud_prompt.text = p
     if Input.is_action_just_pressed("action_x"):
         ship.toggle_sail()
+    if Game.has_item("rope"):
+        if hud_prompt:
+            hud_prompt.text += "   Y: Salvage"
+        if Input.is_action_just_pressed("action_y"):
+            Game.try_salvage(ship.global_position)
     if Input.is_action_just_pressed("target") and ship.jump_ok:
         ship.try_jump()
     if hud_prompt and ship.jump_ok:
@@ -3133,6 +3138,8 @@ var doors_report: Array = []
 # --models: load every animated actor model and report the ones with no mesh, no clips, or a
 # head model that does not resolve.  --cutscenes: play every baked .stb through to its end.
 var models_test: bool = "--models" in OS.get_cmdline_user_args()
+# --salvage=<kind> : sail the boat onto a point of that kind and work the crane
+var salvage_test := -1
 # --island=<type> : stand Link inside that island's TagIsl, satisfy its terms, watch it fire
 var island_test := -1
 # --timer=<step id>[:win] : raise the island's switch, then run the clock out (or open the chest)
@@ -3286,6 +3293,8 @@ func _ready() -> void:
             event_test = a.substr(8)
         elif a.begins_with("--talk="):
             talk_test = a.substr(7)
+        elif a.begins_with("--salvage="):
+            salvage_test = int(a.substr(10))
         elif a.begins_with("--island="):
             island_test = int(a.substr(9))
         elif a.begins_with("--timer="):
@@ -3801,6 +3810,43 @@ func _opening_start(step: Dictionary, arrived := false) -> void:
             else:
                 story_event_done(id if ev == "" else ev)
 
+func _salvage_test() -> void:
+    give_item("rope")
+    # put the world into the state this kind needs, the way real play would have by then:
+    # kind 4 wants night, kind 6 the full moon's night, kind 2 the switch a Warship drops
+    match salvage_test:
+        4:
+            save["day_time"] = 300.0
+        6:
+            save["day"] = 0
+            save["day_time"] = 300.0
+        2:
+            for sp0 in get_tree().get_nodes_in_group("salvage"):
+                if int(sp0.get("kind")) == 2:
+                    set_switch(int(sp0.get("room")), int(sp0.get("switch_no")))
+    var pts := get_tree().get_nodes_in_group("salvage")
+    var want: Node3D = null
+    var seen := {}
+    for sp in pts:
+        seen[int(sp.get("kind"))] = int(seen.get(int(sp.get("kind")), 0)) + 1
+        if int(sp.get("kind")) == salvage_test and want == null and sp.call("available"):
+            want = sp
+    print("gcrip salvage: ", pts.size(), " points here by kind ", seen,
+        " | this file's candidate = ", random_salvage_point())
+    if want == null:
+        print("gcrip salvage: no AVAILABLE kind-", salvage_test, " point in this stage")
+        get_tree().quit()
+        return
+    var at: Vector3 = want.global_position
+    print("gcrip salvage: working the crane over a kind-", salvage_test, " point at ",
+        at.round(), " ring ", want.get("ring"), " depth ", want.get("depth"),
+        " type ", want.get("type"), " item 0x%02X" % int(want.get("item_no")))
+    var got := try_salvage(at)
+    print("gcrip salvage: result ", got)
+    print("gcrip salvage: still available? ", want.call("available"),
+        " | collect_map ", save.get("collect_map", {}), " ocean ", save.get("ocean", {}))
+    get_tree().quit()
+
 func _island_prepare() -> void:
     # arrivalTerms()/otherCheck() bits have to be up before the stage picks a layer - the
     # Windfall volume is placed only on layers 2 and 3, the endless-night dressing
@@ -4144,6 +4190,12 @@ func _process(delta: float) -> void:
                   " ", after.slice(maxi(after.size() - 3, 0)))
             print("gcrip defeat: boss_dead ", save.get("boss_dead", {}))
         elif event_frames > 300:
+            get_tree().quit()
+    if salvage_test >= 0:
+        event_frames += 1
+        if event_frames == 40:
+            _salvage_test()
+        elif event_frames > 400:
             get_tree().quit()
     if island_test >= 0:
         event_frames += 1
@@ -5257,7 +5309,7 @@ func burst(pos: Vector3, color: Color) -> void:
 
 func scripted() -> bool:
     # any headless harness run: nobody is holding the pad, so "press any key" waits must pass
-    return conduct_test or selftest or story_test or newgame_test or dialogue_test or door_test         or talk_test != "" or event_test != "" or shot_actor != "" or scope_test or near_test or defeat_test != "" or hit_test or timer_test != "" or island_test >= 0 or opening_test or sweep_test or doors_test \
+    return conduct_test or selftest or story_test or newgame_test or dialogue_test or door_test         or talk_test != "" or event_test != "" or shot_actor != "" or scope_test or near_test or defeat_test != "" or hit_test or timer_test != "" or island_test >= 0 or salvage_test >= 0 or opening_test or sweep_test or doors_test \
         or models_test or cuts_test or object_test or clock_test
 
 func stage_boss_dead(stage := "") -> bool:
@@ -5521,6 +5573,74 @@ func story_timer_tick(delta: float) -> void:
     timer_left -= delta
     if timer_left <= 0.0:
         _timer_expired()
+
+# ---- salvage (d_salvage.cpp / d_a_salvage.cpp) -----------------------------------------
+# daSalvage_c::m_savelabel[16] - the only salvage state kept as event bits, d_com_static.cpp:115
+const SALVAGE_FM_BITS := [0x2080, 0x2004, 0x2002, 0x2804, 0x2802, 0x2801, 0x2980, 0x2940,
+                          0x3B01, 0x3C80, 0x3C40, 0x3C20, 0x3C10, 0x3C08, 0x3C04, 0x3C02]
+
+func try_salvage(at: Vector3) -> Dictionary:
+    # the crane comes down at the boat: find an available point whose ring holds this XZ
+    var water := sea_height(at.x, at.z) if current_stage_key().begins_with("sea") else 0.0
+    var best: Node3D = null
+    var best_d := 1.0e30
+    for sp in get_tree().get_nodes_in_group("salvage"):
+        if not is_instance_valid(sp) or not sp.call("available"):
+            continue
+        var tip := Vector3(at.x, water - float(sp.get("depth")) - 1.0, at.z)
+        if not sp.call("in_reach", tip, water):
+            continue
+        var d: float = at.distance_to((sp as Node3D).global_position)
+        if d < best_d:
+            best_d = d
+            best = sp
+    if best == null:
+        return {"hit": false, "none": true}
+    var out: Dictionary = best.call("dredge")
+    var kinds := ["chart", "?", "switch", "free", "night", "decoy", "full moon"]
+    var kn: String = kinds[int(out["kind"])] if int(out["kind"]) < kinds.size() else "?"
+    if bool(out["hit"]):
+        print("gcrip salvage: dredged a ", kn, " point -> item 0x%02X" % int(out["item"]))
+        show_text("You pulled up a treasure!")
+    else:
+        print("gcrip salvage: the crane comes up empty (", kn, " point)",
+            " - and something came with it" if bool(out["octorok"]) else "")
+        show_text("Nothing but sand...")
+    return out
+
+func random_salvage_point() -> int:
+    # dSv_player_info_c::init: mRandomSalvagePoint = cM_rndF(3.0f) clamped to 0..2, rolled ONCE
+    # per save file - which of a room's four candidate spots actually holds the chart's treasure
+    var info: Dictionary = save.get("info", {})
+    if not info.has("random_salvage_point"):
+        info["random_salvage_point"] = randi() % 3
+        save["info"] = info
+        print("gcrip salvage: this file's salvage spot is candidate ",
+            info["random_salvage_point"])
+    return int(info["random_salvage_point"])
+
+func ocean_bit(room: int, save_no: int) -> bool:
+    return bool((save.get("ocean", {}) as Dictionary).get("%d/%d" % [room, save_no], false))
+
+func set_ocean_bit(room: int, save_no: int) -> void:
+    var o: Dictionary = save.get("ocean", {})
+    o["%d/%d" % [room, save_no]] = true
+    save["ocean"] = o
+
+func collect_map_done(chart: int) -> bool:
+    return bool((save.get("collect_map", {}) as Dictionary).get(str(chart), false))
+
+func set_collect_map_done(chart: int) -> void:
+    var m: Dictionary = save.get("collect_map", {})
+    m[str(chart)] = true
+    save["collect_map"] = m
+
+func full_moon_night() -> bool:
+    # proc_wait, d_a_salvage.cpp:332-340: !dKy_moon_type_chk() is day-of-week 0, and
+    # dKyr_moon_arrival_check() is true past 277.5 or before 112.5 - the full moon's night
+    var day := int(save.get("day", 0))
+    var t := float(save.get("day_time", 0.0))
+    return day % 7 == 0 and (t > 277.5 or t < 112.5)
 
 func story_bits_tick() -> void:
     # a step whose trigger is a pure bit test: it fires the moment every bit it requires is set.
@@ -7563,6 +7683,100 @@ func _physics_process(_delta: float) -> void:
     Game.run_event(ev)
 """
 
+_SALVAGE_GD = """extends Node3D
+# gcrip: a salvage point (d_a_salvage.cpp).  489 of them cover the Great Sea in six kinds.
+# The crane tip has to be inside the ring in XZ and well below the water; a type-1 point gives
+# up its buried item, anything else answers with an empty crane - and sometimes an Octorok.
+
+var params := 0
+var rot_z := 0
+var room := 0
+var kind := 0
+var save_no := 0
+var item_no := 0
+var type := 0
+var cmap_no := 0
+var switch_no := 0
+var ring := 700.0
+var depth := 1000.0
+var taken := false
+
+# checkArea, d_a_salvage.cpp:443 - rerolled whenever the hook leaves a ring
+const DEPTHS := [1000.0, 1500.0, 2000.0]
+
+func setup(p: int, rz: int, r: int, sc: Array) -> void:
+    params = p
+    rot_z = rz
+    room = r
+    kind = (p >> 28) & 0xF
+    save_no = (p >> 20) & 0xFF
+    item_no = (p >> 4) & 0xFF
+    type = p & 0x0F
+    cmap_no = rz & 0x03
+    switch_no = rz & 0xFF
+    # d_salvage.cpp:124-137
+    var sx := float(sc[0])
+    ring = sx * (700.0 if kind == 0 else (500.0 if kind == 5 else 400.0))
+    depth = DEPTHS[randi() % 3]
+
+func available() -> bool:
+    # dSalvage_control_c::entry, d_salvage.cpp:88-114 - one case per kind
+    if taken:
+        return false
+    match kind:
+        0:
+            if Game.collect_map_done(save_no):
+                return false
+            return cmap_no == Game.random_salvage_point()
+        2:
+            if not Game.is_switch(room, switch_no):
+                return false
+            return save_no == 31 or not Game.ocean_bit(room, save_no)
+        3:
+            return save_no == 31 or not Game.ocean_bit(room, save_no)
+        4:
+            if save_no != 31 and Game.ocean_bit(room, save_no):
+                return false
+            return Game.is_night()        # marked used while it is day
+        5:
+            return true                   # the invisible decoys are always live
+        6:
+            if save_no < Game.SALVAGE_FM_BITS.size() \
+                    and Game.event_bit(int(Game.SALVAGE_FM_BITS[save_no])):
+                return false
+            return Game.full_moon_night()
+    return false
+
+func in_reach(tip: Vector3, water_y: float) -> bool:
+    var d := tip - global_position
+    if Vector2(d.x, d.z).length() >= ring:
+        return false
+    return tip.y < water_y - depth
+
+func dredge() -> Dictionary:
+    # end_salvage, d_a_salvage.cpp:503-530
+    taken = true
+    var hit: bool = type == 1 and kind != 5
+    var out := {"hit": hit, "kind": kind, "item": item_no if hit else -1, "octorok": false}
+    if not hit:
+        out["octorok"] = kind == 5 or type == 2
+        depth = DEPTHS[randi() % 3]
+        taken = false                      # a miss does not consume the point
+        return out
+    match kind:
+        0:
+            Game.set_collect_map_done(save_no)
+            Game.set_event_bit(0x3E02)
+        3, 4:
+            if save_no != 31:
+                Game.set_ocean_bit(room, save_no)
+        6:
+            if save_no < Game.SALVAGE_FM_BITS.size():
+                Game.set_event_bit(int(Game.SALVAGE_FM_BITS[save_no]))
+    Game.story_item_collected(item_no, "")
+    return out
+"""
+
 _CONTROL_GD = 'extends Node\n# gcrip: a debug control channel.  Started only by --control[=<port>] and bound to 127.0.0.1,\n# it accepts one JSON object per line and answers with one JSON object per line, so an outside\n# tool (the gcrip MCP server) can drive a running game instead of the game running a canned\n# script.  Never start this in a build you hand to anyone.\n\nconst DEFAULT_PORT := 8787\n\nvar server := TCPServer.new()\nvar peers: Array[StreamPeerTCP] = []\nvar buffers: Array[String] = []\nvar port := DEFAULT_PORT\nvar held: Dictionary = {}          # action -> frames left to hold\n\nfunc start(p: int) -> bool:\n    port = p\n    var err := server.listen(port, "127.0.0.1")\n    if err != OK:\n        push_error("gcrip control: cannot listen on 127.0.0.1:%d (%d)" % [port, err])\n        return false\n    print("gcrip control: listening on 127.0.0.1:", port)\n    return true\n\nfunc _process(_delta: float) -> void:\n    while server.is_connection_available():\n        var peer := server.take_connection()\n        peers.append(peer)\n        buffers.append("")\n        print("gcrip control: client connected")\n    var i := 0\n    while i < peers.size():\n        var peer: StreamPeerTCP = peers[i]\n        peer.poll()\n        if peer.get_status() != StreamPeerTCP.STATUS_CONNECTED:\n            peers.remove_at(i)\n            buffers.remove_at(i)\n            continue\n        var n := peer.get_available_bytes()\n        if n > 0:\n            buffers[i] += peer.get_utf8_string(n)\n        while buffers[i].find("\\n") >= 0:\n            var cut := buffers[i].find("\\n")\n            var line := buffers[i].substr(0, cut).strip_edges()\n            buffers[i] = buffers[i].substr(cut + 1)\n            if line != "":\n                var reply := _handle(line)\n                peer.put_data((JSON.stringify(reply) + "\\n").to_utf8_buffer())\n        i += 1\n\nfunc _physics_process(_delta: float) -> void:\n    # a held button has to span whole PHYSICS frames: the player polls\n    # is_action_just_pressed there, and _process can run many times between two ticks\n    for a in held.keys():\n        held[a] -= 1\n        if held[a] <= 0:\n            Input.action_release(a)\n            held.erase(a)\n\nfunc _handle(line: String) -> Dictionary:\n    var msg = JSON.parse_string(line)\n    if not (msg is Dictionary):\n        return {"ok": false, "error": "not a JSON object"}\n    var cmd := str(msg.get("cmd", ""))\n    match cmd:\n        "state":\n            return {"ok": true, "state": _state()}\n        "stages":\n            var out: Array = []\n            for k in Game.stage_data.keys():\n                if Game.playable(k):\n                    out.append(k)\n            out.sort()\n            return {"ok": true, "stages": out, "names": Game.stage_names}\n        "warp":\n            var st := str(msg.get("stage", ""))\n            if not Game.stage_data.has(st):\n                return {"ok": false, "error": "no such stage: " + st}\n            Game.last_warp_ms = -100000\n            Game.warp(st, int(msg.get("room", 0)), int(msg.get("spawn", 0)))\n            return {"ok": true}\n        "place":\n            var lk := Game.player()\n            if lk == null:\n                return {"ok": false, "error": "no player"}\n            lk.global_position = Vector3(\n                float(msg.get("x", lk.global_position.x)),\n                float(msg.get("y", lk.global_position.y)),\n                float(msg.get("z", lk.global_position.z)))\n            lk.velocity = Vector3.ZERO\n            if msg.has("facing_deg"):\n                lk.set("facing", deg_to_rad(float(msg["facing_deg"])))\n            return {"ok": true, "state": _state()}\n        "input":\n            # hold an input action for N frames, the way a player would tap or hold it\n            var action := str(msg.get("action", ""))\n            if action == "":\n                return {"ok": false, "error": "no action"}\n            if not InputMap.has_action(action):\n                return {"ok": false, "error": "no such action: " + action,\n                        "actions": InputMap.get_actions()}\n            Input.action_press(action, float(msg.get("strength", 1.0)))\n            held[action] = maxi(int(msg.get("frames", 2)), 1)\n            return {"ok": true}\n        "stick":\n            # the analog stick, as a held vector (x right, y forward)\n            Game.control_stick = Vector2(float(msg.get("x", 0.0)), float(msg.get("y", 0.0)))\n            Game.control_stick_frames = int(msg.get("frames", 30))\n            return {"ok": true}\n        "actors":\n            var out2: Array = []\n            for grp in ["interact", "enemy", "pickup"]:\n                for nd in get_tree().get_nodes_in_group(grp):\n                    if is_instance_valid(nd):\n                        var nm = nd.get("actor")\n                        out2.append({"actor": str(nm) if nm != null else "",\n                                     "node": String(nd.name), "group": grp,\n                                     "pos": _v(nd.global_position)})\n            return {"ok": true, "actors": out2}\n        "talk":\n            var who := str(msg.get("actor", ""))\n            var target := Game._find_actor(who)\n            var lk2 := Game.player()\n            if target == null or lk2 == null:\n                return {"ok": false, "error": "no " + who + " here"}\n            lk2.global_position = target.global_position + Vector3(0, 5, 120)\n            target.interact(lk2)\n            return {"ok": true, "state": _state()}\n        "event":\n            var ev := str(msg.get("name", ""))\n            if not Game.events.has(ev):\n                return {"ok": false, "error": "no event " + ev + " in this stage",\n                        "events": Game.events.keys()}\n            return {"ok": Game.run_event(ev)}\n        "dialog":\n            if Game.dialog and Game.dialog_open:\n                Game.dialog.advance()\n            return {"ok": true, "open": Game.dialog_open}\n        "defeat":\n            var who := str(msg.get("actor", ""))\n            if who == "room":\n                Game.story_room_cleared(int(msg.get("room", 0)))\n            else:\n                Game.story_enemy_defeated(who, bool(msg.get("boss", false)))\n            return {"ok": true, "story_done": (Game.save.get("story_done", {}) as Dictionary).keys(),\n                    "boss_dead": Game.save.get("boss_dead", {})}\n        "story_place":\n            # move a named actor (npc_tag: put Medli inside the TagMd box) or place a\n            # breakable story object at a point (hit: the Ajav wall has no placement yet)\n            var pwho := str(msg.get("actor", ""))\n            var plk := Game.player()\n            var at: Vector3 = plk.global_position if plk else Vector3.ZERO\n            if msg.has("x"):\n                at = Vector3(float(msg["x"]), float(msg.get("y", at.y)), float(msg["z"]))\n            if bool(msg.get("hit", false)):\n                var hscene := get_tree().current_scene\n                if hscene == null or not hscene.has_method("spawn_hit_object"):\n                    return {"ok": false, "error": "this scene places no hit objects"}\n                for step in Game.story_hit_steps():\n                    var hb: Dictionary = step.get("hit", {})\n                    if pwho != "" and str(hb.get("actor", "")) != pwho:\n                        continue\n                    var nd = hscene.spawn_hit_object(step, at,\n                        float(msg.get("facing_deg", 0.0)))\n                    return {"ok": true, "node": String(nd.name), "at": _v(at),\n                            "events": hb.get("events", [])}\n                return {"ok": false, "error": "no story hit step is waiting here"}\n            var pt := Game._find_actor(pwho)\n            if pt == null:\n                return {"ok": false, "error": "no " + pwho + " here"}\n            pt.global_position = at\n            return {"ok": true, "at": _v(at), "ground": Game.ground_height(at),\n                    "story_done": (Game.save.get("story_done", {}) as Dictionary).keys(),\n                    "hit_log": Game.hit_log}\n\n        "reg":\n            var rid := int(msg.get("id", 0))\n            if msg.has("value"):\n                Game.set_event_reg(rid, int(msg["value"]))\n            return {"ok": true, "value": Game.event_reg(rid)}\n        "bit":\n            var id := int(msg.get("id", 0))\n            if msg.has("set"):\n                if bool(msg["set"]):\n                    Game.set_event_bit(id)\n                return {"ok": true, "value": Game.event_bit(id)}\n            return {"ok": true, "value": Game.event_bit(id)}\n        "item":\n            var nm := str(msg.get("name", ""))\n            if bool(msg.get("give", false)):\n                Game.give_item(nm)\n            return {"ok": true, "has": Game.has_item(nm), "items": Game.save.get("items", {})}\n        "screenshot":\n            var img := get_viewport().get_texture().get_image()\n            if img == null:\n                return {"ok": false, "error": "no viewport image (running headless?)"}\n            var path := str(msg.get("path", "user://control_shot.png"))\n            img.save_png(path)\n            return {"ok": true, "path": ProjectSettings.globalize_path(path)}\n        "ground":\n            var lk3 := Game.player()\n            var at: Vector3 = lk3.global_position if lk3 else Vector3.ZERO\n            if msg.has("x"):\n                at = Vector3(float(msg["x"]), float(msg.get("y", 0.0)), float(msg["z"]))\n            return {"ok": true, "under": Game.ground_under(at), "at": _v(at)}\n        "quit":\n            get_tree().quit()\n            return {"ok": true}\n    return {"ok": false, "error": "unknown cmd: " + cmd,\n            "commands": ["state", "stages", "warp", "place", "input", "stick", "actors",\n                         "talk", "event", "dialog", "bit", "item", "defeat", "screenshot",\n                         "story_place",\n                         "ground",\n                         "quit"]}\n\nfunc _v(p: Vector3) -> Array:\n    return [snappedf(p.x, 0.1), snappedf(p.y, 0.1), snappedf(p.z, 0.1)]\n\nfunc _state() -> Dictionary:\n    var cs := get_tree().current_scene\n    var lk := Game.player()\n    var st := {\n        "scene": String(cs.name) if cs else "",\n        "stage": Game.current_stage_key(),\n        "event_running": Game.event_running,\n        "cutscene": Game.cutscene_running(),\n        "dialog_open": Game.dialog_open,\n        "hearts": Game.save.get("hearts", 0),\n        "items": Game.save.get("items", {}),\n        "story_done": (Game.save.get("story_done", {}) as Dictionary).keys(),\n    }\n    if lk:\n        st["pos"] = _v(lk.global_position)\n        st["facing_deg"] = snappedf(rad_to_deg(float(lk.get("facing"))), 0.1)\n        st["state"] = int(lk.get("state"))\n        st["ground"] = Game.ground_under(lk.global_position)\n        var pt = lk.get("prompt_target")\n        st["prompt_target"] = (str(pt.get("actor")) if pt != null and is_instance_valid(pt)\n            else "")\n    return st\n'
 
 _DIALOG_GD = """extends CanvasLayer
@@ -7839,6 +8053,30 @@ func _spawn_tags() -> void:
         k += 1
     if k > 0:
         print("gcrip: ", k, " island arrival tags in ", name)
+    _spawn_salvage()
+
+const SALVAGE_NAMES := ["Salvage", "Salvag2", "SalvagN", "SwSlvg", "SalvFM", "SalvagE"]
+
+func _spawn_salvage() -> void:
+    # model-less points: they come through the exporter's "logic" list, not "actors"
+    var info: Dictionary = Game.stage_data.get(name, {})
+    var n := 0
+    for rec in info.get("logic", []):
+        if not SALVAGE_NAMES.has(str(rec.get("actor", ""))):
+            continue
+        var rot: Array = rec.get("rot", [0, 0, 0])
+        var sp := Node3D.new()
+        sp.set_script(load("res://actors/salvage.gd"))
+        sp.name = "Salvage_%d" % n
+        add_child(sp)
+        sp.global_position = Vector3(rec["pos"][0], rec["pos"][1], rec["pos"][2])
+        sp.add_to_group("salvage")
+        sp.setup(int(rec["params"]), int(rot[2]),
+            int(rec["room"]) if rec.get("room") != null else 0,
+            rec.get("scale", [1, 1, 1]))
+        n += 1
+    if n > 0:
+        print("gcrip: ", n, " salvage points in ", name)
 
 # tag volumes that watch a named NPC instead of Link (actors/npc_tag.gd).  These live in
 # the same "tags" list as TagEv, but they are their own pass: TagEv is a player trigger and
@@ -9816,6 +10054,7 @@ def export_godot(
         "enemy.gd": _ACTOR_ENEMY_GD,
         "tag_event.gd": _TAG_EVENT_GD,
         "tag_island.gd": _TAG_ISLAND_GD,
+        "salvage.gd": _SALVAGE_GD,
         "npc_tag.gd": _NPC_TAG_GD,
         "hit_object.gd": _HIT_OBJECT_GD,
         "warp_object.gd": _WARP_OBJECT_GD,
