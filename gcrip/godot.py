@@ -3133,6 +3133,11 @@ var doors_report: Array = []
 # --models: load every animated actor model and report the ones with no mesh, no clips, or a
 # head model that does not resolve.  --cutscenes: play every baked .stb through to its end.
 var models_test: bool = "--models" in OS.get_cmdline_user_args()
+# --timer=<step id>[:win] : raise the island's switch, then run the clock out (or open the chest)
+var timer_test := ""
+var timer_win := false
+var timer_lose := false   # go INTO the cave and let it expire there: the ejection branch
+var timer_settle := 0     # frames to let a deferred ejection warp actually land
 # --hit: raise the waiting hit step's bits before the stage loads, then break its object
 var hit_test: bool = "--hit" in OS.get_cmdline_user_args()
 var hit_struck := 0
@@ -3279,6 +3284,11 @@ func _ready() -> void:
             event_test = a.substr(8)
         elif a.begins_with("--talk="):
             talk_test = a.substr(7)
+        elif a.begins_with("--timer="):
+            var tspec := a.substr(8).split(":")
+            timer_test = tspec[0]
+            timer_win = tspec.size() > 1 and tspec[1] == "win"
+            timer_lose = tspec.size() > 1 and tspec[1] == "lose"
         elif a.begins_with("--defeat="):
             defeat_test = a.substr(9)
         elif a.begins_with("--control"):
@@ -3783,6 +3793,43 @@ func _opening_start(step: Dictionary, arrived := false) -> void:
             else:
                 story_event_done(id if ev == "" else ev)
 
+func _timer_test_begin() -> void:
+    # stand in for the fire/ice arrow: raise the sea-side switch this island waits on
+    for step in story.get("steps", []):
+        var clock = step.get("timer")
+        if not (clock is Dictionary) or not bool(clock.get("start", false)):
+            continue
+        if sfield(step, "id") != timer_test:
+            continue
+        var room := int(clock.get("room", 0))
+        var sw := int(clock.get("switch", -1))
+        print("gcrip timer: raising switch ", sw, " in room ", room, " of ",
+            current_stage_key(), " (the fire/ice arrow's job)")
+        set_switch(room, sw)
+        story_timer_tick(0.0)
+        if not story_timer_running():
+            print("gcrip timer: the clock did not start")
+            get_tree().quit()
+            return
+        # which chest ends it, so --timer=<step>:win can open the right one
+        for other in story.get("steps", []):
+            var b = other.get("timer")
+            if b is Dictionary and bool(b.get("beaten", false)) \
+                    and str(b.get("cave_stage", "")) == str(clock.get("cave_stage", "")):
+                timer_info["tbox_win"] = int(b.get("tbox", -1))
+        var cave := str(clock.get("cave_stage", ""))
+        if (timer_win or timer_lose) and stage_data.has(cave):
+            print("gcrip timer: warping into ", cave)
+            last_warp_ms = -100000
+            warp(cave, 0, 0)
+        else:
+            # let it expire where Link stands: 300 s at 30 fps is 9000 frames, so wind it down
+            timer_left = 3.0
+            print("gcrip timer: winding the clock down to 3 s to watch it expire")
+        return
+    print("gcrip timer: no start step called ", timer_test)
+    get_tree().quit()
+
 func _hit_prepare() -> void:
     # the wall only exists on the endless-night layers, so its bits have to be up before the
     # stage picks a layer - this runs deferred ahead of the --stage warp
@@ -4017,9 +4064,17 @@ func _process(delta: float) -> void:
         control_stick_frames -= 1
         if control_stick_frames == 0:
             control_stick = Vector2.ZERO
+    if not _timer_eject.is_empty() and not (event_running or cutscene_running() or dialog_open):
+        var go: Array = _timer_eject
+        _timer_eject = []
+        # setNextStage is unconditional in the real actor: this is a scripted story warp, not
+        # the player walking back through a door, so the anti-bounce guard must not eat it
+        last_warp_ms = -100000
+        warp("sea", int(go[0]), int(go[1]))
     story_tick += 1
     if story_tick % 15 == 0:
         story_npc_tick()
+        story_timer_tick(15.0 / 30.0)
         story_bits_tick()
         conduct_tick()
         story_object_tick()
@@ -4048,6 +4103,35 @@ func _process(delta: float) -> void:
                   " ", after.slice(maxi(after.size() - 3, 0)))
             print("gcrip defeat: boss_dead ", save.get("boss_dead", {}))
         elif event_frames > 300:
+            get_tree().quit()
+    if timer_test != "":
+        event_frames += 1
+        if event_frames == 30:
+            _timer_test_begin()
+        elif event_frames > 30 and event_frames % 30 == 0:
+            if story_timer_running():
+                print("gcrip timer: %.0f s left, stage %s" % [timer_left, current_stage_key()])
+                var in_cave := current_stage_key() == str(timer_info.get("cave_stage", ""))
+                if timer_win and in_cave:
+                    print("gcrip timer: opening the chest (tbox ", timer_info.get("tbox_win"), ")")
+                    story_timer_beaten(int(timer_info.get("tbox_win", -1)))
+                elif timer_lose and in_cave and timer_left > 5.0:
+                    print("gcrip timer: inside the cave - winding down to watch the ejection")
+                    timer_left = 2.0
+            elif event_frames > 120:
+                # the timeout branch orders TAG_VOLCANO first and only warps once it ends, so
+                # do not call it finished while that is still in flight
+                if not _timer_eject.is_empty() or event_running or cutscene_running():
+                    timer_settle = 90     # a warp is deferred; do not read the stage yet
+                    return
+                if timer_settle > 0:
+                    timer_settle -= 1
+                    return
+                print("gcrip timer: clock is stopped in ", current_stage_key(),
+                    "; story done ", (save.get("story_done", {}) as Dictionary).keys())
+                get_tree().quit()
+        if event_frames > 4000:
+            print("gcrip timer: done (timeout)")
             get_tree().quit()
     if hit_test:
         event_frames += 1
@@ -4799,6 +4883,13 @@ func set_switch(room: int, bit: int) -> void:
     sw["%s/%d/%d" % [current_stage_key(), room, bit]] = true
     save["switches"] = sw
 
+func clear_switch(room: int, bit: int) -> void:
+    # the timed islands need this: when the countdown expires the sea-side VolTag turns its
+    # switch back OFF, which is what makes GiceL re-freeze / daObjVolcano re-erupt
+    var sw: Dictionary = save.get("switches", {})
+    sw.erase("%s/%d/%d" % [current_stage_key(), room, bit])
+    save["switches"] = sw
+
 func current_stage_key() -> String:
     var cs := get_tree().current_scene
     return String(cs.name).split("_r")[0] if cs else ""
@@ -5107,7 +5198,7 @@ func burst(pos: Vector3, color: Color) -> void:
 
 func scripted() -> bool:
     # any headless harness run: nobody is holding the pad, so "press any key" waits must pass
-    return conduct_test or selftest or story_test or newgame_test or dialogue_test or door_test         or talk_test != "" or event_test != "" or shot_actor != "" or scope_test or near_test or defeat_test != "" or hit_test or opening_test or sweep_test or doors_test \
+    return conduct_test or selftest or story_test or newgame_test or dialogue_test or door_test         or talk_test != "" or event_test != "" or shot_actor != "" or scope_test or near_test or defeat_test != "" or hit_test or timer_test != "" or opening_test or sweep_test or doors_test \
         or models_test or cuts_test or object_test or clock_test
 
 func stage_boss_dead(stage := "") -> bool:
@@ -5274,6 +5365,103 @@ func story_chest_opened(item_id: int) -> void:
         print("gcrip story: chest -> ", id, " (item 0x%02X)" % item_id)
         story_event_done(id)
         return
+
+# ---- the timed islands (daTagvolcano::Act_c) -------------------------------------------
+# Lives on Game, not on the scene, because the clock has to survive the warp into the cave.
+var timer_left := -1.0            # seconds remaining, < 0 = no timer running
+var timer_info: Dictionary = {}   # the start step's timer block, so the cave knows its island
+
+func story_timer_running() -> bool:
+    return timer_left >= 0.0
+
+func _timer_start(step: Dictionary, clock: Dictionary) -> void:
+    timer_info = clock.duplicate()
+    timer_left = float(clock.get("seconds", 300.0))
+    timer_info["step"] = sfield(step, "id")
+    _mark_story_done(sfield(step, "id"))
+    print("gcrip timer: ", timer_info["step"], " - ", timer_left, " s to reach the chest in ",
+        clock.get("cave_stage", "?"))
+
+func _timer_stop() -> void:
+    timer_left = -1.0
+    timer_info = {}
+
+func story_timer_beaten(tbox: int) -> void:
+    # the cave-side VolTag: dComIfGs_isTbox(bitTRB) went true, so the island is settled for good
+    if not story_timer_running():
+        return
+    var here := current_stage_key()
+    for step in story.get("steps", []):
+        var clock = step.get("timer")
+        if not (clock is Dictionary) or not bool(clock.get("beaten", false)):
+            continue
+        if str(clock.get("cave_stage", "")) != here or int(clock.get("tbox", -1)) != tbox:
+            continue
+        var id := sfield(step, "id")
+        if story_done(id):
+            continue
+        _timer_stop()
+        _mark_story_done(id)
+        print("gcrip timer: chest ", tbox, " opened -> ", id, " (the island is settled)")
+        story_event_done(id)
+        return
+
+func _timer_expired() -> void:
+    # switch back off: the sea-side actor re-seals the island the moment its switch drops
+    var sw = timer_info.get("switch")
+    if sw != null:
+        clear_switch(int(timer_info.get("room", 0)), int(sw))
+    var cave := str(timer_info.get("cave_stage", ""))
+    var isle := int(timer_info.get("isle_room", 0))
+    var inside := current_stage_key() == cave
+    print("gcrip timer: out of time (switch ", int(sw) if sw != null else -1, " off, ",
+        "Link is inside" if inside else "Link is outside", ")")
+    _timer_stop()
+    if not inside:
+        return
+    last_warp_ms = -100000
+    # the cave-side branch: order TAG_VOLCANO, then throw Link out onto the island at spawn 2
+    for step in story.get("steps", []):
+        var clock = step.get("timer")
+        if not (clock is Dictionary) or not bool(clock.get("timeout", false)):
+            continue
+        if str(clock.get("cave_stage", "")) != cave:
+            continue
+        var ev := sfield(step, "event")
+        _mark_story_done(sfield(step, "id"))
+        if ev != "" and events.has(ev) and run_event(ev):
+            _timer_eject = [isle, 2]
+            return
+        break
+    warp("sea", isle, 2)
+
+var _timer_eject: Array = []      # [isle_room, spawn] to leave for once TAG_VOLCANO ends
+
+func story_timer_tick(delta: float) -> void:
+    # start any waiting island whose switch is on, then run the clock
+    for step in story.get("steps", []):
+        var clock = step.get("timer")
+        if not (clock is Dictionary) or not bool(clock.get("start", false)):
+            continue
+        if story_done(sfield(step, "id")) or story_timer_running():
+            continue
+        if is_switch(int(clock.get("room", 0)), int(clock.get("switch", -1))):
+            _timer_start(step, clock)
+    if not story_timer_running():
+        return
+    if event_running or cutscene_running() or dialog_open:
+        # the real actor pauses the clock for the length of any event and restarts it after
+        if not _timer_eject.is_empty():
+            return
+        return
+    if not _timer_eject.is_empty():
+        var go: Array = _timer_eject
+        _timer_eject = []
+        warp("sea", int(go[0]), int(go[1]))
+        return
+    timer_left -= delta
+    if timer_left <= 0.0:
+        _timer_expired()
 
 func story_bits_tick() -> void:
     # a step whose trigger is a pure bit test: it fires the moment every bit it requires is set.
@@ -6453,12 +6641,14 @@ _ACTOR_CHEST_GD = """extends StaticBody3D
 # item id lives in rot.z >> 8; item-get text is message 101 + item id.
 
 var item_id := 0
+var tbox_no := -1
 var opened := false
 var mesh: Node3D = null
 var facing := 0.0
 
-func setup(rot_z: int, mesh_node: Node3D, rot_y_deg: float) -> void:
+func setup(rot_z: int, mesh_node: Node3D, rot_y_deg: float, params := 0) -> void:
     item_id = (rot_z >> 8) & 0xFF
+    tbox_no = (params >> 7) & 0x1F   # d_a_tbox: which chest bit this one owns in the save
     mesh = mesh_node
     facing = deg_to_rad(rot_y_deg)
     # opened chests stay open (the game keeps a per-stage tbox bit in the save file)
@@ -6505,6 +6695,8 @@ func interact(link: Node3D) -> void:
     Game.show_message(101 + item_id)
     Game.story_chest_opened(item_id)
     Game.story_item_collected(item_id, "")
+    if tbox_no >= 0:
+        Game.story_timer_beaten(tbox_no)
 """
 
 _ACTOR_PICKUP_GD = """extends Node3D
@@ -7693,7 +7885,7 @@ func _wrap_actors() -> void:
         elif script_path.ends_with("sign.gd"):
             node.setup(params, mesh, rot_y)
         elif script_path.ends_with("chest.gd"):
-            node.setup(int(rot[2]), mesh, rot_y)
+            node.setup(int(rot[2]), mesh, rot_y, params)
         elif script_path.ends_with("pickup.gd"):
             node.setup(actor, params, mesh)
         elif script_path.ends_with("npc.gd") or script_path.ends_with("enemy.gd"):
@@ -8444,6 +8636,26 @@ _STORY_HIT = {
     },
 }
 
+# The two timed islands.  Like _STORY_HIT these keep the structured form here so the chapter
+# files stay a record of what the decomp says rather than of what this engine needs.
+# swSave / bitTRB / the 300 seconds are all read out of the placements' params in
+# ww_story_labyrinths.json; sources are on each step there.
+_STORY_TIMER = {
+    "icering_timer_starts": {
+        "start": True, "switch": 27, "room": 40, "seconds": 300.0,
+        "cave_stage": "MiniHyo", "isle_room": 40, "after_event": "MELT_ICE",
+    },
+    "firemountain_timer_starts": {
+        "start": True, "switch": 24, "room": 20, "seconds": 300.0,
+        "cave_stage": "MiniKaz", "isle_room": 20, "after_event": "FREEZE_VOLCANO",
+    },
+    # the failure branch; only Ice Ring was mined as its own step, Fire Mountain shares the code
+    "icering_timeout": {"timeout": True, "cave_stage": "MiniHyo"},
+    # success: the cave-side VolTag watching its chest bit
+    "icering_beaten": {"beaten": True, "cave_stage": "MiniHyo", "tbox": 1},
+    "firemountain_beaten": {"beaten": True, "cave_stage": "MiniKaz", "tbox": 0},
+}
+
 _DLG_BIT_RE = re.compile(r"UNK_([0-9A-Fa-f]{4})")
 _DLG_TYPE_RE = re.compile(r"type\s*([0-9](?:\s*/\s*[0-9])*)")
 _DLG_PAREN_RE = re.compile(r"\(([^)]*)\)")
@@ -8683,6 +8895,9 @@ def _story_with_actors(path: Path) -> dict:
         hit = _STORY_HIT.get(str(step.get("id", "")))
         if hit:
             step["hit"] = hit
+        clock = _STORY_TIMER.get(str(step.get("id", "")))
+        if clock:
+            step["timer"] = clock
         obj = _STORY_OBJECT.get(str(step.get("id", "")))
         if obj and (step.get("trigger") or {}).get("kind") == "object":
             step["object"] = obj

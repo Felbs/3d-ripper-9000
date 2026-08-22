@@ -42,6 +42,11 @@ IMPLEMENTED = {
                " two-body proximity and the facing test, with a real ERROR branch",
     "npc_tag": "actors/npc_tag.gd - a volume that box-tests one named NPC and never the player."
                " Wired end to end, but not yet seen to fire in an integration test",
+    "timer": "Game.story_timer_tick - the timed islands (daTagvolcano). The sea-side switch"
+             " starts a 300 s clock that survives the warp into the cave and pauses for events;"
+             " opening the cave's chest (by tboxNo, the way dComIfGs_isTbox does) settles the"
+             " island for good, and running out turns the switch back off and, if Link is"
+             " inside, orders TAG_VOLCANO and throws him out onto the island",
     "hit": "actors/hit_object.gd - take_hit stages that each order an event, positioned from"
            " the stage's own placement records. Verified: the Ajav wall over Jabun's cave"
            " breaks in three stages, ajav_destroy0 -> ajav_destroy1 -> ajav_uzu",
