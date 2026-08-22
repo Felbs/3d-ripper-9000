@@ -5635,7 +5635,8 @@ func story_hit_switch(actor: String, room: int, swbit: int) -> void:
     # a hit step whose object is one of these switches finishes when its switch goes on
     var here := current_stage_key()
     for step in story.get("steps", []):
-        if str((step.get("trigger") or {}).get("kind", "")) != "hit":
+        var trig = step.get("trigger")
+        if not (trig is Dictionary) or str(trig.get("kind", "")) != "hit":
             continue
         var id := sfield(step, "id")
         if story_done(id) or not _story_bits_ok(step):
@@ -5643,7 +5644,7 @@ func story_hit_switch(actor: String, room: int, swbit: int) -> void:
         var st := sfield(step, "stage")
         if st != "" and st != here and st != here.split("_r")[0]:
             continue
-        if str((step.get("trigger") or {}).get("detail", "")).find(actor) < 0:
+        if str(trig.get("detail", "")).find(actor) < 0:
             continue
         _mark_story_done(id)
         print("gcrip story: ", actor, " switch ", swbit, " (room ", room, ") -> ", id)
@@ -5787,6 +5788,7 @@ const DUNGEON_COMPASS := 2         # bit 1
 const DUNGEON_BIG_KEY := 4         # bit 2
 
 # ---- cel shading -----------------------------------------------------------------------
+var sun_direction := Vector3(0.55, -0.72, 0.42)   # set by the stage's light rig each tick
 var toon_shader: Shader = null
 var lit_shader: Shader = null
 var toon_ramp: Texture2D = null
@@ -6124,6 +6126,7 @@ func toon_tick() -> void:
         var m: ShaderMaterial = _toon_cache[k]
         m.set_shader_parameter("c0", Vector3(cs[0].r, cs[0].g, cs[0].b))
         m.set_shader_parameter("k0", Vector3(cs[1].r, cs[1].g, cs[1].b))
+        m.set_shader_parameter("sun_dir", sun_direction)
 
 func shade_report() -> Dictionary:
     # which classes the current stage's surfaces landed in - the --shade harness prints it
@@ -8372,6 +8375,20 @@ void fragment() {
 }
 """
 
+_FLAME_FLICKER_GD = """extends Light3D
+# gcrip: a flame wanders around its nominal output - two incommensurate sines, so it never
+# visibly repeats.  Works on a spot or an omni.
+
+var _t := 0.0
+var _base := -1.0
+
+func _process(delta: float) -> void:
+    if _base < 0.0:
+        _base = light_intensity_lumens
+    _t += delta
+    light_intensity_lumens = _base * (1.0 + 0.08 * sin(_t * 9.3) + 0.05 * sin(_t * 23.1 + 1.7))
+"""
+
 _HIT_SWITCH_GD = """extends StaticBody3D
 # gcrip: an object that reacts to ONE kind of attack and raises a switch.  Not a breakable -
 # nothing is destroyed; the switch is the whole point.  See ww_story_labyrinths.json.
@@ -8393,11 +8410,29 @@ const ITEM_FOR := {
     "hammer": "the Skull Hammer", "fire": "a flame",
 }
 
+var lamp: OmniLight3D = null
+var _flicker_t := 0.0
+
+# photometric numbers: an open flame is ~1900 K and a wall torch ~600-1200 lm
+const FLAME_KELVIN := 1900.0
+const FLAME_LUMENS := 900.0
+
 func setup_switch(actor_name: String, p: int, r: int) -> void:
     actor = actor_name
     params = p
     room = r
     needs = str(ACCEPTS.get(actor_name, "any"))
+    if actor_name == "bonbori":
+        # a lamp is a light source.  It starts lit unless it is a puzzle lamp waiting on a
+        # switch (swbit != 0xFF with the switch off) - those light when struck with fire.
+        lamp = OmniLight3D.new()
+        lamp.light_temperature = FLAME_KELVIN
+        lamp.light_intensity_lumens = FLAME_LUMENS
+        lamp.omni_range = 900.0
+        lamp.omni_attenuation = 1.0        # inverse-square in physical units
+        lamp.shadow_enabled = false        # 780 shadowed lamps is not a budget anyone has
+        lamp.position = Vector3(0, 120.0, 0)
+        add_child(lamp)
     match actor_name:
         "Qdghd", "Ykzyg":
             swbit = (p >> 8) & 0xFF
@@ -8407,6 +8442,14 @@ func setup_switch(actor_name: String, p: int, r: int) -> void:
             swbit = p & 0xFF
     if swbit != 0xFF and Game.is_switch(room, swbit):
         thrown = true
+    if lamp:
+        # d_a_ep.cpp: type = params & 0x3F (0x3F reads as 0); types 0 and 3 burn from the
+        # start, the others are the puzzle torches that wait to be lit
+        var ep_type := p & 0x3F
+        if ep_type == 0x3F:
+            ep_type = 0
+        var lit_at_start: bool = ep_type == 0 or ep_type == 3
+        lamp.visible = thrown or lit_at_start
     add_to_group("hit_switch")
     collision_layer = 8          # the layer weapons sweep
     collision_mask = 0
@@ -8429,8 +8472,18 @@ func take_hit(_damage: int, _from: Vector3, kind := "sword") -> void:
     thrown = true
     if swbit != 0xFF:
         Game.set_switch(room, swbit)
+    if lamp:
+        lamp.visible = true
     print("gcrip hit_switch: ", actor, " struck with ", kind, " -> switch ", swbit,
         " in room ", room)
+
+func _process(delta: float) -> void:
+    # a flame does not hold still: a slow wander around the nominal output
+    if lamp == null or not lamp.visible:
+        return
+    _flicker_t += delta
+    var f := 1.0 + 0.08 * sin(_flicker_t * 9.3) + 0.05 * sin(_flicker_t * 23.1 + 1.7)
+    lamp.light_intensity_lumens = FLAME_LUMENS * f
     Game.story_hit_switch(actor, room, swbit)
 """
 
@@ -8971,9 +9024,129 @@ func _spawn_tags() -> void:
     _spawn_salvage()
     _spawn_missing_doors()
     _spawn_hit_switches()
+    _spawn_flame_lights()
     _apply_toon()
+
+# ---- flames that are light sources but not switches ----------------------------------
+const FLAME_LIGHTS := {
+    # kelvin, lumens, range, kind
+    "Lamp":    [1900.0, 250.0, 700.0, "sconce"],
+    "Fire":    [2000.0, 1500.0, 1400.0, "omni"],
+    "Zenfire": [2000.0, 1500.0, 1400.0, "omni"],
+    "Yfire00": [2000.0, 1500.0, 1400.0, "omni"],
+}
+
+func _spawn_flame_lights() -> void:
+    var info: Dictionary = Game.stage_data.get(name, {})
+    var n := 0
+    var sconce: Texture2D = null
+    if ResourceLoader.exists("res://ies/wall_torch.png"):
+        sconce = load("res://ies/wall_torch.png")
+    for lst in ["actors", "logic"]:
+        for rec in info.get(lst, []):
+            var act := str(rec.get("actor", ""))
+            if not FLAME_LIGHTS.has(act):
+                continue
+            var lay := int(rec.get("layer", -1))
+            var rm: int = int(rec["room"]) if rec.get("room") != null else 0
+            if lay >= 0 and lay != Game.story_layer(name, rm):
+                continue
+            var spec: Array = FLAME_LIGHTS[act]
+            var light: Light3D
+            if str(spec[3]) == "sconce" and sconce != null:
+                # a wall lamp throws out from the wall; the invented sconce IES shapes it
+                var sp := SpotLight3D.new()
+                sp.spot_angle = 80.0
+                sp.spot_range = float(spec[2])
+                sp.light_projector = sconce
+                light = sp
+            else:
+                var om := OmniLight3D.new()
+                om.omni_range = float(spec[2])
+                om.omni_attenuation = 1.0
+                light = om
+            light.light_temperature = float(spec[0])
+            light.light_intensity_lumens = float(spec[1])
+            light.shadow_enabled = false
+            light.name = "Flame_%s_%d" % [act, n]
+            add_child(light)
+            var pos: Array = rec["pos"]
+            light.global_position = Vector3(pos[0], pos[1] + 100.0, pos[2])
+            if light is SpotLight3D:
+                # face away from the wall: the placement's yaw is the fixture's facing
+                light.rotation.y = deg_to_rad(float(rec.get("rot_y_deg", 0.0)))
+                light.rotation.x = deg_to_rad(-25.0)
+            light.set_script(load("res://actors/flame_flicker.gd"))
+            n += 1
+    if n > 0:
+        print("gcrip light: ", n, " flame lights in ", name)
     _stream_init()
     _spawn_ocean()
+    _setup_lighting()
+
+# ---- physical lighting --------------------------------------------------------------------
+var sun: DirectionalLight3D = null
+var env_node: WorldEnvironment = null
+var outdoors := true
+
+func _setup_lighting() -> void:
+    sun = get_node_or_null("Sun")
+    env_node = get_node_or_null("Env")
+    if sun == null or env_node == null:
+        return
+    var info = Game.dungeons.get(String(name).split("_r")[0])
+    var kind := str(info.get("type", "")) if info is Dictionary else ""
+    outdoors = kind in ["SEA", "OUTDOORS", "", "FF1"] or String(name).begins_with("sea")
+    var env: Environment = env_node.environment
+    if env == null:
+        return
+    # an HDRI dropped next to project.godot wins over the simulated atmosphere
+    for cand in ["res://sky.hdr", "res://sky.exr"]:
+        if ResourceLoader.exists(cand):
+            var pano := PanoramaSkyMaterial.new()
+            pano.panorama = load(cand)
+            env.sky.sky_material = pano
+            print("gcrip light: using HDRI ", cand)
+            break
+    if not outdoors:
+        # a dungeon has no sky: a dim fill so the lit looks are not pitch black, and the sky's
+        # ambient kept out of the room
+        sun.light_intensity_lux = 400.0
+        sun.shadow_enabled = false
+        env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+        env.ambient_light_color = Color(0.35, 0.36, 0.42)
+        env.ambient_light_energy = 1.0
+        env.reflected_light_source = Environment.REFLECTION_SOURCE_DISABLED
+        env.background_mode = Environment.BG_COLOR
+        env.background_color = Color(0.02, 0.02, 0.03)
+    _light_tick()
+    print("gcrip light: ", "outdoor" if outdoors else "indoor", " rig in ", name,
+        " (", kind, ")")
+
+func _light_tick() -> void:
+    if sun == null or not outdoors:
+        return
+    # the sun's arc from the clock: 06:00 on the eastern horizon, noon overhead, 18:00 west;
+    # a warm colour temperature near the horizon and white at noon.  Same direction is pushed
+    # into the toon / ocean shaders so every look agrees about where the light is.
+    var h := Game.day_time() / Game.UNITS_PER_HOUR
+    var t := clampf((h - 6.0) / 12.0, 0.0, 1.0)          # 0 at sunrise, 1 at sunset
+    var elev := sin(t * PI) * deg_to_rad(70.0)            # peaks at 70 deg
+    var azim := lerpf(deg_to_rad(-100.0), deg_to_rad(100.0), t)
+    var night := h < 5.5 or h > 18.5
+    if night:
+        elev = deg_to_rad(-20.0)
+    var dir := Vector3(cos(elev) * sin(azim), -sin(elev), cos(elev) * cos(azim)).normalized()
+    sun.global_transform = Transform3D(Basis.looking_at(dir, Vector3.UP), Vector3(0, 10000, 0))
+    var low := clampf(1.0 - sin(t * PI), 0.0, 1.0)        # 1 at the horizon, 0 at noon
+    sun.light_temperature = lerpf(5800.0, 2600.0, pow(low, 1.5))
+    sun.light_intensity_lux = 0.0 if night else lerpf(100000.0, 8000.0, pow(low, 2.0))
+    if night:
+        sun.light_intensity_lux = 150.0              # moonlight
+        sun.light_temperature = 7500.0
+    Game.sun_direction = dir
+
+
 
 # ---- the ocean surface (daSea_packet_c) --------------------------------------------------
 const OCEAN_CELL := 800.0        # the game's heightfield cell
@@ -9046,6 +9219,7 @@ func _ocean_tick() -> void:
     ocean_mat.set_shader_parameter("t_frames", float(Engine.get_physics_frames()))
     ocean_mat.set_shader_parameter("wave_scale", Game.sea_cur_scale)
     ocean_mat.set_shader_parameter("night", 1.0 if Game.is_night() else 0.0)
+    ocean_mat.set_shader_parameter("sun_dir", Game.sun_direction)
     var cs := Game.toon_sun_colors()
     ocean_mat.set_shader_parameter("c0", Vector3(cs[0].r, cs[0].g, cs[0].b))
     ocean_mat.set_shader_parameter("k0", Vector3(cs[1].r, cs[1].g, cs[1].b))
@@ -9339,6 +9513,8 @@ func _start_bgm() -> void:
 
 func _process(_delta: float) -> void:
     _ocean_tick()
+    if Engine.get_process_frames() % 30 == 0:
+        _light_tick()
     if not room_nodes.is_empty() and Engine.get_process_frames() % 20 == 0:
         _stream_update()
     if name != "sea":
@@ -9838,18 +10014,50 @@ def _stage_tscn(
 {col_res}{warp_res}{stage_res}
 
 {warp_shape}
-[sub_resource type="ProceduralSkyMaterial" id="sky"]
-sky_top_color = Color(0.24, 0.44, 0.72, 1)
-sky_horizon_color = Color(0.65, 0.78, 0.9, 1)
+[sub_resource type="PhysicalSkyMaterial" id="sky"]
+rayleigh_coefficient = 2.0
+mie_coefficient = 0.005
+mie_eccentricity = 0.8
+turbidity = 10.0
+sun_disk_scale = 1.0
+ground_color = Color(0.3, 0.26, 0.22, 1)
+energy_multiplier = 1.0
 
 [sub_resource type="Sky" id="skyres"]
 sky_material = SubResource("sky")
+radiance_size = 4
+
+[sub_resource type="CameraAttributesPhysical" id="camattr"]
+exposure_aperture = 16.0
+exposure_shutter_speed = 100.0
+exposure_sensitivity = 100.0
+auto_exposure_enabled = true
+auto_exposure_min_exposure_value = 6.0
+auto_exposure_max_exposure_value = 15.0
+auto_exposure_speed = 1.2
 
 [sub_resource type="Environment" id="env"]
 background_mode = 2
 sky = SubResource("skyres")
 ambient_light_source = 3
-tonemap_mode = 2
+ambient_light_sky_contribution = 1.0
+reflected_light_source = 2
+tonemap_mode = 3
+tonemap_white = 6.0
+ssao_enabled = true
+ssao_radius = 120.0
+ssao_intensity = 1.5
+ssil_enabled = true
+ssil_radius = 200.0
+sdfgi_enabled = true
+sdfgi_use_occlusion = true
+sdfgi_cascades = 6
+sdfgi_min_cell_size = 40.0
+sdfgi_y_scale = 1
+glow_enabled = true
+glow_intensity = 0.35
+glow_bloom = 0.05
+glow_hdr_threshold = 1.2
 
 [node name="{name}" type="Node3D"]
 script = ExtResource("5")
@@ -9858,11 +10066,20 @@ script = ExtResource("5")
 {col_node}
 [node name="Sun" type="DirectionalLight3D" parent="."]
 transform = Transform3D({_sun_basis()}, 0, 10000, 0)
-light_energy = 1.3
+light_intensity_lux = 100000.0
+light_temperature = 5500.0
+light_angular_distance = 0.53
 shadow_enabled = true
+directional_shadow_mode = 2
+directional_shadow_max_distance = 60000.0
+directional_shadow_split_1 = 0.05
+directional_shadow_split_2 = 0.15
+directional_shadow_split_3 = 0.4
+shadow_blur = 1.5
 
 [node name="Env" type="WorldEnvironment" parent="."]
 environment = SubResource("env")
+camera_attributes = SubResource("camattr")
 
 [node name="Player" parent="." instance=ExtResource("2")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, {x:.1f}, {y + 30:.1f}, {z:.1f})
@@ -10606,6 +10823,14 @@ wav={{
 
 renderer/rendering_method="{renderer}"
 renderer/rendering_method.mobile="{renderer}"
+
+[rendering]
+lights_and_shadows/use_physical_light_units=true
+lights_and_shadows/directional_shadow/size=8192
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality=3
+global_illumination/sdfgi/probe_ray_count=2
+anti_aliasing/quality/msaa_3d=2
+anti_aliasing/quality/screen_space_aa=1
 """
 
 
@@ -10637,6 +10862,34 @@ def _godot_glb(stage_gltf: Path, out_glb: Path, *, suffix_rooms: bool = True) ->
     finally:
         tmp.unlink(missing_ok=True)
     return n_col
+
+
+def _write_ies(out_dir: Path) -> None:
+    """Every gcrip/data/ies/*.ies -> ies/<name>.png, a light projector of the real throw."""
+    src = Path(__file__).parent / "data" / "ies"
+    if not src.is_dir():
+        return
+    from gcrip.formats import ies as ies_mod
+
+    dst = out_dir / "ies"
+    n = 0
+    for f in sorted(src.glob("*.ies")):
+        try:
+            prof = ies_mod.parse(f.read_text(encoding="latin-1"))
+            img = (prof.projector(256) * 255.0).astype("uint8")
+            dst.mkdir(parents=True, exist_ok=True)
+            rgb = __import__("numpy").stack([img, img, img], axis=-1)
+            try:
+                from PIL import Image
+
+                Image.fromarray(rgb, "RGB").save(dst / f"{f.stem}.png")
+            except ImportError:
+                _write_png_rgb(dst / f"{f.stem}.png", rgb)
+            n += 1
+        except Exception as exc:
+            print(f"  ies {f.name}: {exc}")
+    if n:
+        print(f"  ies: {n} photometric profiles -> ies/")
 
 
 def _write_particles(rip_dir: Path, out_dir: Path) -> None:
@@ -11367,6 +11620,7 @@ def export_godot(
     _write_particles(rip_dir, out_dir)
     (out_dir / "fx.gdshader").write_text(_FX_SHADER, encoding="utf-8")
     (out_dir / "ocean.gdshader").write_text(_OCEAN_SHADER, encoding="utf-8")
+    _write_ies(out_dir)
     _write_toon_ramp(rip_dir, out_dir)
     (out_dir / "warp.gd").write_text(_WARP_GD, encoding="utf-8")
     (out_dir / "event_runner.gd").write_text(_EVENT_GD, encoding="utf-8")
@@ -11408,6 +11662,7 @@ def export_godot(
         "salvage.gd": _SALVAGE_GD,
         "door.gd": _DOOR_GD,
         "hit_switch.gd": _HIT_SWITCH_GD,
+        "flame_flicker.gd": _FLAME_FLICKER_GD,
         "npc_tag.gd": _NPC_TAG_GD,
         "hit_object.gd": _HIT_OBJECT_GD,
         "warp_object.gd": _WARP_OBJECT_GD,
