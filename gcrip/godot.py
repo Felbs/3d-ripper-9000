@@ -132,9 +132,10 @@ const SWIM_APPROACH_MAX := 2.0       # swim.speed_approach_max_step
 const SWIM_TURN_MAX := 5000          # swim.turn_max_step  s16 (27.5 deg)
 const SWIM_TURN_MIN := 1200          # swim.turn_min_step  s16 (6.6 deg)
 const SWIM_TURN_DIVISOR := 17.0      # swim.turn_divisor
-const SWIM_START_DEPTH := 90.0       # swim.swim_start_depth
+const SWIM_START_DEPTH := 35.0       # how far below the surface swim engages (was 90, which
+                                    # let Link plunge before catching - it read as a void)
 const SWIM_RISE_ACCEL := 6.0         # swim.rise_accel
-const SWIM_RISE_MAX := 9.5           # swim.rise_speed_max
+const SWIM_RISE_MAX := 20.0          # swim.rise_speed_max (raised so a dive surfaces quickly)
 # --- fall damage (fall.fall_height_damage*_m, meters x100) ---
 const FALL_HARD_LANDING := 1000.0    # half the 1-heart height: hard landing, no damage
 const FALL_DAMAGE_1 := 2000.0        # 1 heart
@@ -2877,7 +2878,12 @@ func _update_hud() -> void:
 func _enter_swim() -> void:
     state = State.SWIM
     swim_speed = 0.0
-    velocity.y = clampf(velocity.y, -50.0 * 30.0, 0.0)  # swim.water_entry_yspeed_min
+    # kill the fall: a small dive at most, so entering water reads as a splash, not a plunge
+    velocity.y = clampf(velocity.y, -6.0 * 30.0, 0.0)
+    # if a fast fall already carried him well under, lift him back near the surface at once
+    var surf := water_surface()
+    if surf > -1.0e8 and global_position.y < surf - 120.0:
+        global_position.y = surf - 60.0
     play_clip("swimwait", 0.2)
 
 func _swim() -> void:
