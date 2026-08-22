@@ -3138,6 +3138,8 @@ var doors_report: Array = []
 # --models: load every animated actor model and report the ones with no mesh, no clips, or a
 # head model that does not resolve.  --cutscenes: play every baked .stb through to its end.
 var models_test: bool = "--models" in OS.get_cmdline_user_args()
+# --hitsw[=<kind>] : strike every hit switch in this stage with that attack kind
+var hitsw_test := ""
 # --dungeon : report every locked door in this stage, then try each one with and without its key
 var dungeon_test: bool = "--dungeon" in OS.get_cmdline_user_args()
 # --salvage=<kind> : sail the boat onto a point of that kind and work the crane
@@ -3295,6 +3297,8 @@ func _ready() -> void:
             event_test = a.substr(8)
         elif a.begins_with("--talk="):
             talk_test = a.substr(7)
+        elif a.begins_with("--hitsw"):
+            hitsw_test = a.substr(8) if a.length() > 8 else "sword"
         elif a.begins_with("--salvage="):
             salvage_test = int(a.substr(10))
         elif a.begins_with("--island="):
@@ -3817,6 +3821,24 @@ func _opening_start(step: Dictionary, arrived := false) -> void:
             else:
                 story_event_done(id if ev == "" else ev)
 
+func _hitsw_report() -> void:
+    var sws := get_tree().get_nodes_in_group("hit_switch")
+    print("gcrip hit_switch: ", sws.size(), " in ", current_stage_key(),
+        "; striking each with '", hitsw_test, "'")
+    var by_need := {}
+    for w in sws:
+        var nd := str(w.get("needs"))
+        by_need[nd] = int(by_need.get(nd, 0)) + 1
+    print("gcrip hit_switch: by accepted attack ", by_need)
+    var done := 0
+    for w in sws:
+        w.call("take_hit", 1, (w as Node3D).global_position + Vector3(0, 0, 100), hitsw_test)
+        if bool(w.get("thrown")):
+            done += 1
+    print("gcrip hit_switch: ", done, " of ", sws.size(), " reacted to '", hitsw_test,
+        "'; switches now ", (save.get("switches", {}) as Dictionary).size())
+    get_tree().quit()
+
 func _dungeon_report() -> void:
     var doors: Array = get_tree().get_nodes_in_group("door")
     var locked: Array = doors.filter(func(d): return int(d.get("lock")) != 0)
@@ -4239,6 +4261,12 @@ func _process(delta: float) -> void:
             print("gcrip defeat: story steps done ", before, " -> ", after.size(),
                   " ", after.slice(maxi(after.size() - 3, 0)))
             print("gcrip defeat: boss_dead ", save.get("boss_dead", {}))
+        elif event_frames > 300:
+            get_tree().quit()
+    if hitsw_test != "":
+        event_frames += 1
+        if event_frames == 40:
+            _hitsw_report()
         elif event_frames > 300:
             get_tree().quit()
     if dungeon_test:
@@ -5365,7 +5393,7 @@ func burst(pos: Vector3, color: Color) -> void:
 
 func scripted() -> bool:
     # any headless harness run: nobody is holding the pad, so "press any key" waits must pass
-    return conduct_test or selftest or story_test or newgame_test or dialogue_test or door_test         or talk_test != "" or event_test != "" or shot_actor != "" or scope_test or near_test or defeat_test != "" or hit_test or timer_test != "" or island_test >= 0 or salvage_test >= 0 or dungeon_test or opening_test or sweep_test or doors_test \
+    return conduct_test or selftest or story_test or newgame_test or dialogue_test or door_test         or talk_test != "" or event_test != "" or shot_actor != "" or scope_test or near_test or defeat_test != "" or hit_test or timer_test != "" or island_test >= 0 or salvage_test >= 0 or dungeon_test or hitsw_test != "" or opening_test or sweep_test or doors_test \
         or models_test or cuts_test or object_test or clock_test
 
 func stage_boss_dead(stage := "") -> bool:
@@ -5561,6 +5589,28 @@ func story_chest_opened(item_id: int) -> void:
 # Lives on Game, not on the scene, because the clock has to survive the warp into the cave.
 var timer_left := -1.0            # seconds remaining, < 0 = no timer running
 var timer_info: Dictionary = {}   # the start step's timer block, so the cave knows its island
+
+func story_hit_switch(actor: String, room: int, swbit: int) -> void:
+    # a hit step whose object is one of these switches finishes when its switch goes on
+    var here := current_stage_key()
+    for step in story.get("steps", []):
+        if str((step.get("trigger") or {}).get("kind", "")) != "hit":
+            continue
+        var id := sfield(step, "id")
+        if story_done(id) or not _story_bits_ok(step):
+            continue
+        var st := sfield(step, "stage")
+        if st != "" and st != here and st != here.split("_r")[0]:
+            continue
+        if str((step.get("trigger") or {}).get("detail", "")).find(actor) < 0:
+            continue
+        _mark_story_done(id)
+        print("gcrip story: ", actor, " switch ", swbit, " (room ", room, ") -> ", id)
+        var ev := sfield(step, "event")
+        if ev != "" and events.has(ev) and run_event(ev):
+            return
+        story_event_done(id)
+        return
 
 func story_timer_running() -> bool:
     return timer_left >= 0.0
@@ -7805,6 +7855,68 @@ func _physics_process(_delta: float) -> void:
     Game.run_event(ev)
 """
 
+_HIT_SWITCH_GD = """extends StaticBody3D
+# gcrip: an object that reacts to ONE kind of attack and raises a switch.  Not a breakable -
+# nothing is destroyed; the switch is the whole point.  See ww_story_labyrinths.json.
+
+var actor := ""
+var params := 0
+var room := 0
+var swbit := 0xFF
+var needs := "any"       # which attack kind this accepts
+var thrown := false
+
+# what each actor's collision accepts, from its own attack-type mask
+const ACCEPTS := {
+    "Qdghd": "fire_arrow", "Ykzyg": "ice_arrow", "MhmrSW0": "hammer",
+    "bonbori": "fire", "SW_HIT0": "any",
+}
+const ITEM_FOR := {
+    "fire_arrow": "the Fire Arrow", "ice_arrow": "the Ice Arrow",
+    "hammer": "the Skull Hammer", "fire": "a flame",
+}
+
+func setup_switch(actor_name: String, p: int, r: int) -> void:
+    actor = actor_name
+    params = p
+    room = r
+    needs = str(ACCEPTS.get(actor_name, "any"))
+    match actor_name:
+        "Qdghd", "Ykzyg":
+            swbit = (p >> 8) & 0xFF
+        "MhmrSW0":
+            swbit = (p >> 8) & 0xFF
+        _:
+            swbit = p & 0xFF
+    if swbit != 0xFF and Game.is_switch(room, swbit):
+        thrown = true
+    add_to_group("hit_switch")
+    collision_layer = 8          # the layer weapons sweep
+    collision_mask = 0
+    var shape := CollisionShape3D.new()
+    var box := BoxShape3D.new()
+    box.size = Vector3(120.0, 160.0, 120.0)
+    shape.shape = box
+    shape.position.y = 80.0
+    add_child(shape)
+
+func take_hit(_damage: int, _from: Vector3, kind := "sword") -> void:
+    if thrown:
+        return
+    if needs != "any" and kind != needs:
+        # the real collision simply does not accept the attack; say what it wants
+        var want: String = str(ITEM_FOR.get(needs, needs))
+        if Game.scripted():
+            print("gcrip hit_switch: ", actor, " ignores ", kind, " - it wants ", want)
+        return
+    thrown = true
+    if swbit != 0xFF:
+        Game.set_switch(room, swbit)
+    print("gcrip hit_switch: ", actor, " struck with ", kind, " -> switch ", swbit,
+        " in room ", room)
+    Game.story_hit_switch(actor, room, swbit)
+"""
+
 _DOOR_GD = """extends StaticBody3D
 # gcrip: a placed door (d_door.cpp + d_a_door10/12/kddoor).  159 door10, 52 door12 and their
 # aliases are placed across the game; until now they were scenery and every doorway was open.
@@ -8322,6 +8434,32 @@ func _spawn_tags() -> void:
         print("gcrip: ", k, " island arrival tags in ", name)
     _spawn_salvage()
     _spawn_missing_doors()
+    _spawn_hit_switches()
+
+const HIT_SWITCHES := ["Qdghd", "Ykzyg", "MhmrSW0", "bonbori", "SW_HIT0"]
+
+func _spawn_hit_switches() -> void:
+    # these are model-less or unmodelled, so they come from the placement lists directly
+    var info: Dictionary = Game.stage_data.get(name, {})
+    var n := 0
+    for lst in ["logic", "actors"]:
+        for rec in info.get(lst, []):
+            var act := str(rec.get("actor", ""))
+            if not HIT_SWITCHES.has(act):
+                continue
+            var lay := int(rec.get("layer", -1))
+            var rm: int = int(rec["room"]) if rec.get("room") != null else 0
+            if lay >= 0 and lay != Game.story_layer(name, rm):
+                continue
+            var sw := StaticBody3D.new()
+            sw.set_script(load("res://actors/hit_switch.gd"))
+            sw.name = "HitSw_%s_%d" % [act, n]
+            add_child(sw)
+            sw.global_position = Vector3(rec["pos"][0], rec["pos"][1], rec["pos"][2])
+            sw.setup_switch(act, int(rec["params"]), rm)
+            n += 1
+    if n > 0:
+        print("gcrip: ", n, " hit switches in ", name)
 
 # Only doors whose MESH resolved get wrapped by _wrap_actors, and several locked kinds
 # (keyshut, keyS12, ZenS12, doorSH) have no model in the exported level - which would leave
@@ -10361,6 +10499,7 @@ def export_godot(
         "tag_island.gd": _TAG_ISLAND_GD,
         "salvage.gd": _SALVAGE_GD,
         "door.gd": _DOOR_GD,
+        "hit_switch.gd": _HIT_SWITCH_GD,
         "npc_tag.gd": _NPC_TAG_GD,
         "hit_object.gd": _HIT_OBJECT_GD,
         "warp_object.gd": _WARP_OBJECT_GD,

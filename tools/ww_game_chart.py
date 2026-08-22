@@ -56,8 +56,10 @@ IMPLEMENTED = {
              " island for good, and running out turns the switch back off and, if Link is"
              " inside, orders TAG_VOLCANO and throws him out onto the island",
     "hit": "actors/hit_object.gd - take_hit stages that each order an event, positioned from"
-           " the stage's own placement records. Verified: the Ajav wall over Jabun's cave"
-           " breaks in three stages, ajav_destroy0 -> ajav_destroy1 -> ajav_uzu",
+           " the stage's own placement records (the Ajav wall over Jabun's cave breaks in three"
+           " stages); plus actors/hit_switch.gd for the objects that accept exactly ONE attack"
+           " kind and raise a switch - 780 bonbori, 50 SW_HIT0, 26 MhmrSW0 and the single Qdghd"
+           " and Ykzyg, with take_hit carrying the attack kind",
 }
 
 # An enemy the mined data names but enemies.json has no profile for is never wrapped, so its
@@ -148,7 +150,13 @@ def step_status(step: dict, scenes: dict[str, set[str]] | None) -> tuple[str, st
             return "partial", f"stage '{step.get('stage')}' is not in the build"
         if ev and ev not in scenes[key]:
             return "missing", f"no TagEv in {key} orders '{ev}'"
+    # a hit step is also covered when its object is one of the switch/lamp actors that
+    # actors/hit_switch.gd places straight from the placement data
+    HIT_SWITCH_ACTORS = ("Qdghd", "Ykzyg", "MhmrSW0", "bonbori", "SW_HIT0")
     if kind == "hit" and not isinstance(step.get("hit"), dict):
+        detail = str((step.get("trigger") or {}).get("detail", ""))
+        if any(a in detail for a in HIT_SWITCH_ACTORS):
+            return "ok", IMPLEMENTED[kind]
         # the mechanism is real, but hit_object.gd is handed a structured block (actor, events,
         # min_damage, room) built by _STORY_HIT; a step mined with its geometry only in the
         # trigger prose has nothing to spawn
