@@ -3133,6 +3133,8 @@ var doors_report: Array = []
 # --models: load every animated actor model and report the ones with no mesh, no clips, or a
 # head model that does not resolve.  --cutscenes: play every baked .stb through to its end.
 var models_test: bool = "--models" in OS.get_cmdline_user_args()
+# --island=<type> : stand Link inside that island's TagIsl, satisfy its terms, watch it fire
+var island_test := -1
 # --timer=<step id>[:win] : raise the island's switch, then run the clock out (or open the chest)
 var timer_test := ""
 var timer_win := false
@@ -3284,6 +3286,8 @@ func _ready() -> void:
             event_test = a.substr(8)
         elif a.begins_with("--talk="):
             talk_test = a.substr(7)
+        elif a.begins_with("--island="):
+            island_test = int(a.substr(9))
         elif a.begins_with("--timer="):
             var tspec := a.substr(8).split(":")
             timer_test = tspec[0]
@@ -3325,6 +3329,10 @@ func _ready() -> void:
             door_test = true
             if a.begins_with("--door="):
                 door_want = a.substr(7)
+    if island_test >= 0:
+        # deferred, like _hit_prepare: load_game() further down _ready REPLACES `save`, so a
+        # bit raised here and now is wiped before the stage ever picks a layer
+        _island_prepare.call_deferred()
     if hit_test:
         _hit_prepare.call_deferred()
     if start_stage != "":
@@ -3793,6 +3801,39 @@ func _opening_start(step: Dictionary, arrived := false) -> void:
             else:
                 story_event_done(id if ev == "" else ev)
 
+func _island_prepare() -> void:
+    # arrivalTerms()/otherCheck() bits have to be up before the stage picks a layer - the
+    # Windfall volume is placed only on layers 2 and 3, the endless-night dressing
+    match island_test:
+        4:
+            set_event_bit(0x0A02)
+        7:
+            set_event_bit(0x0A02)
+            give_item("bomb")
+        5:
+            set_event_bit(0x1608)
+        6:
+            set_event_bit(0x1604)
+
+func _island_test_begin() -> void:
+    var cs := get_tree().current_scene
+    var lk := player()
+    if cs == null or lk == null:
+        print("gcrip island: no scene / player")
+        get_tree().quit()
+        return
+    for c in cs.get_children():
+        if not c.name.begins_with("TagIsl_") or int(c.get("type")) != island_test:
+            continue
+        lk.global_position = (c as Node3D).global_position + Vector3(0, 5, 0)
+        lk.velocity = Vector3.ZERO
+        print("gcrip island: standing in TagIsl type ", island_test, " at ",
+            (c as Node3D).global_position.round(), " radius ", c.get("radius"),
+            " -> expecting ", c.call("event_name"))
+        return
+    print("gcrip island: no TagIsl of type ", island_test, " on this stage's current layer")
+    get_tree().quit()
+
 func _timer_test_begin() -> void:
     # stand in for the fire/ice arrow: raise the sea-side switch this island waits on
     for step in story.get("steps", []):
@@ -4104,6 +4145,24 @@ func _process(delta: float) -> void:
             print("gcrip defeat: boss_dead ", save.get("boss_dead", {}))
         elif event_frames > 300:
             get_tree().quit()
+    if island_test >= 0:
+        event_frames += 1
+        if event_frames == 30:
+            _island_test_begin()
+        elif event_frames > 30 and event_frames % 60 == 0:
+            var cs := get_tree().current_scene
+            var tg: Node = null
+            if cs:
+                for c in cs.get_children():
+                    if c.name.begins_with("TagIsl_") and int(c.get("type")) == island_test:
+                        tg = c
+            print("gcrip island: f", event_frames, " event=", event_running, " cut=",
+                cutscene_running(), " fired=", tg.get("fired") if tg else "?",
+                " done=", (save.get("story_done", {}) as Dictionary).keys())
+            if event_frames > 900 or (tg and bool(tg.get("fired")) and not event_running
+                    and not cutscene_running()):
+                print("gcrip island: done")
+                get_tree().quit()
     if timer_test != "":
         event_frames += 1
         if event_frames == 30:
@@ -5198,7 +5257,7 @@ func burst(pos: Vector3, color: Color) -> void:
 
 func scripted() -> bool:
     # any headless harness run: nobody is holding the pad, so "press any key" waits must pass
-    return conduct_test or selftest or story_test or newgame_test or dialogue_test or door_test         or talk_test != "" or event_test != "" or shot_actor != "" or scope_test or near_test or defeat_test != "" or hit_test or timer_test != "" or opening_test or sweep_test or doors_test \
+    return conduct_test or selftest or story_test or newgame_test or dialogue_test or door_test         or talk_test != "" or event_test != "" or shot_actor != "" or scope_test or near_test or defeat_test != "" or hit_test or timer_test != "" or island_test >= 0 or opening_test or sweep_test or doors_test \
         or models_test or cuts_test or object_test or clock_test
 
 func stage_boss_dead(stage := "") -> bool:
@@ -7412,6 +7471,98 @@ size_flags_vertical = 3
 theme_override_font_sizes/font_size = 18
 """
 
+_TAG_ISLAND_GD = """extends Node3D
+# gcrip: TagIsl (d_a_tag_island.cpp) - the volume that plays an island's arrival cutscene the
+# first time Link reaches it.  Not a TagEv: its own param layout, its own distance test, and a
+# per-type save flag that the demo raises itself so it only ever fires once.
+#
+# Polled rather than an Area3D: checkArea() is a cylinder test the actor runs every frame, and
+# the real one's radius is scale.x * 10000 - a 32000-unit cylinder around Dragon Roost is not
+# something the physics server needs to own.
+
+var params := 0
+var event_no := 0
+var swbit := 0xFF
+var type := 0
+var radius := 10000.0
+var half_h := 10000.0
+var table: Array = []
+var room := 0
+var fired := false
+
+# getArrivalFlag(): the bit each type raises when its demo starts (d_a_tag_island.cpp:85-97)
+const ARRIVAL_FLAG := {1: 0x0902, 2: 0x0A20, 3: 0x0A02, 4: 0x1F04, 5: 0x2E04, 6: 0x2E02, 7: 0x3E10}
+# makeEvId(): the on-foot variant of each arrival, looked up by NAME (:60-82)
+const ON_FOOT := {1: "ARRIVAL_DRG2", 2: "ARRIVAL_FST2", 3: "ARRIVAL_BRK2", 4: "ARRIVAL_TWN2",
+                  5: "ARRIVAL_GND2", 6: "ARRIVAL_WND2", 7: "PUROLO_RETURN2"}
+# otherCheck(): two islands also wait on a story bit (:100-112)
+const OTHER_BIT := {5: 0x1608, 6: 0x1604}
+
+func setup(p: int, r: int, tbl: Array, sc: Array) -> void:
+    params = p
+    room = r
+    table = tbl
+    event_no = (p >> 24) & 0xFF
+    swbit = (p >> 8) & 0xFF
+    type = p & 0xFF
+    radius = maxf(float(sc[0]) * 10000.0, 100.0)
+    half_h = maxf(float(sc[1]) * 10000.0, 100.0)
+
+func arrival_flag() -> int:
+    return int(ARRIVAL_FLAG.get(type, 0))
+
+func event_name() -> String:
+    var base := str(table[event_no]) if event_no < table.size() else ""
+    var lk := Game.player()
+    var aboard: bool = lk != null and lk.get("ship") != null and is_instance_valid(lk.get("ship"))
+    if not aboard and ON_FOOT.has(type) and Game.events.has(str(ON_FOOT[type])):
+        return str(ON_FOOT[type])
+    return base
+
+func arrival_terms() -> bool:
+    # arrivalTerms() + otherCheck(), d_a_tag_island.cpp:100-131
+    var flag := arrival_flag()
+    if flag != 0 and Game.event_bit(flag):
+        return false            # already arrived here once
+    if OTHER_BIT.has(type) and not Game.event_bit(int(OTHER_BIT[type])):
+        return false
+    match type:
+        4:
+            if not Game.night_stop():
+                return false
+        7:
+            if not Game.night_stop() or not Game.has_item("bomb"):
+                return false
+    return true
+
+func check_area(lk: Node3D) -> bool:
+    var d := lk.global_position - global_position
+    var dxz := Vector2(d.x, d.z).length()
+    return dxz < radius and absf(d.y) <= half_h
+
+func _physics_process(_delta: float) -> void:
+    if fired or Game.event_running or Game.cutscene_running() or Game.dialog_open:
+        return
+    if Engine.get_physics_frames() % 8 != 0:
+        return
+    var lk := Game.player()
+    if lk == null or not check_area(lk):
+        return
+    if not arrival_terms():
+        return
+    var ev := event_name()
+    if ev == "" or not Game.events.has(ev):
+        return
+    fired = true
+    var flag := arrival_flag()
+    if flag != 0:
+        Game.set_event_bit(flag)    # demoInitProc(): raised as the demo STARTS (:134-137)
+    print("gcrip island: type ", type, " arrival -> ", ev, " (flag 0x%04X)" % flag)
+    if swbit != 0xFF:
+        Game.set_switch(room, swbit)
+    Game.run_event(ev)
+"""
+
 _CONTROL_GD = 'extends Node\n# gcrip: a debug control channel.  Started only by --control[=<port>] and bound to 127.0.0.1,\n# it accepts one JSON object per line and answers with one JSON object per line, so an outside\n# tool (the gcrip MCP server) can drive a running game instead of the game running a canned\n# script.  Never start this in a build you hand to anyone.\n\nconst DEFAULT_PORT := 8787\n\nvar server := TCPServer.new()\nvar peers: Array[StreamPeerTCP] = []\nvar buffers: Array[String] = []\nvar port := DEFAULT_PORT\nvar held: Dictionary = {}          # action -> frames left to hold\n\nfunc start(p: int) -> bool:\n    port = p\n    var err := server.listen(port, "127.0.0.1")\n    if err != OK:\n        push_error("gcrip control: cannot listen on 127.0.0.1:%d (%d)" % [port, err])\n        return false\n    print("gcrip control: listening on 127.0.0.1:", port)\n    return true\n\nfunc _process(_delta: float) -> void:\n    while server.is_connection_available():\n        var peer := server.take_connection()\n        peers.append(peer)\n        buffers.append("")\n        print("gcrip control: client connected")\n    var i := 0\n    while i < peers.size():\n        var peer: StreamPeerTCP = peers[i]\n        peer.poll()\n        if peer.get_status() != StreamPeerTCP.STATUS_CONNECTED:\n            peers.remove_at(i)\n            buffers.remove_at(i)\n            continue\n        var n := peer.get_available_bytes()\n        if n > 0:\n            buffers[i] += peer.get_utf8_string(n)\n        while buffers[i].find("\\n") >= 0:\n            var cut := buffers[i].find("\\n")\n            var line := buffers[i].substr(0, cut).strip_edges()\n            buffers[i] = buffers[i].substr(cut + 1)\n            if line != "":\n                var reply := _handle(line)\n                peer.put_data((JSON.stringify(reply) + "\\n").to_utf8_buffer())\n        i += 1\n\nfunc _physics_process(_delta: float) -> void:\n    # a held button has to span whole PHYSICS frames: the player polls\n    # is_action_just_pressed there, and _process can run many times between two ticks\n    for a in held.keys():\n        held[a] -= 1\n        if held[a] <= 0:\n            Input.action_release(a)\n            held.erase(a)\n\nfunc _handle(line: String) -> Dictionary:\n    var msg = JSON.parse_string(line)\n    if not (msg is Dictionary):\n        return {"ok": false, "error": "not a JSON object"}\n    var cmd := str(msg.get("cmd", ""))\n    match cmd:\n        "state":\n            return {"ok": true, "state": _state()}\n        "stages":\n            var out: Array = []\n            for k in Game.stage_data.keys():\n                if Game.playable(k):\n                    out.append(k)\n            out.sort()\n            return {"ok": true, "stages": out, "names": Game.stage_names}\n        "warp":\n            var st := str(msg.get("stage", ""))\n            if not Game.stage_data.has(st):\n                return {"ok": false, "error": "no such stage: " + st}\n            Game.last_warp_ms = -100000\n            Game.warp(st, int(msg.get("room", 0)), int(msg.get("spawn", 0)))\n            return {"ok": true}\n        "place":\n            var lk := Game.player()\n            if lk == null:\n                return {"ok": false, "error": "no player"}\n            lk.global_position = Vector3(\n                float(msg.get("x", lk.global_position.x)),\n                float(msg.get("y", lk.global_position.y)),\n                float(msg.get("z", lk.global_position.z)))\n            lk.velocity = Vector3.ZERO\n            if msg.has("facing_deg"):\n                lk.set("facing", deg_to_rad(float(msg["facing_deg"])))\n            return {"ok": true, "state": _state()}\n        "input":\n            # hold an input action for N frames, the way a player would tap or hold it\n            var action := str(msg.get("action", ""))\n            if action == "":\n                return {"ok": false, "error": "no action"}\n            if not InputMap.has_action(action):\n                return {"ok": false, "error": "no such action: " + action,\n                        "actions": InputMap.get_actions()}\n            Input.action_press(action, float(msg.get("strength", 1.0)))\n            held[action] = maxi(int(msg.get("frames", 2)), 1)\n            return {"ok": true}\n        "stick":\n            # the analog stick, as a held vector (x right, y forward)\n            Game.control_stick = Vector2(float(msg.get("x", 0.0)), float(msg.get("y", 0.0)))\n            Game.control_stick_frames = int(msg.get("frames", 30))\n            return {"ok": true}\n        "actors":\n            var out2: Array = []\n            for grp in ["interact", "enemy", "pickup"]:\n                for nd in get_tree().get_nodes_in_group(grp):\n                    if is_instance_valid(nd):\n                        var nm = nd.get("actor")\n                        out2.append({"actor": str(nm) if nm != null else "",\n                                     "node": String(nd.name), "group": grp,\n                                     "pos": _v(nd.global_position)})\n            return {"ok": true, "actors": out2}\n        "talk":\n            var who := str(msg.get("actor", ""))\n            var target := Game._find_actor(who)\n            var lk2 := Game.player()\n            if target == null or lk2 == null:\n                return {"ok": false, "error": "no " + who + " here"}\n            lk2.global_position = target.global_position + Vector3(0, 5, 120)\n            target.interact(lk2)\n            return {"ok": true, "state": _state()}\n        "event":\n            var ev := str(msg.get("name", ""))\n            if not Game.events.has(ev):\n                return {"ok": false, "error": "no event " + ev + " in this stage",\n                        "events": Game.events.keys()}\n            return {"ok": Game.run_event(ev)}\n        "dialog":\n            if Game.dialog and Game.dialog_open:\n                Game.dialog.advance()\n            return {"ok": true, "open": Game.dialog_open}\n        "defeat":\n            var who := str(msg.get("actor", ""))\n            if who == "room":\n                Game.story_room_cleared(int(msg.get("room", 0)))\n            else:\n                Game.story_enemy_defeated(who, bool(msg.get("boss", false)))\n            return {"ok": true, "story_done": (Game.save.get("story_done", {}) as Dictionary).keys(),\n                    "boss_dead": Game.save.get("boss_dead", {})}\n        "story_place":\n            # move a named actor (npc_tag: put Medli inside the TagMd box) or place a\n            # breakable story object at a point (hit: the Ajav wall has no placement yet)\n            var pwho := str(msg.get("actor", ""))\n            var plk := Game.player()\n            var at: Vector3 = plk.global_position if plk else Vector3.ZERO\n            if msg.has("x"):\n                at = Vector3(float(msg["x"]), float(msg.get("y", at.y)), float(msg["z"]))\n            if bool(msg.get("hit", false)):\n                var hscene := get_tree().current_scene\n                if hscene == null or not hscene.has_method("spawn_hit_object"):\n                    return {"ok": false, "error": "this scene places no hit objects"}\n                for step in Game.story_hit_steps():\n                    var hb: Dictionary = step.get("hit", {})\n                    if pwho != "" and str(hb.get("actor", "")) != pwho:\n                        continue\n                    var nd = hscene.spawn_hit_object(step, at,\n                        float(msg.get("facing_deg", 0.0)))\n                    return {"ok": true, "node": String(nd.name), "at": _v(at),\n                            "events": hb.get("events", [])}\n                return {"ok": false, "error": "no story hit step is waiting here"}\n            var pt := Game._find_actor(pwho)\n            if pt == null:\n                return {"ok": false, "error": "no " + pwho + " here"}\n            pt.global_position = at\n            return {"ok": true, "at": _v(at), "ground": Game.ground_height(at),\n                    "story_done": (Game.save.get("story_done", {}) as Dictionary).keys(),\n                    "hit_log": Game.hit_log}\n\n        "reg":\n            var rid := int(msg.get("id", 0))\n            if msg.has("value"):\n                Game.set_event_reg(rid, int(msg["value"]))\n            return {"ok": true, "value": Game.event_reg(rid)}\n        "bit":\n            var id := int(msg.get("id", 0))\n            if msg.has("set"):\n                if bool(msg["set"]):\n                    Game.set_event_bit(id)\n                return {"ok": true, "value": Game.event_bit(id)}\n            return {"ok": true, "value": Game.event_bit(id)}\n        "item":\n            var nm := str(msg.get("name", ""))\n            if bool(msg.get("give", false)):\n                Game.give_item(nm)\n            return {"ok": true, "has": Game.has_item(nm), "items": Game.save.get("items", {})}\n        "screenshot":\n            var img := get_viewport().get_texture().get_image()\n            if img == null:\n                return {"ok": false, "error": "no viewport image (running headless?)"}\n            var path := str(msg.get("path", "user://control_shot.png"))\n            img.save_png(path)\n            return {"ok": true, "path": ProjectSettings.globalize_path(path)}\n        "ground":\n            var lk3 := Game.player()\n            var at: Vector3 = lk3.global_position if lk3 else Vector3.ZERO\n            if msg.has("x"):\n                at = Vector3(float(msg["x"]), float(msg.get("y", 0.0)), float(msg["z"]))\n            return {"ok": true, "under": Game.ground_under(at), "at": _v(at)}\n        "quit":\n            get_tree().quit()\n            return {"ok": true}\n    return {"ok": false, "error": "unknown cmd: " + cmd,\n            "commands": ["state", "stages", "warp", "place", "input", "stick", "actors",\n                         "talk", "event", "dialog", "bit", "item", "defeat", "screenshot",\n                         "story_place",\n                         "ground",\n                         "quit"]}\n\nfunc _v(p: Vector3) -> Array:\n    return [snappedf(p.x, 0.1), snappedf(p.y, 0.1), snappedf(p.z, 0.1)]\n\nfunc _state() -> Dictionary:\n    var cs := get_tree().current_scene\n    var lk := Game.player()\n    var st := {\n        "scene": String(cs.name) if cs else "",\n        "stage": Game.current_stage_key(),\n        "event_running": Game.event_running,\n        "cutscene": Game.cutscene_running(),\n        "dialog_open": Game.dialog_open,\n        "hearts": Game.save.get("hearts", 0),\n        "items": Game.save.get("items", {}),\n        "story_done": (Game.save.get("story_done", {}) as Dictionary).keys(),\n    }\n    if lk:\n        st["pos"] = _v(lk.global_position)\n        st["facing_deg"] = snappedf(rad_to_deg(float(lk.get("facing"))), 0.1)\n        st["state"] = int(lk.get("state"))\n        st["ground"] = Game.ground_under(lk.global_position)\n        var pt = lk.get("prompt_target")\n        st["prompt_target"] = (str(pt.get("actor")) if pt != null and is_instance_valid(pt)\n            else "")\n    return st\n'
 
 _DIALOG_GD = """extends CanvasLayer
@@ -7670,6 +7821,24 @@ func _spawn_tags() -> void:
         n += 1
     if n > 0:
         print("gcrip: ", n, " event tags in ", name)
+    # island arrivals are their own actor (TagIsl, d_a_tag_island.cpp) with their own rules
+    var k := 0
+    for rec in info.get("tags", []):
+        if str(rec.get("actor", "")) != "TagIsl":
+            continue
+        var lay := int(rec.get("layer", -1))
+        var rm: int = int(rec["room"]) if rec.get("room") != null else 0
+        if lay >= 0 and lay != Game.story_layer(name, rm):
+            continue                # Windfall's night-only arrival lives on layers 2/3
+        var isl := Node3D.new()
+        isl.set_script(load("res://actors/tag_island.gd"))
+        isl.name = "TagIsl_%d" % k
+        add_child(isl)
+        isl.global_position = Vector3(rec["pos"][0], rec["pos"][1], rec["pos"][2])
+        isl.setup(int(rec["params"]), rm, table, rec.get("scale", [1, 1, 1]))
+        k += 1
+    if k > 0:
+        print("gcrip: ", k, " island arrival tags in ", name)
 
 # tag volumes that watch a named NPC instead of Link (actors/npc_tag.gd).  These live in
 # the same "tags" list as TagEv, but they are their own pass: TagEv is a player trigger and
@@ -9646,6 +9815,7 @@ def export_godot(
         "kui.gd": _KUI_GD,
         "enemy.gd": _ACTOR_ENEMY_GD,
         "tag_event.gd": _TAG_EVENT_GD,
+        "tag_island.gd": _TAG_ISLAND_GD,
         "npc_tag.gd": _NPC_TAG_GD,
         "hit_object.gd": _HIT_OBJECT_GD,
         "warp_object.gd": _WARP_OBJECT_GD,

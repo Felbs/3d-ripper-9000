@@ -5,7 +5,7 @@ the mined data - the player's own state machine, the item list, the enemy table,
 baked cutscenes, the story graph - so this cannot drift from what the engine does.
 
 **Systems:** 10 working, 4 partial, 0 not started.  
-**Story:** 357 of 415 mined steps reachable (20 partial, 38 missing) across 18 chapters: outset, fortress, dragonroost, forbiddenwoods, jabun, towerofgods, hyrule, temples, fortress2, ganon, ganontower, caves, gallery, houses, labyrinths, minigames, triforce, windfall.
+**Story:** 362 of 415 mined steps reachable (20 partial, 33 missing) across 18 chapters: outset, fortress, dragonroost, forbiddenwoods, jabun, towerofgods, hyrule, temples, fortress2, ganon, ganontower, caves, gallery, houses, labyrinths, minigames, triforce, windfall.
 
 ## 1. Systems
 
@@ -164,7 +164,7 @@ flowchart TD
         ff_meet_korl --> ff_board_korl
     end
     subgraph dragonroost["dragonroost"]
-        dr_arrive_island["dr_arrive_island<br/>ARRIVAL_DRG<br/>sets 0x0902<br/><i>tag - MISSING</i>"]
+        dr_arrive_island["dr_arrive_island<br/>ARRIVAL_DRG<br/>sets 0x0902<br/><i>tag - OK</i>"]
         dr_chieftain_dragontale["dr_chieftain_dragontale<br/>dragontale.stb<br/><i>tag - OK</i>"]
         dr_arrive_island --> dr_chieftain_dragontale
         dr_medli_gives_letter["dr_medli_gives_letter<br/>Md_ItemGet<br/>sets 0x0E02<br/><i>talk - OK</i>"]
@@ -202,7 +202,7 @@ flowchart TD
     end
     subgraph forbiddenwoods["forbiddenwoods"]
         fw_korl_sends_link_to_forest["fw_korl_sends_link_to_forest<br/>sets 0x0A80<br/><i>talk - OK</i>"]
-        fw_arrive_forest_haven["fw_arrive_forest_haven<br/>ARRIVAL_FST<br/>sets 0x0A20<br/><i>tag - MISSING</i>"]
+        fw_arrive_forest_haven["fw_arrive_forest_haven<br/>ARRIVAL_FST<br/>sets 0x0A20<br/><i>tag - OK</i>"]
         fw_korl_sends_link_to_forest --> fw_arrive_forest_haven
         fw_korl_forest_directions["fw_korl_forest_directions<br/>sets 0x2B80<br/><i>talk - OK</i>"]
         fw_arrive_forest_haven --> fw_korl_forest_directions
@@ -251,13 +251,13 @@ flowchart TD
     end
     subgraph jabun["jabun"]
         jab_korl_points_to_greatfish["jab_korl_points_to_greatfish<br/>sets 0x0A08<br/><i>talk - OK</i>"]
-        jab_arrive_greatfish_ruined["jab_arrive_greatfish_ruined<br/>ARRIVAL_BRK<br/>sets 0x0A02<br/><i>tag - MISSING</i>"]
+        jab_arrive_greatfish_ruined["jab_arrive_greatfish_ruined<br/>ARRIVAL_BRK<br/>sets 0x0A02<br/><i>tag - OK</i>"]
         jab_korl_points_to_greatfish --> jab_arrive_greatfish_ruined
         jab_korl_briefing_after_greatfish["jab_korl_briefing_after_greatfish<br/>sets 0x0A01<br/><i>talk - OK</i>"]
         jab_arrive_greatfish_ruined --> jab_korl_briefing_after_greatfish
         jab_quill_at_greatfish["jab_quill_at_greatfish<br/><i>talk - OK</i>"]
         jab_korl_briefing_after_greatfish --> jab_quill_at_greatfish
-        jab_arrive_windfall_night["jab_arrive_windfall_night<br/>ARRIVAL_TWN<br/>sets 0x1F04<br/><i>tag - MISSING</i>"]
+        jab_arrive_windfall_night["jab_arrive_windfall_night<br/>ARRIVAL_TWN<br/>sets 0x1F04<br/><i>tag - OK</i>"]
         jab_quill_at_greatfish --> jab_arrive_windfall_night
         jab_bombshop_raid["jab_bombshop_raid<br/>bombshop.stb<br/>sets 0x2110 0x3B20 0x2110 0x2110 0x2110 0x2110 0x2110<br/><i>tag - OK</i>"]
         jab_arrive_windfall_night --> jab_bombshop_raid
@@ -277,7 +277,7 @@ flowchart TD
         jab_rope_course_2_cleared --> jab_get_bomb_bag
         jab_korl_briefing_after_bombs["jab_korl_briefing_after_bombs<br/>sets 0x1F02<br/><i>talk - OK</i>"]
         jab_get_bomb_bag --> jab_korl_briefing_after_bombs
-        jab_return_to_outset["jab_return_to_outset<br/>PUROLO_RETURN<br/>sets 0x3E10<br/><i>tag - MISSING</i>"]
+        jab_return_to_outset["jab_return_to_outset<br/>PUROLO_RETURN<br/>sets 0x3E10<br/><i>tag - OK</i>"]
         jab_korl_briefing_after_bombs --> jab_return_to_outset
         jab_blow_open_the_cave["jab_blow_open_the_cave<br/>ajav_uzu<br/><i>hit - OK</i>"]
         jab_return_to_outset --> jab_blow_open_the_cave
@@ -1074,9 +1074,9 @@ flowchart TD
     jab_arrive_windfall_night -.->|0x1F04| wf_sploosh_kaboom
     jab_arrive_windfall_night -.->|0x1F04| wf_chu_jelly_juice_shop
     jab_arrive_windfall_night -.->|0x1F04| wf_bomb_shop
-    class opening_lookout_awake,aryll_tower_first_talk,grandma_birthday_talk,tale_demo_hero_clothes,aryll_omedeto,aryll_get_telescope,telescope_watch_quill,zelda_fly_helmaroc,aryll_etalk,grandma_after_prologue,orca_first_talk,orca_sparring_lesson,orca_gives_hero_sword,orca_spin_attack_lesson,grandma_after_sword,amori_bokoblin_dropin,amori_meet_tetra,outset_ridge_layer9,stolen_sister,outset_village_layer2,look_shield,grandma_gives_shield,grandma_after_kidnap,tetra_dock_conversation,tetra_board_ship,departure,post_outset_note,ff_ride_to_fortress,ff_launched_at_fortress,ff_arrive_exterior,ff_tower_looks,ff_tetra_ooi,ff_infiltration,ff_searchlight_look,ff_push_barrel,ff_interior_cells,ff_door_looks,ff_moblin_patrol,ff_find_sister,ff_meet_korl,ff_board_korl,dr_chieftain_dragontale,dr_medli_gives_letter,dr_medli_cliff_request,dr_throw_medli_to_ledge,dr_bomb_the_spring,dr_enter_cavern,dr_cavern_set_pieces,dr_trapped_with_bokoblins,dr_clear_room_bars_open,dr_grappling_hook,dr_carry_medli,dr_gohma,dr_boss_warp_out,dr_valoo_calms,dr_dins_pearl,dr_secret_cave,fw_korl_sends_link_to_forest,fw_korl_forest_directions,fw_forest_haven_looks,fw_fall_into_forest_haven,fw_mori_inside,fw_meet_deku_tree,fw_get_deku_leaf,fw_woods_telop,fw_woods_cameras,fw_dungeon_items,fw_mothula,fw_get_boomerang,fw_kalle_demos,fw_heart_container,fw_rescue_makar,fw_warp_out_with_makar,fw_boss_warpout_to_forest_haven,fw_getperl_deku,fw_makar_in_forest_haven,fw_korl_after_the_pearl,fw_otkura_boundary,jab_korl_points_to_greatfish,jab_korl_briefing_after_greatfish,jab_quill_at_greatfish,jab_bombshop_raid,jab_password_door,jab_board_pirate_ship,jab_rope_course_2,jab_rope_course_2_cleared,jab_get_bomb_bag,jab_korl_briefing_after_bombs,jab_blow_open_the_cave,jab_receive_nayrus_pearl,jab_curse_broken,jab_abship_not_in_this_chapter,totg_pearl_din,totg_first_statue_reaction,totg_place_pearl,totg_tower_rises,totg_tower_rises_cutscene,totg_arrive_tower,totg_enter_dungeon,totg_interior_camera_beats,totg_wake_servants,totg_trial_east,totg_trial_west,totg_trial_north,totg_pedestals_done,totg_warp_up,totg_big_key,totg_darknut,totg_get_bow,totg_gohdan,totg_heart_container,totg_boss_warp,totg_descend_shaft,totg_warp_to_hyrule,totg_return_from_tower,totg_later_return_to_hyrule,hy_warp_in,hy_descent,hy_courtyard,hy_intro,hy_floor_puzzle,hy_statue_moves,hy_draw_master_sword,hy_rebirth,hy_swing_sword,hy_fight_out,hy_warp_back,hy_return_route_opens,hy_second_visit_awake_zelda,hy_third_visit_swordroom_ambush,hy_third_visit_break_barrier,et_land_headstone,et_enter_edaichi,et_learn_earth_gods_lyric,et_dance_zola,et_duet_opens_earth_temple,et_hole_cam,et_inner_tablets,et_warp_jars,et_mkie_block_cameras,et_moro_cam,et_stalfos_miniboss,et_jalhalla,et_boss_warp,et_pray_zola,wt_land_gale_isle,wt_enter_ekaze,wt_learn_wind_gods_aria,wt_dance_kokiri,wt_duet_opens_wind_temple,wt_makar_sows_seeds,wt_inner_tablets,wt_wizzrobe_miniboss,wt_molgera,wt_boss_warp,wt_pray_kokiri,ff2_sail_to_fortress,ff2_land_at_fortress,ff2_enter_interior,ff2_moblins_patrol,ff2_interior_chests,ff2_phantom_ganon,ff2_skull_hammer,ff2_rescue,ff2_tower_redressed,ff2_helmaroc_king,ff2_enter_ganon_room,ff2_attack_ganon,ff2_runaway_majuto,ff2_after_endless_night,gt_tower_intro,gt_trial_gohma,gt_trial_kalle_demos,gt_trial_jalhalla,gt_trial_molgera,gt_four_doors_open,gt_phantom_ganon,gt_puppet_ganon,gt_to_the_roof,gt_rooftop_confrontation,gt_endhr,gt_ending,gtj_enter_maze,gtj_doorsound_path,gtj_trap_room_moblins,gtj_trap_room_bokoblins,gtj_trap_room_darknuts,gtj_trap_room_moblin_pair,gtj_seal_room13,gtj_light_arrow_chest,gtj_maze_exit,gtn_stairs_to_the_hub,gtn_top_of_stairs,gtl_stairs_to_puppet_ganon,gtl_clear_the_stairs,gtl_to_puppet_ganon,gtx_rematch_gohma,gtx_rematch_kalle_demos,gtx_rematch_jalhalla,gtx_rematch_molgera,gtx_return_to_the_trial_hall,ff3_third_visit_swap,ff3_enter_the_cells,ff3_deserted_fortress,ff3_moro_cam,ff3_chests,ff3_warp_to_ganons_tower,cave_clear_room,cave_switch_chest,cave_open_chest,cave_heart_piece,cave_triforce_chart,cave_treasure_chart,savage_labyrinth,cave08_unused,fairy_island_arrival,fairy_fountain_enter,great_fairy_arrival,great_fairy_upgrade,fairy_fountain_heal,bigocto_fairy_freed,bigocto_fairy_magic,otkura_wind_gods_aria,otkura_awake_kokiri,gal_hatch_open,gal_enter,gal_meet_carlov,gal_collect_figure,gal_go_and_look,gal_hall_doors,gal_halls,gal_complete,pship_chart,pship_appear,pship_board,pship_treasure,pship_clear,steel_approach,steel_interior,steel_chest,sub_board,sub_interior,sub_ladder_down,sub_chests,shop_board,house_abesso_enter,house_abesso_sliding_puzzle,house_abesso_puzzle_display_board,house_abesso_grapple_point,house_abesso_labyrinth_entrance_missing,house_abesso_dead_layer_7,house_ojhous2_is_unreachable,house_ojhous2_suebelle_upstairs,house_omasao_enter,house_omasao_resident_is_night_only,house_omasao_chest,house_omasao_dead_layers,house_onobuta_enter,house_onobuta_day_and_night_residents,house_linkug_is_unused,house_ocrogh_walk_start,house_pdrgsh_next_link,house_pdrgsh_shelf_items,house_orichh_auction_is_night_only,house_orichh_residents,house_orichh_chest,house_ebesso_is_empty,house_tincle_is_empty,house_mukao_is_empty,house_kazan_is_empty,grotto_entrance,cave_exit_lightcolumn,icering_timer_starts,icering_iron_boots,icering_beaten,icering_timeout,firemountain_timer_starts,firemountain_power_bracelets,firemountain_beaten,firemountain_ekao,savage_labyrinth_entrance,savage_labyrinth_descent,savage_labyrinth_escape,savage_labyrinth_floor30,savage_labyrinth_floor50,savage_labyrinth_leftovers,triforce_platform_song,gauntlet_quad_room,gauntlet_progress_torches,tf07_broken_copy,cabana_water_cull,subd42_warpd_leftover,warp_maze_pot,warp_maze_floormaster,angular_isles_light_sensors,subd71_ghost_ship_rooms,cliff_plateau_two_mouths,pawprint_chuchu_boulders,cave06_dead_copy,minihyo_debug_pitfall,mg_birdman_look,mg_birdman_launch,mg_birdman_flight,mg_birdman_prize,mg_boating_briefing,mg_boating_enter,mg_boating_start,mg_boating_fail,mg_boating_reward,mg_squid_enter,mg_squid_play,mg_squid_prize,mg_cannon_game,mg_big_octo,mg_cyclones,mg_cyclones_off,mg_hoho_lookouts,mg_fishman_chart,mg_hyoi_seagull,mg_sea_platforms,tf_korl_briefing,tf_tingle_jail_talk,tf_find_the_eight_charts,tf_ghost_ship_chart,tf_tingle_decipher_chart,tf_chart_state_is_not_an_event_bit,tf_open_chart_on_sea_chart,tf_salvage_arm,tf_warship_guards_shard,tf_golden_warship,tf_korl_confirms_complete,tf_gate_to_hyrule,tf_descend_to_hyrule,tf_assembled_triforce_layer,wf_town_title_card,wf_jail_entry_camera,wf_jail_picto_box,wf_jail_rotten_floor,wf_tingle_through_bars,wf_free_tingle,wf_lenzo_first_talk,wf_lenzo_attic_chests,wf_lenzo_sees_picto_box,wf_lenzo_research_assistant,wf_killer_bees_first_talk,wf_hide_and_seek,wf_hide_and_seek_cleared,wf_marie_first_talk,wf_marie_asks_for_pendant,wf_bees_point_at_the_tree,wf_marie_preach,wf_auction,wf_moblins_letter,wf_cafe_bar_camera,wf_tott_dance,wf_bomb_shop,wf_hollo_shop_is_not_windfall ok;
+    class opening_lookout_awake,aryll_tower_first_talk,grandma_birthday_talk,tale_demo_hero_clothes,aryll_omedeto,aryll_get_telescope,telescope_watch_quill,zelda_fly_helmaroc,aryll_etalk,grandma_after_prologue,orca_first_talk,orca_sparring_lesson,orca_gives_hero_sword,orca_spin_attack_lesson,grandma_after_sword,amori_bokoblin_dropin,amori_meet_tetra,outset_ridge_layer9,stolen_sister,outset_village_layer2,look_shield,grandma_gives_shield,grandma_after_kidnap,tetra_dock_conversation,tetra_board_ship,departure,post_outset_note,ff_ride_to_fortress,ff_launched_at_fortress,ff_arrive_exterior,ff_tower_looks,ff_tetra_ooi,ff_infiltration,ff_searchlight_look,ff_push_barrel,ff_interior_cells,ff_door_looks,ff_moblin_patrol,ff_find_sister,ff_meet_korl,ff_board_korl,dr_arrive_island,dr_chieftain_dragontale,dr_medli_gives_letter,dr_medli_cliff_request,dr_throw_medli_to_ledge,dr_bomb_the_spring,dr_enter_cavern,dr_cavern_set_pieces,dr_trapped_with_bokoblins,dr_clear_room_bars_open,dr_grappling_hook,dr_carry_medli,dr_gohma,dr_boss_warp_out,dr_valoo_calms,dr_dins_pearl,dr_secret_cave,fw_korl_sends_link_to_forest,fw_arrive_forest_haven,fw_korl_forest_directions,fw_forest_haven_looks,fw_fall_into_forest_haven,fw_mori_inside,fw_meet_deku_tree,fw_get_deku_leaf,fw_woods_telop,fw_woods_cameras,fw_dungeon_items,fw_mothula,fw_get_boomerang,fw_kalle_demos,fw_heart_container,fw_rescue_makar,fw_warp_out_with_makar,fw_boss_warpout_to_forest_haven,fw_getperl_deku,fw_makar_in_forest_haven,fw_korl_after_the_pearl,fw_otkura_boundary,jab_korl_points_to_greatfish,jab_arrive_greatfish_ruined,jab_korl_briefing_after_greatfish,jab_quill_at_greatfish,jab_arrive_windfall_night,jab_bombshop_raid,jab_password_door,jab_board_pirate_ship,jab_rope_course_2,jab_rope_course_2_cleared,jab_get_bomb_bag,jab_korl_briefing_after_bombs,jab_return_to_outset,jab_blow_open_the_cave,jab_receive_nayrus_pearl,jab_curse_broken,jab_abship_not_in_this_chapter,totg_pearl_din,totg_first_statue_reaction,totg_place_pearl,totg_tower_rises,totg_tower_rises_cutscene,totg_arrive_tower,totg_enter_dungeon,totg_interior_camera_beats,totg_wake_servants,totg_trial_east,totg_trial_west,totg_trial_north,totg_pedestals_done,totg_warp_up,totg_big_key,totg_darknut,totg_get_bow,totg_gohdan,totg_heart_container,totg_boss_warp,totg_descend_shaft,totg_warp_to_hyrule,totg_return_from_tower,totg_later_return_to_hyrule,hy_warp_in,hy_descent,hy_courtyard,hy_intro,hy_floor_puzzle,hy_statue_moves,hy_draw_master_sword,hy_rebirth,hy_swing_sword,hy_fight_out,hy_warp_back,hy_return_route_opens,hy_second_visit_awake_zelda,hy_third_visit_swordroom_ambush,hy_third_visit_break_barrier,et_land_headstone,et_enter_edaichi,et_learn_earth_gods_lyric,et_dance_zola,et_duet_opens_earth_temple,et_hole_cam,et_inner_tablets,et_warp_jars,et_mkie_block_cameras,et_moro_cam,et_stalfos_miniboss,et_jalhalla,et_boss_warp,et_pray_zola,wt_land_gale_isle,wt_enter_ekaze,wt_learn_wind_gods_aria,wt_dance_kokiri,wt_duet_opens_wind_temple,wt_makar_sows_seeds,wt_inner_tablets,wt_wizzrobe_miniboss,wt_molgera,wt_boss_warp,wt_pray_kokiri,ff2_sail_to_fortress,ff2_land_at_fortress,ff2_enter_interior,ff2_moblins_patrol,ff2_interior_chests,ff2_phantom_ganon,ff2_skull_hammer,ff2_rescue,ff2_tower_redressed,ff2_helmaroc_king,ff2_enter_ganon_room,ff2_attack_ganon,ff2_runaway_majuto,ff2_after_endless_night,gt_tower_intro,gt_trial_gohma,gt_trial_kalle_demos,gt_trial_jalhalla,gt_trial_molgera,gt_four_doors_open,gt_phantom_ganon,gt_puppet_ganon,gt_to_the_roof,gt_rooftop_confrontation,gt_endhr,gt_ending,gtj_enter_maze,gtj_doorsound_path,gtj_trap_room_moblins,gtj_trap_room_bokoblins,gtj_trap_room_darknuts,gtj_trap_room_moblin_pair,gtj_seal_room13,gtj_light_arrow_chest,gtj_maze_exit,gtn_stairs_to_the_hub,gtn_top_of_stairs,gtl_stairs_to_puppet_ganon,gtl_clear_the_stairs,gtl_to_puppet_ganon,gtx_rematch_gohma,gtx_rematch_kalle_demos,gtx_rematch_jalhalla,gtx_rematch_molgera,gtx_return_to_the_trial_hall,ff3_third_visit_swap,ff3_enter_the_cells,ff3_deserted_fortress,ff3_moro_cam,ff3_chests,ff3_warp_to_ganons_tower,cave_clear_room,cave_switch_chest,cave_open_chest,cave_heart_piece,cave_triforce_chart,cave_treasure_chart,savage_labyrinth,cave08_unused,fairy_island_arrival,fairy_fountain_enter,great_fairy_arrival,great_fairy_upgrade,fairy_fountain_heal,bigocto_fairy_freed,bigocto_fairy_magic,otkura_wind_gods_aria,otkura_awake_kokiri,gal_hatch_open,gal_enter,gal_meet_carlov,gal_collect_figure,gal_go_and_look,gal_hall_doors,gal_halls,gal_complete,pship_chart,pship_appear,pship_board,pship_treasure,pship_clear,steel_approach,steel_interior,steel_chest,sub_board,sub_interior,sub_ladder_down,sub_chests,shop_board,house_abesso_enter,house_abesso_sliding_puzzle,house_abesso_puzzle_display_board,house_abesso_grapple_point,house_abesso_labyrinth_entrance_missing,house_abesso_dead_layer_7,house_ojhous2_is_unreachable,house_ojhous2_suebelle_upstairs,house_omasao_enter,house_omasao_resident_is_night_only,house_omasao_chest,house_omasao_dead_layers,house_onobuta_enter,house_onobuta_day_and_night_residents,house_linkug_is_unused,house_ocrogh_walk_start,house_pdrgsh_next_link,house_pdrgsh_shelf_items,house_orichh_auction_is_night_only,house_orichh_residents,house_orichh_chest,house_ebesso_is_empty,house_tincle_is_empty,house_mukao_is_empty,house_kazan_is_empty,grotto_entrance,cave_exit_lightcolumn,icering_timer_starts,icering_iron_boots,icering_beaten,icering_timeout,firemountain_timer_starts,firemountain_power_bracelets,firemountain_beaten,firemountain_ekao,savage_labyrinth_entrance,savage_labyrinth_descent,savage_labyrinth_escape,savage_labyrinth_floor30,savage_labyrinth_floor50,savage_labyrinth_leftovers,triforce_platform_song,gauntlet_quad_room,gauntlet_progress_torches,tf07_broken_copy,cabana_water_cull,subd42_warpd_leftover,warp_maze_pot,warp_maze_floormaster,angular_isles_light_sensors,subd71_ghost_ship_rooms,cliff_plateau_two_mouths,pawprint_chuchu_boulders,cave06_dead_copy,minihyo_debug_pitfall,mg_birdman_look,mg_birdman_launch,mg_birdman_flight,mg_birdman_prize,mg_boating_briefing,mg_boating_enter,mg_boating_start,mg_boating_fail,mg_boating_reward,mg_squid_enter,mg_squid_play,mg_squid_prize,mg_cannon_game,mg_big_octo,mg_cyclones,mg_cyclones_off,mg_hoho_lookouts,mg_fishman_chart,mg_hyoi_seagull,mg_sea_platforms,tf_korl_briefing,tf_tingle_jail_talk,tf_find_the_eight_charts,tf_ghost_ship_chart,tf_tingle_decipher_chart,tf_chart_state_is_not_an_event_bit,tf_open_chart_on_sea_chart,tf_salvage_arm,tf_warship_guards_shard,tf_golden_warship,tf_korl_confirms_complete,tf_gate_to_hyrule,tf_descend_to_hyrule,tf_assembled_triforce_layer,wf_town_title_card,wf_jail_entry_camera,wf_jail_picto_box,wf_jail_rotten_floor,wf_tingle_through_bars,wf_free_tingle,wf_lenzo_first_talk,wf_lenzo_attic_chests,wf_lenzo_sees_picto_box,wf_lenzo_research_assistant,wf_killer_bees_first_talk,wf_hide_and_seek,wf_hide_and_seek_cleared,wf_marie_first_talk,wf_marie_asks_for_pendant,wf_bees_point_at_the_tree,wf_marie_preach,wf_auction,wf_moblins_letter,wf_cafe_bar_camera,wf_tott_dance,wf_bomb_shop,wf_hollo_shop_is_not_windfall ok;
     class aj_speak_ambient,dr_komali_refuses,fw_koroks_and_lift,fw_glide_to_forbidden_woods,jab_bombshop_owner,jab_niko_second_course_intro,ff2_climb_the_wall,ff2_reach_the_tower,gtj_phantom_illusion,cave_entry,icering_melt,firemountain_freeze,cabana_hammer_doors,needlerock_six_torches,boating_course_hit_switches,tf05_hammer_toggle_puzzle,mg_birdman_signup,tc_salvage_corp,wf_joy_pendant_tree,wf_chu_jelly_juice_shop partial;
-    class dr_arrive_island,fw_arrive_forest_haven,jab_arrive_greatfish_ruined,jab_arrive_windfall_night,jab_return_to_outset,hy_hint,et_partner_hint_tags,wt_partner_hint_tags,gt_warp_appears,gal_show_pictograph,gal_wait_a_day,shop_buy,shop_membership,house_ojhous2_knights_crest_shelf,house_pdrgsh_display_stands,house_orichh_display_stands,house_morocam_is_a_moblin_camera_test,mg_birdman_result,mg_boating_goal,mg_squid_end,mg_fishman_bow,tf_rescue_tingle,tf_salvage_shard,tf_salvage_miss,tc_treasure_chart_points,tc_salvage_free_points,tc_salvage_night_points,tc_salvage_switch_points,tc_salvage_full_moon_points,wf_lenzo_three_assignments,wf_lenzo_deluxe_picto_box,wf_lenzo_legendary_pictograph,wf_photograph_ub1,wf_marie_joy_pendants,wf_auction_lots,wf_stall_merchants,wf_shop_guru_statue,wf_sploosh_kaboom missing;
+    class hy_hint,et_partner_hint_tags,wt_partner_hint_tags,gt_warp_appears,gal_show_pictograph,gal_wait_a_day,shop_buy,shop_membership,house_ojhous2_knights_crest_shelf,house_pdrgsh_display_stands,house_orichh_display_stands,house_morocam_is_a_moblin_camera_test,mg_birdman_result,mg_boating_goal,mg_squid_end,mg_fishman_bow,tf_rescue_tingle,tf_salvage_shard,tf_salvage_miss,tc_treasure_chart_points,tc_salvage_free_points,tc_salvage_night_points,tc_salvage_switch_points,tc_salvage_full_moon_points,wf_lenzo_three_assignments,wf_lenzo_deluxe_picto_box,wf_lenzo_legendary_pictograph,wf_photograph_ub1,wf_marie_joy_pendants,wf_auction_lots,wf_stall_merchants,wf_shop_guru_statue,wf_sploosh_kaboom missing;
 ```
 
 | chapter | step | trigger | event | sets | status | why |
@@ -1096,12 +1096,12 @@ flowchart TD
 | outset | orca_gives_hero_sword | talk | Ji1_SwordGetTalkEnd | 0x2F10 | ok | Game.story_talk - via actors/npc.gd |
 | outset | orca_spin_attack_lesson | talk | Ji1_kaiten | 0x0501 | ok | Game.story_talk - via actors/npc.gd |
 | outset | grandma_after_sword | talk |  | 0x0602 | ok | Game.story_talk - via actors/npc.gd |
-| outset | amori_bokoblin_dropin | tag | AMORI_DEMO_1 | 0x0004 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
-| outset | amori_meet_tetra | tag | MEET_TETORA | 0x0101 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| outset | amori_bokoblin_dropin | tag | AMORI_DEMO_1 | 0x0004 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
+| outset | amori_meet_tetra | tag | MEET_TETORA | 0x0101 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | outset | outset_ridge_layer9 | spawn |  |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
-| outset | stolen_sister | tag | STOLENSISTER | 0x0E20 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| outset | stolen_sister | tag | STOLENSISTER | 0x0E20 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | outset | outset_village_layer2 | spawn |  |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
-| outset | look_shield | tag | LOOK_SHIELD | 0x3202 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| outset | look_shield | tag | LOOK_SHIELD | 0x3202 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | outset | grandma_gives_shield | talk | get_shield |  | ok | Game.story_talk - via actors/npc.gd |
 | outset | grandma_after_kidnap | talk |  | 0x0740 | ok | Game.story_talk - via actors/npc.gd |
 | outset | tetra_dock_conversation | npc | yuukaigo |  | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
@@ -1115,24 +1115,24 @@ flowchart TD
 | fortress | ff_tower_looks | spawn | TowerLook3 |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | fortress | ff_tetra_ooi | npc | ooi | 0x0804 | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
 | fortress | ff_infiltration | npc | majyuu_shinnyuu | 0x0801 | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
-| fortress | ff_searchlight_look | tag | SerchLook1 |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
-| fortress | ff_push_barrel | tag | push |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| fortress | ff_searchlight_look | tag | SerchLook1 |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
+| fortress | ff_push_barrel | tag | push |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | fortress | ff_interior_cells | spawn | kankin1 |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
-| fortress | ff_door_looks | tag | DoorLook1 |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
-| fortress | ff_moblin_patrol | tag | moro_cam |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| fortress | ff_door_looks | tag | DoorLook1 |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
+| fortress | ff_moblin_patrol | tag | moro_cam |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | fortress | ff_find_sister | spawn | FIND_SISTER | 0x2580 0x2580 0x2580 0x2580 0x2580 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | fortress | ff_meet_korl | spawn | MEETSHISHIOH | 0x0F80 0x2E01 0x2E01 0x2E01 0x2E01 0x2E01 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | fortress | ff_board_korl | board |  | 0x2A08 | ok | player.gd board() raises RODE_KORL the first time Link boards the boat |
-| dragonroost | dr_arrive_island | tag | ARRIVAL_DRG | 0x0902 | missing | no TagEv in sea orders 'ARRIVAL_DRG' |
-| dragonroost | dr_chieftain_dragontale | tag | demo10 |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| dragonroost | dr_arrive_island | tag | ARRIVAL_DRG | 0x0902 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
+| dragonroost | dr_chieftain_dragontale | tag | demo10 |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | dragonroost | dr_medli_gives_letter | talk | Md_ItemGet | 0x0E02 | ok | Game.story_talk - via actors/npc.gd |
 | dragonroost | dr_komali_refuses | talk |  |  | partial | mined with low confidence |
 | dragonroost | dr_medli_cliff_request | talk | md_cliff | 0x1104 | ok | Game.story_talk - via actors/npc.gd |
 | dragonroost | dr_throw_medli_to_ledge | npc_tag | MD_FLY | 0x1102 | ok | actors/npc_tag.gd - a volume that box-tests one named NPC and never the player. Wired end to end, but not yet seen to fire in an integration test |
 | dragonroost | dr_bomb_the_spring | npc | Eskban |  | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
-| dragonroost | dr_enter_cavern | tag | TELOP_DORAGON |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
-| dragonroost | dr_cavern_set_pieces | tag | moro_cut |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
-| dragonroost | dr_trapped_with_bokoblins | tag | MORI1_EVENT |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| dragonroost | dr_enter_cavern | tag | TELOP_DORAGON |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
+| dragonroost | dr_cavern_set_pieces | tag | moro_cut |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
+| dragonroost | dr_trapped_with_bokoblins | tag | MORI1_EVENT |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | dragonroost | dr_clear_room_bars_open | defeat | DEFAULT_STOP_OPEN | 0x1140 | ok | actors/enemy.gd death -> Game.story_enemy_defeated / story_room_cleared; a dungeon boss also writes the per-stage boss_dead field, which is NOT an event bit |
 | dragonroost | dr_grappling_hook | talk | Md_RopeGet | 0x1101 | ok | Game.story_talk - via actors/npc.gd |
 | dragonroost | dr_carry_medli | npc | Md_Fly2 | 0x1280 | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
@@ -1142,17 +1142,17 @@ flowchart TD
 | dragonroost | dr_dins_pearl | spawn | getperl_komori |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | dragonroost | dr_secret_cave | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
 | forbiddenwoods | fw_korl_sends_link_to_forest | talk |  | 0x0A80 | ok | Game.story_talk - via actors/npc.gd |
-| forbiddenwoods | fw_arrive_forest_haven | tag | ARRIVAL_FST | 0x0A20 | missing | no TagEv in sea orders 'ARRIVAL_FST' |
+| forbiddenwoods | fw_arrive_forest_haven | tag | ARRIVAL_FST | 0x0A20 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | forbiddenwoods | fw_korl_forest_directions | talk |  | 0x2B80 | ok | Game.story_talk - via actors/npc.gd |
 | forbiddenwoods | fw_forest_haven_looks | spawn | R29LOOK_KINDAN |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
-| forbiddenwoods | fw_fall_into_forest_haven | tag | fall |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| forbiddenwoods | fw_fall_into_forest_haven | tag | fall |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | forbiddenwoods | fw_mori_inside | spawn | MORI_INSIDE |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | forbiddenwoods | fw_meet_deku_tree | npc | meet_deku | 0x1801 | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
 | forbiddenwoods | fw_koroks_and_lift | npc | Calling |  | partial | mined with low confidence |
 | forbiddenwoods | fw_get_deku_leaf | item |  |  | ok | Game.story_item_collected - picking up or being handed the step's dItemNo |
 | forbiddenwoods | fw_glide_to_forbidden_woods | room_enter |  |  | partial | mined with low confidence |
-| forbiddenwoods | fw_woods_telop | tag | TELOP_FOREST |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
-| forbiddenwoods | fw_woods_cameras | tag | StartCam |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| forbiddenwoods | fw_woods_telop | tag | TELOP_FOREST |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
+| forbiddenwoods | fw_woods_cameras | tag | StartCam |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | forbiddenwoods | fw_dungeon_items | item |  |  | ok | Game.story_item_collected - picking up or being handed the step's dItemNo |
 | forbiddenwoods | fw_mothula | defeat |  |  | ok | actors/enemy.gd death -> Game.story_enemy_defeated / story_room_cleared; a dungeon boss also writes the per-stage boss_dead field, which is NOT an event bit |
 | forbiddenwoods | fw_get_boomerang | item |  |  | ok | Game.story_item_collected - picking up or being handed the step's dItemNo |
@@ -1166,11 +1166,11 @@ flowchart TD
 | forbiddenwoods | fw_korl_after_the_pearl | talk |  | 0x0A08 0x2A02 | ok | Game.story_talk - via actors/npc.gd |
 | forbiddenwoods | fw_otkura_boundary | spawn | awake_kokiri | 0x1610 0x1604 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | jabun | jab_korl_points_to_greatfish | talk |  | 0x0A08 | ok | Game.story_talk - via actors/npc.gd |
-| jabun | jab_arrive_greatfish_ruined | tag | ARRIVAL_BRK | 0x0A02 | missing | no TagEv in sea orders 'ARRIVAL_BRK' |
+| jabun | jab_arrive_greatfish_ruined | tag | ARRIVAL_BRK | 0x0A02 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | jabun | jab_korl_briefing_after_greatfish | talk |  | 0x0A01 | ok | Game.story_talk - via actors/npc.gd |
 | jabun | jab_quill_at_greatfish | talk |  |  | ok | Game.story_talk - via actors/npc.gd |
-| jabun | jab_arrive_windfall_night | tag | ARRIVAL_TWN | 0x1F04 | missing | no TagEv in sea_r11 orders 'ARRIVAL_TWN' |
-| jabun | jab_bombshop_raid | tag | bombshop | 0x2110 0x3B20 0x2110 0x2110 0x2110 0x2110 0x2110 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| jabun | jab_arrive_windfall_night | tag | ARRIVAL_TWN | 0x1F04 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
+| jabun | jab_bombshop_raid | tag | bombshop | 0x2110 0x3B20 0x2110 0x2110 0x2110 0x2110 0x2110 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | jabun | jab_bombshop_owner | npc | BMS_LAND_DEMO |  | partial | mined with low confidence |
 | jabun | jab_password_door | talk |  | 0x1910 0x3B20 | ok | Game.story_talk - via actors/npc.gd |
 | jabun | jab_board_pirate_ship | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
@@ -1179,7 +1179,7 @@ flowchart TD
 | jabun | jab_rope_course_2_cleared | npc | P2B_GOAL_2 |  | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
 | jabun | jab_get_bomb_bag | chest | P2B_BOMB_GET |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
 | jabun | jab_korl_briefing_after_bombs | talk |  | 0x1F02 | ok | Game.story_talk - via actors/npc.gd |
-| jabun | jab_return_to_outset | tag | PUROLO_RETURN | 0x3E10 | missing | no TagEv in sea_r44 orders 'PUROLO_RETURN' |
+| jabun | jab_return_to_outset | tag | PUROLO_RETURN | 0x3E10 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | jabun | jab_blow_open_the_cave | hit | ajav_uzu |  | ok | actors/hit_object.gd - take_hit stages that each order an event, positioned from the stage's own placement records. Verified: the Ajav wall over Jabun's cave breaks in three stages, ajav_destroy0 -> ajav_destroy1 -> ajav_uzu |
 | jabun | jab_receive_nayrus_pearl | spawn | getperl_jab | 0x3920 0x3920 0x3920 0x3920 0x3920 0x3920 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | jabun | jab_curse_broken | talk |  | 0x2F20 | ok | Game.story_talk - via actors/npc.gd |
@@ -1191,7 +1191,7 @@ flowchart TD
 | towerofgods | totg_tower_rises_cutscene | spawn | towerd | 0x2E80 0x2E80 0x2E80 0x2E80 0x2E80 0x2E80 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | towerofgods | totg_arrive_tower | spawn |  |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | towerofgods | totg_enter_dungeon | spawn | moro_scam |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
-| towerofgods | totg_interior_camera_beats | tag | moro_R06 |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| towerofgods | totg_interior_camera_beats | tag | moro_R06 |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | towerofgods | totg_wake_servants | npc | Os_Wakeup | 0x1780 0x1740 0x1720 | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
 | towerofgods | totg_trial_east | npc | Os_Finit0 | 0x1710 | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
 | towerofgods | totg_trial_west | npc | Os1_Finit0 | 0x1704 | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
@@ -1199,7 +1199,7 @@ flowchart TD
 | towerofgods | totg_pedestals_done | npc |  |  | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
 | towerofgods | totg_warp_up | warp | TOWER_WARP_U |  | ok | actors/warp_object.gd - picks WHICH event to order from save state, the way daWarpf_c::CreateInit does, then plays it and changes stage |
 | towerofgods | totg_big_key | chest |  |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
-| towerofgods | totg_darknut | tag | SIREN_MD |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| towerofgods | totg_darknut | tag | SIREN_MD |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | towerofgods | totg_get_bow | chest |  |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
 | towerofgods | totg_gohdan | enemy_defeat |  |  | ok | same mechanism as 'defeat' |
 | towerofgods | totg_heart_container | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
@@ -1215,26 +1215,26 @@ flowchart TD
 | hyrule | hy_hint | tag | HIRL_HINT |  | missing | no TagEv in Hyroom orders 'HIRL_HINT' |
 | hyrule | hy_floor_puzzle | object | MtryB_sink |  | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
 | hyrule | hy_statue_moves | object | move_YLzou |  | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
-| hyrule | hy_draw_master_sword | tag | master_sword | 0x2D04 0x2D04 0x2D04 0x2D04 0x2D04 0x2D04 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| hyrule | hy_draw_master_sword | tag | master_sword | 0x2D04 0x2D04 0x2D04 0x2D04 0x2D04 0x2D04 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | hyrule | hy_rebirth | spawn | rebirth_hyral | 0x3802 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | hyrule | hy_swing_sword | spawn | swing_sword | 0x3A04 0x3A04 0x3A04 0x3A04 0x3A04 0x3A04 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | hyrule | hy_fight_out | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
 | hyrule | hy_warp_back | object | TO_SEA_WARP_1 | 0x3810 | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
 | hyrule | hy_return_route_opens | spawn | warphole | 0x2D08 0x2D08 0x2D08 0x2D08 0x2D08 0x2D08 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
-| hyrule | hy_second_visit_awake_zelda | tag | to_awake_zl | 0x2D02 0x2D02 0x2D02 0x2D02 0x2D02 0x2D02 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
-| hyrule | hy_third_visit_swordroom_ambush | tag | btl_of_swroom |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| hyrule | hy_second_visit_awake_zelda | tag | to_awake_zl | 0x2D02 0x2D02 0x2D02 0x2D02 0x2D02 0x2D02 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
+| hyrule | hy_third_visit_swordroom_ambush | tag | btl_of_swroom |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | hyrule | hy_third_visit_break_barrier | object | seal | 0x2C02 0x3B08 0x3B08 0x3B08 0x3B08 0x3B08 0x3B08 | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
 | temples | et_land_headstone | board |  | 0x2E04 | ok | player.gd board() raises RODE_KORL the first time Link boards the boat |
 | temples | et_enter_edaichi | spawn |  |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | temples | et_learn_earth_gods_lyric | talk | MKNJD_D_LESSON |  | ok | Game.story_talk - via actors/npc.gd |
 | temples | et_dance_zola | spawn | dance_zola | 0x2D40 0x2D40 0x2D40 0x2D40 0x2D40 0x2D40 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | temples | et_duet_opens_earth_temple | conduct | MKNJD_D_DEMO | 0x2920 | ok | player.gd CONDUCT state + Game.conduct_tick - the tablet's song, the 800-unit two-body proximity and the facing test, with a real ERROR branch |
-| temples | et_hole_cam | tag | HoleCam | 0x2920 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| temples | et_hole_cam | tag | HoleCam | 0x2920 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | temples | et_partner_hint_tags | tag | md_tag_message |  | missing | no TagEv in M_Dai orders 'md_tag_message' |
 | temples | et_inner_tablets | conduct | MKNJD_D_DEMO |  | ok | player.gd CONDUCT state + Game.conduct_tick - the tablet's song, the 800-unit two-body proximity and the facing test, with a real ERROR branch |
 | temples | et_warp_jars | npc | WARPT_OPEN |  | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
-| temples | et_mkie_block_cameras | tag | MkieB_die |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
-| temples | et_moro_cam | tag | moro_D03 |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| temples | et_mkie_block_cameras | tag | MkieB_die |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
+| temples | et_moro_cam | tag | moro_D03 |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | temples | et_stalfos_miniboss | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
 | temples | et_jalhalla | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
 | temples | et_boss_warp | npc | WARP_WIND |  | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
@@ -1251,10 +1251,10 @@ flowchart TD
 | temples | wt_molgera | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
 | temples | wt_boss_warp | npc | WARP_WIND |  | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
 | temples | wt_pray_kokiri | spawn | pray_kokiri | 0x4004 0x4004 0x4004 0x4004 0x4004 0x4004 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
-| fortress2 | ff2_sail_to_fortress | tag | BEAST_GATE | 0x3040 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| fortress2 | ff2_sail_to_fortress | tag | BEAST_GATE | 0x3040 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | fortress2 | ff2_land_at_fortress | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
 | fortress2 | ff2_enter_interior | spawn | kankin2 |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
-| fortress2 | ff2_moblins_patrol | tag | moro_cam |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| fortress2 | ff2_moblins_patrol | tag | moro_cam |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | fortress2 | ff2_interior_chests | chest |  |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
 | fortress2 | ff2_phantom_ganon | defeat |  |  | ok | actors/enemy.gd death -> Game.story_enemy_defeated / story_room_cleared; a dungeon boss also writes the per-stage boss_dead field, which is NOT an event bit |
 | fortress2 | ff2_skull_hammer | chest |  |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
@@ -1268,7 +1268,7 @@ flowchart TD
 | fortress2 | ff2_runaway_majuto | spawn | runaway_majuto | 0x3280 0x3280 0x3280 0x3280 0x3280 0x3280 | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | fortress2 | ff2_after_endless_night | room_enter | kankin1 |  | ok | stage.gd - the stage's arrival event runs on load |
 | ganon | gt_warp_appears | actor | APPEAR_WARP | 0x3D02 | missing | a placed object resolves its event by NAME through the event manager; nothing in the engine does that yet |
-| ganon | gt_tower_intro | tag | Gintro2 |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| ganon | gt_tower_intro | tag | Gintro2 |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | ganon | gt_trial_gohma | boss | 4_door_dn | 0x3240 0x3904 | ok | same mechanism as 'defeat' |
 | ganon | gt_trial_kalle_demos | boss | 4_door_mr | 0x3220 0x3902 | ok | same mechanism as 'defeat' |
 | ganon | gt_trial_jalhalla | boss | 4_door_dc | 0x3210 0x3901 | ok | same mechanism as 'defeat' |
@@ -1282,7 +1282,7 @@ flowchart TD
 | ganon | gt_ending | spawn | ending |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | ganontower | gtj_enter_maze | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
 | ganontower | gtj_phantom_illusion | hit |  |  | partial | the mechanism works, but this step has no structured hit block, so nothing is spawned for it |
-| ganontower | gtj_doorsound_path | tag | DoorSound |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| ganontower | gtj_doorsound_path | tag | DoorSound |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | ganontower | gtj_trap_room_moblins | defeat |  |  | ok | actors/enemy.gd death -> Game.story_enemy_defeated / story_room_cleared; a dungeon boss also writes the per-stage boss_dead field, which is NOT an event bit |
 | ganontower | gtj_trap_room_bokoblins | defeat |  |  | ok | actors/enemy.gd death -> Game.story_enemy_defeated / story_room_cleared; a dungeon boss also writes the per-stage boss_dead field, which is NOT an event bit |
 | ganontower | gtj_trap_room_darknuts | defeat |  |  | ok | actors/enemy.gd death -> Game.story_enemy_defeated / story_room_cleared; a dungeon boss also writes the per-stage boss_dead field, which is NOT an event bit |
@@ -1303,7 +1303,7 @@ flowchart TD
 | ganontower | ff3_third_visit_swap | bits |  |  | ok | Game.story_bits_tick - fires as soon as every requires_bits entry is set |
 | ganontower | ff3_enter_the_cells | spawn | kankin1 |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | ganontower | ff3_deserted_fortress | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
-| ganontower | ff3_moro_cam | tag | moro_cam |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| ganontower | ff3_moro_cam | tag | moro_cam |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | ganontower | ff3_chests | chest |  |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
 | ganontower | ff3_warp_to_ganons_tower | warp | GANON_ARRIVE |  | ok | actors/warp_object.gd - picks WHICH event to order from save state, the way daWarpf_c::CreateInit does, then plays it and changes stage |
 | caves | cave_entry | warp |  |  | partial | mined with low confidence |
@@ -1325,7 +1325,7 @@ flowchart TD
 | caves | otkura_wind_gods_aria | conduct | cb_tact | 0x1610 0x1604 | ok | player.gd CONDUCT state + Game.conduct_tick - the tablet's song, the 800-unit two-body proximity and the facing test, with a real ERROR branch |
 | caves | otkura_awake_kokiri | spawn | awake_kokiri |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | gallery | gal_hatch_open | npc | FIGURE_HATCH_OPEN |  | ok | Game.story_npc_tick - proximity, or ordered as the actor is placed |
-| gallery | gal_enter | tag | nitendo |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| gallery | gal_enter | tag | nitendo |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | gallery | gal_meet_carlov | talk |  | 0x2F02 | ok | Game.story_talk - via actors/npc.gd |
 | gallery | gal_show_pictograph | photo |  | 0x2F01 0x3401 | missing | taking or delivering a pictograph: a camera mode plus a per-subject result value |
 | gallery | gal_wait_a_day | day_change |  | 0x3080 | missing | trigger kind 'day_change' has no mechanism |
@@ -1344,7 +1344,7 @@ flowchart TD
 | gallery | steel_chest | chest |  |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
 | gallery | sub_board | board |  |  | ok | player.gd board() raises RODE_KORL the first time Link boards the boat |
 | gallery | sub_interior | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
-| gallery | sub_ladder_down | tag | hasigo_down |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| gallery | sub_ladder_down | tag | hasigo_down |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | gallery | sub_chests | chest |  |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
 | gallery | shop_board | board |  |  | ok | player.gd board() raises RODE_KORL the first time Link boards the boat |
 | gallery | shop_buy | buy | BS1_GETDEMO |  | missing | trigger kind 'buy' has no mechanism |
@@ -1414,9 +1414,9 @@ flowchart TD
 | labyrinths | tf05_hammer_toggle_puzzle | hit |  |  | partial | the mechanism works, but this step has no structured hit block, so nothing is spawned for it |
 | labyrinths | cave06_dead_copy | room_enter |  |  | ok | stage.gd - the stage's arrival event runs on load |
 | labyrinths | minihyo_debug_pitfall | warp | DEFAULT_PITFALL |  | ok | actors/warp_object.gd - picks WHICH event to order from save state, the way daWarpf_c::CreateInit does, then plays it and changes stage |
-| minigames | mg_birdman_look | tag | BirdLook |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| minigames | mg_birdman_look | tag | BirdLook |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | minigames | mg_birdman_signup | talk |  |  | partial | mined with low confidence |
-| minigames | mg_birdman_launch | tag | BMCON_NEXT |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| minigames | mg_birdman_launch | tag | BMCON_NEXT |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | minigames | mg_birdman_flight | spawn | BirdStart |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | minigames | mg_birdman_result | score | BMCON_END |  | missing | trigger kind 'score' has no mechanism |
 | minigames | mg_birdman_prize | talk | BMCON_GET_ITEM |  | ok | Game.story_talk - via actors/npc.gd |
@@ -1462,12 +1462,12 @@ flowchart TD
 | triforce | tc_salvage_switch_points | salvage | SALVAGE_GETITEM |  | missing | trigger kind 'salvage' has no mechanism |
 | triforce | tc_salvage_full_moon_points | salvage | SALVAGE_GETITEM | 0x2080 0x2004 0x2002 0x2804 0x2802 0x2801 0x2980 0x2940 0x3B01 0x3C80 0x3C40 0x3C20 0x3C10 0x3C08 0x3C04 0x3C02 | missing | trigger kind 'salvage' has no mechanism |
 | triforce | tc_salvage_corp | talk | SV_TALK_P1_1ST |  | partial | mined with low confidence |
-| windfall | wf_town_title_card | tag | TELOP_TAURA |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
-| windfall | wf_jail_entry_camera | tag | First |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| windfall | wf_town_title_card | tag | TELOP_TAURA |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
+| windfall | wf_jail_entry_camera | tag | First |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | windfall | wf_jail_picto_box | chest |  |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
 | windfall | wf_jail_rotten_floor | object | NZFALL |  | ok | Game.story_object_tick - a per-object predicate (distance, ship, switch, item, sword swing) rather than an area the player walks into |
 | windfall | wf_tingle_through_bars | talk | TC_TALK_NEAR_JAIL | 0x0B40 | ok | Game.story_talk - via actors/npc.gd |
-| windfall | wf_free_tingle | tag | OpenDoor | 0x0B80 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| windfall | wf_free_tingle | tag | OpenDoor | 0x0B80 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | windfall | wf_lenzo_first_talk | talk |  | 0x1208 | ok | Game.story_talk - via actors/npc.gd |
 | windfall | wf_lenzo_attic_chests | chest |  |  | ok | actors/chest.gd - opening the chest holding that dItemNo advances the step |
 | windfall | wf_lenzo_sees_picto_box | talk |  | 0x1701 | ok | Game.story_talk - via actors/npc.gd |
@@ -1488,22 +1488,22 @@ flowchart TD
 | windfall | wf_auction | spawn | Auction |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 | windfall | wf_auction_lots | minigame | AUCTION_GET_ITEM | 0x0F01 0x1080 0x1040 0x1020 0x1008 0x1004 0x4008 | missing | an outcome decided by a scored activity rather than a position or a bit |
 | windfall | wf_moblins_letter | talk | Get_Mo3_Ltr | 0x1908 | ok | Game.story_talk - via actors/npc.gd |
-| windfall | wf_cafe_bar_camera | tag | FirstCamera |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| windfall | wf_cafe_bar_camera | tag | FirstCamera |  | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | windfall | wf_stall_merchants | show_item | ROTEN_EXCHANGE_1ST | 0x1320 0x1310 0x1308 0x1304 0x1302 0x1301 | missing | holding an inventory item out to an NPC (dEvtCnd_CANTALKITEM_e): a talk that carries the selected item id, with the NPC branching on it |
 | windfall | wf_shop_guru_statue | show_item |  | 0x3E04 | missing | holding an inventory item out to an NPC (dEvtCnd_CANTALKITEM_e): a talk that carries the selected item id, with the NPC branching on it |
 | windfall | wf_tott_dance | conduct | TACT_TT10 | 0x0B08 0x0C40 | ok | player.gd CONDUCT state + Game.conduct_tick - the tablet's song, the 800-unit two-body proximity and the facing test, with a real ERROR branch |
 | windfall | wf_sploosh_kaboom | minigame | KAISEN_GETITEM |  | missing | an outcome decided by a scored activity rather than a position or a bit |
 | windfall | wf_chu_jelly_juice_shop | spawn | next_link |  | partial | mined with low confidence |
-| windfall | wf_bomb_shop | tag | bombshop | 0x2110 0x2110 0x2110 0x2110 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry |
+| windfall | wf_bomb_shop | tag | bombshop | 0x2110 0x2110 0x2110 0x2110 | ok | actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd - a TagIsl arrival volume with the island's own terms (ship vs on-foot variant, endless night, the Bomb Bag) and the per-island arrival flag it raises |
 | windfall | wf_hollo_shop_is_not_windfall | spawn | WALK_START |  | ok | Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table |
 
 ## 3. What is left
 
 - **Low-confidence mining** - 12 steps: mined with low confidence
-- **Trigger volumes not in the build** - 10 steps: no TagEv in Hyroom orders 'HIRL_HINT'; no TagEv in M_Dai orders 'md_tag_message'; no TagEv in Pnezumi orders 'TC_RESCUE'; no TagEv in kaze orders 'cb_tag_message'; no TagEv in morocam orders 'moro_scam'; no TagEv in sea orders 'ARRIVAL_BRK'; no TagEv in sea orders 'ARRIVAL_DRG'; no TagEv in sea orders 'ARRIVAL_FST'; no TagEv in sea_r11 orders 'ARRIVAL_TWN'; no TagEv in sea_r44 orders 'PUROLO_RETURN'
 - **Breakable objects without geometry** - 8 steps: the mechanism works, but this step has no structured hit block, so nothing is spawned for it
 - **Showing an item to an NPC** - 8 steps: holding an inventory item out to an NPC (dEvtCnd_CANTALKITEM_e): a talk that carries the selected item id, with the NPC branching on it
 - **Salvage points** - 7 steps: trigger kind 'salvage' has no mechanism
+- **Trigger volumes not in the build** - 5 steps: no TagEv in Hyroom orders 'HIRL_HINT'; no TagEv in M_Dai orders 'md_tag_message'; no TagEv in Pnezumi orders 'TC_RESCUE'; no TagEv in kaze orders 'cb_tag_message'; no TagEv in morocam orders 'moro_scam'
 - **Pictographs** - 4 steps: taking or delivering a pictograph: a camera mode plus a per-subject result value
 - **Scored minigames** - 4 steps: trigger kind 'score' has no mechanism
 - **Minigame outcomes** - 2 steps: an outcome decided by a scored activity rather than a position or a bit

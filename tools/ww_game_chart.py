@@ -22,7 +22,9 @@ BUILD = ROOT / "out" / "rip" / "GZLE01" / "godot"
 # Trigger mechanisms the engine implements, and the function that does it.
 IMPLEMENTED = {
     "spawn": "Game._place_player - a PLYR spawn's params >> 24 indexes the stage EVNT table",
-    "tag": "actors/tag_event.gd - a TagEv volume orders its EVNT entry",
+    "tag": "actors/tag_event.gd - a TagEv volume orders its EVNT entry; actors/tag_island.gd -"
+           " a TagIsl arrival volume with the island's own terms (ship vs on-foot variant,"
+           " endless night, the Bomb Bag) and the per-island arrival flag it raises",
     "room_enter": "stage.gd - the stage's arrival event runs on load",
     "talk": "Game.story_talk - via actors/npc.gd",
     "npc": "Game.story_npc_tick - proximity, or ordered as the actor is placed",
@@ -105,7 +107,9 @@ def tag_events() -> dict[str, set[str]] | None:
         table = scene.get("event_table") or []
         names = set()
         for t in scene.get("tags") or []:
-            if str(t.get("actor", "")).startswith(("TagEv", "AttTag")):
+            # TagEv orders its EVNT entry on entry; TagIsl (d_a_tag_island.cpp) does too, by
+            # its own rules - both index the table with params >> 24
+            if str(t.get("actor", "")).startswith(("TagEv", "AttTag", "TagIsl")):
                 no = (int(t.get("params", 0)) >> 24) & 0xFF
                 if no < len(table):
                     names.add(str(table[no]))
