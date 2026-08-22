@@ -74,6 +74,16 @@ class ShipPoint:  # SHIP entry: where the King of Red Lions can be moored (sea r
 
 
 @dataclass
+class RoomSet:
+    """One RTBL entry: which rooms are resident while Link stands on this collision group."""
+
+    rooms: list[int]        # room indices, byte & 0x3F
+    with_bg: list[bool]     # byte & 0x80 - load with BG collision and its dzr actors
+    reverb: int             # reverbAndFlags & 0x7F
+    time_pass: int          # timePassField & 0x03
+
+
+@dataclass
 class CameraRegion:
     """One CAMR (stage) or RCAM (room) entry: which camera type a region switches to."""
 
@@ -111,6 +121,7 @@ class Dzs:
     scls: list[Exit] = field(default_factory=list)  # exit table (doors index into it)
     ships: list[ShipPoint] = field(default_factory=list)  # SHIP: boat mooring points
     events: list[str] = field(default_factory=list)  # EVNT: event names tag actors index into
+    room_sets: list[RoomSet] = field(default_factory=list)  # RTBL: the streaming table
     cameras: list[CameraRegion] = field(default_factory=list)  # CAMR (stage) / RCAM (room)
     cam_arrows: list[CameraArrow] = field(default_factory=list)  # AROB (stage) / RARO (room)
 
@@ -163,6 +174,22 @@ def parse(data: bytes) -> Dzs:
                 x, y, z, ry, sid = struct.unpack_from(">3fHB", data, off + k * 0x10)
                 ry = ry - 0x10000 if ry >= 0x8000 else ry
                 out.ships.append(ShipPoint((x, y, z), ry, sid))
+        elif fourcc == "RTBL":
+            # one indirection deeper than every other chunk: `off` points at an array of u32
+            # file offsets, one per entry, and each entry then points at its own room bytes
+            # (d_stage.h:215-226, relocation at d_stage.cpp:1732-1743)
+            for k in range(n):
+                (ent,) = struct.unpack_from(">I", data, off + k * 4)
+                cnt, rev, tp, _pad, rooms_off = struct.unpack_from(">4BI", data, ent)
+                raw = data[rooms_off : rooms_off + cnt]
+                out.room_sets.append(
+                    RoomSet(
+                        [b & 0x3F for b in raw],
+                        [bool(b & 0x80) for b in raw],
+                        rev & 0x7F,
+                        tp & 0x03,
+                    )
+                )
         elif fourcc in ("CAMR", "RCAM"):
             for k in range(n):
                 base = off + k * 0x14

@@ -8597,6 +8597,76 @@ func _spawn_tags() -> void:
     _spawn_missing_doors()
     _spawn_hit_switches()
     _apply_toon()
+    _stream_init()
+
+# ---- room streaming (RTBL) --------------------------------------------------------------
+var room_sets: Array = []
+var room_nodes: Dictionary = {}     # room number -> [nodes that belong to it]
+var resident := {}                  # room -> true
+var stream_room := -999
+
+func _stream_init() -> void:
+    var info: Dictionary = Game.stage_data.get(name, {})
+    room_sets = info.get("room_sets", [])
+    if room_sets.size() < 2:
+        return          # nothing to stream: one resident set, or no table at all
+    var level := get_node_or_null("Level")
+    if level == null:
+        return
+    # the level glTF names each room's subtree "RoomN" / "RoomN/model..."
+    for child in level.get_children():
+        var nm := String(child.name)
+        if not nm.begins_with("Room"):
+            continue
+        var digits := ""
+        for i in range(4, nm.length()):
+            if nm[i] < "0" or nm[i] > "9":
+                break
+            digits += nm[i]
+        if digits == "":
+            continue
+        var rn := int(digits)
+        if not room_nodes.has(rn):
+            room_nodes[rn] = []
+        room_nodes[rn].append(child)
+    if room_nodes.is_empty():
+        return
+    print("gcrip: RTBL streaming in ", name, " - ", room_sets.size(), " sets over ",
+        room_nodes.size(), " rooms")
+    _stream_update(true)
+
+func _stream_update(force := false) -> void:
+    if room_nodes.is_empty():
+        return
+    var lk := Game.player()
+    if lk == null:
+        return
+    var here := Game.sea_room_at(lk.global_position) if name.begins_with("sea") else 0
+    if here == stream_room and not force:
+        return
+    stream_room = here
+    var want := {}
+    if here >= 0 and here < room_sets.size():
+        var entry: Dictionary = room_sets[here]
+        for r in entry.get("rooms", []):
+            want[int(r)] = true
+    else:
+        want[here] = true
+    if want == resident and not force:
+        return
+    resident = want
+    var on := 0
+    for rn in room_nodes:
+        var vis: bool = want.has(int(rn))
+        if vis:
+            on += 1
+        for n in room_nodes[rn]:
+            if n is Node3D:
+                (n as Node3D).visible = vis
+    if Game.scripted():
+        print("gcrip stream: room ", here, " -> resident ", want.keys(), " (", on, " of ",
+            room_nodes.size(), " room subtrees drawn)")
+
 
 func _apply_toon() -> void:
     # cel shading: every surface in this stage goes through the game's own ramp
@@ -8811,6 +8881,8 @@ func _start_bgm() -> void:
         Game.run_event("StartCamera")
 
 func _process(_delta: float) -> void:
+    if not room_nodes.is_empty() and Engine.get_process_frames() % 20 == 0:
+        _stream_update()
     if name != "sea":
         return
     _bgm_tick += 1
@@ -10623,6 +10695,7 @@ def export_godot(
             "spawns": spawns,
             "actors": rep.get("actors") or [],
             "ships": rep.get("ships") or [],
+            "room_sets": rep.get("room_sets") or [],
             "wave_max": rep.get("wave_max") or {},
             "offset": rep.get("offset") or [0.0, 0.0, 0.0],
             "tags": rep.get("tags") or [],

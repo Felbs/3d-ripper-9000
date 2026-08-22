@@ -230,9 +230,9 @@ def subsystems() -> list[tuple[str, str, str]]:
          " from JAudio; the scene-level reverb amount is still a chosen constant, and no sound"
          " effects at all (ww_sound_effects.json maps the banks and the 28 footstep surfaces)"),
         ("Sailing", "partial",
-         "boat physics, sail, wind and wave_max from the real MULT values; no cannon, crane or"
-         " cyclones, and the Great Sea is one heavy scene - its RTBL streaming rule is mined"
-         " (ww_greatsea.json) but not built"),
+         "boat physics, sail, wind, wave_max from the real MULT values, and RTBL room streaming:"
+         " the game's own table keeps exactly {sea floor, one island} resident, so the sea"
+         " draws 1 of 49 room subtrees instead of all of them. No cannon, crane or cyclones"),
         ("Save / story bits", "ok", "dSv_event_flag_c byte array, story_done, items, switches"),
         ("Day / night", "ok",
          "600 real seconds per in-game day (dKy: 360 units, 0.02/frame); layers swap at 6 and 18"),

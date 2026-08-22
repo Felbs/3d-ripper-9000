@@ -22,7 +22,7 @@ flowchart LR
     class G0_1 ok;
     G0 --> G0_2["Day / night<br/><i>600 real seconds per in-game day (dKy: 360 units, 0.02/frame); l</i>"]
     class G0_2 ok;
-    G0 --> G0_3["Sailing<br/><i>boat physics, sail, wind and wave_max from the real MULT values;</i>"]
+    G0 --> G0_3["Sailing<br/><i>boat physics, sail, wind, wave_max from the real MULT values, an</i>"]
     class G0_3 partial;
     GAME --> G1["Link"]
     G1 --> G1_0["Player movement<br/><i>27 states: GROUND, AIR, ROLL, SWIM, LAND, ATTACK, JUMPCUT, JUMPC</i>"]
@@ -65,7 +65,7 @@ flowchart LR
 | Events (event_list) | ok | interpreter runs staff/cut timelines: camera, dialogue, actor animation |
 | NPC dialogue | ok | 11 villagers with story-conditional rules, chosen at talk time |
 | Music | partial | 167 stage songs with vibrato, per-track fx send and the pitch oscillator mined from JAudio; the scene-level reverb amount is still a chosen constant, and no sound effects at all (ww_sound_effects.json maps the banks and the 28 footstep surfaces) |
-| Sailing | partial | boat physics, sail, wind and wave_max from the real MULT values; no cannon, crane or cyclones, and the Great Sea is one heavy scene - its RTBL streaming rule is mined (ww_greatsea.json) but not built |
+| Sailing | partial | boat physics, sail, wind, wave_max from the real MULT values, and RTBL room streaming: the game's own table keeps exactly {sea floor, one island} resident, so the sea draws 1 of 49 room subtrees instead of all of them. No cannon, crane or cyclones |
 | Save / story bits | ok | dSv_event_flag_c byte array, story_done, items, switches |
 | Day / night | ok | 600 real seconds per in-game day (dKy: 360 units, 0.02/frame); layers swap at 6 and 18 |
 | Dungeons | partial | small keys, locked doors and the Big Key work (actors/door.gd): the per-dungeon save block dSv_memBit_c keyed by the stage's STAG slot, both door families' conflicting type numbers, and a Big Key door that spends no key. Chest bits, the 128 memory switches and the dungeon map/compass UI are still not modelled |

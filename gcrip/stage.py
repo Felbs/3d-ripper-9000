@@ -267,6 +267,7 @@ def _build(
     tag_recs: list[dict] = []  # invisible trigger actors (TagEv, AttTag, TagMsg...)
     logic_recs: list[dict] = []  # every other model-less actor (switches, salvage, Ajav)
     event_table: list[str] = []  # stage.dzs EVNT names (TagEv params >> 24 indexes them)
+    room_sets: list[dict] = []  # RTBL: which rooms stay resident together
     cameras: list[dict] = []  # CAMR/RCAM: the camera type a region switches to
     cam_arrows: list[dict] = []  # AROB/RARO: fixed eye points those regions point at
     if "Stage.arc" in stage_arcs:
@@ -276,6 +277,7 @@ def _build(
             mult = d.mult
             stage_scls = d.scls
             event_table = list(d.events)
+            room_sets = [vars(rs) for rs in d.room_sets]
             cameras += [vars(c) for c in d.cameras]
             cam_arrows += [
                 {**vars(a), "pos": list(a.pos), "yaw_deg": a.yaw_deg, "pitch_deg": a.pitch_deg}
@@ -521,6 +523,9 @@ def _build(
         # authored camera behaviour: a CAMR/RCAM region names a dCamera_c type by string and
         # may point at an AROB/RARO arrow giving a fixed eye point (d_stage.h:166-185).  Which
         # region applies comes from the collision polygon Link stands on, not from a volume.
+        # RTBL: the game keeps only these rooms resident at once (d_stage.cpp:213-247).
+        # On the Great Sea every entry is {room 0, one island} - two rooms, never 49.
+        "room_sets": room_sets,
         "cameras": cameras,
         "cam_arrows": cam_arrows,
         "wave_max": {str(r): t.wave_max for r, t in mult.items() if r in room_nos},
