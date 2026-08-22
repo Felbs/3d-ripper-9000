@@ -9098,6 +9098,8 @@ func _spawn_flame_lights() -> void:
 var sun: DirectionalLight3D = null
 var env_node: WorldEnvironment = null
 var outdoors := true
+var hdri_sun := Vector3.ZERO     # the map's sun direction when an HDRI lights the stage
+var hdri_ratio := 0.0
 
 func _setup_lighting() -> void:
     sun = get_node_or_null("Sun")
@@ -9115,8 +9117,21 @@ func _setup_lighting() -> void:
         if ResourceLoader.exists(cand):
             var pano := PanoramaSkyMaterial.new()
             pano.panorama = load(cand)
+            # physical units: the map's radiance is relative, so scale its mean sky to a
+            # clear-day sky luminance (about 8,000 nits) - the sun's own disc then lands near
+            # the right brightness through the measured sun-to-sky ratio
             env.sky.sky_material = pano
-            print("gcrip light: using HDRI ", cand)
+            var mf := FileAccess.open("res://sky.json", FileAccess.READ)
+            if mf:
+                var meta = JSON.parse_string(mf.get_as_text())
+                if meta is Dictionary:
+                    var sd: Array = meta.get("sun_dir", [])
+                    if sd.size() == 3:
+                        hdri_sun = Vector3(float(sd[0]), float(sd[1]), float(sd[2])).normalized()
+                    hdri_ratio = float(meta.get("sun_to_sky", 0.0))
+                    print("gcrip light: HDRI ", meta.get("source", cand), " - sun from ",
+                        hdri_sun, ", ", int(hdri_ratio), "x the sky mean")
+            pano.energy_multiplier = 8000.0
             break
     if not outdoors:
         # a dungeon has no sky: a fill so the lit looks are not pitch black, and the sky's
@@ -9136,6 +9151,18 @@ func _setup_lighting() -> void:
 
 func _light_tick() -> void:
     if sun == null or not outdoors:
+        return
+    if hdri_sun != Vector3.ZERO:
+        # an HDRI is measured light: its sun dictates the shadows, the clock does not.  The
+        # key-to-fill balance follows the map's own sun-to-sky ratio.
+        sun.global_transform = Transform3D(Basis.looking_at(hdri_sun, Vector3.UP),
+            Vector3(0, 10000, 0))
+        var el := rad_to_deg(asin(clampf(-hdri_sun.y, -1.0, 1.0)))
+        var low := clampf(1.0 - el / 60.0, 0.0, 1.0)
+        sun.light_temperature = lerpf(5800.0, 2800.0, pow(low, 1.5))
+        sun.light_intensity_lux = clampf(8000.0 * hdri_ratio * 0.1, 10000.0, 100000.0)
+        Game.sun_direction = hdri_sun
+        Game.scene_nits = sun.light_intensity_lux * 1.2 / PI
         return
     # the sun's arc from the clock: 06:00 on the eastern horizon, noon overhead, 18:00 west;
     # a warm colour temperature near the horizon and white at noon.  Same direction is pushed
@@ -10878,6 +10905,46 @@ def _godot_glb(stage_gltf: Path, out_glb: Path, *, suffix_rooms: bool = True) ->
     return n_col
 
 
+def _write_hdri(out_dir: Path, hdri: Path | None) -> None:
+    """Copy the map in as sky.hdr and write sky.json with where its sun is."""
+    import shutil
+
+    dst = out_dir / "sky.hdr"
+    meta = out_dir / "sky.json"
+    if hdri is None:
+        return
+    if not hdri.exists():
+        print(f"  hdri: {hdri} not found")
+        return
+    from gcrip.formats import hdr as hdr_mod
+
+    try:
+        img = hdr_mod.parse(hdri.read_bytes())
+        direction, peak, ratio = img.sun()
+        shutil.copyfile(hdri, dst)
+        meta.write_text(
+            json.dumps(
+                {
+                    "source": hdri.name,
+                    "width": img.width,
+                    "height": img.height,
+                    "sun_dir": [round(v, 5) for v in direction],
+                    "sun_peak": peak,
+                    "sun_to_sky": ratio,
+                },
+                indent=1,
+            ),
+            encoding="utf-8",
+        )
+        el = math.degrees(math.asin(-direction[1]))
+        print(
+            f"  hdri: {hdri.name} {img.width}x{img.height}, sun {el:.0f} deg up, "
+            f"{ratio:.0f}x the sky mean -> sky.hdr + sky.json"
+        )
+    except Exception as exc:
+        print(f"  hdri not written: {exc}")
+
+
 def _write_ies(out_dir: Path) -> None:
     """Every gcrip/data/ies/*.ies -> ies/<name>.png, a light projector of the real throw."""
     src = Path(__file__).parent / "data" / "ies"
@@ -11475,6 +11542,7 @@ def export_godot(
     out_dir: Path | None = None,
     quiet: bool = False,
     renderer: str = "forward_plus",
+    hdri: Path | None = None,
 ) -> dict:
     t0 = time.monotonic()
     rip_dir = Path(rip_dir)
@@ -11635,6 +11703,7 @@ def export_godot(
     (out_dir / "fx.gdshader").write_text(_FX_SHADER, encoding="utf-8")
     (out_dir / "ocean.gdshader").write_text(_OCEAN_SHADER, encoding="utf-8")
     _write_ies(out_dir)
+    _write_hdri(out_dir, hdri)
     _write_toon_ramp(rip_dir, out_dir)
     (out_dir / "warp.gd").write_text(_WARP_GD, encoding="utf-8")
     (out_dir / "event_runner.gd").write_text(_EVENT_GD, encoding="utf-8")

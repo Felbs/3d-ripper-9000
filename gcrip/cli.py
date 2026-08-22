@@ -352,6 +352,7 @@ def cmd_godot(args: argparse.Namespace) -> int:
         out_dir=Path(args.out) if args.out else None,
         quiet=args.quiet,
         renderer=args.renderer,
+        hdri=Path(args.hdri) if args.hdri else None,
     )
     return 0
 
@@ -539,6 +540,11 @@ def main(argv: list[str] | None = None) -> int:
         "--renderer", default="forward_plus",
         choices=["forward_plus", "mobile", "gl_compatibility"],
         help="Godot rendering method; forward_plus enables SDFGI/SSR/SSAO (default)",
+    )
+    p.add_argument(
+        "--hdri", default=None,
+        help="a Radiance .hdr to light outdoor stages with; the sun is found in it and the"
+        " shadow light pointed there",
     )
     p.add_argument("-q", "--quiet", action="store_true")
     p.set_defaults(fn=cmd_godot)
