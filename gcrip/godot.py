@@ -3138,6 +3138,8 @@ var doors_report: Array = []
 # --models: load every animated actor model and report the ones with no mesh, no clips, or a
 # head model that does not resolve.  --cutscenes: play every baked .stb through to its end.
 var models_test: bool = "--models" in OS.get_cmdline_user_args()
+# --no-toon : load without the cel shader, so the two looks can be compared
+var no_toon: bool = "--no-toon" in OS.get_cmdline_user_args()
 # --hitsw[=<kind>] : strike every hit switch in this stage with that attack kind
 var hitsw_test := ""
 # --dungeon : report every locked door in this stage, then try each one with and without its key
@@ -3355,6 +3357,8 @@ func _ready() -> void:
     # pad mappings at boot (was only done on a menu warp: a shortcut launch ran the pad raw)
     _apply_saved_pad_mappings.call_deferred()
     Input.joy_connection_changed.connect(func(_id, _c): _apply_saved_pad_mappings())
+    if no_toon:
+        toon_on = false
     var dgf := FileAccess.open("res://dungeons.json", FileAccess.READ)
     if dgf:
         var dgp = JSON.parse_string(dgf.get_as_text())
@@ -5745,6 +5749,104 @@ const DUNGEON_MAP := 1             # mDungeonItem bit 0
 const DUNGEON_COMPASS := 2         # bit 1
 const DUNGEON_BIG_KEY := 4         # bit 2
 
+# ---- cel shading -----------------------------------------------------------------------
+var toon_shader: Shader = null
+var toon_ramp: Texture2D = null
+var toon_on := true
+var _toon_cache: Dictionary = {}     # source material -> the ShaderMaterial built from it
+
+func toon_ready() -> bool:
+    if not toon_on:
+        return false
+    if toon_shader == null and ResourceLoader.exists("res://toon.gdshader"):
+        toon_shader = load("res://toon.gdshader")
+    if toon_ramp == null and ResourceLoader.exists("res://toon_ramp.png"):
+        toon_ramp = load("res://toon_ramp.png")
+    return toon_shader != null and toon_ramp != null
+
+func _toon_material(src: Material) -> ShaderMaterial:
+    # one ShaderMaterial per source material, shared by every surface that used it
+    var key := src.resource_path if src and src.resource_path != "" else str(src)
+    if _toon_cache.has(key):
+        return _toon_cache[key]
+    var m := ShaderMaterial.new()
+    m.shader = toon_shader
+    m.set_shader_parameter("toon_ramp", toon_ramp)
+    var tex: Texture2D = null
+    var col := Color(1, 1, 1, 1)
+    var scissor := 0.0
+    if src is StandardMaterial3D:
+        var std := src as StandardMaterial3D
+        tex = std.albedo_texture
+        col = std.albedo_color
+        if std.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR:
+            scissor = std.alpha_scissor_threshold
+        elif std.transparency == BaseMaterial3D.TRANSPARENCY_ALPHA:
+            m.render_priority = 1
+    m.set_shader_parameter("albedo_tex", tex)
+    m.set_shader_parameter("has_tex", tex != null)
+    m.set_shader_parameter("albedo_col", col)
+    m.set_shader_parameter("alpha_scissor", scissor)
+    _toon_cache[key] = m
+    return m
+
+func toonify(root: Node) -> int:
+    # walk a freshly instanced model and swap each surface for the ramp shader
+    if root == null or not toon_ready():
+        return 0
+    var n := 0
+    var stack: Array = [root]
+    while not stack.is_empty():
+        var node = stack.pop_back()
+        for c in node.get_children():
+            stack.append(c)
+        if not (node is MeshInstance3D):
+            continue
+        var mi := node as MeshInstance3D
+        if mi.mesh == null:
+            continue
+        for i in range(mi.mesh.get_surface_count()):
+            var src: Material = mi.get_active_material(i)
+            if src is ShaderMaterial:
+                continue
+            mi.set_surface_override_material(i, _toon_material(src))
+            n += 1
+    return n
+
+func set_toon(on: bool) -> void:
+    toon_on = on
+    save["toon"] = on
+    print("gcrip toon: cel shading ", "on" if on else "off", " - reload the stage to see it")
+
+func toon_sun_colors() -> Array:
+    # C0 / K0 come from the time-of-day palette every frame in the real game
+    # (d_kankyo.cpp:1821, :1827). The Great Sea's Actor_K0 runs (255,222,163) at noon to
+    # (158,158,155) at night; C0 is its shadow partner.
+    var h := day_time() / UNITS_PER_HOUR
+    var day_k := Color(1.0, 0.871, 0.639)
+    var night_k := Color(0.62, 0.62, 0.608)
+    var day_c := Color(0.42, 0.44, 0.52)
+    var night_c := Color(0.20, 0.22, 0.34)
+    var t := clampf((cos((h - 12.0) / 24.0 * TAU) + 1.0) * 0.5, 0.0, 1.0)
+    return [night_c.lerp(day_c, t), night_k.lerp(day_k, t)]
+
+func toon_input(event: InputEvent) -> void:
+    # F6 flips cel shading so the two looks can be compared without relaunching
+    if event is InputEventKey and event.pressed and not event.echo             and (event as InputEventKey).keycode == KEY_F6:
+        set_toon(not toon_on)
+        var cs := get_tree().current_scene
+        if cs:
+            get_tree().reload_current_scene()
+
+func toon_tick() -> void:
+    if not toon_on or _toon_cache.is_empty():
+        return
+    var cs := toon_sun_colors()
+    for k in _toon_cache:
+        var m: ShaderMaterial = _toon_cache[k]
+        m.set_shader_parameter("c0", Vector3(cs[0].r, cs[0].g, cs[0].b))
+        m.set_shader_parameter("k0", Vector3(cs[1].r, cs[1].g, cs[1].b))
+
 func dungeon_slot(stage := "") -> int:
     var key := stage if stage != "" else current_stage_key().split("_r")[0]
     var info = dungeons.get(key)
@@ -6497,6 +6599,7 @@ func _show_banner(text: String) -> void:
 func _unhandled_input(event: InputEvent) -> void:
     if calib != null:
         return
+    toon_input(event)
     var start_pressed: bool = event is InputEventJoypadButton and event.pressed and not Input.is_joy_known(event.device) and banner != null and banner.visible
     if event.is_action_pressed("calibrate") or start_pressed:
         open_calibration()
@@ -7855,6 +7958,45 @@ func _physics_process(_delta: float) -> void:
     Game.run_event(ev)
 """
 
+_TOON_SHADER = """shader_type spatial;
+render_mode unshaded, cull_back, depth_draw_opaque;
+// gcrip: Wind Waker's cel shading, as the game actually builds it.
+//   lit = C0 * (1 - toon) + K0 * toon      (TEV stage 0)
+//   out = albedo * lit                     (TEV stage 1)
+// `toon` is a RAMP LOOKUP indexed by the lit value, not a dot product - the ramp is the
+// game's own toon.bti, flat 0 to index 119, a rise to 137, then flat 255.  Unshaded because
+// the ramp IS the lighting model; Godot's own light loop would fight it.
+
+uniform sampler2D albedo_tex : source_color, filter_linear_mipmap;
+uniform vec4 albedo_col : source_color = vec4(1.0);
+uniform bool has_tex = true;
+uniform sampler2D toon_ramp : filter_linear;
+uniform vec3 sun_dir = vec3(0.55, -0.72, 0.42);
+uniform vec3 c0 : source_color = vec3(0.42, 0.44, 0.52);   // shadow / TEV register 0
+uniform vec3 k0 : source_color = vec3(1.0, 0.94, 0.82);    // lit / konst 0
+uniform float alpha_scissor = 0.0;
+
+varying vec3 world_normal;
+
+void vertex() {
+    world_normal = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
+}
+
+void fragment() {
+    // the lit value the ramp is indexed by: a half-Lambert, so back faces sit at the ramp's
+    // flat foot rather than clamping to zero
+    float d = clamp(dot(normalize(world_normal), -normalize(sun_dir)) * 0.5 + 0.5, 0.0, 1.0);
+    float toon = texture(toon_ramp, vec2(d, 0.5)).r;
+    vec3 lit = mix(c0, k0, toon);
+    vec4 base = has_tex ? texture(albedo_tex, UV) * albedo_col : albedo_col;
+    if (alpha_scissor > 0.0 && base.a < alpha_scissor) {
+        discard;
+    }
+    ALBEDO = base.rgb * lit;
+    ALPHA = base.a;
+}
+"""
+
 _HIT_SWITCH_GD = """extends StaticBody3D
 # gcrip: an object that reacts to ONE kind of attack and raises a switch.  Not a breakable -
 # nothing is destroyed; the switch is the whole point.  See ww_story_labyrinths.json.
@@ -7946,14 +8088,18 @@ var back_room := 0x3F
 var arg1 := 0
 var lock: int = Lock.NONE
 var opened := false
-var warp: Area3D = null      # the exit volume this door stands in front of
+var warp: Area3D = null      # the exit volume this door stands in front of, if it gates one
+var slab: CollisionShape3D = null   # the physical barrier, for doors with no model
 
 const DOOR10 := ["door10", "door11", "door20", "door21", "Zenshut", "keyshut", "K_Zshut"]
 const DOOR12 := ["door12", "door12M", "door12B", "door13", "door13M", "door13B",
                  "keyS12", "ZenS12"]
 
-func setup_door(actor_name: String, p: int, rot: Array) -> void:
+var door_rot_y := 0.0
+
+func setup_door(actor_name: String, p: int, rot: Array, rot_y_deg := 0.0) -> void:
     actor = actor_name
+    door_rot_y = rot_y_deg
     params = p
     swbit = p & 0xFF
     dtype = (p >> 8) & 0xF
@@ -7981,6 +8127,18 @@ func setup_door(actor_name: String, p: int, rot: Array) -> void:
     _find_warp()
     if lock != Lock.NONE and not opened:
         add_to_group("interact")
+        # A dungeon's doors are room-to-room INSIDE one scene, so most gate no warp at all -
+        # and a door placed from the record has no model either.  Without a slab a "locked"
+        # door would stop nothing, so give it one and drop it when the door opens.
+        if warp == null:
+            slab = CollisionShape3D.new()
+            var box := BoxShape3D.new()
+            box.size = Vector3(300.0, 360.0, 40.0)
+            slab.shape = box
+            slab.position.y = 180.0
+            slab.rotation.y = deg_to_rad(door_rot_y)
+            add_child(slab)
+            collision_layer = 1
 
 func _find_warp() -> void:
     # the exit volume is generated from the SCLS table, not from this placement, so pair them
@@ -8007,6 +8165,9 @@ func _unlock(spend: bool) -> void:
         Game.set_switch(front_room, swbit)   # stays unlocked for good
     if warp and is_instance_valid(warp):
         warp.set("locked", false)
+    if slab and is_instance_valid(slab):
+        slab.queue_free()      # the way is open
+        slab = null
     remove_from_group("interact")
     print("gcrip door: ", actor, " type ", dtype, " opened",
         " (spent a small key)" if spend else "")
@@ -8435,6 +8596,13 @@ func _spawn_tags() -> void:
     _spawn_salvage()
     _spawn_missing_doors()
     _spawn_hit_switches()
+    _apply_toon()
+
+func _apply_toon() -> void:
+    # cel shading: every surface in this stage goes through the game's own ramp
+    var n := Game.toonify(self)
+    if n > 0:
+        print("gcrip: cel shading on ", n, " surfaces in ", name)
 
 const HIT_SWITCHES := ["Qdghd", "Ykzyg", "MhmrSW0", "bonbori", "SW_HIT0"]
 
@@ -8487,7 +8655,8 @@ func _spawn_missing_doors() -> void:
         add_child(dn)
         dn.global_position = Vector3(rec["pos"][0], rec["pos"][1], rec["pos"][2])
         dn.set("node_name", nn)
-        dn.setup_door(act, int(rec["params"]), rec.get("rot", [0, 0, 0]))
+        dn.setup_door(act, int(rec["params"]), rec.get("rot", [0, 0, 0]),
+            float(rec.get("rot_y_deg", 0.0)))
         n += 1
     if n > 0:
         print("gcrip: ", n, " doors with no model placed from the record in ", name)
@@ -8730,7 +8899,7 @@ func _wrap_actors() -> void:
             node.setup(params, mesh, rot_y)
         elif script_path.ends_with("door.gd"):
             node.set("node_name", node_name)
-            node.setup_door(actor, params, rec.get("rot", [0, 0, 0]))
+            node.setup_door(actor, params, rec.get("rot", [0, 0, 0]), rot_y)
         elif script_path.ends_with("chest.gd"):
             node.setup(int(rot[2]), mesh, rot_y, params)
         elif script_path.ends_with("pickup.gd"):
@@ -9939,6 +10108,69 @@ def _godot_glb(stage_gltf: Path, out_glb: Path, *, suffix_rooms: bool = True) ->
     return n_col
 
 
+def _write_toon_ramp(rip_dir: Path, out_dir: Path) -> None:
+    """The game's own cel ramp: res/Object/System.arc :: archive/dat/toon.bti, 256x8 I4.
+
+    The 8x8 ramp baked into every BMD is a placeholder that d_resorce.cpp:76-82 swaps at load
+    by testing two characters of the texture name, so the real curve has to come from here.
+    Decoded off the disc it is flat 0 up to index 119, rises to 137, then flat 255.
+    """
+    out = out_dir / "toon_ramp.png"
+    try:
+        from gcrip.formats import bti, rarc, yaz0
+        from gcrip.stage import _Disc, _find_iso
+
+        disc = _Disc(_find_iso(rip_dir, None))
+        try:
+            e = disc.entries.get("res/Object/System.arc")
+            if e is None:
+                return
+            blob = disc.img.read(e.offset, e.size)
+            if blob[:4] == b"Yaz0":
+                blob = yaz0.decompress(blob)
+            arc = rarc.parse(blob)
+            for f in arc.files:
+                if not f.path.endswith("toon.bti"):
+                    continue
+                tex = bti.parse(arc.read(blob, f))
+                img = tex.decode()
+                try:
+                    from PIL import Image
+
+                    Image.fromarray(img[:, :, :3], "RGB").save(out)
+                except ImportError:
+                    _write_png_rgb(out, img[:, :, :3])
+                return
+        finally:
+            disc.close()
+    except Exception as exc:  # the ramp is a nicety; never fail an export over it
+        print(f"  toon ramp not written: {exc}")
+
+
+def _write_png_rgb(path: Path, arr) -> None:
+    """Minimal PNG writer, so the ramp does not depend on Pillow."""
+    import struct
+    import zlib
+
+    h, w = arr.shape[0], arr.shape[1]
+    raw = b"".join(b"\x00" + arr[y].tobytes() for y in range(h))
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(data))
+            + tag
+            + data
+            + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+        )
+
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+        + chunk(b"IDAT", zlib.compress(raw, 9))
+        + chunk(b"IEND", b"")
+    )
+
+
 def _godot_col_glb(col_gltf: Path, out_glb: Path) -> int:
     """Pack the stage's real .dzb collision for Godot: solid surfaces become
     -colonly nodes (collision only, nothing rendered); water/lava/poison meshes are
@@ -10460,6 +10692,8 @@ def export_godot(
     (out_dir / "player.gd").write_text(_PLAYER_GD, encoding="utf-8")
     (out_dir / "player.tscn").write_text(_player_tscn(has_model), encoding="utf-8")
     (out_dir / "game.gd").write_text(_GAME_GD, encoding="utf-8")
+    (out_dir / "toon.gdshader").write_text(_TOON_SHADER, encoding="utf-8")
+    _write_toon_ramp(rip_dir, out_dir)
     (out_dir / "warp.gd").write_text(_WARP_GD, encoding="utf-8")
     (out_dir / "event_runner.gd").write_text(_EVENT_GD, encoding="utf-8")
     (out_dir / "cutscene.gd").write_text(_CUTSCENE_GD, encoding="utf-8")

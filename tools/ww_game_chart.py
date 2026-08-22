@@ -215,6 +215,11 @@ def subsystems() -> list[tuple[str, str, str]]:
         ("Enemies", "partial",
          f"{len(solid)} fully mined, {len(thin)} stubbed in the decomp ({', '.join(thin)})"),
         ("Actor models", "ok", f"{len(models)} animated models with clips and head attachment"),
+        ("Cel shading", "partial",
+         "the game's own toon.bti ramp (256x8 I4, flat to 119, rise to 137, flat after) drives"
+         " a shader that reproduces WW's TEV recipe albedo * mix(C0, K0, ramp), with C0/K0"
+         " following the clock. NOT yet seen by human eyes - headless has no viewport - and"
+         " BTK/BRK material animation is still unparsed, so water does not move"),
         ("Cutscenes (.stb)", "ok", f"{len(cuts)} baked and played end to end"),
         ("Events (event_list)", "ok",
          "interpreter runs staff/cut timelines: camera, dialogue, actor animation"),
@@ -248,7 +253,7 @@ def mermaid_systems(rows: list[tuple[str, str, str]]) -> str:
         "World": ["Stages", "Doors", "Day / night", "Sailing"],
         "Link": ["Player movement", "Items (X)"],
         "Actors": ["Enemies", "Actor models", "NPC dialogue"],
-        "Presentation": ["Cutscenes (.stb)", "Music"],
+        "Presentation": ["Cutscenes (.stb)", "Music", "Cel shading"],
         "Progress": ["Events (event_list)", "Save / story bits", "Dungeons"],
     }
     status = {name: st for name, st, _ in rows}
