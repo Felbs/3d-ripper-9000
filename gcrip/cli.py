@@ -359,6 +359,7 @@ def cmd_godot(args: argparse.Namespace) -> int:
             }.items()
             if v
         } or None,
+        physical=args.physical,
     )
     return 0
 
@@ -554,6 +555,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--hdri-sunset", default=None, help="HDR used at dawn/dusk")
     p.add_argument("--hdri-night", default=None, help="HDR used at night")
+    p.add_argument(
+        "--physical", dest="physical", action="store_true", default=None,
+        help="physical light units, exposure and the HDR sky dome (default: on only with --hdri)",
+    )
+    p.add_argument("--no-physical", dest="physical", action="store_false",
+                   help="force the simple always-visible lighting even with an HDR")
     p.add_argument("-q", "--quiet", action="store_true")
     p.set_defaults(fn=cmd_godot)
 

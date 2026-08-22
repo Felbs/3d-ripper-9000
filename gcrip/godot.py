@@ -3407,6 +3407,11 @@ func _ready() -> void:
         toon_on = false
     if shade_arg != "" and SHADE_MODES.has(shade_arg):
         shade_mode = shade_arg
+    var lf := FileAccess.open("res://lighting.json", FileAccess.READ)
+    if lf:
+        var lp = JSON.parse_string(lf.get_as_text())
+        if lp is Dictionary:
+            physical = bool(lp.get("physical", false))
     var dgf := FileAccess.open("res://dungeons.json", FileAccess.READ)
     if dgf:
         var dgp = JSON.parse_string(dgf.get_as_text())
@@ -5804,7 +5809,8 @@ const DUNGEON_BIG_KEY := 4         # bit 2
 var sun_direction := Vector3(0.55, -0.72, 0.42)   # set by the stage's light rig each tick
 # the luminance of a lit diffuse white right now, lux / pi - what unshaded shaders scale by so
 # they sit at the same exposure as the lit surfaces (physical light units)
-var scene_nits := 31800.0
+var physical := false          # physical light units + HDR rig; else simple always-on light
+var scene_nits := 1.0          # unshaded multiplier; 1.0 in simple mode, high only in physical
 var toon_shader: Shader = null
 var lit_shader: Shader = null
 var toon_ramp: Texture2D = null
@@ -9178,6 +9184,20 @@ func _setup_lighting() -> void:
     var env: Environment = env_node.environment
     if env == null:
         return
+    if not Game.physical:
+        # simple mode: a plain sun and sky, always visible.  Indoors, a soft ambient fill and a
+        # dim key so the dungeon is not pitch black.
+        if not outdoors:
+            sun.light_energy = 0.25
+            sun.shadow_enabled = false
+            env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+            env.ambient_light_color = Color(0.42, 0.44, 0.5)
+            env.ambient_light_energy = 0.6
+            env.background_mode = Environment.BG_COLOR
+            env.background_color = Color(0.03, 0.03, 0.05)
+        _light_tick()
+        print("gcrip light: simple ", "outdoor" if outdoors else "indoor", " rig in ", name)
+        return
     env.sdfgi_enabled = Game.gi_on and outdoors
     # the HDR lights the world (ambient + reflection); a stylised sky dome hides it as the
     # background, and the visible sun is the game's own, tracked by the clock
@@ -9263,6 +9283,24 @@ func _apply_slot(slot: String) -> void:
 
 func _light_tick() -> void:
     if sun == null or not outdoors:
+        return
+    if not Game.physical:
+        # the sun's arc from the clock, in ordinary energy - bright by day, off at night, warm
+        # near the horizon.  scene_nits stays 1, so the toon look reads correctly.
+        var hh := Game.day_time() / Game.UNITS_PER_HOUR
+        var tt := clampf((hh - 6.0) / 12.0, 0.0, 1.0)
+        var ee := sin(tt * PI)
+        var elv := ee * deg_to_rad(70.0)
+        var azm := lerpf(deg_to_rad(-100.0), deg_to_rad(100.0), tt)
+        var night2 := hh < 5.5 or hh > 18.5
+        if night2:
+            elv = deg_to_rad(-15.0)
+        var dr := Vector3(cos(elv) * sin(azm), -sin(elv), cos(elv) * cos(azm)).normalized()
+        sun.global_transform = Transform3D(Basis.looking_at(dr, Vector3.UP), Vector3(0, 10000, 0))
+        sun.light_energy = 0.15 if night2 else lerpf(0.5, 1.25, ee)
+        sun.light_temperature = lerpf(3200.0, 6000.0, ee)
+        Game.sun_direction = dr
+        Game.scene_nits = 1.0
         return
     # the sun's arc from the clock: 06:00 on the eastern horizon, noon overhead, 18:00 west;
     # a warm colour temperature near the horizon and white at noon.  Same direction is pushed
@@ -10081,6 +10119,18 @@ func _on_body_entered(body: Node3D) -> void:
 """
 
 
+def _render_block(physical: bool) -> str:
+    phys = "true" if physical else "false"
+    return (
+        "[rendering]\n"
+        f"lights_and_shadows/use_physical_light_units={phys}\n"
+        "lights_and_shadows/directional_shadow/size=4096\n"
+        "lights_and_shadows/directional_shadow/soft_shadow_filter_quality=2\n"
+        "anti_aliasing/quality/msaa_3d=2\n"
+        "anti_aliasing/quality/screen_space_aa=1"
+    )
+
+
 def _sun_basis() -> str:
     """DirectionalLight3D basis: pitched down 50deg, turned 30deg."""
     rx, ry = math.radians(-50), math.radians(30)
@@ -10096,6 +10146,87 @@ def _sun_basis() -> str:
     return ", ".join(f"{v:.5f}" for v in nums)
 
 
+def _lighting_block(physical: bool) -> str:
+    if physical:
+        return """[sub_resource type="PhysicalSkyMaterial" id="sky"]
+rayleigh_coefficient = 2.0
+mie_coefficient = 0.005
+turbidity = 10.0
+ground_color = Color(0.3, 0.26, 0.22, 1)
+
+[sub_resource type="Sky" id="skyres"]
+sky_material = SubResource("sky")
+radiance_size = 4
+
+[sub_resource type="CameraAttributesPhysical" id="camattr"]
+exposure_aperture = 16.0
+exposure_shutter_speed = 100.0
+exposure_sensitivity = 100.0
+auto_exposure_enabled = true
+auto_exposure_min_exposure_value = 1.0
+auto_exposure_max_exposure_value = 15.0
+
+[sub_resource type="Environment" id="env"]
+background_mode = 2
+sky = SubResource("skyres")
+ambient_light_source = 3
+reflected_light_source = 2
+tonemap_mode = 3
+tonemap_white = 6.0
+ssao_enabled = true
+ssao_radius = 120.0
+ssil_enabled = true
+glow_enabled = true
+glow_intensity = 0.35
+glow_hdr_threshold = 1.2"""
+    # simple: a plain sky, sky ambient, Filmic, mild glow - always visible, no exposure games
+    return """[sub_resource type="ProceduralSkyMaterial" id="sky"]
+sky_top_color = Color(0.28, 0.5, 0.78, 1)
+sky_horizon_color = Color(0.7, 0.82, 0.92, 1)
+ground_bottom_color = Color(0.42, 0.45, 0.4, 1)
+ground_horizon_color = Color(0.7, 0.82, 0.92, 1)
+sun_angle_max = 30.0
+
+[sub_resource type="Sky" id="skyres"]
+sky_material = SubResource("sky")
+
+[sub_resource type="Environment" id="env"]
+background_mode = 2
+sky = SubResource("skyres")
+ambient_light_source = 3
+ambient_light_energy = 1.0
+tonemap_mode = 2
+glow_enabled = true
+glow_intensity = 0.25
+glow_bloom = 0.05"""
+
+
+def _sun_env_nodes(physical: bool) -> str:
+    sun = (
+        '''[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(%s, 0, 10000, 0)
+light_intensity_lux = 100000.0
+light_temperature = 5500.0
+light_angular_distance = 0.53
+shadow_enabled = true
+directional_shadow_max_distance = 60000.0
+shadow_blur = 1.5'''
+        if physical
+        else '''[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(%s, 0, 10000, 0)
+light_energy = 1.15
+shadow_enabled = true
+directional_shadow_max_distance = 60000.0'''
+    ) % _sun_basis()
+    env = (
+        '[node name="Env" type="WorldEnvironment" parent="."]\n'
+        'environment = SubResource("env")'
+    )
+    if physical:
+        env += '\ncamera_attributes = SubResource("camattr")'
+    return sun + "\n\n" + env
+
+
 def _stage_tscn(
     name: str,
     spawn: tuple[float, float, float],
@@ -10104,6 +10235,7 @@ def _stage_tscn(
     exits: list[dict] | None = None,
     water_level: float = -1.0e9,
     spawns: list[dict] | None = None,
+    physical: bool = False,
 ) -> str:
     x, y, z = spawn
     exits = exits or []
@@ -10161,72 +10293,14 @@ def _stage_tscn(
 {col_res}{warp_res}{stage_res}
 
 {warp_shape}
-[sub_resource type="PhysicalSkyMaterial" id="sky"]
-rayleigh_coefficient = 2.0
-mie_coefficient = 0.005
-mie_eccentricity = 0.8
-turbidity = 10.0
-sun_disk_scale = 1.0
-ground_color = Color(0.3, 0.26, 0.22, 1)
-energy_multiplier = 1.0
-
-[sub_resource type="Sky" id="skyres"]
-sky_material = SubResource("sky")
-radiance_size = 4
-
-[sub_resource type="CameraAttributesPhysical" id="camattr"]
-exposure_aperture = 16.0
-exposure_shutter_speed = 100.0
-exposure_sensitivity = 100.0
-auto_exposure_enabled = true
-auto_exposure_min_exposure_value = 1.0
-auto_exposure_max_exposure_value = 15.0
-auto_exposure_speed = 1.2
-
-[sub_resource type="Environment" id="env"]
-background_mode = 2
-sky = SubResource("skyres")
-ambient_light_source = 3
-ambient_light_sky_contribution = 1.0
-reflected_light_source = 2
-tonemap_mode = 3
-tonemap_white = 6.0
-ssao_enabled = true
-ssao_radius = 120.0
-ssao_intensity = 1.5
-ssil_enabled = true
-ssil_radius = 200.0
-sdfgi_enabled = false
-sdfgi_use_occlusion = true
-sdfgi_cascades = 6
-sdfgi_min_cell_size = 40.0
-sdfgi_y_scale = 1
-glow_enabled = true
-glow_intensity = 0.35
-glow_bloom = 0.05
-glow_hdr_threshold = 1.2
+{_lighting_block(physical)}
 
 [node name="{name}" type="Node3D"]
 script = ExtResource("5")
 
 [node name="Level" parent="." instance=ExtResource("1")]
 {col_node}
-[node name="Sun" type="DirectionalLight3D" parent="."]
-transform = Transform3D({_sun_basis()}, 0, 10000, 0)
-light_intensity_lux = 100000.0
-light_temperature = 5500.0
-light_angular_distance = 0.53
-shadow_enabled = true
-directional_shadow_mode = 2
-directional_shadow_max_distance = 60000.0
-directional_shadow_split_1 = 0.05
-directional_shadow_split_2 = 0.15
-directional_shadow_split_3 = 0.4
-shadow_blur = 1.5
-
-[node name="Env" type="WorldEnvironment" parent="."]
-environment = SubResource("env")
-camera_attributes = SubResource("camattr")
+{_sun_env_nodes(physical)}
 
 [node name="Player" parent="." instance=ExtResource("2")]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, {x:.1f}, {y + 30:.1f}, {z:.1f})
@@ -10922,7 +10996,9 @@ def _copy_music(rip_dir: Path, out_dir: Path, stages: list[str]) -> int:
     return n
 
 
-def _project_godot(title: str, main_scene: str, renderer: str = "forward_plus") -> str:
+def _project_godot(
+    title: str, main_scene: str, renderer: str = "forward_plus", physical: bool = False
+) -> str:
     k = _KEYS
     return f"""; generated by gcrip godot - open this folder with Godot 4
 config_version=5
@@ -10971,13 +11047,7 @@ wav={{
 renderer/rendering_method="{renderer}"
 renderer/rendering_method.mobile="{renderer}"
 
-[rendering]
-lights_and_shadows/use_physical_light_units=true
-lights_and_shadows/directional_shadow/size=8192
-lights_and_shadows/directional_shadow/soft_shadow_filter_quality=3
-global_illumination/sdfgi/probe_ray_count=2
-anti_aliasing/quality/msaa_3d=2
-anti_aliasing/quality/screen_space_aa=1
+{_render_block(physical)}
 """
 
 
@@ -11641,6 +11711,7 @@ def export_godot(
     quiet: bool = False,
     renderer: str = "forward_plus",
     hdri: dict | None = None,
+    physical: bool | None = None,
 ) -> dict:
     t0 = time.monotonic()
     rip_dir = Path(rip_dir)
@@ -11658,6 +11729,8 @@ def export_godot(
         )
 
     out_dir = Path(out_dir) if out_dir else rip_dir / "godot"
+    # simple lighting is the default; physical is opt-in, auto-on with an HDR
+    physical_on = bool(hdri) if physical is None else bool(physical)
     (out_dir / "stages").mkdir(parents=True, exist_ok=True)
     (out_dir / "scenes").mkdir(parents=True, exist_ok=True)
 
@@ -11710,7 +11783,8 @@ def export_godot(
         water = 0.0 if name.lower().startswith("sea") else -1.0e9
         (out_dir / "scenes" / f"{name}.tscn").write_text(
             _stage_tscn(
-                name, spawn, has_col=has_col, exits=exits, water_level=water, spawns=spawns
+                name, spawn, has_col=has_col, exits=exits, water_level=water, spawns=spawns,
+                physical=physical_on,
             ),
             encoding="utf-8",
         )
@@ -11788,6 +11862,9 @@ def export_godot(
     (out_dir / "player.gd").write_text(_PLAYER_GD, encoding="utf-8")
     (out_dir / "player.tscn").write_text(_player_tscn(has_model), encoding="utf-8")
     (out_dir / "game.gd").write_text(_GAME_GD, encoding="utf-8")
+    (out_dir / "lighting.json").write_text(
+        json.dumps({"physical": physical_on}), encoding="utf-8"
+    )
     (out_dir / "toon.gdshader").write_text(_TOON_SHADER, encoding="utf-8")
     (out_dir / "ww_material.gdshader").write_text(
         (Path(__file__).parent / "data" / "ww_material.gdshader").read_text(encoding="utf-8"),
@@ -11802,7 +11879,7 @@ def export_godot(
     (out_dir / "ocean.gdshader").write_text(_OCEAN_SHADER, encoding="utf-8")
     (out_dir / "skydome.gdshader").write_text(_SKYDOME_SHADER, encoding="utf-8")
     _write_ies(out_dir)
-    _write_hdri(out_dir, hdri)
+    _write_hdri(out_dir, hdri if physical_on else None)
     _write_toon_ramp(rip_dir, out_dir)
     (out_dir / "warp.gd").write_text(_WARP_GD, encoding="utf-8")
     (out_dir / "event_runner.gd").write_text(_EVENT_GD, encoding="utf-8")
@@ -11910,7 +11987,7 @@ def export_godot(
     (out_dir / "stage_names.json").write_text(json.dumps(names, indent=1), encoding="utf-8")
     main = next((n for n in ("sea_r44", "M_NewD2", "sea") if n in done), done[0])
     (out_dir / "project.godot").write_text(
-        _project_godot(title, main, renderer), encoding="utf-8"
+        _project_godot(title, main, renderer, physical_on), encoding="utf-8"
     )
     seconds = round(time.monotonic() - t0, 1)
     if not quiet:
