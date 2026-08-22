@@ -5824,6 +5824,8 @@ var physical := false          # physical light units + HDR rig; else simple alw
 var scene_nits := 1.0          # unshaded multiplier; 1.0 in simple mode, high only in physical
 var toon_shader: Shader = null
 var lit_shader: Shader = null
+var toon_shader_ds: Shader = null      # the cull_disabled twins, for doubleSided materials
+var lit_shader_ds: Shader = null
 var toon_ramp: Texture2D = null
 var toon_on := true
 # the look the whole world is drawn in.  "toon" is the game's own recipe, untouched; the others
@@ -6032,6 +6034,10 @@ func toon_ready() -> bool:
         lit_shader = load("res://ww_material.gdshader")
     if toon_shader == null and ResourceLoader.exists("res://toon.gdshader"):
         toon_shader = load("res://toon.gdshader")
+    if lit_shader_ds == null and ResourceLoader.exists("res://ww_material_ds.gdshader"):
+        lit_shader_ds = load("res://ww_material_ds.gdshader")
+    if toon_shader_ds == null and ResourceLoader.exists("res://toon_ds.gdshader"):
+        toon_shader_ds = load("res://toon_ds.gdshader")
     if toon_ramp == null and ResourceLoader.exists("res://toon_ramp.png"):
         toon_ramp = load("res://toon_ramp.png")
     return toon_shader != null and toon_ramp != null
@@ -6042,11 +6048,20 @@ func _toon_material(src: Material) -> ShaderMaterial:
     # one ShaderMaterial per source material, shared by every surface that used it
     var key := src.resource_path if src and src.resource_path != "" else str(src)
     key += "|" + shade_mode
+    # the original's GX cull mode came through glTF doubleSided; keep it, or surfaces the
+    # game drew from both sides go invisible from one side (the see-through bridge)
+    var two_sided := (src is BaseMaterial3D
+        and (src as BaseMaterial3D).cull_mode == BaseMaterial3D.CULL_DISABLED)
+    if two_sided:
+        key += "|ds"
     if _toon_cache.has(key):
         return _toon_cache[key]
     var m := ShaderMaterial.new()
     var lit: bool = shade_mode != "toon" and lit_shader != null
-    m.shader = lit_shader if lit else toon_shader
+    if lit:
+        m.shader = lit_shader_ds if (two_sided and lit_shader_ds != null) else lit_shader
+    else:
+        m.shader = toon_shader_ds if (two_sided and toon_shader_ds != null) else toon_shader
     m.set_shader_parameter("toon_ramp", toon_ramp)
     if lit:
         var cls := classify_material(src, _shade_archive)
@@ -8334,8 +8349,13 @@ render_mode cull_disabled, depth_draw_opaque, unshaded;
 // gcrip: the Great Sea surface.  The wave sum is daSea_packet_c's, with the four wave rows
 // pushed from the SAME const the CPU sea_height() reads, so the boat floats on what you see.
 //   y = 1 + sum_i amp_i * scale * cos(k_i * (dx_i*x + dz_i*z) - phase_i(t) + off_i)
-// Cel shading on purpose: the real TEV is C0 + K0*tex0 + K1*tex2 with no Fresnel and no
-// reflection; this is the ramp-lit sea colour, which is what the game actually looks like.
+// The fragment is the game/film middle ground: the cel ramp still lights the water body
+// (the real TEV had no Fresnel at all), but the surface now behaves like water -
+//   depth fade   the beach shows through the shallows (hint_depth_texture thickness)
+//   absorption   Beer-Lambert: turquoise shallows deepening to the sea colour
+//   Fresnel      Schlick, F0=0.02 (IOR 1.333): sky reflection, mirror-like at grazing
+//   sun glint    gloss falls with distance - sharp sparkle near, wide sheet at the horizon
+//   foam         animated shoreline band + whitecaps on crests, scaled by wave_scale
 
 uniform vec4 wave_a = vec4(2.5, 13600.0, 0.0, 200.0);     // amp, wavelength, phase s16, period
 uniform vec4 wave_b = vec4(2.5, 11200.0, 4000.0, 190.0);
@@ -8347,14 +8367,27 @@ uniform float wave_scale = 30.0;     // the room's wave_max, eased (sea_cur_scal
 uniform float t_frames = 0.0;        // physics frames, the clock sea_height() uses
 uniform vec3 sea_day : source_color = vec3(0.16, 0.42, 0.62);
 uniform vec3 sea_night : source_color = vec3(0.05, 0.12, 0.24);
+uniform vec3 shallow_col : source_color = vec3(0.32, 0.64, 0.66);  // absorption start
 uniform float night = 0.0;
 uniform vec3 sun_dir = vec3(0.55, -0.72, 0.42);
 uniform sampler2D toon_ramp : filter_linear;
 uniform vec3 c0 : source_color = vec3(0.42, 0.44, 0.52);
 uniform vec3 k0 : source_color = vec3(1.0, 0.94, 0.82);
 uniform float nits = 1.0;   // physical units: unshaded output is luminance
+// depth-fade distances in world units (100 units ~ 1 m)
+// per-channel Beer-Lambert extinction, per world unit (100 units ~ 1 m).  Red dies in
+// ~100 units, green ~250, blue ~670 - the turquoise-to-deep-blue gradient comes free.
+uniform vec3 absorb_rgb = vec3(0.010, 0.004, 0.0015);
+uniform float foam_dist = 90.0;      // shoreline foam band thickness
+// the sky the water reflects; matches the dome palette (day values, dimmed by `night`)
+uniform vec3 sky_zenith : source_color = vec3(0.20, 0.45, 0.75);
+uniform vec3 sky_horizon : source_color = vec3(0.70, 0.82, 0.92);
+uniform vec3 sun_col : source_color = vec3(1.0, 0.96, 0.86);
+uniform sampler2D depth_tex : hint_depth_texture, filter_linear;
 
 varying vec3 w_normal;
+varying vec3 w_pos;
+varying float v_crest;   // 0..1, how near this vertex is to the wave-sum crest
 
 float wave(vec4 w, vec2 d, vec2 xz, out vec2 grad) {
     float k = 6.28 / w.y;
@@ -8377,15 +8410,76 @@ void vertex() {
     g = ga + gb + gc + gd;
     VERTEX.y = y - (MODEL_MATRIX * vec4(0.0, 0.0, 0.0, 1.0)).y;
     w_normal = normalize(vec3(-g.x, 1.0, -g.y));
+    w_pos = vec3(wp.x, y, wp.z);
+    v_crest = clamp((y - 1.0) / max(10.0 * wave_scale, 1.0) * 0.5 + 0.5, 0.0, 1.0);
     NORMAL = (inverse(MODEL_MATRIX) * vec4(w_normal, 0.0)).xyz;
 }
 
+// cheap animated value noise for the foam edge
+float vhash(vec2 q) { return fract(sin(dot(q, vec2(127.1, 311.7))) * 43758.5453); }
+float vnoise(vec2 q) {
+    vec2 i = floor(q);
+    vec2 f = fract(q);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(vhash(i), vhash(i + vec2(1.0, 0.0)), f.x),
+               mix(vhash(i + vec2(0.0, 1.0)), vhash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+
 void fragment() {
-    float d = clamp(dot(normalize(w_normal), -normalize(sun_dir)) * 0.5 + 0.5, 0.0, 1.0);
+    vec3 n = normalize(w_normal);
+    if (!FRONT_FACING) { n = -n; }
+    // the cel light factor: the ramp is still the diffuse model, as in the real TEV
+    float d = clamp(dot(n, -normalize(sun_dir)) * 0.5 + 0.5, 0.0, 1.0);
     float toon = texture(toon_ramp, vec2(d, 0.5)).r;
     vec3 lit = mix(c0, k0, toon);
-    vec3 base = mix(sea_day, sea_night, night);
-    ALBEDO = base * lit * nits;
+
+    // water thickness along the eye ray: scene depth minus our own depth
+    float sd = texture(depth_tex, SCREEN_UV).r;
+    vec4 vp = INV_PROJECTION_MATRIX * vec4(SCREEN_UV * 2.0 - 1.0, sd, 1.0);
+    float scene_d = -vp.z / vp.w;
+    float thick = max(scene_d + VERTEX.z, 0.0);   // VERTEX.z is -view depth
+    vec3 transmit = exp(-thick * absorb_rgb);          // per-channel Beer-Lambert
+    float shallow = 1.0 - dot(transmit, vec3(0.30, 0.45, 0.25));  // 0 waterline, 1 deep
+
+    // absorption: red dies first, green next, blue last - shallows turn turquoise, then
+    // the sea colour takes over
+    vec3 deep = mix(sea_day, sea_night, night);
+    vec3 body = mix(deep, shallow_col * mix(1.0, 0.25, night), transmit) * lit;
+
+    // Schlick Fresnel against the sky, F0 = 0.02 (IOR 1.333)
+    vec3 wv = normalize(CAMERA_POSITION_WORLD - w_pos);
+    float cosv = clamp(dot(wv, n), 0.0, 1.0);
+    float fres = 0.02 + 0.98 * pow(1.0 - cosv, 5.0);
+    vec3 r = reflect(-wv, n);
+    float ry = clamp(r.y, 0.0, 1.0);
+    // the palette is pushed from the stage and already carries the hour
+    vec3 sky = mix(sky_horizon, sky_zenith, pow(ry, 0.5));
+
+    // the sun glint: tight sparkle near the camera, a broad sheet at the horizon
+    float dist = -VERTEX.z;
+    float gloss = mix(900.0, 90.0, clamp(dist / 200000.0, 0.0, 1.0));
+    float spec = pow(max(dot(r, -normalize(sun_dir)), 0.0), gloss) * (1.0 - night * 0.85);
+
+    // foam: the shoreline band, edge broken by animated noise, plus whitecaps on crests
+    vec2 fuv = w_pos.xz * 0.012;
+    float fn = vnoise(fuv + vec2(t_frames * 0.010, t_frames * -0.007)) * 0.65
+             + vnoise(fuv * 4.7 - vec2(t_frames * 0.016, 0.0)) * 0.35;
+    float shore = 1.0 - smoothstep(foam_dist * 0.15, foam_dist, thick);
+    float foam = shore * smoothstep(0.28, 0.62, fn * 0.7 + shore * 0.5);
+    float caps = smoothstep(0.86, 0.99, v_crest) * clamp(wave_scale / 30.0, 0.0, 1.0);
+    foam = clamp(foam + caps * smoothstep(0.45, 0.75, fn), 0.0, 1.0);
+
+    vec3 col = mix(body, sky, fres);
+    col += sun_col * spec * (0.05 + fres) * 12.0;
+    col = mix(col, vec3(0.94, 0.97, 1.0) * lit, foam);
+    ALBEDO = col * nits;
+
+    // transparency: shallows show the beach, deep water is opaque, grazing angles and foam
+    // close it up.  Underside (swimming) is a steady translucent tint.
+    float a = mix(0.06, 0.94, shallow);
+    a = clamp(a + fres * 0.85 + foam, 0.0, 1.0);
+    if (!FRONT_FACING) { a = 0.65; }
+    ALPHA = a;
 }
 """
 
@@ -8447,7 +8541,11 @@ void vertex() {
 void fragment() {
     // the lit value the ramp is indexed by: a half-Lambert, so back faces sit at the ramp's
     // flat foot rather than clamping to zero
-    float d = clamp(dot(normalize(world_normal), -normalize(sun_dir)) * 0.5 + 0.5, 0.0, 1.0);
+    // a double-sided surface (cull_disabled variant) shows its back face to the camera:
+    // flip the normal or the ramp lights it as if it faced away.  No-op when culling is on.
+    vec3 wn = normalize(world_normal);
+    if (!FRONT_FACING) { wn = -wn; }
+    float d = clamp(dot(wn, -normalize(sun_dir)) * 0.5 + 0.5, 0.0, 1.0);
     float toon = texture(toon_ramp, vec2(d, 0.5)).r;
     vec3 lit = mix(c0, k0, toon);
     vec4 base = has_tex ? texture(albedo_tex, UV) * albedo_col : albedo_col;
@@ -8820,7 +8918,7 @@ func dredge() -> Dictionary:
     return out
 """
 
-_CONTROL_GD = 'extends Node\n# gcrip: a debug control channel.  Started only by --control[=<port>] and bound to 127.0.0.1,\n# it accepts one JSON object per line and answers with one JSON object per line, so an outside\n# tool (the gcrip MCP server) can drive a running game instead of the game running a canned\n# script.  Never start this in a build you hand to anyone.\n\nconst DEFAULT_PORT := 8787\n\nvar server := TCPServer.new()\nvar peers: Array[StreamPeerTCP] = []\nvar buffers: Array[String] = []\nvar port := DEFAULT_PORT\nvar held: Dictionary = {}          # action -> frames left to hold\n\nfunc start(p: int) -> bool:\n    port = p\n    var err := server.listen(port, "127.0.0.1")\n    if err != OK:\n        push_error("gcrip control: cannot listen on 127.0.0.1:%d (%d)" % [port, err])\n        return false\n    print("gcrip control: listening on 127.0.0.1:", port)\n    return true\n\nfunc _process(_delta: float) -> void:\n    while server.is_connection_available():\n        var peer := server.take_connection()\n        peers.append(peer)\n        buffers.append("")\n        print("gcrip control: client connected")\n    var i := 0\n    while i < peers.size():\n        var peer: StreamPeerTCP = peers[i]\n        peer.poll()\n        if peer.get_status() != StreamPeerTCP.STATUS_CONNECTED:\n            peers.remove_at(i)\n            buffers.remove_at(i)\n            continue\n        var n := peer.get_available_bytes()\n        if n > 0:\n            buffers[i] += peer.get_utf8_string(n)\n        while buffers[i].find("\\n") >= 0:\n            var cut := buffers[i].find("\\n")\n            var line := buffers[i].substr(0, cut).strip_edges()\n            buffers[i] = buffers[i].substr(cut + 1)\n            if line != "":\n                var reply := _handle(line)\n                peer.put_data((JSON.stringify(reply) + "\\n").to_utf8_buffer())\n        i += 1\n\nfunc _physics_process(_delta: float) -> void:\n    # a held button has to span whole PHYSICS frames: the player polls\n    # is_action_just_pressed there, and _process can run many times between two ticks\n    for a in held.keys():\n        held[a] -= 1\n        if held[a] <= 0:\n            Input.action_release(a)\n            held.erase(a)\n\nfunc _handle(line: String) -> Dictionary:\n    var msg = JSON.parse_string(line)\n    if not (msg is Dictionary):\n        return {"ok": false, "error": "not a JSON object"}\n    var cmd := str(msg.get("cmd", ""))\n    match cmd:\n        "state":\n            return {"ok": true, "state": _state()}\n        "stages":\n            var out: Array = []\n            for k in Game.stage_data.keys():\n                if Game.playable(k):\n                    out.append(k)\n            out.sort()\n            return {"ok": true, "stages": out, "names": Game.stage_names}\n        "warp":\n            var st := str(msg.get("stage", ""))\n            if not Game.stage_data.has(st):\n                return {"ok": false, "error": "no such stage: " + st}\n            Game.last_warp_ms = -100000\n            Game.warp(st, int(msg.get("room", 0)), int(msg.get("spawn", 0)))\n            return {"ok": true}\n        "place":\n            var lk := Game.player()\n            if lk == null:\n                return {"ok": false, "error": "no player"}\n            lk.global_position = Vector3(\n                float(msg.get("x", lk.global_position.x)),\n                float(msg.get("y", lk.global_position.y)),\n                float(msg.get("z", lk.global_position.z)))\n            lk.velocity = Vector3.ZERO\n            if msg.has("facing_deg"):\n                lk.set("facing", deg_to_rad(float(msg["facing_deg"])))\n            return {"ok": true, "state": _state()}\n        "input":\n            # hold an input action for N frames, the way a player would tap or hold it\n            var action := str(msg.get("action", ""))\n            if action == "":\n                return {"ok": false, "error": "no action"}\n            if not InputMap.has_action(action):\n                return {"ok": false, "error": "no such action: " + action,\n                        "actions": InputMap.get_actions()}\n            Input.action_press(action, float(msg.get("strength", 1.0)))\n            held[action] = maxi(int(msg.get("frames", 2)), 1)\n            return {"ok": true}\n        "stick":\n            # the analog stick, as a held vector (x right, y forward)\n            Game.control_stick = Vector2(float(msg.get("x", 0.0)), float(msg.get("y", 0.0)))\n            Game.control_stick_frames = int(msg.get("frames", 30))\n            return {"ok": true}\n        "actors":\n            var out2: Array = []\n            for grp in ["interact", "enemy", "pickup"]:\n                for nd in get_tree().get_nodes_in_group(grp):\n                    if is_instance_valid(nd):\n                        var nm = nd.get("actor")\n                        out2.append({"actor": str(nm) if nm != null else "",\n                                     "node": String(nd.name), "group": grp,\n                                     "pos": _v(nd.global_position)})\n            return {"ok": true, "actors": out2}\n        "talk":\n            var who := str(msg.get("actor", ""))\n            var target := Game._find_actor(who)\n            var lk2 := Game.player()\n            if target == null or lk2 == null:\n                return {"ok": false, "error": "no " + who + " here"}\n            lk2.global_position = target.global_position + Vector3(0, 5, 120)\n            target.interact(lk2)\n            return {"ok": true, "state": _state()}\n        "event":\n            var ev := str(msg.get("name", ""))\n            if not Game.events.has(ev):\n                return {"ok": false, "error": "no event " + ev + " in this stage",\n                        "events": Game.events.keys()}\n            return {"ok": Game.run_event(ev)}\n        "dialog":\n            if Game.dialog and Game.dialog_open:\n                Game.dialog.advance()\n            return {"ok": true, "open": Game.dialog_open}\n        "defeat":\n            var who := str(msg.get("actor", ""))\n            if who == "room":\n                Game.story_room_cleared(int(msg.get("room", 0)))\n            else:\n                Game.story_enemy_defeated(who, bool(msg.get("boss", false)))\n            return {"ok": true, "story_done": (Game.save.get("story_done", {}) as Dictionary).keys(),\n                    "boss_dead": Game.save.get("boss_dead", {})}\n        "story_place":\n            # move a named actor (npc_tag: put Medli inside the TagMd box) or place a\n            # breakable story object at a point (hit: the Ajav wall has no placement yet)\n            var pwho := str(msg.get("actor", ""))\n            var plk := Game.player()\n            var at: Vector3 = plk.global_position if plk else Vector3.ZERO\n            if msg.has("x"):\n                at = Vector3(float(msg["x"]), float(msg.get("y", at.y)), float(msg["z"]))\n            if bool(msg.get("hit", false)):\n                var hscene := get_tree().current_scene\n                if hscene == null or not hscene.has_method("spawn_hit_object"):\n                    return {"ok": false, "error": "this scene places no hit objects"}\n                for step in Game.story_hit_steps():\n                    var hb: Dictionary = step.get("hit", {})\n                    if pwho != "" and str(hb.get("actor", "")) != pwho:\n                        continue\n                    var nd = hscene.spawn_hit_object(step, at,\n                        float(msg.get("facing_deg", 0.0)))\n                    return {"ok": true, "node": String(nd.name), "at": _v(at),\n                            "events": hb.get("events", [])}\n                return {"ok": false, "error": "no story hit step is waiting here"}\n            var pt := Game._find_actor(pwho)\n            if pt == null:\n                return {"ok": false, "error": "no " + pwho + " here"}\n            pt.global_position = at\n            return {"ok": true, "at": _v(at), "ground": Game.ground_height(at),\n                    "story_done": (Game.save.get("story_done", {}) as Dictionary).keys(),\n                    "hit_log": Game.hit_log}\n\n        "reg":\n            var rid := int(msg.get("id", 0))\n            if msg.has("value"):\n                Game.set_event_reg(rid, int(msg["value"]))\n            return {"ok": true, "value": Game.event_reg(rid)}\n        "bit":\n            var id := int(msg.get("id", 0))\n            if msg.has("set"):\n                if bool(msg["set"]):\n                    Game.set_event_bit(id)\n                return {"ok": true, "value": Game.event_bit(id)}\n            return {"ok": true, "value": Game.event_bit(id)}\n        "item":\n            var nm := str(msg.get("name", ""))\n            if bool(msg.get("give", false)):\n                Game.give_item(nm)\n            return {"ok": true, "has": Game.has_item(nm), "items": Game.save.get("items", {})}\n        "screenshot":\n            var img := get_viewport().get_texture().get_image()\n            if img == null:\n                return {"ok": false, "error": "no viewport image (running headless?)"}\n            var path := str(msg.get("path", "user://control_shot.png"))\n            img.save_png(path)\n            return {"ok": true, "path": ProjectSettings.globalize_path(path)}\n        "ground":\n            var lk3 := Game.player()\n            var at: Vector3 = lk3.global_position if lk3 else Vector3.ZERO\n            if msg.has("x"):\n                at = Vector3(float(msg["x"]), float(msg.get("y", 0.0)), float(msg["z"]))\n            return {"ok": true, "under": Game.ground_under(at), "at": _v(at)}\n        "quit":\n            get_tree().quit()\n            return {"ok": true}\n    return {"ok": false, "error": "unknown cmd: " + cmd,\n            "commands": ["state", "stages", "warp", "place", "input", "stick", "actors",\n                         "talk", "event", "dialog", "bit", "item", "defeat", "screenshot",\n                         "story_place",\n                         "ground",\n                         "quit"]}\n\nfunc _v(p: Vector3) -> Array:\n    return [snappedf(p.x, 0.1), snappedf(p.y, 0.1), snappedf(p.z, 0.1)]\n\nfunc _state() -> Dictionary:\n    var cs := get_tree().current_scene\n    var lk := Game.player()\n    var st := {\n        "scene": String(cs.name) if cs else "",\n        "stage": Game.current_stage_key(),\n        "event_running": Game.event_running,\n        "cutscene": Game.cutscene_running(),\n        "dialog_open": Game.dialog_open,\n        "hearts": Game.save.get("hearts", 0),\n        "items": Game.save.get("items", {}),\n        "story_done": (Game.save.get("story_done", {}) as Dictionary).keys(),\n    }\n    if lk:\n        st["pos"] = _v(lk.global_position)\n        st["facing_deg"] = snappedf(rad_to_deg(float(lk.get("facing"))), 0.1)\n        st["state"] = int(lk.get("state"))\n        st["ground"] = Game.ground_under(lk.global_position)\n        var pt = lk.get("prompt_target")\n        st["prompt_target"] = (str(pt.get("actor")) if pt != null and is_instance_valid(pt)\n            else "")\n    return st\n'
+_CONTROL_GD = 'extends Node\n# gcrip: a debug control channel.  Started only by --control[=<port>] and bound to 127.0.0.1,\n# it accepts one JSON object per line and answers with one JSON object per line, so an outside\n# tool (the gcrip MCP server) can drive a running game instead of the game running a canned\n# script.  Never start this in a build you hand to anyone.\n\nconst DEFAULT_PORT := 8787\n\nvar server := TCPServer.new()\nvar peers: Array[StreamPeerTCP] = []\nvar buffers: Array[String] = []\nvar port := DEFAULT_PORT\nvar held: Dictionary = {}          # action -> frames left to hold\n\nfunc start(p: int) -> bool:\n    port = p\n    var err := server.listen(port, "127.0.0.1")\n    if err != OK:\n        push_error("gcrip control: cannot listen on 127.0.0.1:%d (%d)" % [port, err])\n        return false\n    print("gcrip control: listening on 127.0.0.1:", port)\n    return true\n\nfunc _process(_delta: float) -> void:\n    while server.is_connection_available():\n        var peer := server.take_connection()\n        peers.append(peer)\n        buffers.append("")\n        print("gcrip control: client connected")\n    var i := 0\n    while i < peers.size():\n        var peer: StreamPeerTCP = peers[i]\n        peer.poll()\n        if peer.get_status() != StreamPeerTCP.STATUS_CONNECTED:\n            peers.remove_at(i)\n            buffers.remove_at(i)\n            continue\n        var n := peer.get_available_bytes()\n        if n > 0:\n            buffers[i] += peer.get_utf8_string(n)\n        while buffers[i].find("\\n") >= 0:\n            var cut := buffers[i].find("\\n")\n            var line := buffers[i].substr(0, cut).strip_edges()\n            buffers[i] = buffers[i].substr(cut + 1)\n            if line != "":\n                var reply := _handle(line)\n                peer.put_data((JSON.stringify(reply) + "\\n").to_utf8_buffer())\n        i += 1\n\nfunc _physics_process(_delta: float) -> void:\n    # a held button has to span whole PHYSICS frames: the player polls\n    # is_action_just_pressed there, and _process can run many times between two ticks\n    for a in held.keys():\n        held[a] -= 1\n        if held[a] <= 0:\n            Input.action_release(a)\n            held.erase(a)\n\nfunc _handle(line: String) -> Dictionary:\n    var msg = JSON.parse_string(line)\n    if not (msg is Dictionary):\n        return {"ok": false, "error": "not a JSON object"}\n    var cmd := str(msg.get("cmd", ""))\n    match cmd:\n        "state":\n            return {"ok": true, "state": _state()}\n        "stages":\n            var out: Array = []\n            for k in Game.stage_data.keys():\n                if Game.playable(k):\n                    out.append(k)\n            out.sort()\n            return {"ok": true, "stages": out, "names": Game.stage_names}\n        "warp":\n            var st := str(msg.get("stage", ""))\n            if not Game.stage_data.has(st):\n                return {"ok": false, "error": "no such stage: " + st}\n            Game.last_warp_ms = -100000\n            Game.warp(st, int(msg.get("room", 0)), int(msg.get("spawn", 0)))\n            return {"ok": true}\n        "place":\n            var lk := Game.player()\n            if lk == null:\n                return {"ok": false, "error": "no player"}\n            lk.global_position = Vector3(\n                float(msg.get("x", lk.global_position.x)),\n                float(msg.get("y", lk.global_position.y)),\n                float(msg.get("z", lk.global_position.z)))\n            lk.velocity = Vector3.ZERO\n            if msg.has("facing_deg"):\n                lk.set("facing", deg_to_rad(float(msg["facing_deg"])))\n            return {"ok": true, "state": _state()}\n        "input":\n            # hold an input action for N frames, the way a player would tap or hold it\n            var action := str(msg.get("action", ""))\n            if action == "":\n                return {"ok": false, "error": "no action"}\n            if not InputMap.has_action(action):\n                return {"ok": false, "error": "no such action: " + action,\n                        "actions": InputMap.get_actions()}\n            Input.action_press(action, float(msg.get("strength", 1.0)))\n            held[action] = maxi(int(msg.get("frames", 2)), 1)\n            return {"ok": true}\n        "stick":\n            # the analog stick, as a held vector (x right, y forward)\n            Game.control_stick = Vector2(float(msg.get("x", 0.0)), float(msg.get("y", 0.0)))\n            Game.control_stick_frames = int(msg.get("frames", 30))\n            return {"ok": true}\n        "actors":\n            var out2: Array = []\n            for grp in ["interact", "enemy", "pickup"]:\n                for nd in get_tree().get_nodes_in_group(grp):\n                    if is_instance_valid(nd):\n                        var nm = nd.get("actor")\n                        out2.append({"actor": str(nm) if nm != null else "",\n                                     "node": String(nd.name), "group": grp,\n                                     "pos": _v(nd.global_position)})\n            return {"ok": true, "actors": out2}\n        "talk":\n            var who := str(msg.get("actor", ""))\n            var target := Game._find_actor(who)\n            var lk2 := Game.player()\n            if target == null or lk2 == null:\n                return {"ok": false, "error": "no " + who + " here"}\n            lk2.global_position = target.global_position + Vector3(0, 5, 120)\n            target.interact(lk2)\n            return {"ok": true, "state": _state()}\n        "event":\n            var ev := str(msg.get("name", ""))\n            if not Game.events.has(ev):\n                return {"ok": false, "error": "no event " + ev + " in this stage",\n                        "events": Game.events.keys()}\n            return {"ok": Game.run_event(ev)}\n        "dialog":\n            if Game.dialog and Game.dialog_open:\n                Game.dialog.advance()\n            return {"ok": true, "open": Game.dialog_open}\n        "defeat":\n            var who := str(msg.get("actor", ""))\n            if who == "room":\n                Game.story_room_cleared(int(msg.get("room", 0)))\n            else:\n                Game.story_enemy_defeated(who, bool(msg.get("boss", false)))\n            return {"ok": true, "story_done": (Game.save.get("story_done", {}) as Dictionary).keys(),\n                    "boss_dead": Game.save.get("boss_dead", {})}\n        "story_place":\n            # move a named actor (npc_tag: put Medli inside the TagMd box) or place a\n            # breakable story object at a point (hit: the Ajav wall has no placement yet)\n            var pwho := str(msg.get("actor", ""))\n            var plk := Game.player()\n            var at: Vector3 = plk.global_position if plk else Vector3.ZERO\n            if msg.has("x"):\n                at = Vector3(float(msg["x"]), float(msg.get("y", at.y)), float(msg["z"]))\n            if bool(msg.get("hit", false)):\n                var hscene := get_tree().current_scene\n                if hscene == null or not hscene.has_method("spawn_hit_object"):\n                    return {"ok": false, "error": "this scene places no hit objects"}\n                for step in Game.story_hit_steps():\n                    var hb: Dictionary = step.get("hit", {})\n                    if pwho != "" and str(hb.get("actor", "")) != pwho:\n                        continue\n                    var nd = hscene.spawn_hit_object(step, at,\n                        float(msg.get("facing_deg", 0.0)))\n                    return {"ok": true, "node": String(nd.name), "at": _v(at),\n                            "events": hb.get("events", [])}\n                return {"ok": false, "error": "no story hit step is waiting here"}\n            var pt := Game._find_actor(pwho)\n            if pt == null:\n                return {"ok": false, "error": "no " + pwho + " here"}\n            pt.global_position = at\n            return {"ok": true, "at": _v(at), "ground": Game.ground_height(at),\n                    "story_done": (Game.save.get("story_done", {}) as Dictionary).keys(),\n                    "hit_log": Game.hit_log}\n\n        "reg":\n            var rid := int(msg.get("id", 0))\n            if msg.has("value"):\n                Game.set_event_reg(rid, int(msg["value"]))\n            return {"ok": true, "value": Game.event_reg(rid)}\n        "bit":\n            var id := int(msg.get("id", 0))\n            if msg.has("set"):\n                if bool(msg["set"]):\n                    Game.set_event_bit(id)\n                return {"ok": true, "value": Game.event_bit(id)}\n            return {"ok": true, "value": Game.event_bit(id)}\n        "item":\n            var nm := str(msg.get("name", ""))\n            if bool(msg.get("give", false)):\n                Game.give_item(nm)\n            return {"ok": true, "has": Game.has_item(nm), "items": Game.save.get("items", {})}\n        "screenshot":\n            var img := get_viewport().get_texture().get_image()\n            if img == null:\n                return {"ok": false, "error": "no viewport image (running headless?)"}\n            var path := str(msg.get("path", "user://control_shot.png"))\n            img.save_png(path)\n            return {"ok": true, "path": ProjectSettings.globalize_path(path)}\n        "eye":\n            # a free camera, for looking at the world from where the follow cam cannot go\n            var dcam := get_tree().root.get_node_or_null("GcripDebugCam") as Camera3D\n            if bool(msg.get("off", false)):\n                if dcam:\n                    dcam.queue_free()\n                var pcam := get_viewport().get_camera_3d()\n                return {"ok": true, "free": false}\n            if dcam == null:\n                dcam = Camera3D.new()\n                dcam.name = "GcripDebugCam"\n                dcam.far = 800000.0\n                get_tree().root.add_child(dcam)\n            var epos := Vector3(float(msg.get("x", 0.0)), float(msg.get("y", 0.0)),\n                float(msg.get("z", 0.0)))\n            var lk4 := Game.player()\n            var look := lk4.global_position if lk4 else Vector3.ZERO\n            if msg.has("lx"):\n                look = Vector3(float(msg["lx"]), float(msg.get("ly", 0.0)),\n                    float(msg["lz"]))\n            dcam.global_position = epos\n            if epos.distance_to(look) > 0.01:\n                dcam.look_at(look, Vector3.UP)\n            dcam.make_current()\n            return {"ok": true, "free": true, "eye": _v(epos), "look": _v(look)}\n        "clock":\n            if msg.has("hour"):\n                Game.set_day_time(float(msg["hour"]) * Game.UNITS_PER_HOUR)\n            return {"ok": true, "hour": Game.day_time() / Game.UNITS_PER_HOUR}\n        "ground":\n            var lk3 := Game.player()\n            var at: Vector3 = lk3.global_position if lk3 else Vector3.ZERO\n            if msg.has("x"):\n                at = Vector3(float(msg["x"]), float(msg.get("y", 0.0)), float(msg["z"]))\n            return {"ok": true, "under": Game.ground_under(at), "at": _v(at)}\n        "quit":\n            get_tree().quit()\n            return {"ok": true}\n    return {"ok": false, "error": "unknown cmd: " + cmd,\n            "commands": ["state", "stages", "warp", "place", "input", "stick", "actors",\n                         "talk", "event", "dialog", "bit", "item", "defeat", "screenshot",\n                         "story_place",\n                         "ground", "clock", "eye",\n                         "quit"]}\n\nfunc _v(p: Vector3) -> Array:\n    return [snappedf(p.x, 0.1), snappedf(p.y, 0.1), snappedf(p.z, 0.1)]\n\nfunc _state() -> Dictionary:\n    var cs := get_tree().current_scene\n    var lk := Game.player()\n    var st := {\n        "scene": String(cs.name) if cs else "",\n        "stage": Game.current_stage_key(),\n        "event_running": Game.event_running,\n        "cutscene": Game.cutscene_running(),\n        "dialog_open": Game.dialog_open,\n        "hearts": Game.save.get("hearts", 0),\n        "items": Game.save.get("items", {}),\n        "story_done": (Game.save.get("story_done", {}) as Dictionary).keys(),\n    }\n    if lk:\n        st["pos"] = _v(lk.global_position)\n        st["facing_deg"] = snappedf(rad_to_deg(float(lk.get("facing"))), 0.1)\n        st["state"] = int(lk.get("state"))\n        st["ground"] = Game.ground_under(lk.global_position)\n        var pt = lk.get("prompt_target")\n        st["prompt_target"] = (str(pt.get("actor")) if pt != null and is_instance_valid(pt)\n            else "")\n    return st\n'
 
 _DIALOG_GD = """extends CanvasLayer
 # gcrip text box: shows BMG messages (tags already decoded by gcrip msg);
@@ -9166,6 +9264,7 @@ func _spawn_flame_lights() -> void:
         print("gcrip light: ", n, " flame lights in ", name)
     _stream_init()
     _spawn_ocean()
+    _build_bridges()
     _setup_lighting()
 
 # ---- physical lighting --------------------------------------------------------------------
@@ -9312,6 +9411,27 @@ func _light_tick() -> void:
         sun.light_temperature = lerpf(3200.0, 6000.0, ee)
         Game.sun_direction = dr
         Game.scene_nits = 1.0
+        # the visible sky follows the same clock - day blue, sunset amber, night dark.
+        # The ocean's night factor and reflection palette ride along, so the sea and the
+        # sky can never disagree about the hour.
+        night_mix = 1.0 - smoothstep(5.0, 6.5, hh) * (1.0 - smoothstep(17.5, 19.0, hh))
+        var sunset_mix := smoothstep(5.0, 6.5, hh) - smoothstep(7.5, 9.0, hh)
+        sunset_mix += smoothstep(16.0, 17.5, hh) - smoothstep(18.5, 19.5, hh)
+        sunset_mix = clampf(sunset_mix, 0.0, 1.0)
+        var zen := Color(0.28, 0.5, 0.78).lerp(Color(0.30, 0.30, 0.52), sunset_mix)
+        zen = zen.lerp(Color(0.03, 0.045, 0.10), night_mix)
+        var hor := Color(0.7, 0.82, 0.92).lerp(Color(0.98, 0.62, 0.35), sunset_mix)
+        hor = hor.lerp(Color(0.10, 0.12, 0.20), night_mix)
+        sky_zen_col = zen
+        sky_hor_col = hor
+        if env_node and env_node.environment and env_node.environment.sky:
+            var skm = env_node.environment.sky.sky_material
+            if skm is ProceduralSkyMaterial:
+                skm.sky_top_color = zen
+                skm.sky_horizon_color = hor
+                skm.ground_horizon_color = hor
+                skm.ground_bottom_color = Color(0.42, 0.45, 0.4).lerp(
+                    Color(0.05, 0.06, 0.08), night_mix)
         return
     # the sun's arc from the clock: 06:00 on the eastern horizon, noon overhead, 18:00 west;
     # a warm colour temperature near the horizon and white at noon.  Same direction is pushed
@@ -9351,6 +9471,9 @@ const OCEAN_SKIRT := 450000.0    # the flat quads beyond the heightfield
 # with the dzb liquid surfaces later)
 var water_level: float = -1.0e9     # set in _spawn_ocean: `name` is empty at init time
 var ocean: MeshInstance3D = null
+var night_mix := 0.0                          # 0 day .. 1 night, smooth (simple mode)
+var sky_zen_col := Color(0.28, 0.5, 0.78)     # what the visible sky shows right now
+var sky_hor_col := Color(0.7, 0.82, 0.92)
 var ocean_mat: ShaderMaterial = null
 var ocean_skirt: MeshInstance3D = null
 
@@ -9395,8 +9518,104 @@ func _spawn_ocean() -> void:
     add_child(ocean_skirt)
     ocean_skirt.position = Vector3(0, water_level - 2.0, 0)
     _ocean_tick()
+    _hide_baked_sea()
     print("gcrip: ocean surface in ", name, " (", OCEAN_CELLS + 1, "x", OCEAN_CELLS + 1,
         " cells of ", OCEAN_CELL, ")")
+
+func _build_bridges() -> void:
+    # The `bridge` actor is placed from its ACTR record, but that record is overwritten at
+    # create: the span comes from the stage PATH (d_a_bridge.cpp:1450-1479).  The exporter
+    # resolved each span to its two ends and a plank count; the plank model is already in
+    # the scene as the stub sitting at the anchor, so clone that and hide the stubs.
+    # keyed by the SCENE name like every other stage system: sea_r44 is its own export with
+    # its own recentred origin, and the full sea's coordinates are 400k units away
+    var info: Dictionary = Game.stage_data.get(name, {})
+    var spans: Array = info.get("bridges", [])
+    if spans.is_empty():
+        return
+    var lvl := get_node_or_null("Level")
+    if lvl == null:
+        return
+    var template: Mesh = null
+    var stubs: Array = []
+    for mi in lvl.find_children("bridge*", "MeshInstance3D", true, false):
+        var m: MeshInstance3D = mi
+        if m.mesh != null and template == null:
+            template = m.mesh
+        stubs.append(m)
+    if template == null:
+        return
+    for m in stubs:
+        (m as MeshInstance3D).visible = false
+    var root := Node3D.new()
+    root.name = "Bridges"
+    add_child(root)
+    var built := 0
+    for sp in spans:
+        var a := Vector3(float(sp["a"][0]), float(sp["a"][1]), float(sp["a"][2]))
+        var b := Vector3(float(sp["b"][0]), float(sp["b"][1]), float(sp["b"][2]))
+        var n := int(sp.get("planks", 0))
+        if n < 2:
+            continue
+        var span := b - a
+        var flat := Vector3(span.x, 0.0, span.z).length()
+        # the rope sags: a catenary is a cosh, but over a span this shallow the parabola
+        # through both ends is within a unit of it and costs nothing
+        var sag: float = clampf(flat * 0.055, 12.0, 90.0)
+        for i in range(n + 1):
+            var t := float(i) / float(n)
+            var pos := a.lerp(b, t)
+            pos.y -= sag * 4.0 * t * (1.0 - t)
+            var pl := MeshInstance3D.new()
+            pl.mesh = template
+            pl.name = "Plank%d" % i
+            root.add_child(pl)
+            # orient from the curve's TANGENT, not euler angles: `rotation` applies Y then
+            # X, so after the yaw the pitch would tilt the plank sideways across the span
+            var tangent := (span - Vector3.UP * (sag * 4.0 * (1.0 - 2.0 * t))).normalized()
+            pl.global_transform = Transform3D(Basis.looking_at(tangent, Vector3.UP), pos)
+            var body := StaticBody3D.new()
+            var cs := CollisionShape3D.new()
+            var box := BoxShape3D.new()
+            box.size = Vector3(200.0, 12.0, 60.0)
+            cs.shape = box
+            body.add_child(cs)
+            pl.add_child(body)
+        built += 1
+    if built > 0:
+        Game.toonify(root, "")
+        print("gcrip: built ", built, " rope bridge span(s) in ", name)
+
+func _hide_baked_sea() -> void:
+    # the stage bakes its own sea: a giant flat quad in the room's water colour plus shore
+    # overlay sheets around each island (SC_01_mizu*).  Authored for TEV alpha tricks we do
+    # not reproduce, they render opaque - the black sea at distance, the white wash at the
+    # beach.  The ocean shader is the sea now, so hide any baked water sheet at sea level.
+    # Ponds well above the waterline (the forest pool at y=768) are left alone.
+    var lvl := get_node_or_null("Level")
+    if lvl == null or ocean == null:
+        return
+    var hidden := 0
+    for mi in lvl.find_children("*", "MeshInstance3D", true, false):
+        var m: MeshInstance3D = mi
+        if m.mesh == null or m.mesh.get_surface_count() == 0:
+            continue
+        var all_water := true
+        for i in range(m.mesh.get_surface_count()):
+            var mat := m.mesh.surface_get_material(i)
+            var nm := (mat.resource_name if mat else "").to_lower()
+            if not ("mizu" in nm or "nami" in nm):
+                all_water = false
+                break
+        if not all_water:
+            continue
+        var bb := m.global_transform * m.get_aabb()
+        if bb.position.y > water_level + 60.0 or bb.end.y < water_level - 60.0:
+            continue
+        m.visible = false
+        hidden += 1
+    if hidden > 0:
+        print("gcrip: hid ", hidden, " baked sea sheets in ", name)
 
 func _ocean_tick() -> void:
     if ocean == null or ocean_mat == null:
@@ -9412,7 +9631,17 @@ func _ocean_tick() -> void:
         floor(centre.z / OCEAN_CELL) * OCEAN_CELL)
     ocean_mat.set_shader_parameter("t_frames", float(Engine.get_physics_frames()))
     ocean_mat.set_shader_parameter("wave_scale", Game.sea_cur_scale)
-    ocean_mat.set_shader_parameter("night", 1.0 if Game.is_night() else 0.0)
+    var nm := night_mix
+    var zc := sky_zen_col
+    var hc := sky_hor_col
+    if Game.physical:
+        nm = 1.0 if Game.is_night() else 0.0
+        if Game.is_night():
+            zc = zc * 0.12
+            hc = hc * 0.15
+    ocean_mat.set_shader_parameter("night", nm)
+    ocean_mat.set_shader_parameter("sky_zenith", Vector3(zc.r, zc.g, zc.b))
+    ocean_mat.set_shader_parameter("sky_horizon", Vector3(hc.r, hc.g, hc.b))
     ocean_mat.set_shader_parameter("sun_dir", Game.sun_direction)
     ocean_mat.set_shader_parameter("nits", Game.scene_nits)
     var cs := Game.toon_sun_colors()
@@ -11815,6 +12044,7 @@ def export_godot(
             "tags": rep.get("tags") or [],
             "logic": rep.get("logic") or [],
             "event_table": rep.get("event_table") or [],
+            "bridges": rep.get("bridges") or [],
         }
         ev_json = d / f"{gltf_path.stem}_events.json"
         if ev_json.exists():
@@ -11883,6 +12113,18 @@ def export_godot(
         json.dumps({"physical": physical_on}), encoding="utf-8"
     )
     (out_dir / "toon.gdshader").write_text(_TOON_SHADER, encoding="utf-8")
+    # the double-sided twin: same shader, culling off, for materials the game drew from
+    # both sides (GX cull mode 0 -> glTF doubleSided -> CULL_DISABLED)
+    (out_dir / "toon_ds.gdshader").write_text(
+        _TOON_SHADER.replace("cull_back", "cull_disabled"), encoding="utf-8"
+    )
+    _ww_shader = (Path(__file__).parent / "data" / "ww_material.gdshader").read_text(
+        encoding="utf-8"
+    )
+    assert "cull_back" in _ww_shader, "ww_material.gdshader lost its cull_back render_mode"
+    (out_dir / "ww_material_ds.gdshader").write_text(
+        _ww_shader.replace("cull_back", "cull_disabled"), encoding="utf-8"
+    )
     (out_dir / "ww_material.gdshader").write_text(
         (Path(__file__).parent / "data" / "ww_material.gdshader").read_text(encoding="utf-8"),
         encoding="utf-8",

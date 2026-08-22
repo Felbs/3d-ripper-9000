@@ -74,6 +74,21 @@ class ShipPoint:  # SHIP entry: where the King of Red Lions can be moored (sea r
 
 
 @dataclass
+class StagePath:
+    """One PATH/RPAT entry: an ordered run of PPNT/RPPN points.
+
+    Actors index these by a byte of their params (the bridge's pathId is params >> 16).
+    For a bridge the run is exactly two points - the ends of the span - and the actor's own
+    position and rotation are thrown away in favour of them (d_a_bridge.cpp:1450-1479).
+    """
+
+    points: list[tuple[float, float, float]] = field(default_factory=list)
+    next_id: int = 0xFFFF
+    arg0: int = 0xFF
+    arg1: int = 0
+
+
+@dataclass
 class RoomSet:
     """One RTBL entry: which rooms are resident while Link stands on this collision group."""
 
@@ -124,6 +139,7 @@ class Dzs:
     room_sets: list[RoomSet] = field(default_factory=list)  # RTBL: the streaming table
     cameras: list[CameraRegion] = field(default_factory=list)  # CAMR (stage) / RCAM (room)
     cam_arrows: list[CameraArrow] = field(default_factory=list)  # AROB (stage) / RARO (room)
+    paths: list[StagePath] = field(default_factory=list)  # PATH/RPAT + PPNT/RPPN
 
 
 def _canonical(fourcc: str) -> tuple[str, int]:
@@ -136,6 +152,8 @@ def _canonical(fourcc: str) -> tuple[str, int]:
 
 def parse(data: bytes) -> Dzs:
     out = Dzs()
+    _path_chunks: list[tuple[int, int]] = []
+    _point_chunk: tuple[int, int] | None = None
     (count,) = struct.unpack_from(">I", data, 0)
     for i in range(count):
         cc, n, off = struct.unpack_from(">4sII", data, 4 + i * 12)
@@ -201,10 +219,25 @@ def parse(data: bytes) -> Dzs:
                 base = off + k * 0x14
                 x, y, z, ax, ay, az, f12 = struct.unpack_from(">3f4h", data, base)
                 out.cam_arrows.append(CameraArrow((x, y, z), ax, ay, az, f12))
+        elif fourcc in ("PATH", "RPAT"):
+            _path_chunks.append((n, off))
+        elif fourcc in ("PPNT", "RPPN"):
+            _point_chunk = (n, off)
         elif fourcc == "SCLS":
             for k in range(n):
                 base = off + k * 0x0C
                 dest = data[base : base + 8].split(b"\0")[0].decode("latin-1", "replace")
                 spawn, room, fade = struct.unpack_from(">3B", data, base + 8)
                 out.scls.append(Exit(dest, spawn, room, fade))
+    # paths last: the headers point into the point chunk, which may be listed either side
+    if _point_chunk is not None:
+        _, poff = _point_chunk
+        for n, off in _path_chunks:
+            for k in range(n):
+                npts, nxt, a0, a1, _a2, first = struct.unpack_from(">HHBBHI", data, off + k * 0x0C)
+                pts = []
+                for j in range(npts):
+                    _arg, px, py, pz = struct.unpack_from(">I3f", data, poff + first + j * 0x10)
+                    pts.append((px, py, pz))
+                out.paths.append(StagePath(pts, nxt, a0, a1))
     return out

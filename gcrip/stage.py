@@ -105,6 +105,54 @@ class _ModelIndex:
         return self.rip_dir / rel if rel else None
 
 
+def _bridge_spans(placements, paths, mult, offset) -> list[dict]:
+    """Resolve every `bridge` actor into the span its PATH describes.
+
+    d_a_bridge.cpp:1450-1479: pathId = (params >> 16) & 0xFF, 0xFF fails to create; points
+    [0] and [1] of that path are the two ends; plank spacing is (47 + (len > 1300 ? 3 : 0))
+    * 1.5 and a bridge needing 50 or more planks refuses to spawn.  Path points are
+    world-space, like actor positions, so only the export offset applies.
+    """
+    import math
+
+    out: list[dict] = []
+    seen: set[tuple] = set()
+    for room_no, pl, _scls in placements:
+        if pl.name != "bridge":
+            continue
+        path_id = (pl.params >> 16) & 0xFF
+        runs = paths.get(room_no) or paths.get(None) or []
+        if path_id == 0xFF or path_id >= len(runs):
+            continue
+        pts = runs[path_id].points
+        if len(pts) < 2:
+            continue
+        # path points are world-space like actor positions - MULT moves only room geometry
+        # (dzs.py's header note), so the export offset is the whole transform
+        ends = [[px - offset[0], py, pz - offset[2]] for px, py, pz in pts[:2]]
+        key = (round(ends[0][0]), round(ends[0][2]), round(ends[1][0]), round(ends[1][2]))
+        if key in seen:      # the same bridge repeats on every story layer
+            continue
+        seen.add(key)
+        dx = ends[1][0] - ends[0][0]
+        dy = ends[1][1] - ends[0][1]
+        dz = ends[1][2] - ends[0][2]
+        length = math.sqrt(dx * dx + dy * dy + dz * dz)
+        spacing = (47.0 + (3.0 if length > 1300.0 else 0.0)) * 1.5
+        planks = int(length / spacing)
+        if planks >= 50 or planks < 2:   # the game refuses this one too
+            continue
+        out.append({
+            "room": room_no,
+            "a": [round(v, 2) for v in ends[0]],
+            "b": [round(v, 2) for v in ends[1]],
+            "planks": planks,
+            "spacing": round(spacing, 2),
+            "type": pl.params & 0xFF,
+        })
+    return out
+
+
 class _Disc:
     def __init__(self, iso: Path):
         self.img = DiscImage(iso)
@@ -268,6 +316,7 @@ def _build(
     logic_recs: list[dict] = []  # every other model-less actor (switches, salvage, Ajav)
     event_table: list[str] = []  # stage.dzs EVNT names (TagEv params >> 24 indexes them)
     room_sets: list[dict] = []  # RTBL: which rooms stay resident together
+    paths: dict[int | None, list] = {}  # room -> PATH/RPAT runs (actors index them by id)
     cameras: list[dict] = []  # CAMR/RCAM: the camera type a region switches to
     cam_arrows: list[dict] = []  # AROB/RARO: fixed eye points those regions point at
     if "Stage.arc" in stage_arcs:
@@ -284,6 +333,7 @@ def _build(
                 for a in d.cam_arrows
             ]
             own_scls += d.scls
+            paths[None] = d.paths
             placements += [(None, p, stage_scls) for p in d.placements]
     room_nos = []
     for arc_name in sorted(stage_arcs):
@@ -298,6 +348,7 @@ def _build(
         if raw:
             d = dzs_mod.parse(raw)
             own_scls += d.scls
+            paths[room_no] = d.paths
             scls = d.scls or stage_scls
             placements += [(room_no, p, scls) for p in d.placements]
             ship_pts += [
@@ -525,6 +576,7 @@ def _build(
         # region applies comes from the collision polygon Link stands on, not from a volume.
         # RTBL: the game keeps only these rooms resident at once (d_stage.cpp:213-247).
         # On the Great Sea every entry is {room 0, one island} - two rooms, never 49.
+        "bridges": _bridge_spans(placements, paths, mult, offset),
         "room_sets": room_sets,
         "cameras": cameras,
         "cam_arrows": cam_arrows,
