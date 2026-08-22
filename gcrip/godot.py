@@ -5837,10 +5837,12 @@ var sun_direction := Vector3(0.55, -0.72, 0.42)   # set by the stage's light rig
 # they sit at the same exposure as the lit surfaces (physical light units)
 var physical := false          # physical light units + HDR rig; else simple always-on light
 var scene_nits := 1.0          # unshaded multiplier; 1.0 in simple mode, high only in physical
-var toon_shader: Shader = null
-var lit_shader: Shader = null
-var toon_shader_ds: Shader = null      # the cull_disabled twins, for doubleSided materials
-var lit_shader_ds: Shader = null
+# Four variants of each cel shader, keyed "" / "_ds" / "_a" / "_ds_a":
+#   _ds = culling disabled (the game drew that material from both sides)
+#   _a  = writes ALPHA (a genuinely BLENDED material; everything else is opaque or cutout)
+var toon_shaders: Dictionary = {}
+var lit_shaders: Dictionary = {}
+var toon_shader: Shader = null         # the plain variant, kept for toon_ready()
 var toon_ramp: Texture2D = null
 var toon_on := true
 # the look the whole world is drawn in.  "toon" is the game's own recipe, untouched; the others
@@ -6045,14 +6047,15 @@ func classify_material(src: Material, archive: String) -> Dictionary:
 func toon_ready() -> bool:
     if not toon_on:
         return false
-    if lit_shader == null and ResourceLoader.exists("res://ww_material.gdshader"):
-        lit_shader = load("res://ww_material.gdshader")
-    if toon_shader == null and ResourceLoader.exists("res://toon.gdshader"):
-        toon_shader = load("res://toon.gdshader")
-    if lit_shader_ds == null and ResourceLoader.exists("res://ww_material_ds.gdshader"):
-        lit_shader_ds = load("res://ww_material_ds.gdshader")
-    if toon_shader_ds == null and ResourceLoader.exists("res://toon_ds.gdshader"):
-        toon_shader_ds = load("res://toon_ds.gdshader")
+    if toon_shaders.is_empty():
+        for v in ["", "_ds", "_a", "_ds_a"]:
+            var tp := "res://toon%s.gdshader" % v
+            if ResourceLoader.exists(tp):
+                toon_shaders[v] = load(tp)
+            var lp := "res://ww_material%s.gdshader" % v
+            if ResourceLoader.exists(lp):
+                lit_shaders[v] = load(lp)
+        toon_shader = toon_shaders.get("", null)
     if toon_ramp == null and ResourceLoader.exists("res://toon_ramp.png"):
         toon_ramp = load("res://toon_ramp.png")
     return toon_shader != null and toon_ramp != null
@@ -6067,16 +6070,19 @@ func _toon_material(src: Material) -> ShaderMaterial:
     # game drew from both sides go invisible from one side (the see-through bridge)
     var two_sided := (src is BaseMaterial3D
         and (src as BaseMaterial3D).cull_mode == BaseMaterial3D.CULL_DISABLED)
-    if two_sided:
-        key += "|ds"
+    # only a genuinely BLENDED material may write ALPHA.  Alpha-scissor is a cutout and stays
+    # opaque (the shader discards); anything else that writes ALPHA lands in the transparent
+    # queue, stops writing depth, and gets sorted against the sea by bounding-box centre.
+    var blended := (src is BaseMaterial3D
+        and (src as BaseMaterial3D).transparency == BaseMaterial3D.TRANSPARENCY_ALPHA)
+    var variant := ("_ds" if two_sided else "") + ("_a" if blended else "")
+    key += "|" + variant
     if _toon_cache.has(key):
         return _toon_cache[key]
     var m := ShaderMaterial.new()
-    var lit: bool = shade_mode != "toon" and lit_shader != null
-    if lit:
-        m.shader = lit_shader_ds if (two_sided and lit_shader_ds != null) else lit_shader
-    else:
-        m.shader = toon_shader_ds if (two_sided and toon_shader_ds != null) else toon_shader
+    var lit: bool = shade_mode != "toon" and not lit_shaders.is_empty()
+    var table: Dictionary = lit_shaders if lit else toon_shaders
+    m.shader = table.get(variant, table.get("", null))
     m.set_shader_parameter("toon_ramp", toon_ramp)
     if lit:
         var cls := classify_material(src, _shade_archive)
@@ -8590,7 +8596,17 @@ void fragment() {
         discard;
     }
     ALBEDO = base.rgb * lit * nits;
-    ALPHA = base.a;
+    // gcrip:alpha
+    // The line above is a marker the exporter swaps: the blended variant writes ALPHA there,
+    // this one deliberately does not.
+    //
+    // Assigning ALPHA at all puts a Godot material in the TRANSPARENT queue: no depth write,
+    // sorted back-to-front by bounding-box centre.  Writing it unconditionally therefore made
+    // every cel-shaded surface in the game transparent, and the whole world only looked right
+    // because the ocean happened to be opaque and filled the depth buffer first.  The moment
+    // the sea became transparent too it sorted nearest (it follows the camera) and painted
+    // over everything below the horizon.  Wind Waker's materials are opaque or alpha-CUTOUT;
+    // the cutout is the discard above, and needs no blending.
 }
 """
 
@@ -9086,6 +9102,11 @@ var _variant_cache: Dictionary = {}
 var _variant_seen: Dictionary = {}
 
 func _ready() -> void:
+    # the sea snaps to this room's wave_max in _spawn_ocean, which runs before the deferred
+    # _start_bgm that used to set it - so it read an EMPTY table, fell back to the open-sea
+    # 30, and put +-300 units of swell over the island for the first half-minute of play
+    var _info: Dictionary = Game.stage_data.get(name, {})
+    Game.sea_wave_max = _info.get("wave_max", {})
     _tag_liquids()
     _wrap_actors()
     _spawn_ships()
@@ -10430,6 +10451,30 @@ func _on_body_entered(body: Node3D) -> void:
     if armed and body is CharacterBody3D:
         Game.warp(dest_stage, dest_room, dest_spawn)
 """
+
+
+def _shader_variants(src: str) -> list[tuple[str, str]]:
+    """(filename suffix, source) for the four cull x blend combinations of a cel shader.
+
+    `render_mode` and whether ALPHA is written are both compile-time in Godot, so a single
+    shader cannot serve a double-sided material and a single-sided one, nor an opaque
+    material and a blended one. The blended variants also take `depth_prepass_alpha`: they
+    still sort as transparent, but they lay down depth first, so they occlude the sea
+    instead of being painted over by it.
+    """
+    assert "// gcrip:alpha" in src, "cel shader lost its alpha marker"
+    out = []
+    for cull_suffix, cull_src in (
+        ("", src),
+        ("_ds", src.replace("cull_back", "cull_disabled")),
+    ):
+        out.append((cull_suffix, cull_src.replace("// gcrip:alpha", "// opaque variant")))
+        blended = cull_src.replace("// gcrip:alpha", "ALPHA = base.a;")
+        first_nl = blended.index(chr(10), blended.index("render_mode"))
+        head, tail = blended[:first_nl], blended[first_nl:]
+        blended = head.rstrip(";") + ", depth_prepass_alpha;" + tail
+        out.append((cull_suffix + "_a", blended))
+    return out
 
 
 def _render_block(physical: bool) -> str:
@@ -12179,23 +12224,23 @@ def export_godot(
     (out_dir / "lighting.json").write_text(
         json.dumps({"physical": physical_on}), encoding="utf-8"
     )
-    (out_dir / "toon.gdshader").write_text(_TOON_SHADER, encoding="utf-8")
-    # the double-sided twin: same shader, culling off, for materials the game drew from
-    # both sides (GX cull mode 0 -> glTF doubleSided -> CULL_DISABLED)
-    (out_dir / "toon_ds.gdshader").write_text(
-        _TOON_SHADER.replace("cull_back", "cull_disabled"), encoding="utf-8"
-    )
+    # Four variants of each cel shader, because BOTH facts are fixed at shader compile time:
+    #   cull mode   - the game's GX cull mode, carried through glTF as doubleSided
+    #   blending    - whether the material writes ALPHA, which decides opaque vs transparent
+    # The plain name is the common case: back-face culled and OPAQUE.
+    for suffix, src in _shader_variants(_TOON_SHADER):
+        (out_dir / f"toon{suffix}.gdshader").write_text(src, encoding="utf-8")
     _ww_shader = (Path(__file__).parent / "data" / "ww_material.gdshader").read_text(
         encoding="utf-8"
     )
     assert "cull_back" in _ww_shader, "ww_material.gdshader lost its cull_back render_mode"
-    (out_dir / "ww_material_ds.gdshader").write_text(
-        _ww_shader.replace("cull_back", "cull_disabled"), encoding="utf-8"
-    )
-    (out_dir / "ww_material.gdshader").write_text(
-        (Path(__file__).parent / "data" / "ww_material.gdshader").read_text(encoding="utf-8"),
-        encoding="utf-8",
-    )
+    # the lit looks carry their ALPHA write inline; swap it for the marker the variant
+    # builder understands, so this shader gets the same opaque / blended split as the toon one
+    _alpha_line = "    ALPHA = base.a;" + chr(10)
+    assert _ww_shader.count(_alpha_line) == 1, "ww_material.gdshader ALPHA moved"
+    _ww_shader = _ww_shader.replace(_alpha_line, "    // gcrip:alpha" + chr(10))
+    for suffix, src in _shader_variants(_ww_shader):
+        (out_dir / f"ww_material{suffix}.gdshader").write_text(src, encoding="utf-8")
     mats_src = Path(__file__).parent / "data" / "ww_materials.json"
     if mats_src.exists():
         (out_dir / "materials.json").write_text(mats_src.read_text(encoding="utf-8"), encoding="utf-8")

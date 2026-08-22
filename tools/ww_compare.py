@@ -424,11 +424,15 @@ def settle(port: int, shot_name: str, marks: list[float]) -> dict:
         # warping to "sea" would load the whole 49-room Great Sea instead
         ctl(cmd="warp", stage=st.get("scene") or st.get("stage", "sea"), room=0, spawn=0)
         time.sleep(3.0)
+        # pin the hour, or this measures the sky changing colour rather than the world
+        # settling - the clock runs at 600 s/day, so 26 s of sampling spans a whole hour
+        ctl(cmd="clock", hour=shot.get("hour", 12))
         eye, look = shot["eye"], shot["look"]
         prev = 0.0
         for t in marks:
             time.sleep(max(t - prev, 0.0))
             prev = t
+            ctl(cmd="clock", hour=shot.get("hour", 12))
             ctl(cmd="eye", x=eye[0], y=eye[1], z=eye[2], lx=look[0], ly=look[1], lz=look[2])
             r = ctl(cmd="screenshot", path=f"user://settle_{t}.png")
             if r.get("ok"):
