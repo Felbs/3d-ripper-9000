@@ -187,7 +187,8 @@
       "mBeast": "Spoils Bag: 8 slots, each holding a dItemNo or 0xFF. Index enum dBeastIdx_e (include/d/d_com_inf_game.h:1277-1285): 0 SKULL_NECKLACE, 1 BOKOBABA_SEED, 2 GOLDEN_FEATHER, 3 KNIGHTS_CREST, 4 RED_JELLY, 5 GREEN_JELLY, 6 BLUE_JELLY, 7 JOY_PENDANT.",
       "mBait": "Bait Bag: 8 slots (All-Purpose Bait, Hyoi Pear...).",
       "mReserve": "Delivery Bag: 8 slots (letters, flowers, deeds, statues...).",
-      "counts": "dSv_player_bag_item_record_c { u8 mBeastNum[8]; u8 mBaitNum[8]; u8 mReserveNum[8]; } - include/d/d_save.h:254-270",
+      "counts": "dSv_player_bag_item_record_c { u8 mBeastNum[8]; u8 mBaitNum[8]; u8 mReserveNum[8]; } - include/d/d_save.h:254-270, size 0x18, zeroed by init() (src/d/d_save.cpp:717-729)",
+      "per_slot_caps": "There is NO shared max-per-slot constant. Each array is capped differently, in a different file: mBeastNum -> 99, clamped in the HUD commit (`if (n > 99) n = 99`, src/d/d_meter.cpp:2872-2873); mBaitNum -> 3, simply SET to 3 by setBaitItem and never incremented (src/d/d_save.cpp:557); mReserveNum -> completely unused, only init() ever touches it (src/d/d_save.cpp:726-728) and dComIfGs_get/setReserveNum have zero callers. The 8-slot limits themselves are enforced structurally by ARRAY_SIZE / literal `for (i < 8)` loops (src/d/d_save.cpp:376-386, 392, 404, 422, 554, 573, 641, 659). Note the `if (sVar1 > 99)` at src/d/d_meter.cpp:5170-5171 is the SMALL KEY counter, not a bag slot.",
       "have_ever": "dSv_player_get_bag_item_c { u32 mReserveFlags; u8 mBeastFlags; u8 mBaitFlags; } - include/d/d_save.h:235-252. Beast/Bait are 8 bits each; Reserve gets a full 32 bits.",
       "confidence": "high"
     },
@@ -514,22 +515,27 @@
       "file": "src/d/d_item.cpp:715-719 (grant); src/d/d_save.cpp:390-430 (contents)",
       "behaviour": "Grant is onGetItem(slot 4, bit 0) + setItem(slot 4, 0x24). Contents live in dSv_player_bag_item_c::mBeast[8] with counts in mBagItemRecord.mBeastNum[8] and a have-ever bitmask in mGetBagItem.mBeastFlags. Each spoil has a fixed index (dBeastIdx_e, include/d/d_com_inf_game.h:1277-1285) and its item_func is the same three lines every time, e.g. item_func_skull_necklace: setBeastItem(0x45); onGetItemBeast(0); setItemBeastNumCount(0, 1) (src/d/d_item.cpp:904-909).",
       "contents": {"0x45": "Skull Necklace", "0x46": "Boko Baba Seed", "0x47": "Golden Feather", "0x48": "Knight's Crest", "0x49": "Red Chu Jelly", "0x4A": "Green Chu Jelly", "0x4B": "Blue Chu Jelly", "0x1F": "Joy Pendant"},
-      "constants": {"slots": {"value": 8, "file": "include/d/d_save.h:228"}, "arc": {"value": "VbagE", "file": "src/d/d_item_data.cpp:1181"}, "name_msg": {"value": "0x01A3", "file": "src/d/d_item_data.cpp:1190"}},
-      "implementation_note": "A simple 8-slot counted inventory. The per-slot maximum is NOT stated in the save code (mBeastNum is a plain u8); see _not_determined.",
+      "count_commit": "Counts are accumulated as a play-side delta (dComIfGp_setItemBeastNumCount) and committed once per frame in the HUD code: `n = getBeastNum(idx) + getItemBeastNumCount(idx); if (n <= 0) { setBeastNum(idx, 0); setBeastItemEmpty(itemNo); } else { if (n > 99) n = 99; setBeastNum(idx, n); }` - src/d/d_meter.cpp:2849-2879. So the per-slot CAP IS 99, and it is enforced in the meter, not in the save code. The HUD shows two digits, hiding the tens below 10 (src/d/d_meter.cpp:2743-2750).",
+      "used_for": "Beedle buys all seven spoil types (src/d/actor/d_a_npc_bs1.cpp:400-431, per-spoil messages :560-579; Knight's Crests also accumulate into event reg UNK_7F0F clamped to 0xF, :585-590). Orca wants 10 Knight's Crests in retail, 3 in the DEMO build (src/d/actor/d_a_npc_ji1.cpp:849-855, 952-961). Mrs. Marie wants 20 Joy Pendants and gives the Cabana Deed (src/d/actor/d_a_npc_ho.cpp:296, 311, 317); smaller donations give Red/Purple/Orange rupees at thresholds <3, <5, else (:337-345). A Rito checks 20 Golden Feathers (src/d/actor/d_a_npc_bm1.cpp:1421, 1630).",
+      "constants": {"slots": {"value": 8, "file": "include/d/d_save.h:228"}, "max_per_slot": {"value": 99, "file": "src/d/d_meter.cpp:2872-2873"}, "orca_crests": {"value": 10, "file": "src/d/actor/d_a_npc_ji1.cpp:849-855"}, "marie_pendants": {"value": 20, "file": "src/d/actor/d_a_npc_ho.cpp:296, 311"}, "rito_feathers": {"value": 20, "file": "src/d/actor/d_a_npc_bm1.cpp:1421"}, "arc": {"value": "VbagE", "file": "src/d/d_item_data.cpp:1181"}, "name_msg": {"value": "0x01A3", "file": "src/d/d_item_data.cpp:1190"}},
+      "implementation_note": "An 8-slot counted inventory, cap 99 per slot. Pickup path: the FIRST ever pickup of a spoil runs the get-demo and sets onGetItemBeast; later ones just call execItemGet (src/d/actor/d_a_item.cpp:654-661). Related predicates: isEmono() is the seven-spoil list (src/d/d_item.cpp:2780-2788), isNonSavedEmono() is the same minus Blue Jelly (:2819-2827), isLimitedItem() is Blue Jelly only (:2810-2816).",
       "confidence": "high",
-      "sources": ["src/d/d_item.cpp:715, 684-689, 904-951", "src/d/d_save.cpp:390-430"]
+      "sources": ["src/d/d_item.cpp:715, 684-689, 904-951, 2780-2827", "src/d/d_save.cpp:390-430, 676-685", "src/d/d_meter.cpp:2743-2750, 2849-2879", "src/d/actor/d_a_item.cpp:654-661"]
     },
 
     "BAIT_BAG": {
       "id": "0x2C", "name": "Bait Bag", "kind": "bag",
       "slot": 11,
       "file": "src/d/d_item.cpp:763-767 (grant); src/d/d_save.cpp:432-582 (contents)",
-      "behaviour": "Grant is onGetItem(slot 11, bit 0) + setItem(slot 11, 0x2C). Contents in mBagItem.mBait[8]. USING a bait does not equip a model - checkNewItemChange sends `isEsa(itemNo)` straight into a player proc: dItemNo_HYOI_PEAR_e (0x83) -> procFoodSet_init() (daPyProc_FOOD_SET_e = 0xA8), any other bait -> procFoodThrow_init() (daPyProc_FOOD_THROW_e = 0xA7). Both require Link to be on the ground and not flying (src/d/actor/d_a_player_main.cpp:3785-3797).",
-      "contents": {"0x82": "BIRD_BAIT_5 (All-Purpose Bait, 5)", "0x83": "HYOI_PEAR (Hyoi Pear)"},
-      "constants": {"arc": {"value": "VbagF", "file": "src/d/d_item_data.cpp:1309"}, "name_msg": {"value": "0x01AA", "file": "src/d/d_item_data.cpp:1318"}},
-      "implementation_note": "Two distinct verbs: throw (feed a fish) and set-on-head (Hyoi Pear -> a seagull carries the camera). Both start from the item menu, not from a held item.",
+      "behaviour": "Grant is onGetItem(slot 11, bit 0) + setItem(slot 11, 0x2C). Contents in mBagItem.mBait[8], counts in mBaitNum[8]. USING a bait does not equip a model - checkNewItemChange sends `isEsa(itemNo)` (= BIRD_BAIT_5 | HYOI_PEAR | MAGIC_BEAN, src/d/d_item.cpp:2791-2797) straight into a player proc: dItemNo_HYOI_PEAR_e (0x83) -> procFoodSet_init() (daPyProc_FOOD_SET_e = 0xA8), any other bait -> procFoodThrow_init() (daPyProc_FOOD_THROW_e = 0xA7). Both require Link on the ground and not flying (src/d/actor/d_a_player_main.cpp:3793-3797). Implementation file src/d/actor/d_a_player_food.inc, fully decompiled, header comment 'Code relating to the All-Purpose Bait and Hyoi Pear items'.",
+      "contents": {"0x82": "BIRD_BAIT_5 (All-Purpose Bait)", "0x83": "HYOI_PEAR (Hyoi Pear)"},
+      "stocking": "setBaitItem() finds the first free mBait slot and ALWAYS sets its count to 3 (src/d/d_save.cpp:552-562) - that is the only place mBaitNum is ever given a positive value, so a bait slot holds 3 and the HUD colour-grades against a max of 3 (src/d/d_meter.cpp:2760). Consumption differs by type: HYOI_PEAR clears the whole slot at once (the count is read into a shadowed local and discarded - a real quirk, src/d/d_save.cpp:504, 537), while BIRD_BAIT_5 decrements and clears only at 0 (src/d/d_save.cpp:478-549).",
+      "throw": "procFoodThrow (src/d/actor/d_a_player_food.inc:111-143): at anim frame 8.0, SE JA_SE_LK_ESA_THROW and fopAcM_fastCreate(fpcNm_ESA_e, 0xFFFF0014, &mLeftHandPos), then setBaitItemEmpty(btn). Before throwing, procFoodThrow_init line-checks 4 cardinal directions at 150 units and rotates Link by 0x8000 / 0x4000 / -0x4000 to face open space (:56-85). The bait actor is src/d/actor/d_a_esa.cpp (308 lines, fully real): it does its own ground/wave check via daSea_calcWave, spawns ID_AK_JN_HAMON00 ripples at rate 0.4, and idles for cM_rndF(50.0) + 200.0 frames before vanishing (:108, :112-114, :136). Actors that react to fpcNm_ESA_e: Seagull (src/d/actor/d_a_kamome.cpp:63, only while esa_check_count < 100), Kargaroc (d_a_bb.cpp:373), Pig (d_a_kb.cpp:90), Rat (d_a_nzg.cpp:55), Puppet Ganon phase 3 (d_a_bgn3.cpp:223).",
+      "hyoi_pear": "procFoodSet (src/d/actor/d_a_player_food.inc:146-228) loads LINK_BDL_HYOINOMI, plays SE JA_SE_LK_HYOI_SET at frame 9.0 and holds for 30 frames. Control then transfers to src/d/actor/d_a_npc_kamome.cpp ('Player - Hyoi Seagull', 1582 lines, fully real): callDemoStartCheck() puts a virtual pear 20 units above link->getHeadTopPos() and sweeps 16 directions (angleY += 0x2000 per step, descent pitch -0x1555) for a collision-free descent line, returning FALSE if none exists (:134-186). Once possessed, onHyoiKamome() swaps Link's actor out entirely - d_a_agb.cpp:1483 checks fopAcM_GetName(player) != fpcNm_NPC_KAM_e. Flight tuning is daNpc_kam_HIO1_c (:20-42: mSpeedF, mFlappingSpeedF, mAccelF, mGlidingAngVelY/X, mMaxAngleZ, mFlappingAngVelY/X, mFlapDuration, mFlapExhaustedDuration, mFlapEnergyDuration); turning uses cLib_addCalcAngleS(&current.angle.y, target, 8, 0x2000, 0x400) (:833). Taking a hit shakes with StartShock(5, -0x21), setDamageFogTimer(150), and returns control to Link after 30 frames (:877-897). Cutscene staff name 'HyoiKam' (:70).",
+      "constants": {"count_per_slot": {"value": 3, "file": "src/d/d_save.cpp:557"}, "throw_frame": {"value": 8.0, "file": "src/d/actor/d_a_player_food.inc:111-143"}, "hyoi_set_frame": {"value": 9.0, "file": "src/d/actor/d_a_player_food.inc:206-208"}, "hyoi_hold_frames": {"value": 30, "file": "src/d/actor/d_a_player_food.inc:195"}, "throw_clearance_check": {"value": 150.0, "file": "src/d/actor/d_a_player_food.inc:56-85"}, "esa_lifetime_frames": {"value": "cM_rndF(50.0) + 200.0", "file": "src/d/actor/d_a_esa.cpp:108, 136"}, "seagull_search_dirs": {"value": 16, "file": "src/d/actor/d_a_npc_kamome.cpp:134-186"}, "arc": {"value": "VbagF", "file": "src/d/d_item_data.cpp:1309"}, "name_msg": {"value": "0x01AA", "file": "src/d/d_item_data.cpp:1318"}},
+      "implementation_note": "Two distinct verbs, both launched from the item menu rather than from a held item: throw (spawn a bait pickup that animals path toward) and set-on-head (hand the camera to a seagull, which becomes the player actor). Each bait slot holds exactly 3.",
       "confidence": "high",
-      "sources": ["src/d/d_item.cpp:763", "src/d/actor/d_a_player_main.cpp:3785-3797"]
+      "sources": ["src/d/d_item.cpp:763, 1158-1167, 2791-2797", "src/d/actor/d_a_player_main.cpp:3793-3797", "src/d/actor/d_a_player_food.inc:20-228", "src/d/d_save.cpp:478-580", "src/d/actor/d_a_esa.cpp:27-177", "src/d/actor/d_a_npc_kamome.cpp:20-897", "src/d/d_meter.cpp:2752-2761"]
     },
 
     "DELIVERY_BAG": {
@@ -538,21 +544,29 @@
       "file": "src/d/d_item.cpp:786-790 (grant); src/d/d_save.cpp:583-667 (contents)",
       "behaviour": "Grant is onGetItem(slot 18, bit 0) + setItem(slot 18, 0x30). Contents live in mBagItem.mReserve[8] with counts mReserveNum[8] and a 32-bit have-ever mask mGetBagItem.mReserveFlags (the only bag with 32 bits, because it holds far more than 8 distinct item types over a playthrough). Reserve is the only bag with an `offReserve` - items are consumed when delivered (src/d/d_save.cpp:705-710). Selecting a reserve item (ids 0x98 FATHER_LETTER .. 0x9E FILL_UP_COUPON) goes through checkNewItemChange to procNotUse_init(itemNo) unless something else claims it (src/d/actor/d_a_player_main.cpp:3788, 3818-3821).",
       "contents": {"0x8C-0x93": "flowers and flags", "0x94-0x97": "idols/statues", "0x98": "Father's Letter", "0x99": "Note to Mom", "0x9A": "Maggie's Letter", "0x9B": "Moblin's Letter", "0x9C": "Cabana Deed", "0x9D": "Complimentary ID", "0x9E": "Fill-Up Coupon"},
-      "constants": {"arc": {"value": "VbagH", "file": "src/d/d_item_data.cpp:1373"}, "name_msg": {"value": "0x01AD", "file": "src/d/d_item_data.cpp:1382"}, "reserve_flag_bits": {"value": 32, "file": "include/d/d_save.h:246"}},
-      "implementation_note": "Delivery is driven by the receiving NPCs (they check dComIfGs_checkReserveItem and call offReserve), not by the bag. d_a_dai.cpp:123 shows the pattern: `if (!checkItemGet(dItemNo_DELIVERY_BAG_e, TRUE))`.",
+      "no_counts": "mReserveNum[8] exists and is zeroed by init() (src/d/d_save.cpp:726-728) but is NEVER read or written anywhere else - dComIfGs_getReserveNum / setReserveNum (include/d/d_com_inf_game.h:1304-1310) have zero callers in src/. Delivery Bag items are strictly one per slot.",
+      "letter_flag_indices": "The 32-bit mReserveFlags is indexed by a fixed per-item number, not by the dItemNo: flowers/flags/idols occupy 0x0-0xB (src/d/d_item.cpp:1199-1267), then FATHER_LETTER = 0xC, NOTE_TO_MOM = 0xD, MAGGIES_LETTER = 0xE, MOBLINS_LETTER = 0xF (:1271-1292), and CABANA_DEED / COMPLIMENTARY_ID / FILL_UP_COUPON / salvage items are 0x10+ (:1296-1330).",
+      "delivery": "src/d/actor/d_a_obj_toripost.cpp ('Object - Rito Postbox', fully real). getMsgXY() branches by letter (:354-373): NOTE_TO_MOM / MAGGIES_LETTER -> message 0xCE8 plus an ID_IT_JN_LK_GEPPU00 particle at the postbox's mouth joint; FATHER_LETTER / MOBLINS_LETTER -> 0xCEA (rejected, 'put out' anim); anything else -> 0xCE9. Paying the postage (:454-465) does setItemRupeeCount(-getSendPrice()), dComIfGs_setReserveItemEmpty(), then deliverLetter() (:238-247), which sets event bit UNK_1220 for Maggie's letter or calls dLetter_send(LETTER_BAITOS_MOM) for the Note to Mom.",
+      "constants": {"arc": {"value": "VbagH", "file": "src/d/d_item_data.cpp:1373"}, "name_msg": {"value": "0x01AD", "file": "src/d/d_item_data.cpp:1382"}, "reserve_flag_bits": {"value": 32, "file": "include/d/d_save.h:246"}, "slots": {"value": 8, "file": "include/d/d_save.h:230"}},
+      "implementation_note": "8 slots, 1 item each, no counts, plus a 32-bit 'have ever obtained' log. Delivery is driven by the receiving NPCs (they check dComIfGs_checkReserveItem and call setReserveItemEmpty), not by the bag. d_a_dai.cpp:123 shows the possession pattern: `if (!checkItemGet(dItemNo_DELIVERY_BAG_e, TRUE))`. Shop helper getRotenItemNumInBag() sums checkReserveItem over TOWN_FLOWER..SHOP_GURU_STATUE (src/d/d_item.cpp:2740-2746).",
       "confidence": "high",
-      "sources": ["src/d/d_item.cpp:786", "src/d/d_save.cpp:583-667, 700-716"]
+      "sources": ["src/d/d_item.cpp:786, 1199-1330, 2740-2746", "src/d/d_save.cpp:583-667, 698-728", "src/d/actor/d_a_obj_toripost.cpp:238-247, 354-373, 454-465"]
     },
 
     "POWER_BRACELETS": {
       "id": "0x28", "name": "Power Bracelets", "kind": "equipment",
       "slot": null,
       "file": "src/d/d_item.cpp:741-745",
-      "behaviour": "NOT an inventory slot. Grant is `dComIfGs_onCollect(2, 0); dComIfGs_setSelectEquip(2, 0x28)` - it sets bit 0 of dSv_player_collect_c::mCollect[2] and writes the item number into dSv_player_status_a_c::mSelectEquip[2]. Possession is tested with dComIfGs_isCollect(0x2, 0) (src/d/d_item.cpp:2186). Once owned it is always on; there is no equip/unequip.",
-      "constants": {"collect_index": {"value": 2, "file": "src/d/d_item.cpp:742"}, "arc": {"value": "Vpowr", "file": "src/d/d_item_data.cpp:1245"}, "name_msg": {"value": "0x01A6", "file": "src/d/d_item_data.cpp:1246"}},
-      "implementation_note": "Model it as a boolean capability flag consulted by liftable objects, not an item. dItemNo_BARE_HAND_e (0x2E) writes the same mSelectEquip[2] slot with a 'no bracelet' value (src/d/d_item.cpp:775-778), so the game can take them away.",
+      "behaviour": "NOT an inventory slot - an EQUIP slot, like the sword and shield. Grant is `dComIfGs_onCollect(2, 0); dComIfGs_setSelectEquip(2, 0x28)` - it sets bit 0 of dSv_player_collect_c::mCollect[2] and writes the item number into dSv_player_status_a_c::mSelectEquip[2] (src/d/d_com_inf_game.cpp:1814-1821). Possession is `checkPowerGloveEquip() { return dComIfGs_getSelectEquip(2) == dItemNo_POWER_BRACELETS_e; }` (include/d/actor/d_a_player_main.h:1876), or dComIfGs_isCollect(0x2, 0) (src/d/d_item.cpp:2186). Once owned it is always on; there is no equip/unequip. There is NO player proc.",
+      "effects": {
+        "lifting": "src/d/actor/d_a_player_grab.inc:326-336 - a grab succeeds if `checkPowerGloveEquip() || !fopAcM_CheckStatus(target, fopAcStts_UNK10000_e)`; otherwise it falls into procGrabMiss_init (:384). THERE IS NO NUMERIC WEIGHT: 'needs the bracelets' is the single status bit fopAcStts_UNK10000_e = 0x00010000 (include/f_op/f_op_actor.h:35). Objects that set it: src/d/actor/d_a_stone.cpp:252 (conditional on data().m70 & 2), d_a_stone2.cpp:153, d_a_bpw.cpp:4393, d_a_kb.cpp:2538. Heavy objects also change carry behaviour regardless of the bracelets - procGrabHeavyWait_init (d_a_player_grab.inc:286-288), throw-only rather than put-down (:213-216), and a slower GRABNG anim (:365-379).",
+        "pushing": "src/d/actor/d_a_player_pushpull.inc:19-22 - `if (checkPowerGloveEquip()) cLib_onBit<dBgW::PushPullLabel>(pp_label, dBgW::PPLABEL_HEAVY);` where PPLABEL_HEAVY = 0x08 (include/d/d_bg_w.h:26). Consumed at src/d/actor/d_a_obj_movebox.cpp:1263-1265: a movebox whose attribute m9A is non-zero is only pushable when that bit is set.",
+        "cosmetic": "the PRING (bracelet) model is attached to PRING_JNT_PRINGL_e / PRING_JNT_PRINGR_e from Link's CL_JNT_LARMB_JNT_e / CL_JNT_RARMB_JNT_e and drawn only while equipped (src/d/actor/d_a_player_main.cpp:1351-1354, 1906-1908)"
+      },
+      "constants": {"collect_index": {"value": 2, "file": "src/d/d_item.cpp:742"}, "heavy_status_bit": {"value": "fopAcStts_UNK10000_e = 0x00010000", "file": "include/f_op/f_op_actor.h:35"}, "pushpull_bit": {"value": "dBgW::PPLABEL_HEAVY = 0x08", "file": "include/d/d_bg_w.h:26"}, "arc": {"value": "Vpowr", "file": "src/d/d_item_data.cpp:1245"}, "name_msg": {"value": "0x01A6", "file": "src/d/d_item_data.cpp:1246"}},
+      "implementation_note": "A boolean capability flag, not an item. Tag heavy liftables with one bit and heavy pushables with another; the bracelets simply satisfy both. dItemNo_BARE_HAND_e (0x2E) writes the same mSelectEquip[2] slot with a 'no bracelet' value (src/d/d_item.cpp:775-778), so the game can take them away. Do NOT confuse this with mStts.SetWeight(120)/SetWeight(0xFF) at src/d/actor/d_a_player_main.cpp:11218-11226 - that is collision mass in the no-control state and is unrelated.",
       "confidence": "high",
-      "sources": ["src/d/d_item.cpp:741-745, 775-778, 2186", "src/d/d_com_inf_game.cpp:1813-1818"]
+      "sources": ["src/d/d_item.cpp:741-745, 775-778, 2186", "src/d/d_com_inf_game.cpp:1813-1821", "src/d/actor/d_a_player_grab.inc:213-384", "src/d/actor/d_a_player_pushpull.inc:19-22", "src/d/actor/d_a_obj_movebox.cpp:1263-1265", "include/d/actor/d_a_player_main.h:1876"]
     },
 
     "IRON_BOOTS": {
@@ -906,10 +920,11 @@
 
     "HYOI_PEAR": {
       "id": "0x83", "name": "Hyoi Pear", "kind": "bait", "slot": "Bait Bag",
-      "file": "src/d/actor/d_a_player_main.cpp:3792-3796",
-      "behaviour": "The only bait that uses procFoodSet_init() (daPyProc_FOOD_SET_e = 0xA8) instead of procFoodThrow_init() - Link puts it on his head and a seagull takes it, handing the camera to the bird.",
-      "constants": {}, "implementation_note": "A camera-possession mode, not an item in hand.",
-      "confidence": "high", "sources": ["src/d/actor/d_a_player_main.cpp:3792-3796", "include/d/actor/d_a_player_main.h:584-585"]
+      "file": "src/d/actor/d_a_player_main.cpp:3793-3796; src/d/actor/d_a_player_food.inc:146-228; src/d/actor/d_a_npc_kamome.cpp",
+      "behaviour": "The only bait that uses procFoodSet_init() (daPyProc_FOOD_SET_e = 0xA8) instead of procFoodThrow_init() - Link puts it on his head (LINK_BDL_HYOINOMI, SE JA_SE_LK_HYOI_SET at frame 9.0, held 30 frames) and a seagull takes it. See the BAIT_BAG entry's hyoi_pear field for the full seagull-possession detail: daNpc_kam sweeps 16 directions for a clear descent line, then REPLACES Link as the player actor (onHyoiKamome).",
+      "constants": {"set_frame": {"value": 9.0, "file": "src/d/actor/d_a_player_food.inc:206-208"}, "hold_frames": {"value": 30, "file": "src/d/actor/d_a_player_food.inc:195"}, "consumption": {"value": "the whole slot is cleared at once, regardless of count", "file": "src/d/d_save.cpp:504, 537"}},
+      "implementation_note": "A player-actor swap, not an item in hand. The bird has its own flight tuning (daNpc_kam_HIO1_c) and an area-out check that forcibly returns control.",
+      "confidence": "high", "sources": ["src/d/actor/d_a_player_main.cpp:3793-3796", "src/d/actor/d_a_player_food.inc:146-228", "src/d/actor/d_a_npc_kamome.cpp:20-897", "include/d/actor/d_a_player_main.h:584-585"]
     },
     "BIRD_BAIT_5": {
       "id": "0x82", "name": "All-Purpose Bait (x5)", "kind": "bait", "slot": "Bait Bag",
@@ -957,33 +972,43 @@
   },
 
   "_not_determined": [
-    "Iron Boots physics. I established the equip/unequip path and the walk animations but NOT the numbers: no gravity multiplier, sink rate, wind resistance or floor-switch weight was read. Look inside d_a_player_*.inc for daPyFlg0_EQUIP_HEAVY_BOOTS / checkEquipHeavyBoots.",
-    "Magic Armor. I established the toggle flag daPyFlg1_EQUIP_DRAGON_SHIELD and where it is set/cleared, but NOT the magic drain rate per frame nor the damage-nullification hook. daPy_lk_c::changeDragonShield (src/d/actor/d_a_player_main.cpp:3763-3776) was located but not read in full.",
-    "Skull Hammer numbers. The four hammer procs and the file d_a_player_hammer.inc (411 lines, real code) were identified but no swing timings, AT type or Atp were extracted, and d_a_obj_swhammer.cpp's peg-depth constants were not read.",
-    "Bottle restore amounts. How many hearts a Red Potion gives, how much magic a Green Potion gives, what Blue Potion and Soup restore, and how the fairy auto-revive works, are all inside d_a_player_bottle.inc's drink/open procs and were NOT read. Only the Forest Water timer (36000 frames) was confirmed.",
-    "Picto Box capacity. mPictureNum exists in the save (include/d/d_save.h:145) but I did not find the constant that caps it, nor the colour/black-and-white switch inside d_picture_box.cpp / d_snap.cpp.",
-    "Per-slot maximum for bag items. mBeastNum[8] / mBaitNum[8] / mReserveNum[8] are plain u8 arrays and d_save.cpp does not clamp them; a cap (if any) must be in the setItemBeastNumCount / dComIfGp_setItem*NumCount helpers, which I did not read.",
+    "The Fishman / All-Purpose-Bait sea-chart reveal. src/d/actor/d_a_npc_so.cpp ('NPC - Fishman') is 100% STUBBED: 450 lines with 72 empty /* Nonmatching */ bodies, including XyCheckCB and _searchEsa (:11, :56, :61, :71). Only the profile struct (:435-450) and the collision radius 60.0 (:429-432) survive. None of the Fishman's logic is recoverable from this decomp.",
+    "Named meanings for the raw HIO field offsets. daPy_HIO_ham_c1, daPy_HIO_boots_c1, daPy_HIO_move_c1, daPy_HIO_cutRoll_c1 and daPy_HIO_bottle_c1 are all still field_0xNN in include/d/actor/d_a_player_HIO.h. The VALUES quoted in this file are exact and the call sites are cited, but the labels ('active-hitbox window', 'cancel frame', 'fairy release frame') are inferred from those call sites, not from original symbol names. The bottle HIO fields in particular were mapped by index-counting a flat initializer (src/d/actor/d_a_player_HIO_data.inc:274-278) and field_0x58 = 0.0 (fairy release frame) looks suspicious - do not rely on it.",
+    "Whether the Forest Water tick is exactly 30 Hz. 36000 = 20 minutes is inferred from the message code's /1800-minutes and %1800/30-seconds arithmetic (src/f_op/f_op_msg_mng.cpp:2478, 2484), not from an explicit frame-rate constant.",
+    "The item-screen side of the Forest Water timer and spoils equipping. src/d/d_menu_item.cpp is mostly stubbed, including bottleFwaterCheck() (:252) and equipBeastItem() (:270).",
+    "Per-spoil sale prices at Beedle. daNpc_Bs1_getBuyItemNum takes i_itemCost as a parameter (src/d/actor/d_a_npc_bs1.cpp:420-431); the price table itself was not traced.",
+    "daShip_HIO_c0::wind_inc_speed = 55.0f and r_wind_inc_speed = 0.0f both carry a // TODO in the source (src/d/actor/d_a_ship.cpp:77, 79), meaning the decompilers have not confirmed those HIO defaults byte-for-byte. The 55.0 is corroborated by the literal at :1653 and :1214-1215 and is safe; treat r_wind_inc_speed as unverified.",
     "Melodies 6 and 7. They have real conducting patterns (up/down/right and up/right/left/down) and a shorter 600-frame timeout, but they are excluded from the isTact() learned-song check, so they are event-only. Which cutscenes drive them is unknown.",
     "The free-play recogniser. JAIZelInst::m_note_pattern[6][6] and m_stick_to_note_table[25] are real data, but I could not establish what consumes setStickPos()'s return value in gameplay, so do NOT assume those six entries are the six songs.",
     "Ballad of Gales destinations. dStage_changeScene(mTactWarpPosNum + 0xC5, ...) is real, but NOTHING in the decompiled source ever calls setTactWarpPosNum - the caller is in src/d/d_menu_fmap.cpp, which is 131 /* Nonmatching */ stubs in 669 lines, i.e. essentially entirely undecompiled. The mapping from a cyclone icon on the sea chart to a spawn-point index is therefore not recoverable from this decomp.",
     "The wind-direction wheel. dOperate_wind_c::windSet(), arrowDirection(), initialize(), _create() and 19 other functions in src/d/d_operate_wind.cpp are /* Nonmatching */ (23 of ~25 functions). Only dOw_angleRegular (8 directions at 45 degrees, src/d/d_operate_wind.cpp:57-79) and dOw_stickControl are real. The exact s16 angle written for each of the 8 compass directions was NOT recovered; dKyw_tact_wind_set(x, y) is the setter to feed.",
-    "Tingle Tuner gameplay. d_a_agb.cpp (1877 lines) and d_a_agbsw0.cpp are real decompiled code, so its features ARE recoverable, but mining them was out of scope here. All I established is the entry point (orderTalkEvent with the AGB actor) and the state daPyProc_DEMO_AGB_USE_e.",
-    "Hurricane Spin (0xAA): id only; no behaviour established.",
+    "Tingle Tuner gameplay CONTENT. d_a_agb.cpp (1877 lines) and d_a_agbsw0.cpp (2600 lines) are real decompiled code, so its features ARE recoverable, but mining what the Tuner actually does (bomb spawning, hints, statues, item buying) was out of scope. Established here: the entry point, the boot flow, and which save state it reads.",
     "dSv_player_item_record_c::mBottleNum[3] and dSv_player_status_a_c::mSelectEquip[3]: both exist and are initialised, but I found no reader for either.",
     "dSv_player_map_c::field_0x0[0] - one of the four 128-bit chart maps is written by init() but has no accessor I could find; rows 1/2/3 are get/open/complete."
   ],
 
   "_stubbed_files": {
-    "_note": "Files audited with `grep -c Nonmatching`. A high count means the file's behaviour is NOT recoverable.",
-    "src/d/d_operate_wind.cpp": "23 nonmatching in 306 lines - the wind-direction wheel UI is effectively undecompiled",
-    "src/d/d_menu_fmap.cpp": "131 nonmatching in 669 lines - the sea chart, including cyclone-warp destination selection",
+    "_note": "Files audited with `grep -c Nonmatching`, then the bodies were checked. Remember the marker is ambiguous (see _source.stub_warning): a high count usually means empty bodies, but confirm before trusting a count alone.",
+    "src/d/actor/d_a_npc_so.cpp": "72 nonmatching in 450 lines, ALL BODIES EMPTY - the Fishman is entirely unrecoverable",
+    "src/d/d_operate_wind.cpp": "23 nonmatching in 306 lines, bodies empty (verified) - the wind-direction wheel UI is undecompiled",
+    "src/d/d_menu_fmap.cpp": "131 nonmatching in 669 lines, bodies empty (verified at :11-12) - the sea chart, including cyclone-warp destination selection",
     "src/d/d_menu_fmap2.cpp": "113 nonmatching in 572 lines",
+    "src/d/d_menu_item.cpp": "mostly stubbed, including bottleFwaterCheck (:252) and equipBeastItem (:270)",
+    "src/d/d_meter.cpp": "16 nonmatching but the file is largely real - the spoils count-commit at :2849-2879 and the HUD digit code are present",
     "src/d/d_menu_collect.cpp": "2 nonmatching in 4811 lines - essentially complete",
-    "src/d/d_picture_box.cpp": "1 nonmatching in 2457 lines - essentially complete",
+    "src/d/d_picture_box.cpp": "1 nonmatching in 2457 lines (:2076, 'retail-only regalloc') - essentially complete",
+    "src/d/actor/d_a_ship.cpp": "daShip_c::execute() at :3545 carries the marker but HAS A FULL ~1300-line body from :3546 - real code, real constants",
     "fully_real": [
       "src/d/actor/d_a_player_tact.inc (854 lines, 0 stubs)",
       "src/d/actor/d_a_player_bottle.inc (576 lines, 0 stubs)",
+      "src/d/actor/d_a_player_food.inc (bait and Hyoi Pear, 0 stubs)",
       "src/d/actor/d_a_player_hammer.inc (411 lines, 0 stubs)",
+      "src/d/actor/d_a_npc_kamome.cpp (1582 lines, 0 stubs)",
+      "src/d/actor/d_a_esa.cpp (308 lines, 0 stubs)",
+      "src/d/actor/d_a_obj_toripost.cpp (0 stubs)",
+      "src/d/actor/d_a_npc_photo.cpp and d_a_tag_photo.cpp (Lenzo, 0 stubs)",
+      "src/d/actor/d_a_agbsw0.cpp (2600 lines, 0 stubs), src/m_Do/m_Do_gba_com.cpp, src/JSystem/JUtility/JUTGba.cpp, src/dolphin/gba/*.c",
+      "src/d/actor/d_a_obj_shmrgrd.cpp (652 lines, 0 stubs)",
       "src/d/d_item.cpp (2998 lines, 0 stubs)",
       "src/d/d_save.cpp (2021 lines, 0 stubs)",
       "src/d/d_snap.cpp (2257 lines, 0 stubs)",

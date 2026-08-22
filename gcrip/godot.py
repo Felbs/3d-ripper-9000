@@ -4570,6 +4570,7 @@ func _bit_value(b) -> int:
 
 func _story_bits_ok(step: Dictionary) -> bool:
     # every requirement must be an event bit we can test, and it must be set
+    var sets: Array = step.get("sets_bits", [])
     for b in step.get("requires_bits", []):
         var t := str(b).strip_edges()
         if COLLECT_ITEMS.has(t):
@@ -4578,6 +4579,13 @@ func _story_bits_ok(step: Dictionary) -> bool:
             continue
         if not t.begins_with("0x"):
             return false          # gated on a counter we do not model yet
+        if sets.has(b) or sets.has(t):
+            # A step that requires a bit it also SETS is not gated on anything - it is the
+            # mined way of writing "while this has not happened yet".  Ganon's Tower does it
+            # because the four trials may be cleared in any order, so no trial names another;
+            # Hyrule's barrier does it because 0x2C02 is what the break RAISES.  Read as a
+            # hard requirement it is a deadlock: only this step can produce the bit.
+            continue
         if not event_bit(_bit_value(t)):
             return false
     return true
@@ -4882,20 +4890,39 @@ const SEA_WAVES := [
     [2.5, 8800.0, 8000.0, -0.98, 0.20, 210.0],
     [2.5, 6400.0, 12000.0, 0.20, -0.98, 180.0],
 ]
-var sea_scale := 10.0          # room wave_max (0..10); 10 on the open sea, 0 in harbours
+# A room's MULT chunk carries wave_max, and the values on the disc are NOT a 0..10 range:
+# measured across every stage, the only ones that occur are 0 (431 rooms - harbours and
+# interiors), 5 (3), 15 (1), 30 (30 - the open sea), 50 (9 - the roughest water), and -1 where
+# the room has no MULT entry at all.
+const SEA_WAVE_OPEN := 30.0    # the value every open-sea room actually carries
 var sea_wave_max: Dictionary = {}   # "room" -> wave_max of the current stage (from MULT)
+var sea_cur_scale := SEA_WAVE_OPEN  # daSea_WaveInfo::GetScale eases towards the target
 var wind_yaw := 0.0            # Wind's Requiem yaw: 0 = east (new file), 45 deg steps
 var wind_power := 0.9
 
-func sea_wave_scale(x: float, z: float) -> float:
+func sea_wave_target(x: float, z: float) -> float:
+    # which wave_max this point wants, before smoothing
     if sea_wave_max.is_empty():
-        return 10.0
+        return SEA_WAVE_OPEN
     var room := str(sea_room_at(Vector3(x, 0.0, z)))
+    var v := -1.0
     if sea_wave_max.has(room):
-        return float(sea_wave_max[room])
-    if sea_wave_max.size() == 1:
-        return float(sea_wave_max.values()[0])
-    return 10.0
+        v = float(sea_wave_max[room])
+    elif sea_wave_max.size() == 1:
+        v = float(sea_wave_max.values()[0])
+    if v < 0.0:
+        return SEA_WAVE_OPEN    # -1 = the room has no MULT entry
+    return v
+
+func sea_wave_scale(x: float, z: float) -> float:
+    # d_a_sea.cpp:171-174 - one eased scalar for the whole sheet, not a per-point value, so
+    # sailing from open water into a harbour ramps the swell down over about a second and a
+    # half instead of snapping flat at the room boundary
+    var want := sea_wave_target(x, z)
+    sea_cur_scale += (want - sea_cur_scale) / 100.0
+    if absf(want - sea_cur_scale) < 0.01:
+        sea_cur_scale = want
+    return sea_cur_scale
 
 func sea_height(x: float, z: float) -> float:
     var t := float(Engine.get_physics_frames())
@@ -9331,7 +9358,12 @@ def export_godot(
     # Some enemies are PLACED under a different name than the class the decomp profiles them
     # under, so a lookup by placed name misses them entirely: "pow" appears 28 times in the
     # placement data and "PW" never; "Oqw" 22 times against "Oq"'s 7.
-    enemy_aliases = {"pow": "PW", "Oqw": "Oq"}
+    # Some enemies are PLACED under one name and PROFILED under another: the DZR object name
+    # and the actor/archive name differ.  "pow" is placed 28 times and "PW" never; "Oqw" 22
+    # against "Oq"'s 7; and "big_pow" is d_stage.cpp:694's only row for fpcNm_BPW_e, whose
+    # archive - and so our profile key - is "Bpw" (both M_DaiB and the Xboss2 rematch place
+    # it as big_pow).  Publish each profile under both names so a lookup by placed name hits.
+    enemy_aliases = {"pow": "PW", "Oqw": "Oq", "big_pow": "Bpw"}
     merged: dict = {}
     for part in sorted((Path(__file__).parent / "data").glob("ww_enemies_*.json")):
         try:
