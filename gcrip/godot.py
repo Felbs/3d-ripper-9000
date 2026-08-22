@@ -2650,7 +2650,7 @@ func _climb() -> void:
 func _update_prompt() -> void:
     prompt_target = null
     var best := ""
-    if state in [State.GROUND, State.CARRY]:
+    if state in [State.GROUND, State.CARRY, State.SWIM]:
         for n in get_tree().get_nodes_in_group("interact"):
             if not is_instance_valid(n) or n == held:
                 continue
@@ -2661,12 +2661,14 @@ func _update_prompt() -> void:
             var reach := 220.0
             if n.has_method("talk_range"):
                 reach = maxf(reach, n.talk_range())
+            if n.has_method("seat_point"):
+                reach = maxf(reach, 450.0)   # the King of Red Lions is a big hull
             if to_n.length() > reach:
                 continue
             if to_n.length() > 30.0 and forward().dot(to_n.normalized()) < 0.2:
                 continue  # must roughly face it
             var p: String = n.interact_prompt(self)
-            if p != "" and state == State.GROUND:
+            if p != "":
                 prompt_target = n
                 best = p
                 break
@@ -2910,6 +2912,9 @@ func _swim() -> void:
         vy = 0.0
         global_position.y = surface
     _apply(forward() * swim_speed, vy)
+    if Input.is_action_just_pressed("action_a") and prompt_target != null             and prompt_target.has_method("seat_point"):
+        prompt_target.interact(self)   # climb aboard the King of Red Lions from the water
+        return
     if is_on_floor() and depth < SWIM_START_DEPTH:
         speed = swim_speed
         _enter_ground()
@@ -9444,7 +9449,13 @@ func _stream_init() -> void:
         if not room_nodes.has(rn):
             room_nodes[rn] = []
         room_nodes[rn].append(child)
-    if room_nodes.is_empty():
+    # a single-room scene (sea_r44, sea_r11) still carries the whole sea RTBL, but it holds
+    # only ONE room's geometry and is recentred to the origin - so the grid room lookup returns
+    # the wrong number and hides the only room there is, leaving Link on invisible collision.
+    # Streaming is only for the full sea scene, which has many rooms.
+    if room_nodes.size() <= 1:
+        room_nodes.clear()
+        room_sets = []
         return
     print("gcrip: RTBL streaming in ", name, " - ", room_sets.size(), " sets over ",
         room_nodes.size(), " rooms")
