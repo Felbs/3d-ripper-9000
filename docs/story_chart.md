@@ -35,7 +35,7 @@ flowchart TD
     grandma_after_kidnap["grandma_after_kidnap<br/>sets 0x0740<br/><i>talk</i>"]
     tetra_dock_conversation["tetra_dock_conversation<br/>yuukaigo<br/><i>npc</i>"]
     tetra_board_ship["tetra_board_ship<br/><i>talk</i>"]
-    departure["departure<br/>departure.stb<br/>sets 0x2401<br/><i>spawn</i>"]
+    departure["departure<br/>departure.stb<br/>sets 0x2401 0x2401 0x2401 0x2401 0x2401 0x2401<br/><i>spawn</i>"]
     aj_speak_ambient["aj_speak_ambient<br/>AJ_SPEAK<br/><i>talk</i>"]
     post_outset_note["post_outset_note<br/><i>spawn</i>"]
     opening_lookout_awake -.-> aryll_tower_first_talk
@@ -99,7 +99,7 @@ flowchart TD
     grandma_after_kidnap["grandma_after_kidnap<br/>sets 0x0740<br/><i>talk - OK</i>"]
     tetra_dock_conversation["tetra_dock_conversation<br/>yuukaigo<br/><i>npc - OK</i>"]
     tetra_board_ship["tetra_board_ship<br/><i>talk - OK</i>"]
-    departure["departure<br/>departure.stb<br/>sets 0x2401<br/><i>spawn - OK</i>"]
+    departure["departure<br/>departure.stb<br/>sets 0x2401 0x2401 0x2401 0x2401 0x2401 0x2401<br/><i>spawn - OK</i>"]
     aj_speak_ambient["aj_speak_ambient<br/>AJ_SPEAK<br/><i>talk - PARTIAL</i>"]
     post_outset_note["post_outset_note<br/><i>spawn - OK</i>"]
     opening_lookout_awake -.-> aryll_tower_first_talk
@@ -166,6 +166,6 @@ flowchart TD
 | grandma_after_kidnap | talk | Ba1 |  |  | 0x0E20 | 0x0740 | **ok** | story-graph talk steps (Game.story_talk) via actors/npc.gd |
 | tetra_dock_conversation | npc | Zl1 | yuukaigo |  | 0x0E20 |  | **ok** | the NPC orders it itself, by proximity or on being placed (Game.story_npc_tick) |
 | tetra_board_ship | talk | Zl1 |  |  | 0x0E20 |  | **ok** | story-graph talk steps (Game.story_talk) via actors/npc.gd |
-| departure | spawn |  | departure_DEMO | departure.stb | 0x0E20 | 0x2401 | **ok** | PLYR params >> 24 indexes the stage EVNT table (Game._place_player) |
+| departure | spawn |  | departure_DEMO | departure.stb | 0x0E20 | 0x2401 0x2401 0x2401 0x2401 0x2401 0x2401 | **ok** | PLYR params >> 24 indexes the stage EVNT table (Game._place_player) |
 | aj_speak_ambient | talk | Aj1 | AJ_SPEAK |  |  |  | **partial** | mined with low confidence |
 | post_outset_note | spawn |  |  |  | 0x0520 |  | **ok** | PLYR params >> 24 indexes the stage EVNT table (Game._place_player) |

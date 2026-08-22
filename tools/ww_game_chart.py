@@ -1,3 +1,4 @@
+# ruff: noqa: E501  (html_page holds template strings; wrapping them would hurt, not help)
 """One map of the whole remake: every subsystem and every mined story step, with status.
 
 Everything here is read from the build and the mined data - the player's own state machine,
@@ -42,6 +43,7 @@ IMPLEMENTED = {
                " two-body proximity and the facing test, with a real ERROR branch",
     "npc_tag": "actors/npc_tag.gd - a volume that box-tests one named NPC and never the player."
                " Wired end to end, but not yet seen to fire in an integration test",
+    "item": "Game.story_item_collected - picking up or being handed the step's dItemNo",
     "timer": "Game.story_timer_tick - the timed islands (daTagvolcano). The sea-side switch"
              " starts a 300 s clock that survives the warp into the cave and pauses for events;"
              " opening the cave's chest (by tboxNo, the way dComIfGs_isTbox does) settles the"
@@ -202,13 +204,21 @@ def subsystems() -> list[tuple[str, str, str]]:
          "interpreter runs staff/cut timelines: camera, dialogue, actor animation"),
         ("NPC dialogue", "ok",
          f"{len(ruled)} villagers with story-conditional rules, chosen at talk time"),
-        ("Music", "partial", f"{songs} stage songs; the synth lacks vibrato and per-track fx"),
+        ("Music", "partial",
+         f"{songs} stage songs with vibrato, per-track fx send and the pitch oscillator mined"
+         " from JAudio; the scene-level reverb amount is still a chosen constant, and no sound"
+         " effects at all (ww_sound_effects.json maps the banks and the 28 footstep surfaces)"),
         ("Sailing", "partial",
-         "boat physics, sail and wind; no cannon or crane, the Great Sea is one heavy scene"),
+         "boat physics, sail, wind and wave_max from the real MULT values; no cannon, crane or"
+         " cyclones, and the Great Sea is one heavy scene - its RTBL streaming rule is mined"
+         " (ww_greatsea.json) but not built"),
         ("Save / story bits", "ok", "dSv_event_flag_c byte array, story_done, items, switches"),
         ("Day / night", "ok",
          "600 real seconds per in-game day (dKy: 360 units, 0.02/frame); layers swap at 6 and 18"),
-        ("Dungeons", "missing", "no dungeon logic mined yet: keys, switches, boss gates"),
+        ("Dungeons", "partial",
+         "the per-dungeon save block, slot map, key/door decoding and boss flags are mined"
+         " (ww_dungeons.json); boss deaths and room clears work, but keys, locked doors and"
+         " the dungeon-item mask are not wired into the engine"),
     ]
 
 
@@ -291,9 +301,162 @@ def mermaid_story(steps: list[dict], scenes) -> str:
     return "\n".join(out)
 
 
+def remaining(steps: list[dict], scenes) -> list[tuple[str, int, str]]:
+    """Steps that cannot fire yet, grouped by the reason, most first."""
+    groups: dict[str, int] = {}
+    for st in steps:
+        state, why = step_status(st, scenes)
+        if state != "ok":
+            groups[why] = groups.get(why, 0) + 1
+    titles = {
+        "'item'": "Placed items", "'salvage'": "Salvage points", "'score'": "Scored minigames",
+        "hit block": "Breakable objects without geometry", "low confidence": "Low-confidence mining",
+        "inventory item out": "Showing an item to an NPC", "pictograph": "Pictographs",
+        "scored activity": "Minigame outcomes", "enemy profile": "Unprofiled enemies",
+        "not model": "Unmodelled save state", "TagEv": "Trigger volumes not in the build",
+    }
+    # group by TITLE, so five "no TagEv in <stage> orders <event>" lines become one entry
+    merged: dict[str, list] = {}
+    for why, n in groups.items():
+        title = next((t for k, t in titles.items() if k in why), why[:40])
+        m = merged.setdefault(title, [0, []])
+        m[0] += n
+        m[1].append(why)
+    out = []
+    for title, (n, whys) in sorted(merged.items(), key=lambda kv: -kv[1][0]):
+        why = whys[0] if len(whys) == 1 else "; ".join(sorted(whys))
+        out.append((title, n, why))
+    return out
+
+
+CHAPTER_TITLES = {
+    "outset": "Outset Island", "fortress": "The Forsaken Fortress", "dragonroost": "Dragon Roost",
+    "forbiddenwoods": "The Forbidden Woods", "jabun": "Greatfish and Jabun",
+    "towerofgods": "The Tower of the Gods", "hyrule": "Hyrule and the Master Sword",
+    "temples": "The two sages", "fortress2": "The Forsaken Fortress again",
+    "ganon": "Ganon's Tower", "ganontower": "Ganon's Tower - the rooms and rematches",
+    "caves": "Caves and grottoes", "gallery": "The Nintendo Gallery", "houses": "Island interiors",
+    "labyrinths": "Labyrinths and the timed islands", "minigames": "Minigames",
+    "triforce": "The Triforce hunt", "windfall": "Windfall Island",
+}
+
+
+def esc(t: str) -> str:
+    return (str(t).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            .replace('"', "&quot;"))
+
+
+def html_page(rows, steps, scenes, graph) -> str:
+    """The designed page: same numbers as the markdown, same data, one generator."""
+    counts = {"ok": 0, "partial": 0, "missing": 0}
+    per_chapter: dict[str, dict] = {}
+    for st in steps:
+        state, _ = step_status(st, scenes)
+        counts[state] += 1
+        ch = per_chapter.setdefault(str(st.get("chapter")), {"ok": 0, "partial": 0, "missing": 0,
+                                                             "stages": [], "first": None, "last": None})
+        ch[state] += 1
+        stg = str(st.get("stage") or "")
+        if stg and stg not in ch["stages"]:
+            ch["stages"].append(stg)
+        ch["first"] = ch["first"] or st.get("id")
+        ch["last"] = st.get("id")
+    sys_counts = {"ok": 0, "partial": 0, "missing": 0}
+    for _, st, _ in rows:
+        sys_counts[st] += 1
+    pill = {"ok": "working", "partial": "partial", "missing": "not started"}
+
+    css = (ROOT / "tools" / "ww_game_chart.css").read_text(encoding="utf-8")
+    h = ["<title>Wind Waker Remake Map</title>",
+         '<link rel="preconnect" href="https://fonts.googleapis.com">',
+         '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>',
+         '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@500;600&display=swap">',
+         f"<style>{css}</style>", '<div class="wrap">',
+         '<header class="masthead"><p class="eyebrow">Ripped from GZLE01 &middot; rebuilt in Godot 4.7</p>',
+         "<h1>Wind Waker Remake Map</h1>",
+         '<p class="standfirst">Every subsystem and every mined story step in one chart. Each status is read out of the build itself &mdash; Link&rsquo;s own state machine, the item list, the enemy table, the baked cutscenes, the story graph &mdash; so this map cannot drift from what the engine actually does.</p>',
+         '<div class="readout">',
+         f'<div><b>{sys_counts["ok"]}</b><span>systems working</span></div>',
+         f'<div><b>{sys_counts["partial"]}</b><span>systems partial</span></div>',
+         f'<div><b>{sys_counts["missing"]}</b><span>not started</span></div>',
+         f'<div><b>{counts["ok"]}<span style="color:var(--muted)">/{len(steps)}</span></b><span>story steps reachable</span></div>',
+         f'<div><b>{len(graph["chapters"])}</b><span>chapters mined</span></div>',
+         "</div></header>"]
+
+    # 01 systems
+    h += ['<section><h2><span class="num">01</span> Systems</h2>',
+          '<p class="lede">What the engine can do today. &ldquo;Partial&rdquo; means the system runs but a named piece of it is absent; &ldquo;not started&rdquo; means nothing has been built yet.</p>',
+          '<div class="legend"><span class="key"><span class="swatch ok"></span> working</span><span class="key"><span class="swatch partial"></span> partial</span><span class="key"><span class="swatch missing"></span> not started</span></div>',
+          '<div class="plate"><p class="plate-cap">Subsystem map</p><pre class="mermaid">']
+    mm = mermaid_systems(rows).splitlines()[1:-1]
+    h += [esc(line) for line in mm]
+    h += ["</pre></div>", '<div class="cards">']
+    for name, st, ev in rows:
+        h.append(f'<div class="card {st}"><h3>{esc(name)} <span class="pill {st}">{pill[st]}</span></h3><p>{esc(ev)}</p></div>')
+    h += ["</div></section>"]
+
+    # 02 story
+    h += [f'<section><h2><span class="num">02</span> Story &mdash; {len(graph["chapters"])} chapters, {len(steps)} steps</h2>',
+          '<p class="lede">The whole game, mined step by step from the decompilation. Each step records what triggers it, which event or cutscene it runs, and which save bit it raises. The bar on each chapter is how much of it the engine can actually reach today.</p>',
+          '<div class="legend"><span class="key"><span class="swatch ok"></span> reachable</span><span class="key"><span class="swatch partial"></span> partial</span><span class="key"><span class="swatch missing"></span> needs a mechanism</span></div>',
+          '<div class="plate"><p class="plate-cap">The chapters, in story order</p><pre class="mermaid">',
+          "flowchart TD",
+          "  classDef ok fill:#CFE6DA,stroke:#2E7A57,color:#0B1F2E;",
+          "  classDef partial fill:#F2E2BE,stroke:#9C7112,color:#0B1F2E;",
+          "  classDef missing fill:#EFCEC8,stroke:#A2382B,color:#0B1F2E;"]
+    main_story = [c for c in graph["chapters"] if c in (
+        "outset", "fortress", "dragonroost", "forbiddenwoods", "jabun", "towerofgods", "hyrule",
+        "temples", "fortress2", "ganon", "ganontower")]
+    side = [c for c in graph["chapters"] if c not in main_story]
+    cls: dict[str, list[str]] = {"ok": [], "partial": [], "missing": []}
+    for i, c in enumerate(main_story + side):
+        d = per_chapter.get(c, {"ok": 0, "partial": 0, "missing": 0})
+        tot = d["ok"] + d["partial"] + d["missing"]
+        state = "ok" if d["ok"] == tot else ("missing" if d["missing"] else "partial")
+        cls[state].append(f"C{i}")
+        h.append(f'  C{i}["{i + 1} &middot; {esc(CHAPTER_TITLES.get(c, c))}<br/>{d["ok"]}/{tot}"]')
+    for i in range(len(main_story) - 1):
+        h.append(f"  C{i} --> C{i + 1}")
+    if side:
+        h.append('  SIDE(["side content"])')
+        for j in range(len(side)):
+            h.append(f"  SIDE --> C{len(main_story) + j}")
+    for state, ids in cls.items():
+        if ids:
+            h.append(f"  class {','.join(ids)} {state};")
+    h += ["</pre></div>", '<div class="chaps">']
+    for i, c in enumerate(main_story + side):
+        d = per_chapter.get(c)
+        if not d:
+            continue
+        tot = d["ok"] + d["partial"] + d["missing"]
+        state = "ok" if d["ok"] == tot else ("missing" if d["missing"] else "partial")
+        bar = "".join(f'<span class="seg {k}" style="flex:{d[k]}"></span>' for k in ("ok", "partial", "missing") if d[k])
+        h.append(f'<div class="chap {state}"><div class="chap-top"><span class="chap-num">{i + 1:02d}</span>'
+                 f'<h3>{esc(CHAPTER_TITLES.get(c, c))}</h3><span class="chap-count">{d["ok"]}/{tot}</span></div>'
+                 f'<div class="bar">{bar}</div>'
+                 f'<p class="arc">{esc(d["first"])} &rarr; &hellip; &rarr; {esc(d["last"])}</p>'
+                 f'<p class="stages">{esc(", ".join(d["stages"][:8]))}{" &hellip;" if len(d["stages"]) > 8 else ""}</p></div>')
+    h += ["</div></section>"]
+
+    # 03 remaining
+    rem = remaining(steps, scenes)
+    h += ['<section><h2><span class="num">03</span> What is left to build</h2>',
+          f'<p class="lede">{counts["partial"] + counts["missing"]} steps cannot fire yet, and they cluster: most are waiting on the same handful of missing mechanisms. This is the build order, in the order that would unblock the most story.</p>',
+          '<div class="cards">']
+    for title, n, why in rem:
+        h.append(f'<div class="card missing"><h3>{esc(title)} <span class="pill missing">{n} step{"s" if n != 1 else ""}</span></h3><p>{esc(why)}</p></div>')
+    h += ["</div></section>",
+          "<footer>Generated by <code>tools/ww_game_chart.py --html</code> from <code>gcrip/data/ww_story_*.json</code> and the built Godot project.<br>"
+          "Story data mined read-only from the zeldaret/tww decompilation and a personally dumped GZLE01 disc. No game assets are redistributed.</footer>",
+          "</div>"]
+    return "\n".join(h) + "\n"
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=str(ROOT / "docs" / "game_map.md"))
+    ap.add_argument("--html", default=None, help="also write the designed HTML page here")
     args = ap.parse_args()
 
     graph = story_graph()
@@ -344,18 +507,19 @@ def main() -> None:
             f"{s.get('event') or ''} | {bits} | {state} | {why} |"
         )
 
-    lines += ["", "## 3. What is not mined yet", "",
-              "The story graph covers the chapters listed above. Everything after them - Dragon",
-              "Roost, the Forbidden Woods, the Tower of the Gods, Hyrule and the Master Sword,",
-              "the second Forsaken Fortress, the Earth and Wind temples and Ganon's Tower - has",
-              "no graph, so there is nothing for the engine or a test bot to follow there.",
-              "Mining a chapter means: run `tools/ww_story_mine.py <stages>` for its stages,",
-              "read the actors that order the events it names, and write one",
-              "`gcrip/data/ww_story_<chapter>.json` in the same schema.", ""]
+    lines += ["", "## 3. What is left", ""]
+    for title, n, why in remaining(steps, scenes):
+        lines.append(f"- **{title}** - {n} step{'s' if n != 1 else ''}: {why}")
+    lines += ["", "Every chapter of the main story and the side content has a graph. Mining a",
+              "new area means: run `tools/ww_story_mine.py <stages>`, read the actors that",
+              "order the events it names, and write one `gcrip/data/ww_story_<area>.json` in",
+              "the same schema.", ""]
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    if args.html:
+        Path(args.html).write_text(html_page(rows, steps, scenes, graph), encoding="utf-8")
     print(f"systems {sys_counts} | story {counts} of {len(steps)} -> {out}")
 
 
