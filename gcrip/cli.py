@@ -259,6 +259,15 @@ def cmd_survey(args: argparse.Namespace) -> int:
     return 0
 
 
+def _shard(spec: str | None) -> tuple[int, int] | None:
+    if not spec:
+        return None
+    i, n = (int(x) for x in spec.split("/"))
+    if not (n >= 1 and 0 <= i < n):
+        raise SystemExit(f"--shard must be i/n with 0 <= i < n, got {spec!r}")
+    return i, n
+
+
 def cmd_batch(args: argparse.Namespace) -> int:
     from gcrip.batch import batch
 
@@ -274,6 +283,7 @@ def cmd_batch(args: argparse.Namespace) -> int:
         extras=not args.no_extras,
         blend=args.blend,
         blender=args.blender,
+        shard=_shard(args.shard),
         quiet=args.quiet,
     )
     ok = [r for r in rows if not r.get("error")]
@@ -490,6 +500,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--blend", action="store_true", help="also write one .blend per model")
     p.add_argument("--blender", help="blender executable for --blend (default: auto-detect)")
+    p.add_argument(
+        "--shard",
+        metavar="i/n",
+        help="process every n-th disc starting at i (run n of these in parallel on one --out)",
+    )
     p.add_argument("-q", "--quiet", action="store_true")
     p.set_defaults(fn=cmd_batch)
 

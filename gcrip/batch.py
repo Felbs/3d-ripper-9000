@@ -38,10 +38,13 @@ def batch(
     extras: bool = True,
     blend: bool = False,
     blender: str | None = None,
+    shard: tuple[int, int] | None = None,
     quiet: bool = False,
 ) -> list[dict]:
     """``extras`` runs every post-rip step the disc has data for (levels, text, audio,
-    music, cutscenes; see gcrip.extras); ``blend`` adds one .blend per model."""
+    music, cutscenes; see gcrip.extras); ``blend`` adds one .blend per model.
+    ``shard=(i, n)`` takes every n-th disc starting at i, so n processes can share one
+    out folder (they append to the same results file; the matrix is rebuilt from disk)."""
     from gcrip.extras import run_extras
     from gcrip.rip import rip
 
@@ -70,6 +73,9 @@ def batch(
         ]
     if limit:
         files = files[:limit]
+    if shard:
+        i, n = shard
+        files = files[i::n]
     todo = [f for f in files if f.name not in done]
     if not quiet:
         print(f"{len(files)} discs selected, {len(done)} already ripped, {len(todo)} to go")
@@ -133,9 +139,16 @@ def batch(
             done[f.name] = row
             fh.write(json.dumps(row, ensure_ascii=False) + "\n")
             fh.flush()
-            write_matrix(out_root, list(done.values()))
-    write_matrix(out_root, list(done.values()))
+            write_matrix(out_root, _all_rows(results_path, done))
+    write_matrix(out_root, _all_rows(results_path, done))
     return list(done.values())
+
+
+def _all_rows(results_path: Path, done: dict[str, dict]) -> list[dict]:
+    """Rows from every process writing this results file (other shards included)."""
+    merged = {d["file"]: d for d in _load_jsonl(results_path)}
+    merged.update(done)
+    return list(merged.values())
 
 
 def write_matrix(out_root: Path, rows: list[dict]) -> Path:
