@@ -45,7 +45,7 @@ def test_export_godot_project(tmp_path: Path):
 
     proj = (out / "project.godot").read_text(encoding="utf-8")
     assert 'run/main_scene="res://scenes/TestStage.tscn"' in proj
-    assert "move_forward" in proj and "gl_compatibility" in proj
+    assert "move_forward" in proj and "rendering_method" in proj
     assert (out / "player.gd").exists() and (out / "player.tscn").exists()
 
     tscn = (out / "scenes" / "TestStage.tscn").read_text(encoding="utf-8")

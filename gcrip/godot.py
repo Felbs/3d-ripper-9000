@@ -11530,7 +11530,7 @@ def _write_particles(rip_dir: Path, out_dir: Path) -> None:
                 except ImportError:
                     continue
                 written_tex.add(name)
-            except Exception:
+            except (Exception, SystemExit):
                 continue
         n = 0
         for ef in bank.effects:
@@ -11567,7 +11567,7 @@ def _write_particles(rip_dir: Path, out_dir: Path) -> None:
             (fx / f"{ef.res_id:04x}.json").write_text(json.dumps(rec), encoding="utf-8")
             n += 1
         print(f"  particles: {n} effects, {len(written_tex)} textures -> fx/")
-    except Exception as exc:
+    except (Exception, SystemExit) as exc:
         print(f"  particles not written: {exc}")
 
 
@@ -11625,7 +11625,7 @@ def _write_footsteps(rip_dir: Path, out_dir: Path) -> None:
             print(f"  footsteps: {written} waves -> sfx/")
         finally:
             disc.close()
-    except Exception as exc:  # sound is a nicety; never fail an export over it
+    except (Exception, SystemExit) as exc:  # sound is a nicety; never fail an export over it
         print(f"  footsteps not written: {exc}")
 
 
@@ -11664,7 +11664,7 @@ def _write_toon_ramp(rip_dir: Path, out_dir: Path) -> None:
                 return
         finally:
             disc.close()
-    except Exception as exc:  # the ramp is a nicety; never fail an export over it
+    except (Exception, SystemExit) as exc:  # the ramp is a nicety; never fail an export over it
         print(f"  toon ramp not written: {exc}")
 
 

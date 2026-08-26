@@ -1,5 +1,6 @@
 """Rip many discs in one go and keep a per-game scoreboard.
 
+    gcrip dump  D:/roms/gamecube --out "D:/3d dump/GameCube"          # every disc, everything
     gcrip batch D:/roms/gamecube --survey out/survey/survey.jsonl --out out/rip [--engine J3D]
 
 Reads the survey (or takes every disc in the folder when no survey is given), rips each
@@ -34,12 +35,21 @@ def batch(
     only: list[str] | None = None,
     thumbnails: bool = True,
     animations: bool = True,
+    extras: bool = True,
+    blend: bool = False,
+    blender: str | None = None,
     quiet: bool = False,
 ) -> list[dict]:
+    """``extras`` runs every post-rip step the disc has data for (levels, text, audio,
+    music, cutscenes; see gcrip.extras); ``blend`` adds one .blend per model."""
+    from gcrip.extras import run_extras
     from gcrip.rip import rip
 
     folder, out_root = Path(folder), Path(out_root)
     out_root.mkdir(parents=True, exist_ok=True)
+    single = folder.is_file()
+    if single:
+        folder, only, survey_path = folder.parent, [folder.name], None
     results_path = out_root / "batch_results.jsonl"
     done = {d["file"]: d for d in _load_jsonl(results_path)}
     if survey_path:
@@ -50,7 +60,14 @@ def batch(
     else:
         files = sorted(p for p in folder.iterdir() if p.suffix.lower() in (".iso", ".gcm"))
     if only:
-        files = [f for f in files if any(o.lower() in f.name.lower() for o in only)]
+        files = [
+            f
+            for f in files
+            if any(
+                o.lower() == f.name.lower() if single else o.lower() in f.name.lower()
+                for o in only
+            )
+        ]
     if limit:
         files = files[:limit]
     todo = [f for f in files if f.name not in done]
@@ -95,6 +112,20 @@ def batch(
                     seconds=round(res.seconds),
                     report=str((res.out_dir / "report.html").as_posix()),
                 )
+                if extras or blend:
+                    ex = run_extras(
+                        f,
+                        res.out_dir,
+                        res.game_id,
+                        quiet=quiet,
+                        blend=blend,
+                        blender=blender,
+                        log=None if quiet else (lambda m: print("  " + m, flush=True)),
+                    )
+                    row["extras"] = {
+                        k: {a: b for a, b in v.items() if a != "trace"} for k, v in ex.items()
+                    }
+                    row["seconds"] = round(time.monotonic() - t0)
             except Exception as e:  # noqa: BLE001
                 row.update(error=f"{type(e).__name__}: {e}", seconds=round(time.monotonic() - t0))
                 if not quiet:
@@ -119,13 +150,13 @@ def write_matrix(out_root: Path, rows: list[dict]) -> Path:
         f"{sum(1 for r in rows if r.get('error'))} games errored",
         "",
         "| game | ID | exported | dups | failed | tris | clips | animated | expr | Mixamo rigs "
-        "| textured % | textures | s | top warnings |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| textured % | textures | extras | s | top warnings |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---|",
     ]
     for r in rows:
         if r.get("error"):
             lines.append(
-                f"| {r['file']} | | ⚠ {r['error']} | | | | | | | | | | {r.get('seconds', 0)} | |"
+                f"| {r['file']} | | ⚠ {r['error']} | | | | | | | | | | | {r.get('seconds', 0)} | |"
             )
             continue
         warns = "; ".join(f"{k} ×{v}" for k, v in r.get("warnings", {}).items())[:160]
@@ -136,8 +167,69 @@ def write_matrix(out_root: Path, rows: list[dict]) -> Path:
             f"{r['duplicates']} | "
             f"{r['failed']} | {r['triangles']:,} | {r['clips']} | {r['animated_models']} | "
             f"{r['expressions']} | {r['mixamo_rigs']} | {r['textured_pct']} | {r['textures']} | "
-            f"{r['seconds']} | {note} |"
+            f"{_extras_cell(r)} | {r['seconds']} | {note} |"
         )
     p = out_root / "batch_matrix.md"
+    p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    write_dump_readme(out_root, rows)
+    return p
+
+
+def _extras_cell(r: dict) -> str:
+    ex = r.get("extras") or {}
+    parts = []
+    for k, v in ex.items():
+        if not v.get("ok"):
+            parts.append(f"{k} ⚠")
+            continue
+        n = next((v[a] for a in ("built", "streams", "songs", "scenes", "written") if a in v), None)
+        parts.append(k if n is None else f"{k} {n}")
+    return ", ".join(parts)
+
+
+def write_dump_readme(out_root: Path, rows: list[dict]) -> Path:
+    """<out_root>/README.md: what is in this dump folder and how to open it, plus the
+    Blender add-on so the folder is self-contained."""
+    import contextlib
+    import shutil
+
+    import gcrip
+
+    addon = Path(gcrip.__file__).resolve().parent.parent / "blender" / "gcrip_blender.py"
+    if addon.exists():
+        with contextlib.suppress(OSError):
+            shutil.copyfile(addon, out_root / "gcrip_blender.py")
+    ok = [r for r in rows if not r.get("error")]
+    with_models = [r for r in ok if r.get("exported")]
+    lines = [
+        "# 3D Ripper 9000 dump",
+        "",
+        f"{len(rows)} discs processed · {len(with_models)} with models · "
+        f"{sum(r.get('exported', 0) for r in ok):,} models · "
+        f"{sum(r.get('clips', 0) for r in ok):,} animation clips · "
+        f"{sum(r.get('textures', 0) for r in ok):,} standalone textures",
+        "",
+        "Each `<GameID>/` folder mirrors the disc layout: `<model>.gltf` + `.bin` + `_tex/*.png`,",
+        "`report.html` (browse everything with thumbnails), `disc_manifest.json`, and when the",
+        "game has them: `stages/` (recompiled levels), `text/`, `audio/`, `cutscenes/`.",
+        "",
+        "Open models in Blender with **File > Import > GCRip glTF** after installing",
+        "`gcrip_blender.py` (Edit > Preferences > Add-ons > Install from Disk); press N for the",
+        "GCRip tab (expression switches, Mixamo bone renaming). Or `gcrip serve <GameID>`",
+        "for the report with Open-in-Blender buttons.",
+        "",
+        "Full per-game numbers: [batch_matrix.md](batch_matrix.md).",
+        "",
+        "| game | ID | models | clips | textures | extras |",
+        "|---|---|---:|---:|---:|---|",
+    ]
+    for r in sorted(ok, key=lambda r: (-r.get("exported", 0), r.get("title") or r["file"])):
+        if not r.get("exported") and not r.get("textures"):
+            continue
+        lines.append(
+            f"| [{r['title']}]({r['game_id']}/report.html) | {r['game_id']} | {r['exported']} | "
+            f"{r['clips']} | {r['textures']} | {_extras_cell(r)} |"
+        )
+    p = out_root / "README.md"
     p.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return p

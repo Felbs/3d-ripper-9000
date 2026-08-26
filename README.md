@@ -70,6 +70,22 @@ Wind Waker (USA): 2,759 models -> 1,856 unique glTFs, 4,406 animation clips, 1,8
 Twilight Princess (USA): 3,626 models -> 2,489 unique glTFs, 14,362 clips in ~10 minutes.
 Blender imports Link with all 594 clips in about 10 seconds.
 
+### Dump a whole library
+
+```
+gcrip survey "D:/roms/gamecube" -o "D:/3d dump/GameCube/_survey"   # ~1 s/disc: which engine each game uses
+gcrip dump   "D:/roms/gamecube" --out "D:/3d dump/GameCube"        # every disc, everything gcrip can pull
+```
+
+`gcrip dump` runs the rip on each disc (or on one `.iso`) and then every extra the disc has
+data for - recompiled levels, message text, streamed audio, sequenced music, cutscenes
+(`--no-extras` for models only, `--blend` for a `.blend` per model). One folder per game ID,
+a `README.md` + `batch_matrix.md` at the top with per-game counts, and the Blender add-on
+copied alongside so the dump folder is self-contained. Resumable: finished discs are skipped.
+Non-J3D discs still get their manifest and any standalone TPL/BTI textures, and land in the
+matrix as "0 models" - that is the verified-games list in
+[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
+
 ### Level recompilation (Wind Waker)
 
 ```
@@ -116,7 +132,8 @@ original code layered on top.
 ## Status
 
 - **Phase 0 - disc filesystem walker: done.** `.iso`/`.gcm` parsing, FST tree,
-  Yaz0/Yay0, recursive RARC (`.arc`/`.szs`/`.szp`), format sniffing, manifest, tree, extract.
+  Yaz0/Yay0, recursive RARC (`.arc`/`.szs`/`.szp`), embedded `.tgc` mini-discs (Zelda
+  Collector's Edition's Wind Waker demo), format sniffing, manifest, tree, extract.
 - **Static rip (J3D games): done.** BMD/BDL parser (INF1/VTX1/EVP1/DRW1/JNT1/SHP1/MAT3/TEX1),
   GX texture decoding (I4/I8/IA4/IA8/RGB565/RGB5A3/RGBA8/C4/C8/C14X2/CMPR), glTF 2.0 export
   with skins and named joints, dedupe by hash, report.html. This is "Strategy B" of the
@@ -234,7 +251,9 @@ gcrip rip game.iso out/ --anim-map LkAnm=Link  # force an animation archive onto
 gcrip rip game.iso out/ --max-anims 100        # lighter files: at most 100 clips per model
 gcrip rip game.iso out/ --no-anims             # static models only
 gcrip survey D:/roms/gamecube -o out/survey    # whole library: which engine each disc uses (~2 s/disc)
-gcrip batch D:/roms/gamecube --survey out/survey/survey.jsonl --out out/rip   # rip every J3D disc, matrix
+gcrip dump  D:/roms/gamecube --out "D:/3d dump/GameCube"   # every disc: rip + every extra, README + matrix
+gcrip dump  game.iso --out "D:/3d dump/GameCube" --blend    # one disc, plus a .blend per model
+gcrip dump  D:/roms/gamecube --survey out/survey/survey.jsonl --engine J3D --out out/rip   # J3D discs only
 gcrip serve out/GZLE01                         # report with Open-in-Blender buttons
 gcrip blend out/GZLE01                         # .blend asset library (needs Blender)
 gcrip stage out/GZLE01 M_NewD2                 # recompile a Wind Waker level into one glTF

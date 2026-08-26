@@ -72,7 +72,7 @@ def test_parse_entries_and_attrs():
     assert m0.text == "{name} got a Sword!"
     assert m0.raw_bytes == b"\x1a\x05\x00\x00\x00 got a Sword!"
     assert m0.attrs["text_box_type_name"] == "item_get"
-    assert m0.attrs["draw_type_name"] == "slow"
+    assert m0.attrs["draw_type_name"] == "typed_unskippable"
     assert m0.attrs["item_image"] == 0x38
     m1 = b.messages[1]
     assert m1.text == "Hoy, Big Brother!\nCome here."
@@ -95,7 +95,7 @@ def test_escape_decoding():
     )
     text = bmg.decode_text(raw)
     assert text == (
-        "{name}! You got a {color:red}Treasure Chart{color:default}!{wait:20}\n"
+        "{name}! You got a {color:orange}Treasure Chart{color:white}!{wait:20}\n"
         "{choice:2}Yes\nNo {icon:a_button}{size:150}{sound:42}{value:auction_bid}"
         "{tag:07:1234:ab}"
     )

@@ -19,6 +19,7 @@ from collections import Counter
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from gcrip.disc import tgc
 from gcrip.disc.fst import parse_fst, parse_header
 from gcrip.disc.image import DiscImage, UnsupportedImageError
 from gcrip.formats import yay0, yaz0
@@ -61,6 +62,7 @@ _MAGICS: list[tuple[bytes, str]] = [
     (b"MPB", "MPB"),
     (b"IDX", "IDX"),
     (b"IECS", "IECS"),
+    (tgc.TGC_MAGIC, "TGC"),
 ]
 
 _ARCHIVE_MAGICS = (b"Yaz0", b"Yay0", b"RARC", b"\x55\xaa\x38\x2d")
@@ -81,6 +83,7 @@ class DiscSurvey:
     j3d_anims: int = 0
     j3d_inside_archives: int = 0  # archives peeked that contain J3D data
     archives_peeked: int = 0
+    tgc_discs: int = 0  # embedded mini-discs (.tgc) that hold J3D data
     engine: str = "unknown"
     seconds: float = 0.0
     error: str = ""
@@ -172,6 +175,38 @@ def survey_disc(path: Path, *, sample: int = 600, deep: int = 24) -> DiscSurvey:
         s.magics = dict(magics.most_common(12))
         s.j3d_models = magics.get("BMD", 0) + magics.get("BDL", 0)
         s.j3d_anims = magics.get("BCK", 0) + magics.get("BTP", 0)
+        # embedded mini-discs: peek a few of their archives too
+        for e in entries:
+            if not e.name.lower().endswith(".tgc") or e.size < 0x8440:
+                continue
+            try:
+                head = img.read(e.offset, 0x38)
+                if not tgc.is_tgc(head):
+                    continue
+                t = tgc.parse(img.read(e.offset, e.size))
+            except Exception:  # noqa: BLE001
+                continue
+            inner = sorted(
+                (f for f in t.files if 16 <= f.size <= 8 << 20), key=lambda f: f.size
+            )
+            hit = False
+            stepi = max(1, len(inner) // deep)
+            for f in inner[::stepi][:deep]:
+                blob = img.read(e.offset + f.offset, f.size)
+                if blob[:4] not in _ARCHIVE_MAGICS and blob[:3] != b"J3D":
+                    continue
+                try:
+                    models, anims, _inner = _peek_archive(blob)
+                except Exception:  # noqa: BLE001
+                    continue
+                s.archives_peeked += 1
+                if models or anims:
+                    hit = True
+                    s.j3d_inside_archives += 1
+                    s.j3d_models += models
+                    s.j3d_anims += anims
+            if hit:
+                s.tgc_discs += 1
         # peek inside archives spread across the size range (the smallest ones alone are
         # layouts/text and would miss the models); mid-sized ones hold characters
         archives = [a for a in archives if a.size <= 8 << 20]

@@ -21,6 +21,7 @@ from typing import Any
 
 from gcrip import __version__
 from gcrip.classify import SNIFF_BYTES, Classification, classify
+from gcrip.disc import tgc
 from gcrip.disc.fst import (
     APPLOADER_OFFSET,
     BI2_OFFSET,
@@ -246,6 +247,55 @@ class ManifestBuilder:
             return
         if rarc.is_rarc(payload):
             self._walk_rarc(path, payload, disc_offset=payload_disc_offset, depth=depth + 1)
+        elif tgc.is_tgc(payload):
+            self._walk_tgc(path, payload, disc_offset=payload_disc_offset, depth=depth + 1)
+
+    def _walk_tgc(self, path: str, data: bytes, *, disc_offset: int | None, depth: int) -> None:
+        """An embedded mini-disc: its files become nested entries under <path>/files/...
+        (the same layout as the outer disc), its boot.bin/main.dol under <path>/sys/."""
+        try:
+            t = tgc.parse(data)
+        except Exception as e:  # noqa: BLE001
+            self.manifest.errors.append(f"{path}: TGC parse failed: {e}")
+            return
+        self.manifest.dirs.append(f"{path}/sys")
+        self.manifest.dirs.append(f"{path}/files")
+        for d in t.dirs:
+            self.manifest.dirs.append(f"{path}/files/{d}")
+        sys_files = [
+            ("sys/boot.bin", t.header_size, HEADER_SIZE, Classification("system", "BOOT", "fixed")),
+            ("sys/fst.bin", t.fst_offset, t.fst_size, Classification("system", "FST", "fixed")),
+        ]
+        if t.dol_offset and t.dol_size:
+            dol_cls = Classification("executable", "DOL", "fixed")
+            sys_files.append(("sys/main.dol", t.dol_offset, t.dol_size, dol_cls))
+        for sub, off, size, cls in sys_files:
+            if off + size > len(data):
+                continue
+            self.manifest.files.append(
+                ManifestEntry(
+                    path=f"{path}/{sub}",
+                    size=size,
+                    kind=cls.kind,
+                    fmt=cls.fmt,
+                    classified_by=cls.by,
+                    sha1=self._sha1(data[off : off + size]) if self.hash_files else None,
+                    disc_offset=(disc_offset + off) if disc_offset is not None else None,
+                    container=path,
+                    offset=off,
+                    depth=depth,
+                )
+            )
+        for f in t.files:
+            self._walk_blob(
+                f"{path}/files/{f.path}",
+                f.name,
+                data[f.offset : f.offset + f.size],
+                disc_offset=(disc_offset + f.offset) if disc_offset is not None else None,
+                container=path,
+                offset=f.offset,
+                depth=depth,
+            )
 
     def _walk_rarc(self, path: str, data: bytes, *, disc_offset: int | None, depth: int) -> None:
         try:

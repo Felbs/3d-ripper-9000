@@ -271,6 +271,9 @@ def cmd_batch(args: argparse.Namespace) -> int:
         only=args.only,
         thumbnails=not args.no_thumbs,
         animations=not args.no_anims,
+        extras=not args.no_extras,
+        blend=args.blend,
+        blender=args.blender,
         quiet=args.quiet,
     )
     ok = [r for r in rows if not r.get("error")]
@@ -465,18 +468,28 @@ def main(argv: list[str] | None = None) -> int:
     p.set_defaults(fn=cmd_survey)
 
     p = sub.add_parser(
-        "batch", help="rip many discs (all J3D games from a survey) into one out folder"
+        "dump",
+        aliases=["batch"],
+        help="rip a folder of discs (or one disc) into one dump folder: models, textures, "
+        "and every extra the disc has (levels, text, audio, music, cutscenes)",
     )
-    p.add_argument("folder", help="folder of .iso/.gcm images")
+    p.add_argument("folder", help="folder of .iso/.gcm images, or a single image")
     p.add_argument("--survey", help="survey.jsonl from `gcrip survey` (selects discs by engine)")
     p.add_argument(
-        "--engine", default="J3D", help="engine label to select from the survey, or 'any'"
+        "--engine",
+        default="any",
+        help="engine label to select from the survey (e.g. J3D), or 'any'",
     )
     p.add_argument("--out", default="out/rip")
     p.add_argument("--only", nargs="*", help="only discs whose file name contains one of these")
     p.add_argument("--limit", type=int)
     p.add_argument("--no-thumbs", action="store_true")
     p.add_argument("--no-anims", action="store_true")
+    p.add_argument(
+        "--no-extras", action="store_true", help="models and textures only (skip levels/text/audio)"
+    )
+    p.add_argument("--blend", action="store_true", help="also write one .blend per model")
+    p.add_argument("--blender", help="blender executable for --blend (default: auto-detect)")
     p.add_argument("-q", "--quiet", action="store_true")
     p.set_defaults(fn=cmd_batch)
 

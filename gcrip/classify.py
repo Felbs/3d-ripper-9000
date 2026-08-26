@@ -44,6 +44,7 @@ _J3D_TYPES: dict[bytes, tuple[str, str]] = {
 _MAGICS: list[tuple[bytes, Classification]] = [
     (b"\x00\x20\xaf\x30", Classification("texture", "TPL", "magic")),
     (b"RARC", Classification("archive", "RARC", "magic")),
+    (b"\xae\x0f\x38\xa2", Classification("archive", "TGC", "magic")),
     (b"U\xaa8-", Classification("archive", "U8", "magic")),
     (b"Yaz0", Classification("compressed", "Yaz0", "magic")),
     (b"Yay0", Classification("compressed", "Yay0", "magic")),
@@ -85,6 +86,7 @@ _EXTENSIONS: dict[str, Classification] = {
     ".blk": Classification("animation", "BLK", "ext"),
     ".arc": Classification("archive", "ARC", "ext"),
     ".rarc": Classification("archive", "RARC", "ext"),
+    ".tgc": Classification("archive", "TGC", "ext"),
     ".szs": Classification("compressed", "SZS", "ext"),
     ".szp": Classification("compressed", "SZP", "ext"),
     ".ast": Classification("audio", "AST", "ext"),

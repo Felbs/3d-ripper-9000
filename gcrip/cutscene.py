@@ -316,14 +316,14 @@ def find_cutscenes(disc) -> dict[str, tuple[str, bytes]]:
     return out
 
 
-def dump_cutscenes(rip_dir, out_dir=None, *, quiet: bool = False) -> dict:
+def dump_cutscenes(rip_dir, out_dir=None, *, iso=None, quiet: bool = False) -> dict:
     """Every .stb on the disc -> <out_dir>/<name>.json (baked) + index.json."""
     from gcrip.stage import _Disc, _find_iso
 
     rip_dir = Path(rip_dir)
     out_dir = Path(out_dir) if out_dir else rip_dir / "cutscenes"
     out_dir.mkdir(parents=True, exist_ok=True)
-    disc = _Disc(_find_iso(rip_dir, None))
+    disc = _Disc(_find_iso(rip_dir, iso))
     found = find_cutscenes(disc)
     index: dict[str, dict] = {}
     for i, (name, (arc_path, data)) in enumerate(sorted(found.items()), 1):
