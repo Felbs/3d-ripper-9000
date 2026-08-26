@@ -54,6 +54,10 @@ def _count(r: object) -> int:
     return len(r) if hasattr(r, "__len__") else 0
 
 
+def _wavs(folder: Path) -> int:
+    return sum(1 for _ in folder.glob("*.wav")) if folder.is_dir() else 0
+
+
 def run_extras(
     iso: Path,
     game_dir: Path,
@@ -104,7 +108,8 @@ def run_extras(
         def _streams() -> dict:
             from gcrip.audio import dump_streams
 
-            return {"streams": _count(dump_streams(game_dir, iso=iso, quiet=True))}
+            dump_streams(game_dir, iso=iso, quiet=True)
+            return {"streams": _wavs(game_dir / "audio" / "streams")}
 
         out["streams"] = _timed(_streams)
 
@@ -114,7 +119,8 @@ def run_extras(
         def _music() -> dict:
             from gcrip.music import dump_music
 
-            return {"songs": _count(dump_music(game_dir, iso=iso, quiet=True))}
+            dump_music(game_dir, iso=iso, quiet=True)
+            return {"songs": _wavs(game_dir / "audio" / "music")}
 
         out["music"] = _timed(_music)
 
