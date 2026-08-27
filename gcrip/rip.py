@@ -371,8 +371,7 @@ def _run_plugins(src, manifest, result, game_dir, quiet, thumbnails, limit, path
                 r.seconds = time.monotonic() - t0
                 continue
             if not scenes:
-                r.error = f"skipped: {name} found no models"
-                r.seconds = time.monotonic() - t0
+                result.models.remove(r)  # not this plugin's file after all: no record
                 continue
             for k, scene in enumerate(scenes):
                 rk = r if k == 0 else ModelResult(path=f"{e.path}#{k}", out_rel=None, sha1=None)

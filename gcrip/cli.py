@@ -176,7 +176,7 @@ def cmd_rip(args: argparse.Namespace) -> int:
     )
     ok = sum(1 for m in res.models if m.out_rel)
     dup = sum(1 for m in res.models if m.duplicate_of)
-    err = [m for m in res.models if m.error]
+    err = [m for m in res.models if m.error and not m.error.startswith("skipped")]
     print(f"{res.game_id} {res.title}")
     print(f"models: {ok} exported, {dup} duplicates skipped, {len(err)} failed")
     print(f"textures: {sum(1 for t in res.textures if t.out_rel)} standalone PNGs")
