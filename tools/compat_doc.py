@@ -40,7 +40,7 @@ def extras_cell(r: dict) -> str:
     return ", ".join(parts)
 
 
-def main(dump: Path, out: Path) -> None:
+def main(dump: Path, out: Path, console: str = "GameCube", model_fmt: str = "J3D") -> None:
     rows = load(dump / "batch_results.jsonl")
     survey = load(dump / "_survey" / "survey.jsonl")
     ok = [r for r in rows if not r.get("error")]
@@ -56,11 +56,11 @@ def main(dump: Path, out: Path) -> None:
     L = [
         "# Compatibility",
         "",
-        f"`gcrip survey` + `gcrip dump` over a {len(survey) or n_discs}-disc GameCube library "
+        f"survey + dump over a {len(survey) or n_discs}-disc {console} library "
         f"(USA set), {today}. {n_discs} discs processed, {len(errs)} errored. "
         "No game data is stored here - only counts.",
         "",
-        "## Games that rip (J3D models -> glTF)",
+        f"## Games that rip ({model_fmt} models -> glTF)",
         "",
         "| game | ID | models | dups | failed | clips | animated | expressions | Mixamo rigs "
         "| textured % | textures | extras | s | notes |",
@@ -79,7 +79,7 @@ def main(dump: Path, out: Path) -> None:
         f"{sum(r['clips'] for r in j3d):,} animation clips, "
         f"{sum(r['failed'] for r in j3d)} model failures.**",
         "",
-        "## Games where only standalone textures come out (TPL/BTI, no J3D models)",
+        f"## Games where only standalone textures come out (no {model_fmt} models)",
         "",
         "Every one of these ran through the full pipeline without error; their models are in",
         "formats gcrip does not parse yet (see the engine guesses below).",
@@ -87,7 +87,7 @@ def main(dump: Path, out: Path) -> None:
         "| game | ID | textures | engine guess |",
         "|---|---|---:|---|",
     ]
-    eng = {d["game_id"]: d["engine"] for d in survey}
+    eng = {(d.get("game_id") or d.get("product")): d["engine"] for d in survey}
     for r in tex_only:
         L.append(
             f"| {r['title']} | {r['game_id']} | {r['textures']:,} | {eng.get(r['game_id'], '')} |"
@@ -130,4 +130,6 @@ def main(dump: Path, out: Path) -> None:
 if __name__ == "__main__":
     dump = Path(sys.argv[1])
     out = Path(sys.argv[2]) if len(sys.argv) > 2 else Path("docs/COMPATIBILITY.md")
-    main(dump, out)
+    console = sys.argv[3] if len(sys.argv) > 3 else "GameCube"
+    fmt = sys.argv[4] if len(sys.argv) > 4 else ("Ninja" if console == "Dreamcast" else "J3D")
+    main(dump, out, console, fmt)
