@@ -80,22 +80,53 @@ def _safe_inv(m: np.ndarray) -> np.ndarray:
         return np.linalg.pinv(m)
 
 
+def _local(j) -> np.ndarray:
+    m = np.eye(4)
+    x, y, z, w = j.rotation
+    r = np.array(
+        [
+            [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
+            [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
+            [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
+        ]
+    )
+    m[:3, :3] = r @ np.diag(j.scale)
+    m[:3, 3] = j.translation
+    return m
+
+
+def _sane_parents(scene: Scene) -> list[int | None]:
+    """Parent indices that are in range, not self, and acyclic (others become roots)."""
+    n = len(scene.joints)
+    parents: list[int | None] = []
+    for i, j in enumerate(scene.joints):
+        p = j.parent
+        parents.append(p if (p is not None and 0 <= p < n and p != i) else None)
+    for i in range(n):  # break cycles
+        seen = {i}
+        p = parents[i]
+        while p is not None:
+            if p in seen:
+                parents[i] = None
+                break
+            seen.add(p)
+            p = parents[p]
+    return parents
+
+
 def _rest_world(scene: Scene) -> list[np.ndarray]:
-    mats = []
-    for j in scene.joints:
-        m = np.eye(4)
-        x, y, z, w = j.rotation
-        r = np.array(
-            [
-                [1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w)],
-                [2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w)],
-                [2 * (x * z - y * w), 2 * (y * z + x * w), 1 - 2 * (x * x + y * y)],
-            ]
-        )
-        m[:3, :3] = r @ np.diag(j.scale)
-        m[:3, 3] = j.translation
-        mats.append((mats[j.parent] @ m) if j.parent is not None else m)
-    return mats
+    """World rest matrices in any joint order (parents may come after children)."""
+    parents = _sane_parents(scene)
+    local = [_local(j) for j in scene.joints]
+    world: list[np.ndarray | None] = [None] * len(local)
+
+    def get(i: int) -> np.ndarray:
+        if world[i] is None:
+            p = parents[i]
+            world[i] = local[i] if p is None else get(p) @ local[i]
+        return world[i]
+
+    return [get(i) for i in range(len(local))]
 
 
 def export(scene: Scene, out_base: Path, *, thumbnail: bool = True) -> ExportStats:
@@ -185,10 +216,11 @@ def export(scene: Scene, out_base: Path, *, thumbnail: bool = True) -> ExportSta
         }
         gltf["nodes"].append(node)
         joint_nodes.append(len(gltf["nodes"]) - 1)
-    for j, ni in zip(scene.joints, joint_nodes, strict=True):
-        if j.parent is not None:
-            gltf["nodes"][joint_nodes[j.parent]].setdefault("children", []).append(ni)
-    roots = [ni for j, ni in zip(scene.joints, joint_nodes, strict=True) if j.parent is None]
+    parents = _sane_parents(scene)
+    for p, ni in zip(parents, joint_nodes, strict=True):
+        if p is not None:
+            gltf["nodes"][joint_nodes[p]].setdefault("children", []).append(ni)
+    roots = [ni for p, ni in zip(parents, joint_nodes, strict=True) if p is None]
     st.joints = len(scene.joints)
 
     # mesh
