@@ -1,30 +1,49 @@
 # Compatibility
 
-Results of `gcrip survey` + `gcrip batch` over a 638-disc GameCube library (USA set), 2026-08-18.
-No game data is stored here - only counts.
+`gcrip survey` + `gcrip dump` over a 638-disc GameCube library (USA set), 2026-08-26. 18 discs processed, 0 errored. No game data is stored here - only counts.
 
-## J3D games (rip works end to end)
+## Games that rip (J3D models -> glTF)
 
-| game | ID | models exported | dups skipped | failed | clips | animated models | expression models | Mixamo rigs | textured % | s | notes |
-|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
-| DONKEY KONG JUNGLE BEAT | GYBE01 | 486 | 6 | 0 | 2,110 | 207 | 22 | 18 | 95.3 | 141 |  |
-| LUIGI'S MANSION | GLME01 | 73 | 37 | 0 | 119 | 56 | 0 | 0 | 100.0 | 30 | few BMDs; rooms/characters use Luigi's Mansion's own `.mdl` + `.bin` formats (718 .mdl) - future module |
-| Mario Kart Double Dash! | GM4E01 | 387 | 335 | 0 | 378 | 116 | 35 | 2 | 95.1 | 55 |  |
-| PAC-MAN vs. | PRJE01 | 20 | 0 | 0 | 5 | 3 | 1 | 0 | 100.0 | 10 |  |
-| PIKMIN2 for GAMECUBE | GPVE01 | 683 | 438 | 0 | 743 | 299 | 0 | 1 | 97.4 | 156 |  |
-| POKeMON BOX RUBY&SAPPHIRE | GPXE01 | 8 | 0 | 0 | 0 | 0 | 0 | 0 | 100.0 | 4 | 8 Pokémon storage models |
-| Super Mario Sunshine | GMSE01 | 712 | 8,072 | 0 | 10,039 | 633 | 32 | 4 | 90.7 | 469 | 8,072 byte-identical duplicates skipped (every level .szs repeats the NPC set) |
-| THE LEGEND OF ZELDA The Wind Waker for USA | GZLE01 | 1,856 | 902 | 0 | 4,406 | 432 | 117 | 76 | 95.6 | 284 |  |
-| The Legend of Zelda Twilight Princess | GZ2E01 | 2,489 | 1,137 | 0 | 14,362 | 747 | 213 | 257 | 97.5 | 639 |  |
-| The Legend of Zelda: Collector's Edition | PZLE01 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0.0 | 12 | games are nested `.tgc` disc images (OoT/MM/WW demo) - TGC unpacking not implemented yet |
-| The Legend of Zelda: Four Swords FOR NINTENDO GAMECUBE | G4SE01 | 63 | 50 | 0 | 0 | 0 | 0 | 0 | 100.0 | 24 | GBA-era assets; 63 small BMDs |
+| game | ID | models | dups | failed | clips | animated | expressions | Mixamo rigs | textured % | textures | extras | s | notes |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---|
+| The Legend of Zelda Twilight Princess | GZ2E01 | 2,489 | 1,137 | 0 | 13,822 | 755 | 213 | 257 | 97.5 | 1,704 |  | 658 |  |
+| THE LEGEND OF ZELDA The Wind Waker for USA | GZLE01 | 1,856 | 902 | 0 | 4,175 | 432 | 117 | 76 | 95.6 | 1,867 | stages 156, text, streams 76, music 93, cutscenes 48 | 590 |  |
+| The Legend of Zelda: Collector's Edition | PZLE01 | 1,710 | 624 | 0 | 4,175 | 432 | 117 | 76 | 95.3 | 1,784 |  | 282 | the Wind Waker demo inside `ZL_WindWakerUSASHOP_*.tgc`; OoT/MM are N64 ROMs (not J3D) |
+| Super Mario Sunshine | GMSE01 | 712 | 8,072 | 0 | 10,039 | 633 | 32 | 4 | 90.7 | 754 |  | 483 | byte-identical duplicates skipped (every level .szs repeats the NPC set) |
+| PIKMIN2 for GAMECUBE | GPVE01 | 683 | 438 | 0 | 372 | 299 | 0 | 1 | 97.4 | 17,232 |  | 167 |  |
+| DONKEY KONG JUNGLE BEAT | GYBE01 | 486 | 6 | 0 | 1,947 | 207 | 22 | 18 | 95.3 | 240 |  | 138 |  |
+| Mario Kart Double Dash! | GM4E01 | 387 | 335 | 0 | 199 | 116 | 35 | 2 | 95.1 | 1,090 |  | 53 |  |
+| LUIGI'S MANSION | GLME01 | 73 | 37 | 0 | 98 | 56 | 0 | 0 | 100.0 | 1,393 | streams 2 | 31 | few BMDs; rooms/characters use Luigi's Mansion's own `.mdl` + `.bin` formats - future module |
+| The Legend of Zelda: Four Swords FOR NINTENDO GAMECUBE | G4SE01 | 63 | 50 | 0 | 0 | 0 | 0 | 0 | 100.0 | 2,593 |  | 24 | GBA-era assets; small BMDs |
+| PAC-MAN vs. | PRJE01 | 20 | 0 | 0 | 5 | 3 | 1 | 0 | 100.0 | 189 |  | 9 |  |
+| POKeMON BOX RUBY&SAPPHIRE | GPXE01 | 8 | 0 | 0 | 0 | 0 | 0 | 0 | 100.0 | 2,017 |  | 4 | 8 Pokémon storage models |
 
-**Total: 11 games, 6,777 unique models, 32,162 animation clips, 0 model failures.**
+**Total: 11 games, 8,487 unique models, 34,832 animation clips, 0 model failures.**
 
-## The rest of the library (survey engine guesses)
+## Games where only standalone textures come out (TPL/BTI, no J3D models)
 
-The survey samples file magics on each disc and peeks inside archives for J3D data (~2 s per disc).
-Everything below needs a new parser module (documented formats) or the Dolphin capture fork.
+Every one of these ran through the full pipeline without error; their models are in
+formats gcrip does not parse yet (see the engine guesses below).
+
+| game | ID | textures | engine guess |
+|---|---|---:|---|
+| James Bond 007(tm): NightFire(tm) | GO7E69 | 2 | EA (BIG/VIV) |
+| 2006 FIFA World Cup | G6FE69 | 2 | EA (BIG/VIV) |
+| Jimmy Neutron Boy Genius | GJNE78 | 2 | THQ |
+| Alien Hominid | GAHEGG | 1 | custom (.pak) |
+
+## Games that produce nothing yet (3)
+
+Walked and manifested without error (disc filesystem, archives), but no format gcrip
+knows how to decode. Grouped by the survey's engine guess; each group is a candidate
+for a new parser module or the Dolphin capture fork.
+
+| engine / publisher guess | discs | examples |
+|---|---:|---|
+| EA (BIG/VIV) | 2 | 007: Agent Under Fire (tm), 007: Everything or Nothing |
+| custom (.all) | 1 | 18 Wheeler |
+
+## Survey engine guesses (whole library)
 
 | engine / publisher guess | discs |
 |---|---:|
@@ -178,8 +197,3 @@ Everything below needs a new parser module (documented formats) or the Dolphin c
 | custom (.rbb) | 1 |
 | custom (.mrg) | 1 |
 | custom (.igb) | 1 |
-
-Notable non-J3D Nintendo titles: Super Smash Bros. Melee, Kirby Air Ride, Mario Superstar Baseball (HAL DAT);
-Metroid Prime 1/2 (Retro PAK/CMDL); F-Zero GX, Super Monkey Ball 1/2 (Amusement Vision GMA/TPL);
-Star Fox Adventures (Rare); Star Fox Assault, Mario Party 4-7 (Hudson); Pikmin 1 (.mod), Luigi's Mansion (.mdl/.bin),
-Chibi-Robo (qp.bin), Animal Crossing, Battalion Wars, Fire Emblem, Paper Mario TTYD, Pokémon Colosseum/XD (.fsys), Wario World, Wave Race.
