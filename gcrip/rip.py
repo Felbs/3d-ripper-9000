@@ -144,6 +144,7 @@ def rip(
     fps: float = 30.0,
     anim_map: dict[str, str] | None = None,
     max_anims: int | None = None,
+    plugins: bool = True,
 ) -> RipResult:
     """anim_map: {animation archive stem: model archive stem} overrides for archives that
     hold only animations (e.g. {"LkAnm": "Link"}); otherwise the target is guessed."""
@@ -244,6 +245,9 @@ def rip(
                 except Exception as ex:  # noqa: BLE001
                     r.warnings.append(f"cross-archive animations failed: {ex}")
 
+        if plugins:
+            _run_plugins(src, manifest, result, game_dir, quiet, thumbnails, limit, path_filter)
+
         if textures:
             _log(quiet, f"[3/3] {len(texs)} standalone textures")
             for e in texs:
@@ -290,6 +294,97 @@ def rip(
         encoding="utf-8",
     )
     return result
+
+
+def _run_plugins(src, manifest, result, game_dir, quiet, thumbnails, limit, path_filter):
+    """Non-J3D model formats (gcrip.plugins): each recognised file -> one or more Scenes."""
+    from gcrip.plugins import plugins_for
+    from ripcore import gltf as core_gltf
+
+    cands = []
+    for e in manifest.files:
+        if e.kind == "model" and e.fmt in ("BMD", "BDL"):
+            continue
+        if path_filter and path_filter not in e.path:
+            continue
+        try:
+            head = src.get(e.path)[:64] if e.size <= 64 << 20 else b""
+        except Exception:  # noqa: BLE001
+            continue
+        mods = plugins_for(e.path, head, e.size)
+        if mods:
+            cands.append((e, mods))
+    if not cands:
+        return
+    if limit:
+        cands = cands[:limit]
+    _log(quiet, f"[2c/3] {len(cands)} files in plugin formats")
+    seen_hash: dict[str, str] = {}
+    for i, (e, mods) in enumerate(cands):
+        if not quiet and (i % 10 == 0 or i == len(cands) - 1):
+            sys.stderr.write(f"\r  plugin {i + 1}/{len(cands)}: {e.path[:70]:<70}")
+            sys.stderr.flush()
+        rel = _rel_out_path(e.path)
+        sha = e.sha1_decompressed or e.sha1
+        for mod in mods:
+            t0 = time.monotonic()
+            name = getattr(mod, "NAME", mod.__name__)
+            r = ModelResult(path=e.path, out_rel=None, sha1=sha)
+            r.warnings.append(f"format: {name}")
+            result.models.append(r)
+            if sha and (sha, name) in seen_hash:
+                r.duplicate_of = seen_hash[(sha, name)]
+                continue
+            try:
+                scenes = mod.extract(src.get(e.path), e.path, src)
+            except Exception as ex:  # noqa: BLE001
+                r.error = f"{name}: {type(ex).__name__}: {ex}"
+                if not quiet:
+                    sys.stderr.write(f"\n  ! {e.path}: {r.error}\n")
+                    if "--debug" in sys.argv:
+                        traceback.print_exc()
+                r.seconds = time.monotonic() - t0
+                continue
+            if not scenes:
+                r.error = f"skipped: {name} found no models"
+                r.seconds = time.monotonic() - t0
+                continue
+            for k, scene in enumerate(scenes):
+                rk = r if k == 0 else ModelResult(path=f"{e.path}#{k}", out_rel=None, sha1=None)
+                if k:
+                    rk.warnings.append(f"format: {name}")
+                    result.models.append(rk)
+                stem = rel.stem if len(scenes) == 1 else f"{rel.stem}#{k}"
+                if scene.name and len(scenes) > 1:
+                    stem = f"{rel.stem}#{_safe_stem(scene.name)}"
+                out_base = game_dir / rel.parent / stem
+                try:
+                    st = core_gltf.export(scene, out_base)
+                    rk.out_rel = str((rel.parent / f"{stem}.gltf").as_posix())
+                    rk.triangles, rk.vertices, rk.joints = st.triangles, st.vertices, st.joints
+                    rk.textures, rk.materials = st.textures, st.materials
+                    rk.skinned = st.joints > 1
+                    rk.joint_names = [j.name for j in scene.joints]
+                    rk.texture_files = st.texture_files
+                    rk.animations = st.clip_names
+                    rk.warnings += st.warnings
+                    if thumbnails:
+                        th = core_gltf.thumbnail(st, out_base)
+                        if th:
+                            rk.thumb = str((rel.parent / th.name).as_posix())
+                except Exception as ex:  # noqa: BLE001
+                    rk.error = f"{name} export: {type(ex).__name__}: {ex}"
+                rk.seconds = time.monotonic() - t0
+            if sha and r.out_rel:
+                seen_hash[(sha, name)] = e.path
+    if not quiet:
+        sys.stderr.write("\n")
+
+
+def _safe_stem(name: str) -> str:
+    import re
+
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", name).strip("_")[:60] or "model"
 
 
 def _cap(clips: list, max_anims: int | None, r: ModelResult) -> list:
