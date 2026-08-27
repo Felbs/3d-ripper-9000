@@ -42,11 +42,14 @@ def batch(
     quiet: bool = False,
     rip_fn=None,
     suffixes: tuple[str, ...] = (".iso", ".gcm"),
+    verify: bool = False,
 ) -> list[dict]:
     """``extras`` runs every post-rip step the disc has data for (levels, text, audio,
     music, cutscenes; see gcrip.extras); ``blend`` adds one .blend per model.
     ``shard=(i, n)`` takes every n-th disc starting at i, so n processes can share one
     out folder (they append to the same results file; the matrix is rebuilt from disk)."""
+    import shutil
+
     from gcrip.extras import run_extras
     from gcrip.rip import rip as gc_rip
 
@@ -89,13 +92,32 @@ def batch(
             if not quiet:
                 print(f"\n=== [{i + 1}/{len(todo)}] {f.name}", flush=True)
             try:
-                res = rip(
-                    f,
-                    out_root,
-                    quiet=quiet,
-                    thumbnails=thumbnails,
-                    animations=animations,
-                )
+                res = None
+                for attempt in range(3 if verify else 1):
+                    res = rip(
+                        f,
+                        out_root,
+                        quiet=quiet,
+                        thumbnails=thumbnails,
+                        animations=animations,
+                    )
+                    if not verify or rip_fn is not None:
+                        break
+                    from gcrip.verify import verify as verify_rip
+
+                    v = verify_rip(res.out_dir, f, quiet=True)
+                    row["verified"] = v.ok
+                    row["verify_attempts"] = attempt + 1
+                    if v.ok:
+                        break
+                    if not quiet:
+                        print(
+                            f"  ! re-read mismatch on {len(v.mismatched)} file(s) "
+                            f"({', '.join(v.mismatched[:2])}) - ripping again",
+                            flush=True,
+                        )
+                    shutil.rmtree(res.out_dir, ignore_errors=True)
+                assert res is not None
                 ok = [m for m in res.models if m.out_rel]
                 errs = [m for m in res.models if m.error and not m.error.startswith("skipped")]
                 warn = Counter()

@@ -285,6 +285,7 @@ def cmd_batch(args: argparse.Namespace) -> int:
         blender=args.blender,
         shard=_shard(args.shard),
         quiet=args.quiet,
+        verify=args.verify,
     )
     ok = [r for r in rows if not r.get("error")]
     print(
@@ -537,6 +538,12 @@ def main(argv: list[str] | None = None) -> int:
         "--shard",
         metavar="i/n",
         help="process every n-th disc starting at i (run n of these in parallel on one --out)",
+    )
+    p.add_argument(
+        "--verify",
+        action="store_true",
+        help="re-read each disc after ripping and compare every file hash; rip again on a "
+        "mismatch (for drives that occasionally return wrong data)",
     )
     p.add_argument("-q", "--quiet", action="store_true")
     p.set_defaults(fn=cmd_batch)
