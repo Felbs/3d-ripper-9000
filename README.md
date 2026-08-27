@@ -67,8 +67,8 @@ otherwise every eye texture is visible at once), sets the scene to 30 fps, and c
 the bones to Mixamo names. Its **GCRip** sidebar tab (press N) has one row of buttons per
 face part (eyes / mouth / brows) to switch expressions, and Mixamo <-> original bone renaming.
 
-Wind Waker (USA): 2,759 models -> 1,856 unique glTFs, 4,406 animation clips, 1,867 textures in ~4.5 minutes.
-Twilight Princess (USA): 3,626 models -> 2,489 unique glTFs, 14,362 clips in ~10 minutes.
+Wind Waker (USA): 2,759 models -> 1,856 unique glTFs, 4,175 animation clips, 1,867 textures in ~4.5 minutes.
+Twilight Princess (USA): 3,626 models -> 2,489 unique glTFs, 13,822 clips in ~10 minutes.
 Blender imports Link with all 594 clips in about 10 seconds.
 
 ### Dump a whole library
@@ -232,8 +232,9 @@ name-based retargeter). Fingers, hair, clothing and weapon bones keep their orig
   report's "from ..." note and use `--anim-map` if a guess is wrong. BTK (UV scroll), BRK
   (color) and BVA (visibility) clips are not exported.
 
-**Tested on 11 J3D games (6,777 models, 32,162 clips, 0 failures) - see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)**
-for the per-game matrix and the survey of the other 627 discs in a full GameCube library.
+**Run on all 638 discs of a full GameCube library: 12 games rip (8,493 models, 34,836 clips, 0 failures),
+256 more yield their standalone textures, 0 discs error - see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)**
+for the per-game matrix and the engine guesses for the rest.
 
 See [docs/PIPELINE.md](docs/PIPELINE.md) for diagrams of the whole pipeline (disc walk → J3D → glTF →
 animation matching → Blender) and the list of heuristics with where to look when one is wrong.
