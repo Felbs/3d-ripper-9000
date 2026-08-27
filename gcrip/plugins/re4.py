@@ -1,14 +1,17 @@
 """Resident Evil 4 (Capcom, GameCube G4BE08): DAS/DRS/UDAS containers with their
 DAT tables, and the big-endian BIN models with textures from the sibling TPL.
 
-Stage rooms (St?/r???.das) keep their DAT inside a "YZ2" range-coded block that
-is not decoded here (see gcrip.formats.re4); enemies (em/*.drs), the player
-(etc/pl*.bin), items (ss/*/*.bin) and cutscene props are plain.
+Stage rooms (St?/r???.das) keep their DAT inside a "YZ2" range-coded block
+(decoded by gcrip.formats.yz2 when the container is expanded); the room geometry
+is the SMD scenarios in there - placed BIN models sharing an embedded TPL - and
+comes out as one scene per SMD.  Enemies (em/*.drs), the player (etc/pl*.bin),
+items (ss/*/*.bin) and cutscene props are plain BIN + TPL pairs.
 """
 
 from __future__ import annotations
 
 import re
+import struct
 
 import numpy as np
 
@@ -43,7 +46,10 @@ _MEMBER_RE = re.compile(r"\.(das|drs|udas|dat)/", re.I)
 
 
 def detect(path: str, head: bytes, size: int) -> bool:
-    if not path.lower().endswith(".bin") or size < 0x40:
+    low = path.lower()
+    if low.endswith(".smd") and size >= 0x10:
+        return re4.is_smd(head, size) or bool(_MEMBER_RE.search(path))
+    if not low.endswith(".bin") or size < 0x40:
         return False
     # members of our containers are recorded without an offset by the manifest
     # walker, so their sniffed head is not theirs: go by the path instead
@@ -144,29 +150,53 @@ def _textures(tpl_data: bytes | None, scene: Scene) -> list[str]:
     return names
 
 
-def model_to_scene(m: re4.BinModel, name: str, tpl_data: bytes | None = None) -> Scene:
-    scene = Scene(name=name)
-    scene.warnings += m.warnings
-    texnames = _textures(tpl_data, scene)
-    # skeleton: bones are listed by id, parent 0xFF / self = root
-    bone_index = {b.id: i for i, b in enumerate(m.bones)}
-    for i, b in enumerate(m.bones):
-        parent = bone_index.get(b.parent)
-        if parent == i:
-            parent = None
-        x, y, z = b.position
-        scene.joints.append(
-            Joint(f"bone{b.id:02d}", parent, (x, y, -z), (0.0, 0.0, 0.0, 1.0), (1.0, 1.0, 1.0))
-        )
-    skinned = len(scene.joints) > 1 and len(m.weight_maps) > 0
-    pos = m.positions.copy()
+def _diffuse(mat: re4.Material, texnames: list[str], scene: Scene) -> str | None:
+    """The texture to show: params[12], or the second layer (params[14], an I4
+    detail map the GX pipeline multiplies with the vertex colours) when the
+    first layer is the all-black placeholder that room materials pair it with."""
+    tex = None
+    if 0 <= mat.texture < len(texnames) and texnames[mat.texture]:
+        tex = texnames[mat.texture]
+    second = mat.params[14]
+    if tex and mat.params[11] & 4 and 0 <= second < len(texnames) and texnames[second]:
+        img = scene.textures.get(tex)
+        if img is not None and not img[..., :3].any():
+            tex = texnames[second]
+    return tex
+
+
+def _add_model(
+    scene: Scene,
+    m: re4.BinModel,
+    texnames: list[str],
+    matrix: np.ndarray | None = None,
+    prefix: str = "",
+) -> None:
+    """Append a BIN's primitives and materials to `scene`; `matrix` (RE4 space)
+    places it, and the Z flip to glTF space happens after that."""
+    skinned = len(scene.joints) > 1 and len(m.weight_maps) > 0 and matrix is None
+    pos = m.positions.astype(np.float64)
+    nrm = m.normals.astype(np.float64)
+    if matrix is not None:
+        pos = pos @ matrix[:3, :3].T + matrix[:3, 3]
+        nrm = nrm @ np.linalg.inv(matrix[:3, :3]) if len(nrm) else nrm
+        ln = np.linalg.norm(nrm, axis=1) if len(nrm) else nrm
+        if len(nrm):
+            ln[ln == 0] = 1
+            nrm = nrm / ln[:, None]
+    pos = pos.astype(np.float32)
+    nrm = nrm.astype(np.float32)
     pos[:, 2] *= -1
-    nrm = m.normals.copy()
     nrm[:, 2] *= -1
     uv = m.uvs.copy()
     uv[:, 1] = 1.0 - uv[:, 1]
+    base = len(scene.materials)
     for mi, mat in enumerate(m.materials):
         faces = mat.faces
+        tex = _diffuse(mat, texnames, scene)
+        scene.materials.append(
+            MaterialDef(name=f"{prefix}mat{mi:02d}", texture=tex, double_sided=True)
+        )
         if len(faces) == 0:
             continue
         corners = faces.reshape(-1, 4)
@@ -176,7 +206,7 @@ def model_to_scene(m: re4.BinModel, name: str, tpl_data: bytes | None = None) ->
         ni = np.clip(uniq[:, 1], 0, max(0, len(nrm) - 1))
         ui = np.clip(uniq[:, -1], 0, max(0, len(uv) - 1))
         prim = Primitive(
-            material=mi,
+            material=base + mi,
             positions=pos[pi] if len(pos) else np.zeros((len(uniq), 3), np.float32),
             indices=inv.reshape(-1).astype(np.uint32),
             normals=nrm[ni] if len(nrm) else None,
@@ -199,19 +229,65 @@ def model_to_scene(m: re4.BinModel, name: str, tpl_data: bytes | None = None) ->
             prim.joints = joints
             prim.weights = weights
         scene.primitives.append(prim)
-        tex = None
-        if 0 <= mat.texture < len(texnames) and texnames[mat.texture]:
-            tex = texnames[mat.texture]
-        scene.materials.append(
-            MaterialDef(name=f"mat{mi:02d}", texture=tex, double_sided=True)
+
+
+def model_to_scene(m: re4.BinModel, name: str, tpl_data: bytes | None = None) -> Scene:
+    scene = Scene(name=name)
+    scene.warnings += m.warnings
+    texnames = _textures(tpl_data, scene)
+    # skeleton: bones are listed by id, parent 0xFF / self = root
+    bone_index = {b.id: i for i, b in enumerate(m.bones)}
+    for i, b in enumerate(m.bones):
+        parent = bone_index.get(b.parent)
+        if parent == i:
+            parent = None
+        x, y, z = b.position
+        scene.joints.append(
+            Joint(f"bone{b.id:02d}", parent, (x, y, -z), (0.0, 0.0, 0.0, 1.0), (1.0, 1.0, 1.0))
         )
-    # materials must line up with primitive indices even when a slot had no faces
-    while len(scene.materials) < len(m.materials):
-        scene.materials.append(MaterialDef(name=f"mat{len(scene.materials):02d}", texture=None))
+    _add_model(scene, m, texnames)
+    return scene
+
+
+def smd_to_scene(smd: re4.Smd, name: str) -> Scene:
+    """One scene for a scenario: every placed object baked into world space."""
+    scene = Scene(name=name)
+    scene.warnings += smd.warnings
+    tpl_tex: dict[int, list[str]] = {}
+    for ti, tpl_data in enumerate(smd.tpls):
+        names = _textures(tpl_data, scene)
+        for i, n in enumerate(names):
+            if n:
+                scene.textures[f"tpl{ti}_{n}"] = scene.textures.pop(n)
+                names[i] = f"tpl{ti}_{n}"
+        tpl_tex[ti] = names
+    models: dict[int, re4.BinModel | None] = {}
+    placed = 0
+    for ei, e in enumerate(smd.entries):
+        if e.shared or e.bin_id >= len(smd.bins):
+            continue
+        if e.bin_id not in models:
+            try:
+                models[e.bin_id] = re4.parse(smd.bins[e.bin_id])
+            except (re4.Re4Error, ValueError, struct.error) as ex:
+                scene.warnings.append(f"bin {e.bin_id}: {ex}")
+                models[e.bin_id] = None
+        m = models[e.bin_id]
+        if m is None or m.triangle_count == 0:
+            continue
+        _add_model(scene, m, tpl_tex.get(e.tpl_id, []), re4.entry_matrix(e), f"obj{ei:02d}_")
+        placed += 1
+    scene.extras["objects"] = placed
     return scene
 
 
 def extract(data: bytes, path: str, src) -> list[Scene]:
+    if path.lower().endswith(".smd"):
+        if not re4.is_smd(data):
+            data = fetch(path, src)
+        name = re.sub(r"\.smd$", "", path.rsplit("/", 1)[-1], flags=re.I)
+        scene = smd_to_scene(re4.parse_smd(data), name)
+        return [scene] if scene.primitives else []
     if not re4.is_bin(data):
         data = fetch(path, src)
     m = re4.parse(data)

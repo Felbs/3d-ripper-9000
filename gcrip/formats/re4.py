@@ -9,9 +9,8 @@ Containers (all big-endian):
     0x400  first slot's data
     Stage files (St?/r???.das) wrap the DAT in "YZ2" compression: the slot data
     starts with two ASCII hex sizes ("<packed>\\t<unpacked>\\n"), is padded to
-    0x20 and then a range-coded stream tagged 0xCE2843DD begins.  That codec is
-    Yamazaki Satoshi's yz2 (source in JADERLINK/RE4_DASYZ2_TOOL); we leave those
-    slots packed and report them.
+    0x20 and then a range-coded stream (its first bytes are always 0xCE2843DD,
+    the coded DAT header) begins.  Decoded by gcrip.formats.yz2.
   DAT
     u32 count, 12 bytes zero, then count u32 offsets, then count 4-byte
     extensions ("BIN\\0", "TPL\\0", "SMD\\0", "ESL\\0", ...).  In a DRS the
@@ -35,14 +34,25 @@ BIN model (documented by JADERLINK/RE4-GCWII-BIN-TOOL):
   normal, [u16 colour], u16 uv).
   Bones: u8 id, u8 parent, u16 pad, f32 x y z (local offset).
   Weight maps: u8 bone x3, u8 count, u8 weight x3, u8 pad.
+
+SMD scenario (room geometry; JADERLINK/RE4-SCENARIO-SMD-TOOLS):
+  u16 magic (0x0040, or 0x0140 followed by u32 n + n u32 extras), u16 entries,
+  u32 BIN table offset, u32 TPL table offset, u32 file size.  Entries (72 bytes):
+  f32 position x y z (cm), f32 angle x y z (radians, applied X then Y then Z),
+  f32 scale x y z, u8 BIN id, u8 TPL id, u8 0xFF, u8 SMX id, 7 x u32 unused,
+  u32 status (0x10 = BIN shared from another SMD).  Both tables are u32 offsets
+  relative to the table; each BIN is a plain model, each TPL a plain TPL.
 """
 
 from __future__ import annotations
 
+import contextlib
 import struct
 from dataclasses import dataclass, field
 
 import numpy as np
+
+from gcrip.formats import yz2
 
 YZ2_TAG = b"\xce\x28\x43\xdd"
 FILLER = b"\xca\xb6\xbe\x20"
@@ -132,12 +142,15 @@ def dat_entries(data: bytes, base: str) -> list[tuple[str, bytes]]:
     return out
 
 
-def expand_das(data: bytes, base: str) -> list[tuple[str, bytes]]:
+def expand_das(data: bytes, base: str, unpack: bool = True) -> list[tuple[str, bytes]]:
     out = []
     for typ, off, size in das_slots(data):
         blob = data[off : off + size]
         if typ == 0:
-            if is_yz2(blob):
+            if yz2.is_yz2(blob) and unpack:
+                with contextlib.suppress(yz2.Yz2Error):
+                    blob = yz2.decode(blob)
+            if yz2.is_yz2(blob) or is_yz2(blob):
                 out.append((f"{base}.yz2", blob))
             elif is_dat(blob):
                 out.extend(dat_entries(blob, base))
@@ -362,3 +375,114 @@ def parse(data: bytes) -> BinModel:
         weight_maps,
         warnings,
     )
+
+
+# ---------------------------------------------------------------------------
+# SMD scenarios
+# ---------------------------------------------------------------------------
+
+
+SMD_MAGICS = (0x0040, 0x0140, 0x0031, 0x0020, 0x0010)
+SMD_SHARED_BIN = 0x10
+
+
+@dataclass
+class SmdEntry:
+    position: tuple[float, float, float]  # metres
+    angles: tuple[float, float, float]  # radians, X then Y then Z
+    scale: tuple[float, float, float]
+    bin_id: int
+    tpl_id: int
+    smx_id: int
+    status: int
+
+    @property
+    def shared(self) -> bool:
+        return bool(self.status & SMD_SHARED_BIN)
+
+
+@dataclass
+class Smd:
+    entries: list[SmdEntry]
+    bins: list[bytes]
+    tpls: list[bytes]
+    warnings: list[str] = field(default_factory=list)
+
+
+def is_smd(data: bytes, size: int | None = None) -> bool:
+    if len(data) < 0x10:
+        return False
+    total = size if size is not None else len(data)
+    magic = struct.unpack_from("<H", data, 0)[0]
+    count, bin_off, tpl_off, _end = struct.unpack_from(">HIII", data, 2)
+    return magic in SMD_MAGICS and 0 < count < 4096 and 0x10 <= bin_off <= tpl_off <= total
+
+
+def _rel_table(data: bytes, table: int, end: int) -> list[bytes]:
+    """Blobs addressed by a u32 offset table relative to itself; the table ends
+    at the first zero / non-increasing entry or where the first blob starts."""
+    offs: list[int] = []
+    p = table
+    while p + 4 <= len(data):
+        if offs and p >= table + offs[0]:
+            break
+        rel = struct.unpack_from(">I", data, p)[0]
+        if rel == 0 or table + rel > end or (offs and rel <= offs[-1]):
+            break
+        offs.append(rel)
+        p += 4
+    out = []
+    for i, rel in enumerate(offs):
+        nxt = table + offs[i + 1] if i + 1 < len(offs) else end
+        out.append(data[table + rel : nxt])
+    return out
+
+
+def entry_matrix(e: SmdEntry) -> np.ndarray:
+    """4x4 world matrix in RE4 space (Z not yet flipped): rotate X, Y, Z, then
+    scale on the world axes, then translate - the order the scenario tool uses."""
+    ax, ay, az = e.angles
+    cx, sx = np.cos(ax), np.sin(ax)
+    cy, sy = np.cos(ay), np.sin(ay)
+    cz, sz = np.cos(az), np.sin(az)
+    rx = np.array([[1, 0, 0], [0, cx, -sx], [0, sx, cx]])
+    ry = np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]])
+    rz = np.array([[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]])
+    m = np.eye(4)
+    m[:3, :3] = np.diag(e.scale) @ rz @ ry @ rx
+    m[:3, 3] = e.position
+    return m
+
+
+def parse_smd(data: bytes) -> Smd:
+    if not is_smd(data):
+        raise Re4Error("not a RE4 SMD scenario")
+    magic = struct.unpack_from("<H", data, 0)[0]
+    count, bin_off, tpl_off, _end = struct.unpack_from(">HIII", data, 2)
+    p = 0x10
+    if magic == 0x0140:
+        n = struct.unpack_from(">I", data, p)[0]
+        p += 4 + 4 * n
+    entries = []
+    warnings: list[str] = []
+    for _ in range(count):
+        if p + 72 > len(data):
+            warnings.append("smd entry table truncated")
+            break
+        vals = struct.unpack_from(">9f4B7II", data, p)
+        p += 72
+        s = POSITION_SCALE
+        entries.append(
+            SmdEntry(
+                (vals[0] / s, vals[1] / s, vals[2] / s),
+                (vals[3], vals[4], vals[5]),
+                (vals[6], vals[7], vals[8]),
+                vals[9],
+                vals[10],
+                vals[12],
+                vals[20],
+            )
+        )
+    bins = _rel_table(data, bin_off, tpl_off) if bin_off < len(data) else []
+    tpls = _rel_table(data, tpl_off, len(data)) if tpl_off < len(data) else []
+    return Smd(entries, bins, tpls, warnings)
