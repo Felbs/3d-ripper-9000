@@ -38,7 +38,13 @@ def all_plugins() -> list[ModuleType]:
         for info in pkgutil.iter_modules(__path__):
             if info.name.startswith("_"):
                 continue
-            mod = importlib.import_module(f"{__name__}.{info.name}")
+            try:
+                mod = importlib.import_module(f"{__name__}.{info.name}")
+            except Exception as e:  # noqa: BLE001 - one broken plugin must not stop a rip
+                import sys
+
+                print(f"gcrip: plugin {info.name} failed to import: {e}", file=sys.stderr)
+                continue
             if hasattr(mod, "detect") and hasattr(mod, "extract"):
                 mods.append(mod)
         _loaded = sorted(mods, key=lambda m: getattr(m, "NAME", m.__name__))
