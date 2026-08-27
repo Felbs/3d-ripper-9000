@@ -85,10 +85,9 @@ def decompress(data: bytes) -> bytes:
                 raise ValueError("RefPack back-reference before start of output")
             if back >= cnt:
                 out += out[start : start + cnt]
-            else:  # overlapping copy: byte by byte
-                for _ in range(cnt):
-                    out.append(out[start])
-                    start += 1
+            else:  # overlapping copy = the last `back` bytes repeated
+                pattern = bytes(out[start : start + back])
+                out += (pattern * (cnt // back + 1))[:cnt]
     if out_len and len(out) != out_len:
         raise ValueError(f"RefPack size mismatch: header {out_len}, got {len(out)}")
     return bytes(out)

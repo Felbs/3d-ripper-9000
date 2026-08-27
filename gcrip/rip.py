@@ -94,7 +94,9 @@ class _Source:
             raw = yay0.decompress(raw)
         self._cache[path] = raw
         self._cache_order.append(path)
-        if len(self._cache_order) > 4:
+        # nested archives (EA BIG-in-BIG, PAK) are revisited constantly while the manifest
+        # is walked in order; keep a generous window of decompressed payloads around
+        while len(self._cache_order) > 24:
             old = self._cache_order.pop(0)
             self._cache.pop(old, None)
         return raw
@@ -125,7 +127,7 @@ class _Source:
                     break
             except Exception:  # noqa: BLE001
                 continue
-        if len(cache) > 3:
+        while len(cache) > 48:
             cache.pop(next(iter(cache)))
         cache[container] = members
         return members
