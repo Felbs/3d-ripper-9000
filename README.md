@@ -11,6 +11,7 @@ report and Blender add-on.
 | Module | Status | Language | License | What it does |
 |--------|--------|----------|---------|--------------|
 | `gcrip` - GameCube | **working** (Wind Waker, Twilight Princess verified) | Python | MIT | disc walker, J3D model/animation parsers, GX texture decode, glTF export, Blender add-on |
+| `dcrip` - Dreamcast | **working** (Ninja games; Phantasy Star Online verified) | Python | MIT | GDI/zip reader, ISO 9660, AFS/PRS, Ninja model/motion parsers, PVR/PVM decode, same glTF/report/Blender path |
 | Dolphin capture fork (for non-J3D GameCube games) | planned | C++ | GPLv2 | runtime capture of object-space geometry for games with custom formats |
 | N64 module | idea | - | - | - |
 | PlayStation module | idea | - | - | - |
@@ -85,6 +86,23 @@ copied alongside so the dump folder is self-contained. Resumable: finished discs
 Non-J3D discs still get their manifest and any standalone TPL/BTI textures, and land in the
 matrix as "0 models" - that is the verified-games list in
 [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
+
+### Dreamcast (`dcrip`)
+
+```
+dcrip info   "game.zip"                          # IP.BIN header + track table (Redump .gdi zips or a .gdi on disk)
+dcrip survey "D:/roms/dreamcast" -o "D:/3d dump/Dreamcast/_survey"   # which games use Ninja models
+dcrip rip    "game.zip" "D:/3d dump/Dreamcast"    # models + textures + report for one disc
+dcrip dump   "D:/roms/dreamcast" --out "D:/3d dump/Dreamcast"        # the whole library, README + matrix
+```
+
+The Dreamcast module walks the GD-ROM's ISO 9660 tree (raw 2352-byte sectors, absolute
+LBAs), expands AFS archives and PRS-compressed files, and turns every Ninja model
+(NJTL + NJCM chunk models with weighted vertex-cache skinning and cached polygon lists,
+NJBM basic models) into a skinned glTF, with NMDM motions as clips and PVR/PVM textures
+(twiddled, VQ, small VQ, mipmapped; ARGB1555/RGB565/ARGB4444/YUV422) as PNGs. Output,
+`report.html`, `gcrip serve`/`gcrip blend` and the Blender add-on are shared with gcrip.
+Phantasy Star Online: 334 models, 0 failures, 1,560 texture files in 42 s.
 
 ### Level recompilation (Wind Waker)
 
