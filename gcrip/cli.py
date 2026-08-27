@@ -377,6 +377,27 @@ def cmd_godot(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_verify(args: argparse.Namespace) -> int:
+    from gcrip.verify import verify
+
+    rip_dir = Path(args.ripdir)
+    iso = Path(args.iso) if args.iso else None
+    if iso is None:
+        from gcrip.stage import _find_iso
+
+        iso = _find_iso(rip_dir, None)
+    r = verify(rip_dir, iso, quiet=args.quiet)
+    print(
+        f"{r.game_id}: {r.matched}/{r.files} files match the rip's hashes "
+        f"({r.bytes_read / 1e9:.2f} GB re-read in {r.seconds:.0f}s)"
+    )
+    for m in r.mismatched[:20]:
+        print("  MISMATCH", m)
+    for u in r.unreadable[:20]:
+        print("  UNREADABLE", u)
+    return 0 if r.ok else 1
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     from gcrip.serve import serve
 
@@ -591,6 +612,14 @@ def main(argv: list[str] | None = None) -> int:
                    help="force the simple always-visible lighting even with an HDR")
     p.add_argument("-q", "--quiet", action="store_true")
     p.set_defaults(fn=cmd_godot)
+
+    p = sub.add_parser(
+        "verify", help="re-read the disc and compare every file's hash with the rip's manifest"
+    )
+    p.add_argument("ripdir", help="finished rip folder (has disc_manifest.json)")
+    p.add_argument("--iso", default=None, help="disc image (default: found via disc_manifest)")
+    p.add_argument("-q", "--quiet", action="store_true")
+    p.set_defaults(fn=cmd_verify)
 
     p = sub.add_parser("serve", help="open report.html locally with 'Open in Blender' buttons")
     p.add_argument("ripdir", help="out/rip/<GameID>")
