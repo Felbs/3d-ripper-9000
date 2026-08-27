@@ -397,6 +397,13 @@ def rip(
                 if th:
                     r.thumb = str((rel.parent / th.name).as_posix())
             seen[sha] = f.path
+        except ninja.NinjaError as ex:
+            if "no NJCM/NJBM" in str(ex):
+                r.error = "skipped: texture list only (NJTL without a model)"
+            else:
+                r.error = f"NinjaError: {ex}"
+                if not quiet:
+                    sys.stderr.write(f"\n  ! {f.path}: {r.error}\n")
         except Exception as ex:  # noqa: BLE001
             r.error = f"{type(ex).__name__}: {ex}"
             if not quiet:
