@@ -649,6 +649,37 @@ def blocks(data: bytes):
         p += 8 + size
 
 
+BLOCK_MAGICS = (b"NJTL", b"NJCM", b"NJBM", b"NMDM", b"GJTL", b"GJCM", b"PVMH")
+
+
+def find_blocks(data: bytes, *, align: int = 4) -> list[tuple[int, bytes, bytes]]:
+    """(offset, magic, payload) for every Ninja/PVM block embedded anywhere in `data`
+    (Sonic Adventure 2's PRS packs, binaries with models compiled in). A block counts when
+    its size field fits inside the data; hits inside a block are skipped."""
+    out = []
+    p = 0
+    n = len(data)
+    while p + 8 <= n:
+        magic = data[p : p + 4]
+        if magic in BLOCK_MAGICS:
+            size = struct.unpack_from("<I", data, p + 4)[0]
+            if magic == b"PVMH":
+                out.append((p, magic, data[p:]))
+                p += max(align, 8 + size)
+                continue
+            if 0 < size <= n - p - 8:
+                out.append((p, magic, data[p + 8 : p + 8 + size]))
+                p += 8 + size
+                p += (-p) % align
+                continue
+        p += align
+    return out
+
+
+def has_embedded(data: bytes) -> bool:
+    return any(m in data for m in (b"NJCM", b"NJBM", b"GJCM"))
+
+
 def parse_texlist(payload: bytes) -> TexList:
     names_ptr, count = struct.unpack_from("<II", payload, 0)
     names = []

@@ -56,7 +56,7 @@ class _TexSource:
         return self._img
 
 
-def _classify(name: str, data: bytes) -> str:
+def _classify(name: str, data: bytes, whole: bytes | None = None) -> str:
     if ninja.is_ninja(data):
         return "model"
     if ninja.is_motion(data):
@@ -65,6 +65,8 @@ def _classify(name: str, data: bytes) -> str:
         return "pvm"
     if pvr.is_pvr(data):
         return "pvr"
+    if whole is not None and ninja.has_embedded(whole):
+        return "pack"  # models/motions/textures embedded at arbitrary offsets (SA2 .prs)
     return ""
 
 
@@ -116,7 +118,7 @@ def _expand(img: GdImage, quiet: bool, limit_bytes: int = 96 << 20) -> list[_Fil
                         comp = True
                     except ValueError:
                         continue
-                k = _classify(name, blob[:32])
+                k = _classify(name, blob[:32], blob if comp else None)
                 if not k:
                     continue
                 out.append(
@@ -137,7 +139,7 @@ def _expand(img: GdImage, quiet: bool, limit_bytes: int = 96 << 20) -> list[_Fil
                 comp = True
             except ValueError:
                 continue
-            kind = _classify(e.name, data[:32])
+            kind = _classify(e.name, data[:32], data)
             if not kind:
                 continue
         stem = low.rsplit(".", 1)[0]
@@ -215,6 +217,60 @@ def _motions_for(model: _File, motions: list[_File]) -> list[_File]:
     return sorted(out, key=lambda m: m.stem)
 
 
+@dataclass
+class _Packed(_File):
+    """A model block found inside a pack: carries its sibling blocks for textures/motions."""
+
+    pack_motions: list[bytes] = field(default_factory=list)
+    pack_textures: list[_TexSource] = field(default_factory=list)
+
+
+def _unpack(files: list[_File]) -> list[_File]:
+    """Every NJCM/NJBM block inside "pack" files as a model of its own, with the pack's
+    NMDM motions and PVM textures attached (a pack with several models gets no motions:
+    there is no way to tell which model a motion drives)."""
+    out: list[_File] = []
+    for f in files:
+        if f.kind != "pack":
+            continue
+        blocks = ninja.find_blocks(f.data)
+        model_blocks = [(o, m, p) for o, m, p in blocks if m in (b"NJCM", b"NJBM", b"GJCM")]
+        if not model_blocks:
+            continue
+        motions = [p for _, m, p in blocks if m == b"NMDM"]
+        texs: list[_TexSource] = []
+        for _o, m, p in blocks:
+            if m != b"PVMH":
+                continue
+            try:
+                for ent in pvr.parse_pvm(p):
+                    rec = p[ent.offset : ent.offset + ent.size]
+                    texs.append(_TexSource(ent.name.lower(), f"{f.path}/{ent.name}", rec))
+            except (ValueError, IndexError):
+                continue
+        for k, (off, magic, payload) in enumerate(model_blocks):
+            # a texture list right before the model belongs to it
+            tl = next((p for o, m, p in blocks if m in (b"NJTL", b"GJTL") and o < off), None)
+            data = b""
+            if tl is not None:
+                data += b"NJTL" + len(tl).to_bytes(4, "little") + tl
+            data += magic + len(payload).to_bytes(4, "little") + payload
+            suffix = "" if len(model_blocks) == 1 else f"#{k}"
+            out.append(
+                _Packed(
+                    path=f"{f.path}{suffix}",
+                    data=data,
+                    kind="model",
+                    stem=f.stem + suffix,
+                    directory=f.directory,
+                    compressed=f.compressed,
+                    pack_motions=motions if len(model_blocks) == 1 else [],
+                    pack_textures=texs,
+                )
+            )
+    return out
+
+
 def _game_folder(img: GdImage) -> str:
     h = img.header
     product = _safe_component(h.product) or "unknown"
@@ -268,6 +324,7 @@ def rip(
         )
     models = [f for f in files if f.kind == "model"]
     motions = [f for f in files if f.kind == "motion"] if animations else []
+    models += _unpack(files)
     tex_index = _texture_index(files) if textures else {}
     if path_filter:
         models = [m for m in models if path_filter.lower() in m.path.lower()]
@@ -295,7 +352,12 @@ def rip(
         out_base = game_dir / rel.parent / stem
         try:
             mots = _motions_for(f, motions)
-            nj = ninja.parse(f.data, motions=[m.data for m in mots])
+            packed = f.pack_motions if isinstance(f, _Packed) else []
+            nj = ninja.parse(
+                f.data,
+                motions=[m.data for m in mots]
+                + [b"NMDM" + len(p).to_bytes(4, "little") + p for p in packed],
+            )
             scene = ninja_eval.evaluate(nj, stem, fps=fps)
             for k, m in enumerate(mots):
                 if k < len(scene.clips):
@@ -309,7 +371,8 @@ def rip(
                         except (ValueError, IndexError) as ex:
                             scene.warnings.append(f"texture {name}: {ex}")
             else:
-                by_index = _pvm_by_index(f, files)
+                by_index = f.pack_textures if isinstance(f, _Packed) else []
+                by_index = by_index or _pvm_by_index(f, files)
                 for m in scene.materials:
                     if m.texture and m.texture.startswith("tex"):
                         k = int(m.texture[3:])
