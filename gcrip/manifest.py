@@ -249,6 +249,35 @@ class ManifestBuilder:
             self._walk_rarc(path, payload, disc_offset=payload_disc_offset, depth=depth + 1)
         elif tgc.is_tgc(payload):
             self._walk_tgc(path, payload, disc_offset=payload_disc_offset, depth=depth + 1)
+        else:
+            self._walk_plugin_container(
+                path, name, payload, disc_offset=payload_disc_offset, depth=depth + 1
+            )
+
+    def _walk_plugin_container(self, path, name, data, *, disc_offset, depth) -> None:
+        """Archives known to a format plugin (gcrip.plugins: is_container/expand)."""
+        from gcrip.plugins import container_plugins
+
+        for mod in container_plugins():
+            try:
+                if not mod.is_container(name, data[:SNIFF_BYTES]):
+                    continue
+                entries = mod.expand(data)
+            except Exception as e:  # noqa: BLE001
+                self.manifest.errors.append(f"{path}: {mod.__name__} expand failed: {e}")
+                continue
+            self.manifest.dirs.append(path)
+            for inner, blob in entries:
+                self._walk_blob(
+                    f"{path}/{inner}",
+                    inner.rsplit("/", 1)[-1],
+                    blob,
+                    disc_offset=None,
+                    container=path,
+                    offset=0,
+                    depth=depth,
+                )
+            return
 
     def _walk_tgc(self, path: str, data: bytes, *, disc_offset: int | None, depth: int) -> None:
         """An embedded mini-disc: its files become nested entries under <path>/files/...

@@ -10,9 +10,11 @@ A plugin is a module in this package that defines:
         # `src.get(other_path)` fetches sibling files (texture packs, animations) and
         # `src.by_path` is the manifest index, so a plugin can look around the archive
 
-Optional:
-    CONTAINERS: extra archive formats the walker should expand are the manifest's business
-    (gcrip.manifest); a plugin only ever sees files.
+Optional - container support, so the disc walker expands archives the plugin knows:
+    def is_container(name: str, head: bytes) -> bool
+    def expand(data: bytes) -> list[tuple[str, bytes]]   # (inner path, inner bytes)
+The manifest walks the returned entries like RARC members (nested paths, classification,
+further expansion), so models inside such archives reach the plugins as plain files.
 
 The rip calls every plugin whose detect() says yes, exports each returned Scene through
 ripcore.gltf (same glTF/thumbnail/report path as J3D and Dreamcast models), and records
@@ -41,6 +43,10 @@ def all_plugins() -> list[ModuleType]:
                 mods.append(mod)
         _loaded = sorted(mods, key=lambda m: getattr(m, "NAME", m.__name__))
     return _loaded
+
+
+def container_plugins() -> list[ModuleType]:
+    return [m for m in all_plugins() if hasattr(m, "is_container") and hasattr(m, "expand")]
 
 
 def plugins_for(path: str, head: bytes, size: int) -> list[ModuleType]:
