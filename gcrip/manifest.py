@@ -254,6 +254,18 @@ class ManifestBuilder:
                 path, name, payload, disc_offset=payload_disc_offset, depth=depth + 1
             )
 
+    @staticmethod
+    def _plugin_container(name: str, head: bytes) -> bool:
+        from gcrip.plugins import container_plugins
+
+        for mod in container_plugins():
+            try:
+                if mod.is_container(name, head):
+                    return True
+            except Exception:  # noqa: BLE001
+                continue
+        return False
+
     def _walk_plugin_container(self, path, name, data, *, disc_offset, depth) -> None:
         """Archives known to a format plugin (gcrip.plugins: is_container/expand)."""
         from gcrip.plugins import container_plugins
@@ -365,7 +377,9 @@ class ManifestBuilder:
                 self.manifest.errors.append(f"{path}: extends past end of image (truncated dump?)")
             head = self.image.read(e.offset, min(SNIFF_BYTES, e.size))
             cls = classify(e.name, head, e.size)
-            needs_whole = self.recurse and cls.kind in ("compressed", "archive")
+            needs_whole = self.recurse and (
+                cls.kind in ("compressed", "archive") or self._plugin_container(e.name, head)
+            )
             if needs_whole or e.size <= STREAM_THRESHOLD:
                 data = self.image.read(e.offset, e.size)
                 self._walk_blob(
