@@ -16,8 +16,6 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from gcrip.disc.image import DiscImage
-
 
 @dataclass
 class VerifyResult:
@@ -35,33 +33,51 @@ class VerifyResult:
 
 
 def verify(rip_dir: Path, iso: Path, *, quiet: bool = False) -> VerifyResult:
+    """Stream the image once from the disk (bypassing the OS cache where possible) and hash
+    every top-level file range on the fly, then compare with the manifest."""
+    from gcrip.unbuffered import read_chunks
+
     rip_dir, iso = Path(rip_dir), Path(iso)
     manifest = json.loads((rip_dir / "disc_manifest.json").read_text(encoding="utf-8"))
     game_id = manifest["game"]["id"]
     res = VerifyResult(game_id=game_id)
     t0 = time.monotonic()
-    entries = [
-        f
-        for f in manifest["files"]
-        if f.get("depth", 0) == 0 and f.get("sha1") and f.get("disc_offset") is not None
-    ]
+    entries = sorted(
+        (
+            f
+            for f in manifest["files"]
+            if f.get("depth", 0) == 0 and f.get("sha1") and f.get("disc_offset") is not None
+        ),
+        key=lambda f: f["disc_offset"],
+    )
     res.files = len(entries)
-    with DiscImage(iso) as img:
-        for i, f in enumerate(entries):
-            if not quiet and i % 200 == 0:
-                print(f"\r  {i + 1}/{len(entries)} {f['path'][:60]:<60}", end="", flush=True)
-            h = hashlib.sha1()
-            try:
-                for chunk in img.read_chunks(f["disc_offset"], f["size"]):
-                    h.update(chunk)
-            except OSError as e:
-                res.unreadable.append(f"{f['path']}: {e}")
-                continue
-            res.bytes_read += f["size"]
-            if h.hexdigest() == f["sha1"]:
-                res.matched += 1
-            else:
-                res.mismatched.append(f["path"])
+    hashers = [hashlib.sha1() for _ in entries]
+    starts = [f["disc_offset"] for f in entries]
+    ends = [f["disc_offset"] + f["size"] for f in entries]
+    first = 0  # entries before this index are entirely behind the stream position
+    pos = 0
+    for chunk in read_chunks(iso):
+        cend = pos + len(chunk)
+        while first < len(entries) and ends[first] <= pos:
+            first += 1
+        i = first
+        while i < len(entries) and starts[i] < cend:
+            a = max(starts[i], pos) - pos
+            b = min(ends[i], cend) - pos
+            if b > a:
+                hashers[i].update(chunk[a:b])
+            i += 1
+        pos = cend
+        res.bytes_read = pos
+        if not quiet and (pos // len(chunk)) % 32 == 0:
+            print(f"\r  {pos >> 20:5d} MB", end="", flush=True)
+    for i, (f, h) in enumerate(zip(entries, hashers, strict=True)):
+        if ends[i] > pos:
+            res.unreadable.append(f"{f['path']}: beyond end of image")
+        elif h.hexdigest() == f["sha1"]:
+            res.matched += 1
+        else:
+            res.mismatched.append(f["path"])
     if not quiet:
         print()
     res.seconds = time.monotonic() - t0
