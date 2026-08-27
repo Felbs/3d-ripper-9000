@@ -20,7 +20,7 @@ from collections import Counter
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from dcrip.disc.gdi import GdImage, UnsupportedImageError, clean_title
+from dcrip.disc.gdi import GdImage, clean_title
 from dcrip.disc.iso9660 import walk
 from dcrip.formats import afs, prs
 
@@ -139,8 +139,8 @@ def survey_disc(path: Path, *, max_peek: int = 48, sniff_files: int = 4000) -> D
     s = DiscSurvey(file=path.name, size_mb=path.stat().st_size >> 20)
     try:
         img = GdImage(path)
-    except (UnsupportedImageError, ValueError, OSError, KeyError) as e:
-        s.error = str(e).splitlines()[0]
+    except Exception as e:  # noqa: BLE001 - one bad disc must not stop the library
+        s.error = (str(e).splitlines() or [type(e).__name__])[0]
         s.seconds = time.monotonic() - t0
         return s
     try:

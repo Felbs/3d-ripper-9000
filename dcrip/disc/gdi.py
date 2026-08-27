@@ -29,6 +29,7 @@ import shlex
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+from zlib import error as zlib_error
 
 HD_AREA_LBA = 45000
 
@@ -174,6 +175,12 @@ class GdImage:
     # -- opening ------------------------------------------------------------------
 
     def _open_zip(self, load_low_density: bool) -> None:
+        try:
+            self._open_zip_inner(load_low_density)
+        except (zipfile.BadZipFile, zlib_error, EOFError) as e:
+            raise UnsupportedImageError(f"{self.path.name}: damaged zip ({e})") from e
+
+    def _open_zip_inner(self, load_low_density: bool) -> None:
         self._zip = zipfile.ZipFile(self.path)
         names = self._zip.namelist()
         gdis = [n for n in names if n.lower().endswith(".gdi")]
@@ -188,9 +195,22 @@ class GdImage:
             if member is None:
                 self.errors.append(f"track {t.number}: {t.filename} missing from zip")
                 continue
-            blob = self._zip.read(member)
+            blob = self._zip_read_retry(member)
             t.size = len(blob)
             self._data[t.number] = _TrackData(blob=blob)
+
+    def _zip_read_retry(self, member: str, tries: int = 3) -> bytes:
+        """Inflate one member; a CRC failure is retried, since a flaky disk read shows up
+        exactly like that and a second read usually comes back clean."""
+        assert self._zip is not None
+        last: Exception | None = None
+        for _ in range(tries):
+            try:
+                return self._zip.read(member)
+            except (zipfile.BadZipFile, zlib_error) as e:
+                last = e
+                self.errors.append(f"{member}: {e} (retrying)")
+        raise last  # type: ignore[misc]
 
     def _open_gdi(self, load_low_density: bool) -> None:
         self.tracks = parse_gdi(self.path.read_text(encoding="utf-8", errors="replace"))
