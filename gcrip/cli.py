@@ -398,6 +398,18 @@ def cmd_verify(args: argparse.Namespace) -> int:
     return 0 if r.ok else 1
 
 
+def cmd_checkdump(args: argparse.Namespace) -> int:
+    from gcrip.checkdump import checkdump
+
+    rows = checkdump(Path(args.folder), Path(args.dat), Path(args.output), quiet=args.quiet)
+    counts: dict[str, int] = {}
+    for v in rows:
+        counts[v.verdict] = counts.get(v.verdict, 0) + 1
+    print(", ".join(f"{k} {n}" for k, n in sorted(counts.items())))
+    print(f"-> {Path(args.output) / 'checkdump.md'}")
+    return 0
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     from gcrip.serve import serve
 
@@ -620,6 +632,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--iso", default=None, help="disc image (default: found via disc_manifest)")
     p.add_argument("-q", "--quiet", action="store_true")
     p.set_defaults(fn=cmd_verify)
+
+    p = sub.add_parser(
+        "checkdump",
+        help="grade a folder of disc images against a Redump datfile (known-good dumps)",
+    )
+    p.add_argument("folder", help="folder of .iso/.gcm (hashed in full) or Redump .zip (instant)")
+    p.add_argument("--dat", required=True, help="Logiqx .dat or the .zip from redump.org/datfile/")
+    p.add_argument("-o", "--output", default="out/checkdump")
+    p.add_argument("-q", "--quiet", action="store_true")
+    p.set_defaults(fn=cmd_checkdump)
 
     p = sub.add_parser("serve", help="open report.html locally with 'Open in Blender' buttons")
     p.add_argument("ripdir", help="out/rip/<GameID>")
