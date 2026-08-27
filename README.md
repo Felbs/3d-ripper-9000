@@ -10,7 +10,7 @@ report and Blender add-on.
 
 | Module | Status | Language | License | What it does |
 |--------|--------|----------|---------|--------------|
-| `gcrip` - GameCube | **working** (Wind Waker, Twilight Princess verified) | Python | MIT | disc walker, J3D model/animation parsers, GX texture decode, glTF export, Blender add-on |
+| `gcrip` - GameCube | **working** (J3D + 11 format plugins, whole-library verified) | Python | MIT | disc walker, J3D + HSD/Retro/GMA/RenderWare/Jade/EA/... parsers, GX texture decode, glTF export, Blender add-on |
 | `dcrip` - Dreamcast | **working** (Ninja games; Phantasy Star Online verified) | Python | MIT | GDI/zip reader, ISO 9660, AFS/PRS, Ninja model/motion parsers, PVR/PVM decode, same glTF/report/Blender path |
 | Dolphin capture fork (for non-J3D GameCube games) | planned | C++ | GPLv2 | runtime capture of object-space geometry for games with custom formats |
 | N64 module | idea | - | - | - |
@@ -70,6 +70,25 @@ face part (eyes / mouth / brows) to switch expressions, and Mixamo <-> original 
 Wind Waker (USA): 2,759 models -> 1,856 unique glTFs, 4,175 animation clips, 1,867 textures in ~4.5 minutes.
 Twilight Princess (USA): 3,626 models -> 2,489 unique glTFs, 13,822 clips in ~10 minutes.
 Blender imports Link with all 594 clips in about 10 seconds.
+
+### Beyond J3D: format plugins
+
+Every non-J3D format lives in `gcrip/plugins/<name>.py` (auto-discovered; a plugin is a
+`detect()` + `extract()` pair returning engine-neutral `ripcore.scene.Scene`s, optionally with
+`is_container()`/`expand()` so the disc walker opens the game's archives). The rip runs them
+after the J3D pass and exports through the same glTF/thumbnail/report path.
+
+| plugin | games | what comes out |
+|---|---|---|
+| `hsd` | Super Smash Bros. Melee, Kirby Air Ride (HAL DAT) | rigged characters, stages, items; Melee figatree animations as clips |
+| `retro` | Metroid Prime, Echoes (PAK/CMDL/MREA/TXTR) | every model and every room, CINF/CSKR skins |
+| `gma` | F-Zero GX, Super Monkey Ball 1/2 (GMA/TPL/.lz) | tracks, machines, stages |
+| `renderware` | Sonic Heroes (.one), SpongeBob BFBB (HIP/HOP), other RW 3.x titles | rigged DFF clumps, BSP/world sectors, TXD textures |
+| `pikmin` / `lm` / `sfa` | Pikmin, Luigi's Mansion (.mdl/.bin), Star Fox Adventures | characters, rooms, skinned models |
+| `jade` | Prince of Persia: Sands of Time, Beyond Good & Evil (Ubisoft BIG/LZO) | level geometry + textures (materials not yet linked) |
+| `re4` | Resident Evil 4 (DAS/DRS/UDAS) | characters/enemies/items with bones (rooms are YZ2-packed, pending) |
+| `ea` | Need for Speed Underground 2, Madden 2005, other EA titles (BIG/VIV/TERF/RefPack/SSH) | NFSU2 cars/tracks + textures, Madden textures |
+| `neversoft` | Tony Hawk's Underground (PRE) | textures |
 
 ### Dump a whole library
 
