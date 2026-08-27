@@ -67,10 +67,15 @@ def run_extras(
     blend: bool = False,
     blender: str | None = None,
     log: Callable[[str], None] | None = None,
+    steps: bool = True,
 ) -> dict[str, dict]:
+    """``steps=False`` skips the disc-reading extras (other console modules) and only
+    runs the .blend pass when asked."""
     iso, game_dir = Path(iso), Path(game_dir)
     say = log or (lambda m: None)
-    todo = applicable(iso, game_id)
+    todo = applicable(iso, game_id) if steps else dict.fromkeys(
+        ("stages", "text", "streams", "music", "cutscenes"), False
+    )
     out: dict[str, dict] = {}
 
     if todo["stages"]:

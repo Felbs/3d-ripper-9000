@@ -60,6 +60,63 @@ def cmd_extract(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_rip(args: argparse.Namespace) -> int:
+    from dcrip.rip import rip
+
+    res = rip(
+        Path(args.image),
+        Path(args.outdir),
+        thumbnails=not args.no_thumbs,
+        quiet=args.quiet,
+        limit=args.limit,
+        path_filter=args.filter,
+        animations=not args.no_anims,
+        fps=args.fps,
+        textures=not args.no_textures,
+    )
+    ok = sum(1 for m in res.models if m.out_rel)
+    dup = sum(1 for m in res.models if m.duplicate_of)
+    err = [m for m in res.models if m.error]
+    print(f"{res.game_id} {res.title}")
+    print(f"models: {ok} exported, {dup} duplicates skipped, {len(err)} failed")
+    print(f"textures: {sum(1 for t in res.textures if t.out_rel)} texture files")
+    n_anim = sum(len(m.animations) for m in res.models)
+    print(f"animations: {n_anim} clips on {sum(1 for m in res.models if m.animations)} models")
+    print(f"time: {res.seconds:.0f}s")
+    print(f"report: {res.out_dir / 'report.html'}")
+    return 0
+
+
+def cmd_dump(args: argparse.Namespace) -> int:
+    from dcrip.rip import rip
+    from gcrip.batch import batch
+    from gcrip.cli import _shard
+
+    rows = batch(
+        Path(args.folder),
+        Path(args.out),
+        survey_path=Path(args.survey) if args.survey else None,
+        engine=None if args.engine == "any" else args.engine,
+        limit=args.limit,
+        only=args.only,
+        thumbnails=not args.no_thumbs,
+        animations=not args.no_anims,
+        extras=False,
+        blend=args.blend,
+        blender=args.blender,
+        shard=_shard(args.shard),
+        quiet=args.quiet,
+        rip_fn=rip,
+        suffixes=(".zip", ".gdi"),
+    )
+    ok = [r for r in rows if not r.get("error")]
+    print(
+        f"{len(ok)} games ripped, {sum(r['exported'] for r in ok):,} models, "
+        f"{sum(r['clips'] for r in ok):,} clips -> {Path(args.out) / 'batch_matrix.md'}"
+    )
+    return 0
+
+
 def cmd_survey(args: argparse.Namespace) -> int:
     from dcrip.survey import survey
 
@@ -88,6 +145,38 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("outdir", nargs="?", default="out/dc")
     p.add_argument("--filter", help="only paths containing this substring")
     p.set_defaults(fn=cmd_extract)
+
+    p = sub.add_parser("rip", help="disc image -> glTF models + PNG textures + report.html")
+    p.add_argument("image", help=".gdi, or a .zip holding a .gdi and its tracks")
+    p.add_argument("outdir", nargs="?", default="out")
+    p.add_argument("--filter", help="only rip models whose path contains this substring")
+    p.add_argument("--limit", type=int, help="stop after N models (for testing)")
+    p.add_argument("--no-thumbs", action="store_true")
+    p.add_argument("--no-textures", action="store_true", help="skip standalone PVR/PVM export")
+    p.add_argument("--no-anims", action="store_true", help="skip NMDM motions")
+    p.add_argument("--fps", type=float, default=30.0, help="frame rate of motion clips")
+    p.add_argument("--debug", action="store_true")
+    p.add_argument("-q", "--quiet", action="store_true")
+    p.set_defaults(fn=cmd_rip)
+
+    p = sub.add_parser(
+        "dump",
+        aliases=["batch"],
+        help="rip a folder of discs (or one disc) into one dump folder with a README + matrix",
+    )
+    p.add_argument("folder", help="folder of .zip/.gdi images, or a single image")
+    p.add_argument("--survey", help="survey.jsonl from `dcrip survey` (selects discs by engine)")
+    p.add_argument("--engine", default="any", help="engine label from the survey, or 'any'")
+    p.add_argument("--out", default="out/dc")
+    p.add_argument("--only", nargs="*", help="only discs whose file name contains one of these")
+    p.add_argument("--limit", type=int)
+    p.add_argument("--no-thumbs", action="store_true")
+    p.add_argument("--no-anims", action="store_true")
+    p.add_argument("--blend", action="store_true", help="also write one .blend per model")
+    p.add_argument("--blender", help="blender executable for --blend")
+    p.add_argument("--shard", metavar="i/n", help="process every n-th disc starting at i")
+    p.add_argument("-q", "--quiet", action="store_true")
+    p.set_defaults(fn=cmd_dump)
 
     p = sub.add_parser("survey", help="scan a folder of discs: which formats each game uses")
     p.add_argument("folder", help="folder of .zip/.gdi images")

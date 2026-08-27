@@ -76,9 +76,9 @@ def evaluate(nj: ninja.Ninja, name: str, *, fps: float = 30.0) -> Scene:
             Joint(
                 name=o.name,
                 parent=o.parent,
-                translation=tuple(float(x) for x in o.pos),
-                rotation=_quat(ninja.rotation_matrix(o.rot, o.zxy)),
-                scale=tuple(float(x) for x in o.scale),
+                translation=tuple(float(x) for x in o.eval_pos),
+                rotation=_quat(ninja.rotation_matrix(o.eval_rot, o.zxy)),
+                scale=tuple(float(x) for x in o.eval_scale),
             )
         )
     texnames = nj.texlist.names if nj.texlist else []
@@ -148,7 +148,7 @@ def evaluate(nj: ninja.Ninja, name: str, *, fps: float = 30.0) -> Scene:
         rot = wm[:3, :3]
         for v in o.model.vertices:
             e = cache.get(v.cache_index)
-            if v.status == 0 or e is None or v.status == 1:
+            if v.status == 0 or e is None:
                 e = _CacheEntry()
                 cache[v.cache_index] = e
             p = wm @ np.array([*v.pos, 1.0])

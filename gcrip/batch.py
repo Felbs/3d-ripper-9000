@@ -40,14 +40,17 @@ def batch(
     blender: str | None = None,
     shard: tuple[int, int] | None = None,
     quiet: bool = False,
+    rip_fn=None,
+    suffixes: tuple[str, ...] = (".iso", ".gcm"),
 ) -> list[dict]:
     """``extras`` runs every post-rip step the disc has data for (levels, text, audio,
     music, cutscenes; see gcrip.extras); ``blend`` adds one .blend per model.
     ``shard=(i, n)`` takes every n-th disc starting at i, so n processes can share one
     out folder (they append to the same results file; the matrix is rebuilt from disk)."""
     from gcrip.extras import run_extras
-    from gcrip.rip import rip
+    from gcrip.rip import rip as gc_rip
 
+    rip = rip_fn or gc_rip
     folder, out_root = Path(folder), Path(out_root)
     out_root.mkdir(parents=True, exist_ok=True)
     single = folder.is_file()
@@ -61,7 +64,7 @@ def batch(
             discs = [d for d in discs if d["engine"] == engine]
         files = [folder / d["file"] for d in discs]
     else:
-        files = sorted(p for p in folder.iterdir() if p.suffix.lower() in (".iso", ".gcm"))
+        files = sorted(p for p in folder.iterdir() if p.suffix.lower() in suffixes)
     if only:
         files = [
             f
@@ -118,7 +121,7 @@ def batch(
                     seconds=round(res.seconds),
                     report=str((res.out_dir / "report.html").as_posix()),
                 )
-                if extras or blend:
+                if (extras and rip_fn is None) or blend:
                     ex = run_extras(
                         f,
                         res.out_dir,
@@ -126,6 +129,7 @@ def batch(
                         quiet=quiet,
                         blend=blend,
                         blender=blender,
+                        steps=extras and rip_fn is None,
                         log=None if quiet else (lambda m: print("  " + m, flush=True)),
                     )
                     row["extras"] = {

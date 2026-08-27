@@ -16,8 +16,9 @@ NJS_CNK_MODEL: u32 vlist_ptr (0 = none), u32 plist_ptr, f32 center[3], f32 radiu
 
 Vertex list: chunks of (u8 type, u8 flags, u16 size_in_u32) then (u16 index_offset,
 u16 count) and `count` vertices. Types 0x20-0x32 pick the per-vertex layout (see _VTX).
-flags & 3 is the weight status (0 plain, 1 first, 2 middle, 3 last): weighted vertices land
-in a cache shared by the whole object tree; the *_NF layouts carry (cache index | weight<<16).
+flags & 3 is the weight status (0 start = replace the slot, 1 middle / 2 end = accumulate):
+vertices land in a cache shared by the whole object tree; the *_NF layouts carry
+(cache index | weight << 16) in their flags word for every vertex.
 Draw-only objects have no vertex list and reference the cache.
 
 Polygon list: chunks of (u8 type, u8 flags) and, for types >= 0x10, u16 size_in_u16:
@@ -116,7 +117,7 @@ class VertexWrite:
     normal: np.ndarray | None
     color: np.ndarray | None
     weight: float
-    status: int  # 0 plain, 1 first, 2 middle, 3 last
+    status: int  # 0 start (replaces the slot), 1 middle / 2 end (accumulate into it)
 
 
 @dataclass
@@ -161,6 +162,19 @@ class Object:
     @property
     def zxy(self) -> bool:
         return bool(self.flags & 0x20)
+
+    # NJD_EVAL_UNIT_POS / UNIT_ANG / UNIT_SCL: the runtime skips that part of the transform
+    @property
+    def eval_pos(self) -> tuple[float, float, float]:
+        return (0.0, 0.0, 0.0) if self.flags & 0x01 else self.pos
+
+    @property
+    def eval_rot(self) -> tuple[float, float, float]:
+        return (0.0, 0.0, 0.0) if self.flags & 0x02 else self.rot
+
+    @property
+    def eval_scale(self) -> tuple[float, float, float]:
+        return (1.0, 1.0, 1.0) if self.flags & 0x04 else self.scale
 
     @property
     def hidden(self) -> bool:
@@ -224,8 +238,8 @@ def rotation_matrix(rot_deg: tuple[float, float, float], zxy: bool) -> np.ndarra
 
 def local_matrix(obj: Object) -> np.ndarray:
     m = np.eye(4)
-    m[:3, :3] = rotation_matrix(obj.rot, obj.zxy) @ np.diag(obj.scale)
-    m[:3, 3] = obj.pos
+    m[:3, :3] = rotation_matrix(obj.eval_rot, obj.zxy) @ np.diag(obj.eval_scale)
+    m[:3, 3] = obj.eval_pos
     return m
 
 
@@ -335,10 +349,11 @@ class _ChunkParser:
                 if extra == "d8":
                     color = np.array(_argb(self.u32(o)), dtype=np.float32)
                 elif extra == "nf":
+                    # weighted layouts: the cache slot and the weight live in the flags,
+                    # whatever the weight status
                     nf = self.u32(o)
-                    if status:
-                        cache_index = idx_off + (nf & 0xFFFF)
-                        weight = ((nf >> 16) & 0xFF) / 255.0
+                    cache_index = idx_off + (nf & 0xFFFF)
+                    weight = ((nf >> 16) & 0xFF) / 255.0
                 elif extra == "s5":
                     c = self.u16(o)
                     color = np.array(
