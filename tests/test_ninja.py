@@ -7,8 +7,8 @@ import struct
 import numpy as np
 
 from dcrip import ninja_eval
-from dcrip.export import gltf
 from dcrip.formats import ninja, pvr
+from ripcore import gltf
 
 
 def _obj(flags, model_ptr, pos, rot, scale, child, sib) -> bytes:

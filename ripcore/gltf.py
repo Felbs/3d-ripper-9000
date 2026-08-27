@@ -11,8 +11,8 @@ from pathlib import Path
 
 import numpy as np
 
-from dcrip.scene import Scene
 from gcrip.export import png, thumb
+from ripcore.scene import Scene
 
 FLOAT, USHORT, UINT = 5126, 5123, 5125
 ARRAY_BUFFER, ELEMENT_ARRAY_BUFFER = 34962, 34963

@@ -12,7 +12,7 @@ import math
 import numpy as np
 
 from dcrip.formats import ninja
-from dcrip.scene import Clip, Joint, MaterialDef, Primitive, Scene
+from ripcore.scene import Clip, Joint, MaterialDef, Primitive, Scene
 
 
 def _quat(m: np.ndarray) -> tuple[float, float, float, float]:

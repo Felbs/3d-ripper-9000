@@ -27,10 +27,10 @@ import numpy as np
 from dcrip import ninja_eval
 from dcrip.disc.gdi import GdImage, clean_title
 from dcrip.disc.iso9660 import walk
-from dcrip.export import gltf
 from dcrip.formats import afs, ninja, prs, pvr
 from gcrip.export import png
 from gcrip.rip import ModelResult, RipResult, TextureResult, write_report
+from ripcore import gltf
 
 
 @dataclass

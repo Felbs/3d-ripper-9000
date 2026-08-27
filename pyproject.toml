@@ -19,7 +19,7 @@ gcrip = "gcrip.cli:main"
 dcrip = "dcrip.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["gcrip*", "dcrip*"]
+include = ["gcrip*", "dcrip*", "ripcore*"]
 
 [tool.ruff]
 line-length = 100
