@@ -86,6 +86,8 @@ class _Source:
     def _payload(self, path: str) -> bytes:
         """Decompressed contents of a container (archive) by manifest path."""
         if path in self._cache:
+            self._cache_order.remove(path)
+            self._cache_order.append(path)
             return self._cache[path]
         raw = self.raw(path)
         if yaz0.is_yaz0(raw):
@@ -115,6 +117,7 @@ class _Source:
         """Members of a plugin container, keyed by full manifest path (cached)."""
         cache = self.__dict__.setdefault("_plugin_cache", {})
         if container in cache:
+            cache[container] = cache.pop(container)  # LRU touch: parents stay hot
             return cache[container]
         from gcrip.plugins import container_plugins
 
