@@ -99,14 +99,19 @@ def walk_montreal(dec: bytes) -> list[BinEntry]:
 
 
 def walk_montpellier(dec: bytes, *, stop_on_bad: bool = True) -> list[BinEntry]:
-    """Sequential walk; stops at the first size that runs off the end (packs that
-    interleave size requests or irregular files cannot be walked blindly)."""
+    """Sequential walk of u32 size + data records.  A bare u32 that is not a
+    plausible size is a "size request" (a procedural texture asking for the size
+    of its stream) and is skipped; otherwise a size that runs off the end stops
+    the walk (map packs with irregular files need gcrip.formats.jade_obj)."""
     out = []
     pos = 0
     n = len(dec)
     while pos + 4 <= n:
         size = struct.unpack_from("<I", dec, pos)[0]
         if pos + 4 + size > n:
+            if pos + 8 <= n and pos + 8 + struct.unpack_from("<I", dec, pos + 4)[0] <= n:
+                pos += 4  # size request
+                continue
             if stop_on_bad:
                 break
             size = n - pos - 4
@@ -336,10 +341,17 @@ def textures_montreal(entries: list[BinEntry]) -> dict[str, np.ndarray]:
     raws: dict[int, TexHeader] = {}
     rawpal: list[tuple[int, int, int]] = []
     for e in entries:
-        if len(e.data) - 4 in (0x30, 0x300, 0x40, 0x400) and e.data[4:8] != b"\xff\xff\xff\xff":
+        n = len(e.data) - 4
+        if e.data[4:8] == b"\xff\xff\xff\xff" or n < 0x30:
+            continue
+        if n in (0x30, 0x300, 0x40, 0x400):
             pal = palette_from_bytes(e.data[4:])
-            if pal is not None:
-                palettes[e.key] = pal
+        elif n > 0x400 and n % 4 == 0:
+            pal = palette_from_bytes(e.data[4 : 4 + 0x400])  # JTX palette: 256 BGRA + mips
+        else:
+            continue
+        if pal is not None:
+            palettes[e.key] = pal
     for e in entries:
         t = parse_tex_header(e.data, montreal=True)
         if t is None:
@@ -367,19 +379,61 @@ def textures_montreal(entries: list[BinEntry]) -> dict[str, np.ndarray]:
     return out
 
 
-def textures_montpellier(entries: list[BinEntry]) -> dict[str, np.ndarray]:
+def rawpal_slot(body: bytes) -> tuple[int, int, int]:
+    """TEX_Content_RawPal: up to four 12-byte slots (raw 4/8-bit key, palette key,
+    24/32-bit key); GameCube prefers the second slot when it is filled."""
+    slots = [struct.unpack_from("<III", body, i) for i in range(0, len(body) - 11, 12)]
+    if not slots:
+        return 0, 0, 0
+    if len(slots) > 1 and any(k not in (0, 0xFFFFFFFF) for k in slots[1]):
+        return slots[1]
+    return slots[0]
+
+
+def align_texture_keys(headers: list[int | None], order: list[int]) -> list[int | None]:
+    """Key for each primary texture header of a Montpellier texture pack.
+
+    `headers` holds the raw key of each RawPal header (None for other types) in
+    pack order, `order` the texture keys in the order the map referenced them.
+    The two sequences line up except where a reference we did not walk (a
+    modifier's texture) inserts a header; the editor allocated a RawPal texture
+    right after its raw image, so `raw + 1 == key` anchors the shift."""
+    n = len(order)
+    out: list[int | None] = [None] * len(headers)
+
+    def anchor(i: int, d: int) -> bool:
+        raw = headers[i]
+        j = i + d
+        return raw is not None and 0 <= j < n and order[j] == raw + 1
+
+    delta = 0
+    for i, raw in enumerate(headers):
+        if raw is not None and not anchor(i, delta):
+            later = (k for k in range(i + 1, min(i + 8, len(headers))) if headers[k] is not None)
+            nxt = next(later, None)
+            for d in (delta - 1, delta + 1, delta - 2, delta + 2, delta - 3, delta + 3):
+                if anchor(i, d) and (nxt is None or anchor(nxt, d)):
+                    delta = d
+                    break
+        j = i + delta
+        if 0 <= j < n:
+            out[i] = order[j]
+    return out
+
+
+def textures_montpellier(
+    entries: list[BinEntry], tex_order: list[int] | None = None
+) -> dict[str, np.ndarray]:
     """Unkeyed texture pack (BG&E ff8xxxxx.bin).  The loader's order is: every
-    texture's header (RawPal ones carry their raw/palette keys), then the raw
-    textures' headers in first-reference order, then the palettes in
-    first-reference order, then the contents in the same orders.  We pair the
-    k-th distinct raw key with the k-th raw content and the k-th distinct
-    palette key with the k-th palette."""
-    raw_keys: list[int] = []
-    pal_keys: list[int] = []
-    pairs: list[tuple[int, int, int]] = []  # (rawpal index, raw key, pal key)
-    tga_contents: list[np.ndarray] = []
-    raw_contents: list[TexHeader] = []
+    referenced texture's header (RawPal ones carry their raw/palette keys), then
+    the raw textures' headers in first-reference order, then the palettes in
+    first-reference order, then the contents in the same orders.  Images are
+    named by texture key when `tex_order` (the map's reference order, see
+    jade_obj.World.tex_order) is given, else by raw key / position."""
+    heads: list[tuple[TexHeader, int]] = []  # header phase: (header, entry index)
     palettes: list[np.ndarray] = []
+    contents: list[TexHeader | np.ndarray] = []
+    phase = 0
     for e in entries:
         t = parse_tex_header(e.data, montreal=False)
         if t is None:
@@ -387,37 +441,72 @@ def textures_montpellier(entries: list[BinEntry]) -> dict[str, np.ndarray]:
                 pal = palette_from_bytes(e.data)
                 if pal is not None:
                     palettes.append(pal)
+                    phase = max(phase, 1)
             continue
+        is_content = t.type in (TEX_TGA, TEX_JTX) and len(t.body) > 18 or (
+            t.type == TEX_RAW and len(t.body) >= max(1, t.width * t.height * t.bpp // 8)
+        )
+        if is_content:
+            phase = 2
+            if t.type == TEX_TGA:
+                img = decode_tga(t)
+            elif t.type == TEX_JTX:
+                img = decode_jtx(t)
+            else:
+                img = None
+            contents.append(img if img is not None else t)
+        elif phase == 0:
+            heads.append((t, e.index))
+    # the raw textures' own headers (appended to the list as the RawPal headers
+    # are read, so they may interleave with late references) carry no content
+    primaries = [t for t, _ in heads if not (t.type == TEX_RAW and len(t.body) == 0)]
+    raw_keys: list[int] = []
+    pal_keys: list[int] = []
+    slots: list[tuple[int, int, int] | None] = []
+    for t in primaries:
         if t.type == TEX_RAWPAL and len(t.body) >= 8:
-            raw_key, pal_key = struct.unpack_from("<II", t.body, 0)
+            raw_key, pal_key, _ = rawpal_slot(t.body)
+            slots.append((raw_key, pal_key, 0))
             if raw_key not in (0, 0xFFFFFFFF) and raw_key not in raw_keys:
                 raw_keys.append(raw_key)
             if pal_key not in (0, 0xFFFFFFFF) and pal_key not in pal_keys:
                 pal_keys.append(pal_key)
-            pairs.append((len(pairs), raw_key, pal_key))
-        elif t.type == TEX_TGA and len(t.body) > 18:
-            img = decode_tga(t)
-            if img is not None:
-                tga_contents.append(img)
-        elif t.type == TEX_RAW and len(t.body) >= max(1, t.width * t.height * t.bpp // 8):
-            raw_contents.append(t)
-        elif t.type == TEX_JTX and len(t.body) > 24:
-            img = decode_jtx(t)
-            if img is not None:
-                tga_contents.append(img)
-    out: dict[str, np.ndarray] = {}
-    for i, img in enumerate(tga_contents):
-        out[f"tex{i:03d}"] = img
-    raw_by_key = {k: raw_contents[i] for i, k in enumerate(raw_keys) if i < len(raw_contents)}
+        else:
+            slots.append(None)
+    keys: list[int | None] = [None] * len(primaries)
+    if tex_order:
+        keys = align_texture_keys([s[0] if s else None for s in slots], tex_order)
+    # contents in list order: primaries with content, then the raw textures
+    raw_by_key: dict[int, TexHeader] = {}
+    ci = 0
+    primary_imgs: dict[int, np.ndarray] = {}
+    for i, t in enumerate(primaries):
+        if t.type in (TEX_TGA, TEX_JTX, TEX_RAW) and ci < len(contents):  # noqa: SIM102
+            c = contents[ci]
+            ci += 1
+            if isinstance(c, np.ndarray):
+                primary_imgs[i] = c
+    for k in raw_keys:
+        if ci < len(contents):
+            c = contents[ci]
+            ci += 1
+            if isinstance(c, TexHeader):
+                raw_by_key[k] = c
     pal_by_key = {k: palettes[i] for i, k in enumerate(pal_keys) if i < len(palettes)}
-    for _idx, raw_key, pal_key in pairs:
-        t = raw_by_key.get(raw_key)
-        pal = pal_by_key.get(pal_key)
-        if t is None or pal is None:
-            continue
-        img = decode_raw_indexed(t, pal)
-        if img is not None:
-            out[f"{raw_key:08x}"] = img
+    out: dict[str, np.ndarray] = {}
+    for i in range(len(primaries)):
+        key = keys[i]
+        if i in primary_imgs:
+            out[f"{key:08x}" if key is not None else f"tex{i:03d}"] = primary_imgs[i]
+        elif slots[i] is not None:
+            raw_key, pal_key, _ = slots[i]
+            raw = raw_by_key.get(raw_key)
+            pal = pal_by_key.get(pal_key)
+            if raw is None or pal is None:
+                continue
+            img = decode_raw_indexed(raw, pal)
+            if img is not None:
+                out[f"{key:08x}" if key is not None else f"{raw_key:08x}"] = img
     return out
 
 

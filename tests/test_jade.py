@@ -1,13 +1,15 @@
 """Jade engine (BG&E / PoP SoT) plugin: BF table, LZO blocks, texture pairing,
-GEO parsing in both dialects - all on synthetic data."""
+GEO parsing in both dialects, the object graph (GAO -> material -> texture),
+world placement and the Montpellier load-order replay - all on synthetic data."""
 
 from __future__ import annotations
 
 import struct
 
 import numpy as np
+import pytest
 
-from gcrip.formats import jade, jade_bf, jade_lzo
+from gcrip.formats import jade, jade_bf, jade_lzo, jade_obj
 from gcrip.plugins import jade as plug
 
 # ---------------------------------------------------------------------------
@@ -208,3 +210,190 @@ def test_extract_locates_pack_inside_big_file():
     assert len(scenes) == 1 and scenes[0].triangles == 1 and scenes[0].name == "3f001ab9"
     scenes = plug.extract(packed, path, Src())
     assert len(scenes) == 1
+
+
+# ---------------------------------------------------------------------------
+# object graph: GAO -> material -> texture (gcrip.formats.jade_obj)
+# ---------------------------------------------------------------------------
+
+
+def jade_matrix(tx=0.0, ty=0.0, tz=0.0, scale=1.0) -> bytes:
+    """Jade_Matrix: I J K rows with the scale in the 4th column, T, w, type flags."""
+    m = [1.0, 0, 0, scale, 0, 1.0, 0, scale, 0, 0, 1.0, scale, tx, ty, tz, 1.0]
+    return struct.pack("<16f", *m) + struct.pack("<I", 2 | 4 | 8)
+
+
+def montpellier_gao(name: str, geo: int, mat: int, tx=0.0, father: int | None = None) -> bytes:
+    flags = jade_obj.F_BASE | jade_obj.F_VISU | jade_obj.F_OBBOX
+    if father is not None:
+        flags |= jade_obj.F_HIERARCHY
+    b = b".gao" + struct.pack("<II", 0, flags) + struct.pack("<I", 7)
+    b += bytes([0, 0x10, 0, 0, 0, 0])  # secto, visi coeff, lod vis/dist, design, fix flags
+    b += jade_matrix(tx) + b"\0" * 48  # AABB + OBB
+    b += struct.pack("<III", geo, mat, 0xFFBFFFFF) + b"\x10\xff\xff\xff" + struct.pack("<I", 0)
+    if father is not None:
+        b += struct.pack("<I", father) + jade_matrix()
+    nm = name.encode() + b"\0"
+    return b + struct.pack("<I", len(nm)) + nm
+
+
+def montreal_gao(name: str, geo: int, mat: int, tx=0.0) -> bytes:
+    flags = jade_obj.F_BASE | jade_obj.F_VISU
+    nm = name.encode() + b"\0"
+    b = b".gao" + struct.pack("<III", 10, 8, flags) + struct.pack("<I", len(nm)) + nm
+    b += struct.pack("<I", 0) + bytes([0, 0x10, 0, 0, 0, 0])
+    b += jade_matrix(tx) + b"\0" * 24
+    # visual: geo, mat, draw mask, additional flags, light set, display order, unknown, pad
+    b += struct.pack("<III", geo, mat, 0xFFFFFFFF) + bytes([0, 0, 0x10, 0, 0, 0])
+    b += struct.pack("<I", 0)  # vertex colours
+    b += struct.pack("<II", 0, 0xFFFFFFFF)  # ambient unknown, ambient texture (null)
+    b += struct.pack("<II", 0xFFFFFFFF, 0xFFFFFFFF)  # ambient of GAO, local fog
+    return b
+
+
+def mtt_level(texture: int, flags=0x7, color_op=0, uv_source=0, tid=0) -> bytes:
+    fl = (flags & 0xFFF) | (color_op << 12) | (uv_source << 20)
+    return struct.pack("<HHIII", tid, 0, fl, 0, 0x3F800000) + struct.pack("<I", texture)
+
+
+def montpellier_mtt(levels: list[bytes]) -> bytes:
+    b = struct.pack("<I", jade.GRO_MAT_MTT)
+    b += struct.pack("<IIII", 0, 0x00FF8040, 0, 0)  # ambient, diffuse (RGBA bytes), specular, exp
+    b += struct.pack("<f", 1.0)  # opacity
+    b += struct.pack("<III", 7, 0x04DF1FEC, 1)  # flags, first level pointer, validate mask
+    return b + b"".join(levels)
+
+
+def montreal_mtt(texture: int) -> bytes:
+    b = struct.pack("<II", jade.GRO_MAT_MTT, 6) + struct.pack("<IIII", 0, 0, 0xFFFFFFFF, 0xD1)
+    level = struct.pack("<HHIII", 0, 0x1800, 0x00010207, 0, 0x3F800000)
+    return b + level + struct.pack("<II", 0, texture)
+
+
+def msm(keys: list[int], montreal: bool) -> bytes:
+    b = struct.pack("<I", jade.GRO_MAT_MSM) + (struct.pack("<I", 0) if montreal else b"")
+    return b + struct.pack("<I", len(keys)) + struct.pack(f"<{len(keys)}I", *keys)
+
+
+def montpellier_wow(name: str, objects: int) -> bytes:
+    b = b".wow" + struct.pack("<III", 3, 1, 0xFFFFFF00) + name.encode().ljust(60, b"\0")
+    b += jade_matrix() + struct.pack("<f", 1.0) + struct.pack("<III", 0, 0, 0)
+    b += struct.pack("<IIII", 0xFFFFFFFF, 0xFFFFFFFF, objects, 0xFFFFFFFF)
+    return b + struct.pack("<I", 0xFFFFFFFF) + b"\0" * 8
+
+
+def test_parse_gao_both_dialects():
+    data = montpellier_gao("Box_01.gao", 0x11, 0x22, tx=5.0, father=0x33)
+    g = jade_obj.parse_gao(data, montreal=False)
+    assert g.complete and g.name == "Box_01.gao" and g.geo == 0x11 and g.mat == 0x22
+    assert g.father == 0x33 and g.matrix[0, 3] == 5.0 and g.local is not None
+    refs = [r for r in g.refs if not jade_obj.is_null(r[1])]
+    assert refs == [("geo", 0x11), ("mat", 0x22), ("gao", 0x33)]
+    m = jade_obj.parse_gao(montreal_gao("Pillar.gao", 0x44, 0x55, tx=-2.0), montreal=True)
+    assert m.complete and m.name == "Pillar.gao" and m.version == 10
+    assert m.geo == 0x44 and m.mat == 0x55 and m.matrix[0, 3] == -2.0
+
+
+def test_parse_materials_and_base_level():
+    planar = mtt_level(0xAA, flags=0x5, color_op=4, uv_source=6, tid=1)
+    diffuse = mtt_level(0xBB, flags=0x414, color_op=6, uv_source=0)
+    m = jade_obj.parse_material(montpellier_mtt([planar, diffuse]), montreal=False)
+    assert m.kind == jade.GRO_MAT_MTT and m.texture_keys() == [0xAA, 0xBB]
+    assert m.base_level().texture == 0xBB  # object UVs beat a planar projection
+    assert m.diffuse == (0x40 / 255, 0x80 / 255, 1.0, 0.0)
+    m2 = jade_obj.parse_material(montreal_mtt(0x2E004FE4), montreal=True)
+    assert m2.texture_keys() == [0x2E004FE4] and m2.base_level().flags & jade_obj.MTT_TILING_U
+    m3 = jade_obj.parse_material(msm([1, 2, 3], montreal=True), montreal=True)
+    assert m3.kind == jade.GRO_MAT_MSM and m3.subs == [1, 2, 3]
+    with pytest.raises(jade.JadeError):
+        jade_obj.parse_material(montreal_mtt(0x2E004FE4) + b"\0", montreal=True)  # size must match
+    assert jade_obj.classify(b"\x03\x00\x00\x00" + b"\0" * 20, montreal=False)[0] == "raw"
+
+
+def test_montreal_pack_links_geometry_to_textures_and_places_it():
+    blocks = struct.pack("<HHI", 0x07E0, 0x001F, 0)  # DXT1 block: pure green
+    jtx = struct.pack("<IIIIif", 3, jade.JTX_S3TC, 4, 4, 0, 0.0) + blocks + struct.pack("<i", 0)
+    dec = montreal_entry(0x3F001AB9, montreal_geo())  # material slot 2
+    dec += montreal_entry(0x1B00D5A2, tex_header(jade.TEX_JTX, 0x10, 4, 4, jtx, key=0x1B00D5A2))
+    dec += montreal_entry(0x2E0051F1, montreal_mtt(0x1B00D5A2))
+    dec += montreal_entry(0x3F001D5B, msm([0x2E0051F0, 0x2E0051F0, 0x2E0051F1], montreal=True))
+    dec += montreal_entry(0x22022288, montreal_gao("Set_A.gao", 0x3F001AB9, 0x3F001D5B, tx=1.0))
+    dec += montreal_entry(0x22022289, montreal_gao("Set_B.gao", 0x3F001AB9, 0x3F001D5B, tx=3.0))
+    dec += montreal_entry(0x0F003E52, struct.pack("<II", 0x22022288, 0x22022289))  # object group
+    wow = b".wow" + struct.pack("<II", 3, 2) + b"Bridge".ljust(60, b"\0")
+    wow += struct.pack("<I", 0xFFFFFFFF) + jade_matrix() + struct.pack("<f", 1.0)
+    wow += struct.pack("<III", 0, 0, 0xFFFFFFFF)  # background, lod cut, grids 0
+    wow += struct.pack("<III", 0xFFFFFFFF, 0x0F003E52, 0xFFFFFFFF) + b"\0" * 8
+    dec += montreal_entry(0x0F003E56, wow)
+    entries = jade.walk_montreal(dec)
+    w = jade_obj.index_montreal(entries)
+    assert set(w.gaos) == {0x22022288, 0x22022289} and w.wows[0].gaos == [0x22022288, 0x22022289]
+    assert jade_obj.geo_materials(w) == {0x3F001AB9: 0x3F001D5B}
+    sm = jade_obj.resolve_slot(w, 0x3F001D5B, 2)
+    assert sm.texture == 0x1B00D5A2 and sm.clamp_u is False
+    textures = jade.textures_montreal(entries)
+    scene = plug.geo_to_scene(w.geos[0x3F001AB9], "geo", w, 0x3F001D5B, textures)
+    assert scene.materials[0].texture == "1b00d5a2"
+    assert tuple(scene.textures["1b00d5a2"][0, 0]) == (0, 255, 0, 255)
+    level = plug.world_scene(w, w.wows[0], "bridge", textures)
+    assert level.extras["placed_objects"] == 2 and level.triangles == 2
+    xs = sorted(float(p.positions[:, 0].min()) for p in level.primitives)
+    assert xs == [1.0, 3.0]  # each object offset by its matrix
+    packed = struct.pack("<II", len(dec), len(dec)) + dec
+    bf = build_bf([("Bridge_wow_ff0f3e56.bin", 0xFF0F3E56, packed)], [("ROOT", -1)])
+
+    class Src:
+        by_path = {}
+
+        def get(self, path):
+            return bf
+
+    scenes = plug.extract(bf[:64], "files/prince.bf/ROOT/Bin/Bridge_wow_ff0f3e56.bin", Src())
+    names = {s.name for s in scenes}
+    assert {"3f001ab9_Set_A", "ff0f3e56_Bridge", "ff0f3e56_textures"} <= names
+    set_a = next(s for s in scenes if s.name == "3f001ab9_Set_A")
+    assert all(m.texture == "1b00d5a2" for m in set_a.materials)
+
+
+def test_montpellier_pack_replays_the_loader_order():
+    """WOL, WOW, object list, the GAOs, then each GAO's GEO / material in request
+    order (a material already loaded takes no file), then MSM sub-materials."""
+    files = [
+        struct.pack("<I", 0x9E000057) + b".wow",  # world list
+        montpellier_wow("_basic", 0x9E000056),
+        struct.pack("<II", 0x9E000072, 0x9E000073),  # WOR_GameObjectGroup
+        montpellier_gao("A.gao", 0x35009088, 0x350091E7),
+        montpellier_gao("B.gao", 0x54000164, 0x350091E7),
+        montpellier_geo(),  # A's GEO
+        msm([0x62001BD9], montreal=False),  # the shared material
+        montpellier_geo(4),  # B's GEO (material already loaded)
+        montpellier_mtt([mtt_level(0x62001BD9)]),  # MSM sub-material, requested last
+    ]
+    dec = b"".join(struct.pack("<I", len(f)) + f for f in files)
+    w = jade_obj.index_montpellier(dec)
+    assert w.stats["matched"] == 8 and w.stats["unexpected"] == 0 and w.wows[0].name == "_basic"
+    assert w.gaos[0x9E000072].name == "A.gao" and w.wows[0].gaos == [0x9E000072, 0x9E000073]
+    assert len(w.geos[0x35009088].vertices) == 3 and len(w.geos[0x54000164].vertices) == 4
+    assert w.mats[0x350091E7].subs == [0x62001BD9] and w.tex_order == [0x62001BD9]
+    assert jade_obj.resolve_slot(w, 0x350091E7, 0).texture == 0x62001BD9
+    # a request whose file is missing (loaded from the fix) is skipped within its group
+    w2 = jade_obj.index_montpellier(dec, preloaded={0x54000164})
+    assert w2.stats["matched"] == 7 and 0x54000164 not in w2.geos and len(w2.unkeyed_geos) == 1
+
+
+def test_texture_key_alignment_and_keyed_montpellier_textures():
+    keys = jade.align_texture_keys([0x10, 0x20, None, 0x30], [0x11, 0x21, 0x99, 0x77, 0x31])
+    assert keys == [0x11, 0x21, 0x99, 0x31]  # one unwalked reference inserted before the last
+    pal = bytes(b for i in range(256) for b in (i, i, i, i))
+    raw = bytes(range(16))
+    slot = struct.pack("<III", 0x62000010, 0x62000020, 0xFFFFFFFF)
+    entries = [
+        tex_header(jade.TEX_RAWPAL, 0, 0, 0, slot),
+        tex_header(jade.TEX_RAW, 0x40, 4, 4, b""),
+        pal,
+        tex_header(jade.TEX_RAW, 0x40, 4, 4, raw),
+    ]
+    dec = b"".join(struct.pack("<I", len(e)) + e for e in entries)
+    tex = jade.textures_montpellier(jade.walk_montpellier(dec), [0x62000011])
+    assert list(tex) == ["62000011"] and tuple(tex["62000011"][1, 1]) == (5, 5, 5, 10)
+    assert list(jade.textures_montpellier(jade.walk_montpellier(dec))) == ["62000010"]
