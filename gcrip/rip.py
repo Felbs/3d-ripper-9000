@@ -19,6 +19,7 @@ from pathlib import Path
 
 import numpy as np
 
+from gcrip.disc import tgc
 from gcrip.disc.image import DiscImage
 from gcrip.export import gltf, png, thumb
 from gcrip.formats import bti, j3d, rarc, tpl, yay0, yaz0
@@ -103,7 +104,31 @@ class _Source:
         if e.container is None:
             return self.image.read(e.disc_offset or 0, e.size)
         parent = self._payload(e.container)
-        return parent[e.offset : e.offset + e.size]
+        if rarc.is_rarc(parent) or tgc.is_tgc(parent):
+            return parent[e.offset : e.offset + e.size]
+        # a container a format plugin expanded (PAK, BIG, ...): members are not slices
+        return self._expanded(e.container, parent)[path]
+
+    def _expanded(self, container: str, payload: bytes) -> dict[str, bytes]:
+        """Members of a plugin container, keyed by full manifest path (cached)."""
+        cache = self.__dict__.setdefault("_plugin_cache", {})
+        if container in cache:
+            return cache[container]
+        from gcrip.plugins import container_plugins
+
+        name = container.rsplit("/", 1)[-1]
+        members: dict[str, bytes] = {}
+        for mod in container_plugins():
+            try:
+                if mod.is_container(name, payload[:64]):
+                    members = {f"{container}/{inner}": blob for inner, blob in mod.expand(payload)}
+                    break
+            except Exception:  # noqa: BLE001
+                continue
+        if len(cache) > 3:
+            cache.pop(next(iter(cache)))
+        cache[container] = members
+        return members
 
     def get(self, path: str) -> bytes:
         """File contents, decompressed if the file itself is Yaz0/Yay0."""
