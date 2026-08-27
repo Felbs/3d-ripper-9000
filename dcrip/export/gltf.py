@@ -72,6 +72,14 @@ class _Buffer:
         return len(self.accessors) - 1
 
 
+def _safe_inv(m: np.ndarray) -> np.ndarray:
+    """Inverse bind matrix; a joint scaled to zero (hidden parts) gets a pseudo-inverse."""
+    try:
+        return np.linalg.inv(m)
+    except np.linalg.LinAlgError:
+        return np.linalg.pinv(m)
+
+
 def _rest_world(scene: Scene) -> list[np.ndarray]:
     mats = []
     for j in scene.joints:
@@ -222,7 +230,7 @@ def export(scene: Scene, out_base: Path, *, thumbnail: bool = True) -> ExportSta
     gltf["meshes"].append({"name": scene.name, "primitives": prims})
     mesh_node = {"name": scene.name, "mesh": 0}
     if scene.joints:
-        ibm = np.array([np.linalg.inv(m).T for m in rest], np.float32)  # column-major
+        ibm = np.array([_safe_inv(m).T for m in rest], np.float32)  # column-major
         gltf["skins"] = [
             {
                 "name": f"{scene.name}_skin",
