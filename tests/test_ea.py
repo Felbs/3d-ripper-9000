@@ -73,6 +73,14 @@ def test_big4_and_c0fb_variants():
     assert ea_big.expand(arc) == [("f.bin", body)]
 
 
+def test_big_index_only_header_yields_no_members():
+    # Fight Night .bh: a BIG4 whose entries all point at offset 0 with sizes far past the
+    # file; slicing would return the header itself and recurse forever.
+    big4 = bytearray(_build_big({"body.gsh": b""}, magic=b"BIG4"))
+    struct.pack_into(">II", big4, 16, 0, 1835344)
+    assert ea_big.expand(bytes(big4)) == []
+
+
 # ---------------------------------------------------------------- shapes
 
 

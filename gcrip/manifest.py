@@ -280,6 +280,9 @@ class ManifestBuilder:
                 continue
             self.manifest.dirs.append(path)
             for inner, blob in entries:
+                if len(blob) == len(data) and blob == data:
+                    self.manifest.errors.append(f"{path}/{inner}: member is its own container")
+                    continue
                 self._walk_blob(
                     f"{path}/{inner}",
                     inner.rsplit("/", 1)[-1],

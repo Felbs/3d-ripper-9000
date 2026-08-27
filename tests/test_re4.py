@@ -160,6 +160,9 @@ def test_yz2_slot_is_decoded_on_expand():
 def test_bin_model_and_scene():
     data = build_bin()
     assert re4.is_bin(data) and plug.detect("etc/pl010a.bin", data[:64], len(data))
+    # EA TERF tables are *.dat too; their NNNN.bin members are not ours
+    assert not plug.detect("files/UIS_MODL.dat/0089.bin", b"\0" * 64, 4096)
+    assert plug.detect("St1/r100_00.dat/dat_003.BIN", b"\0" * 64, 4096)
     m = re4.parse(data)
     assert m.triangle_count == 1 and len(m.bones) == 1 and len(m.positions) == 3
     # i16 / 2^0 / 100

@@ -42,7 +42,9 @@ def expand(data: bytes) -> list[tuple[str, bytes]]:
     return re4.expand_das(data, base)
 
 
-_MEMBER_RE = re.compile(r"\.(das|drs|udas|dat)/", re.I)
+# .dat members only count when this plugin's expander named them (dat_NNN.EXT):
+# EA TERF tables are also called *.dat and hold NNNN.bin members.
+_MEMBER_RE = re.compile(r"\.(das|drs|udas)/|\.dat/dat_\d{3}\.[A-Z0-9]+$", re.I)
 
 
 def detect(path: str, head: bytes, size: int) -> bool:

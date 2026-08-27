@@ -61,6 +61,9 @@ def expand(data: bytes) -> list[tuple[str, bytes]]:
     """(inner path, bytes) for every member, RefPack members decompressed."""
     out = []
     for e in parse(data):
+        if e.offset + e.size > len(data):
+            # index-only header (Fight Night .bh): the members live in another file
+            continue
         blob = data[e.offset : e.offset + e.size]
         if refpack.is_refpack(blob):
             with contextlib.suppress(ValueError):
