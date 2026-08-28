@@ -99,7 +99,9 @@ def build_object() -> tuple[bytes, bytes, int]:
         entsize = 16 if typ == 2 else (8 if typ == 9 else 0)
         body += struct.pack("<IIIIIIIIII", name, typ, 0, 0, off, size, link, info, 4, entsize)
     hdr = bytearray(b"\x7fELF\x01\x01\x01" + b"\0" * 9)
-    hdr += struct.pack("<HHIIIIIHHHHHH", 1, 8, 1, 0, 0, e_shoff, 0, 0x34, 0, 0, 40, len(sections), 2)
+    hdr += struct.pack(
+        "<HHIIIIIHHHHHH", 1, 8, 1, 0, 0, e_shoff, 0, 0x34, 0, 0, 40, len(sections), 2
+    )
     body[: len(hdr)] = hdr
     split = off_shstr  # .ord = header + .data ; .orp = size + rest
     ord_ = bytes(body[:split])
