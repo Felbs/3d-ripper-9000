@@ -1,0 +1,329 @@
+"""EA Canada EAGL objects on GameCube (FIFA 2003-06, FIFA Street, NBA Live, NHL, MVP,
+Def Jam, Fight Night, SSX, GoldenEye RA, Medal of Honor ...): models, skeletons and
+animation banks stored as ELF relocatable objects.
+
+A model is split in two archive members: ``<name>.ord`` (the ELF header + ``.data``) and
+``<name>.orp`` (a u32 with the ``.ord`` size, then the rest of the ELF: string / symbol /
+relocation tables).  The ELF header and tables are little-endian (the tool chain tags the
+machine as MIPS), the ``.data`` payload is big-endian GameCube data, and every pointer
+inside ``.data`` is a little-endian u32 fixed up by a ``.rel.data`` entry (type 2 against
+symbol 1 = the section itself, or against an external such as a shader or a texture).
+
+Symbols name everything: ``__Model:::<name>``, ``__Bone:::<model>.<bone>``,
+``__Skeleton:::<model>``, ``__EAGL::TAR:::...SHAPENAME=n,m...`` (texture references),
+``__EAGL::GeoPrimState:::...`` (render state) and the undefined externs
+``LitTextureEnvIrrad2x_Skin`` / ``Gouraud_Skin`` / ... (shaders).
+
+Geometry lives in *render packets*, one per (mesh part, shader).  After the shader pointer
+a packet lists ``(count, pointer)`` pairs: a matrix palette (10 entries of the animation
+buffer), the runtime model-view matrix slot, then the vertex attribute streams (all with
+the same count = vertex count; the first is positions as s16 xyz, the last is UVs as s16
+pairs) and finally the GX display list (count = byte size).  Display-list vertices are
+``[posmtx u8][texmtx u8][u16 index per attribute stream]`` - the two matrix bytes are the
+skinning slots (multiples of 3 = GX position-matrix indices).
+"""
+
+from __future__ import annotations
+
+import re
+import struct
+from dataclasses import dataclass, field
+
+import numpy as np
+
+ELF_MAGIC = b"\x7fELF"
+PRIM_OPS = (0x80, 0x90, 0x98, 0xA0)
+POS_SCALE = 1.0 / 256.0
+UV_SCALE = 1.0 / 256.0
+_SHAPENAME = re.compile(r"SHAPENAME=([A-Za-z0-9_]+),(\d+)")
+
+
+class EaglError(ValueError):
+    pass
+
+
+@dataclass
+class Packet:
+    shader: str
+    stride: int
+    positions: np.ndarray  # (N,3) f32 (scaled)
+    indices: np.ndarray  # (M,) u32 triangles
+    uvs: np.ndarray | None
+    normals: np.ndarray | None
+    mtx_slots: np.ndarray  # (V,) u8 per display-list vertex - position-matrix slot
+    palette: list[int]  # matrix palette entries (bone/anim buffer rows), may be empty
+    textures: list[str]  # SHAPENAME shape ids (4-char names) referenced, in order
+
+
+@dataclass
+class Model:
+    name: str
+    packets: list[Packet] = field(default_factory=list)
+    variations: list[str] = field(default_factory=list)
+
+
+@dataclass
+class EaglObject:
+    models: list[Model]
+    bones: list[str]
+    warnings: list[str] = field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# ELF plumbing
+# ---------------------------------------------------------------------------
+
+
+def is_ord(head: bytes) -> bool:
+    """A little-endian relocatable ELF whose e_machine is 8 (EA's tool chain tag)."""
+    return (
+        len(head) >= 0x34
+        and head[:4] == ELF_MAGIC
+        and head[5] == 1
+        and struct.unpack_from("<HH", head, 0x10) == (1, 8)
+    )
+
+
+def join(ord_data: bytes, orp_data: bytes | None) -> bytes:
+    """Reassemble the ELF from its two members (the .orp starts with the .ord size)."""
+    if orp_data is None or len(orp_data) < 4:
+        return ord_data
+    declared = struct.unpack_from(">I", orp_data, 0)[0]
+    declared_le = struct.unpack_from("<I", orp_data, 0)[0]  # some titles store it LE
+    if len(ord_data) not in (declared, declared_le):
+        raise EaglError(f".orp declares {declared:#x} bytes, .ord is {len(ord_data):#x}")
+    return ord_data + orp_data[4:]
+
+
+class _Elf:
+    def __init__(self, data: bytes):
+        if data[:4] != ELF_MAGIC:
+            raise EaglError("not an ELF object")
+        e_shoff = struct.unpack_from("<I", data, 0x20)[0]
+        e_shentsize, e_shnum, e_shstrndx = struct.unpack_from("<HHH", data, 0x2E)
+        if e_shoff + e_shnum * e_shentsize > len(data):
+            raise EaglError("section table outside the file (missing .orp?)")
+        secs = [
+            struct.unpack_from("<IIIIIIIIII", data, e_shoff + i * e_shentsize)
+            for i in range(e_shnum)
+        ]
+        shn = secs[e_shstrndx]
+        strs = data[shn[4] : shn[4] + shn[5]]
+        self.sections = {self._cstr(strs, s[0]): (s[4], s[5]) for s in secs}
+        off, size = self.sections.get(".data", (0, 0))
+        self.data = data[off : off + size]
+        sym = self.sections.get(".symtab")
+        strt = self.sections.get(".strtab")
+        self.syms: list[tuple[str, int, int, int]] = []  # (name, value, size, shndx)
+        if sym and strt:
+            st = data[strt[0] : strt[0] + strt[1]]
+            for i in range(sym[1] // 16):
+                name, value, size_, _info, _other, shndx = struct.unpack_from(
+                    "<IIIBBH", data, sym[0] + i * 16
+                )
+                self.syms.append((self._cstr(st, name), value, size_, shndx))
+        rel = self.sections.get(".rel.data")
+        self.relocs: dict[int, int] = {}  # .data offset -> symbol index
+        if rel:
+            for i in range(rel[1] // 8):
+                off_, info = struct.unpack_from("<II", data, rel[0] + i * 8)
+                self.relocs[off_] = info >> 8
+
+    @staticmethod
+    def _cstr(tab: bytes, off: int) -> str:
+        end = tab.find(b"\0", off)
+        return tab[off : end if end >= 0 else len(tab)].decode("latin-1")
+
+    def ptr(self, off: int) -> int | None:
+        """Relocated section-relative pointer at .data offset, or None if it points to an
+        external symbol / is not a relocation."""
+        s = self.relocs.get(off)
+        if s is None or s != 1:
+            return None
+        return struct.unpack_from("<I", self.data, off)[0]
+
+    def extern(self, off: int) -> str | None:
+        s = self.relocs.get(off)
+        if s is None or s == 1 or s >= len(self.syms):
+            return None
+        return self.syms[s][0]
+
+    def u32(self, off: int) -> int:
+        return struct.unpack_from(">I", self.data, off)[0]
+
+
+# ---------------------------------------------------------------------------
+# packets
+# ---------------------------------------------------------------------------
+
+
+def _chain(dl: bytes, stride: int) -> list[tuple[int, int, int]] | None:
+    """(opcode, count, data offset) for a GX list that must use the whole buffer."""
+    p, n, prims = 0, len(dl), []
+    while p + 3 <= n:
+        op = dl[p]
+        if op == 0:
+            p += 1
+            continue
+        if (op & 0xF8) not in PRIM_OPS:
+            return None
+        count = (dl[p + 1] << 8) | dl[p + 2]
+        end = p + 3 + count * stride
+        if end > n or count == 0:
+            return None
+        prims.append((op & 0xF8, count, p + 3))
+        p = end
+    return prims or None
+
+
+def _triangulate(prims, idx: np.ndarray) -> np.ndarray:
+    tris = []
+    k = 0
+    for op, count, _ in prims:
+        v = idx[k : k + count]
+        k += count
+        if op == 0x90:
+            tris.append(v[: count - count % 3].reshape(-1, 3))
+        elif op == 0x98:
+            for i in range(count - 2):
+                a, b, c = v[i], v[i + 1], v[i + 2]
+                tris.append(np.array([[a, b, c] if i % 2 == 0 else [b, a, c]], np.uint32))
+        elif op == 0xA0:
+            for i in range(1, count - 1):
+                tris.append(np.array([[v[0], v[i], v[i + 1]]], np.uint32))
+        elif op == 0x80:
+            q = v[: count - count % 4].reshape(-1, 4)
+            tris.append(np.stack([q[:, 0], q[:, 1], q[:, 2]], 1))
+            tris.append(np.stack([q[:, 0], q[:, 2], q[:, 3]], 1))
+    if not tris:
+        return np.zeros(0, np.uint32)
+    t = np.concatenate(tris).astype(np.uint32)
+    keep = (t[:, 0] != t[:, 1]) & (t[:, 1] != t[:, 2]) & (t[:, 0] != t[:, 2])
+    return t[keep].reshape(-1)
+
+
+def _packet_entries(elf: _Elf, o_shader: int) -> list[tuple[int, int | None, str | None]]:
+    """(count, pointer, extern) list after a shader reference; the first pointer after the
+    shader carries no count (it is the matrix palette)."""
+    out = []
+    o = o_shader + 8
+    while o + 8 <= len(elf.data) and len(out) < 32:
+        count = elf.u32(o)
+        if (o + 4) not in elf.relocs:
+            break
+        out.append((count, elf.ptr(o + 4), elf.extern(o + 4)))
+        o += 8
+        if count == 0:
+            break
+    return out
+
+
+def _decode_packet(elf: _Elf, o_shader: int, shader: str, warn: list[str]) -> Packet | None:
+    d = elf.data
+    ents = _packet_entries(elf, o_shader)
+    i_m = next(
+        (i for i, e in enumerate(ents) if e[2] and e[2].startswith("__const MATRIX4")), None
+    )
+    if i_m is None:
+        return None
+    # matrix palette: the first (uncounted) pointer right after the shader
+    palette: list[int] = []
+    pal_ptr = elf.ptr(o_shader + 4)
+    pal_count = next((c for c, p, x in ents if x and "EAGLAnimationBuffer" in x), 0)
+    if pal_ptr is not None and pal_count and pal_ptr + pal_count * 2 <= len(d):
+        palette = list(struct.unpack_from(f">{pal_count}H", d, pal_ptr))
+    streams = []
+    j = i_m + 1
+    while j < len(ents) and ents[j][1] is not None and ents[j][2] is None:
+        streams.append(ents[j])
+        j += 1
+    if len(streams) < 2:
+        return None
+    size, dlp, _ = streams[-1]
+    attrs = streams[:-1]
+    if dlp + size > len(d) or (d[dlp] & 0xF8) not in PRIM_OPS:
+        return None
+    dl = d[dlp : dlp + size]
+    nattr = len(attrs)
+    stride = 2 + 2 * nattr  # [posmtx][texmtx] + u16 per stream
+    prims = _chain(dl, stride)
+    if prims is None:
+        stride = 2 * nattr  # no matrix bytes (static objects)
+        prims = _chain(dl, stride)
+        if prims is None:
+            warn.append(f"packet @{o_shader:#x}: display list does not chain at stride {stride}")
+            return None
+    rows = np.concatenate(
+        [np.frombuffer(dl, np.uint8, count * stride, off).reshape(count, stride)
+         for _, count, off in prims]
+    )
+    has_mtx = stride == 2 + 2 * nattr
+    f0 = 2 if has_mtx else 0
+    idx = (rows[:, f0].astype(np.uint32) << 8) | rows[:, f0 + 1]
+    nv, pos_ptr, _ = attrs[0]
+    if idx.max() >= nv or pos_ptr + nv * 6 > len(d):
+        warn.append(f"packet @{o_shader:#x}: index {int(idx.max())} outside {nv} vertices")
+        return None
+    pos = np.frombuffer(d, ">i2", nv * 3, pos_ptr).reshape(nv, 3).astype(np.float32) * POS_SCALE
+    tri = _triangulate(prims, idx)
+    uvs = normals = None
+    if nattr >= 2:
+        uv_ptr = attrs[-1][1]
+        if uv_ptr + nv * 4 <= len(d):
+            k = f0 + 2 * (nattr - 1)
+            uv_idx = (rows[:, k].astype(np.uint32) << 8) | rows[:, k + 1]
+            uv_all = np.frombuffer(d, ">i2", nv * 2, uv_ptr).reshape(nv, 2).astype(np.float32)
+            uv_all *= UV_SCALE
+            if uv_idx.max() < nv:
+                # per-vertex UV lookup must follow the position index: rebuild per position
+                uvs = np.zeros((nv, 2), np.float32)
+                uvs[idx] = uv_all[uv_idx]
+    if nattr >= 3:
+        n_ptr = attrs[-2][1]
+        if n_ptr + nv * 3 <= len(d):
+            k = f0 + 2 * (nattr - 2)
+            n_idx = (rows[:, k].astype(np.uint32) << 8) | rows[:, k + 1]
+            n_all = np.frombuffer(d, np.int8, nv * 3, n_ptr).reshape(nv, 3).astype(np.float32)
+            n_all /= 127.0
+            if n_idx.max() < nv:
+                normals = np.zeros((nv, 3), np.float32)
+                normals[idx] = n_all[n_idx]
+    textures = []
+    for _, _, x in ents:
+        m = _SHAPENAME.search(x) if x and "TAR" in x else None
+        if m:
+            textures.append(m.group(1))
+    slots = rows[:, 0].copy() if has_mtx else np.zeros(len(rows), np.uint8)
+    return Packet(shader, stride, pos, tri, uvs, normals, slots, palette, textures)
+
+
+# ---------------------------------------------------------------------------
+# objects
+# ---------------------------------------------------------------------------
+
+
+def parse(data: bytes) -> EaglObject:
+    elf = _Elf(data)
+    warn: list[str] = []
+    shader_refs = sorted(
+        o for o, s in elf.relocs.items()
+        if s != 1 and s < len(elf.syms) and elf.syms[s][3] == 0
+        and not elf.syms[s][0].startswith("__")
+    )
+    packets: dict[int, Packet] = {}
+    for o in shader_refs:
+        pk = _decode_packet(elf, o, elf.syms[elf.relocs[o]][0], warn)
+        if pk is not None:
+            packets[o - 0x1C] = pk  # packet base = shader pointer - 0x1c
+    # every __Model variation of a file points at the same packet run (the variations
+    # differ in bone tables / visibility, not geometry), so one Model per object
+    variations = [n[len("__Model:::") :] for n, _v, _s, sh in elf.syms
+                  if n.startswith("__Model:::") and sh]
+    stem = variations[0].split(".variation")[0] if variations else "eagl"
+    models = [Model(stem, [packets[k] for k in sorted(packets)])] if packets else []
+    if models:
+        models[0].variations = variations
+    bones = [
+        n[len("__Bone:::") :] for n, _v, _s, sh in elf.syms if n.startswith("__Bone:::") and sh
+    ]
+    return EaglObject(models, bones, warn)

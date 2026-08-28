@@ -39,6 +39,17 @@ def is_shape(head: bytes) -> bool:
     return len(head) >= 16 and head[:3] == b"SHP" and head[3:4] in b"ISXGPM"
 
 
+def shape_names(data: bytes) -> list[str]:
+    """Entry names of a shape file from its header only (no image decoding)."""
+    if len(data) < 16 or data[:3].upper() != b"SHP":
+        return []
+    e = _endian(data)
+    count = struct.unpack_from(e + "I", data, 8)[0]
+    if count > 0x4000 or 16 + count * 8 > len(data):
+        return []
+    return [data[16 + i * 8 : 20 + i * 8].decode("latin-1").rstrip("\0 ") for i in range(count)]
+
+
 def _endian(data: bytes) -> str:
     count_le = struct.unpack_from("<I", data, 8)[0]
     count_be = struct.unpack_from(">I", data, 8)[0]
