@@ -20,7 +20,13 @@ def is_container(name: str, head: bytes) -> bool:
 def expand(data: bytes) -> list[tuple[str, bytes]]:
     if len(data) < MIN_SIZE:
         return []
-    dec = generic.try_decompress(data) if len(data) <= MAX_LZ else generic.try_zlib(data)
+    # compression streams are dense: skip the (pure-Python, slow) LZ decoders unless the
+    # head looks compressed; zlib is C-speed and stays cheap to try
+    dense = generic._entropy(data[: 1 << 16]) >= 6.5
+    if dense and len(data) <= MAX_LZ:
+        dec = generic.try_decompress(data)
+    else:
+        dec = generic.try_zlib(data)
     if dec is not None:
         return [(f"{dec[0]}.bin", dec[1])]
     toc = generic.find_toc(data)
