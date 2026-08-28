@@ -1,7 +1,10 @@
 # GCRip pipeline
 
 How a GameCube disc image becomes textured, rigged, animated glTF you can play back in Blender.
-Five diagrams, from coarse to fine. Module names are the real ones in `gcrip/`.
+One master chart (1) shows every route a file can take; the later charts zoom into one
+stage each. Non-J3D games follow the same walk and export - only the "model parse" box
+differs per format - so there is one pipeline, not one per engine. Module names are the
+real ones in `gcrip/`.
 
 ## 1. End to end
 
@@ -10,9 +13,13 @@ flowchart LR
     ISO["game.iso<br/>(your own dump)"] --> WALK["1  Disc walk<br/>gcrip.disc + gcrip.manifest"]
     WALK --> MAN["disc_manifest.json<br/>every file, format, hash"]
     MAN --> RIP["2  Rip loop<br/>gcrip.rip"]
-    RIP --> J3D["3  Model parse<br/>gcrip.formats.j3d"]
+    RIP -->|"BMD / BDL"| J3D["3  J3D parse<br/>gcrip.formats.j3d"]
+    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
+    RIP -->|"nothing claims it"| GX["3c  Structure scan (fallback)<br/>gcrip.gxscan: GX display lists,<br/>vertex + index arrays"]
     J3D --> ANIM["4  Clip matching<br/>rip._AnimIndex + j3d_anim"]
-    ANIM --> GLTF["5  glTF export<br/>gcrip.export.gltf"]
+    ANIM --> GLTF["5  glTF export<br/>gcrip.export.gltf / ripcore.gltf"]
+    PLUG --> GLTF
+    GX -->|"raw meshes, no rig/UVs"| GLTF
     GLTF --> OUT["out/&lt;GameID&gt;/&lt;disc path&gt;/<br/>model.gltf + .bin + _tex/*.png"]
     GLTF --> REP["report.html<br/>rip_results.json"]
     OUT --> BL["6  Blender<br/>blender/gcrip_blender.py"]
@@ -29,9 +36,14 @@ flowchart TD
     A["boot.bin header<br/>game ID, title, FST offset"] --> B["FST parse<br/>12-byte entries, Shift-JIS names"]
     B --> C{"each file"}
     C -->|"Yaz0 / Yay0 magic"| D["LZ77 decompress"]
-    C -->|"RARC magic"| E["expand archive<br/>nodes / files / string table"]
+    C -->|"RARC / TGC magic"| E["expand archive<br/>nodes / files / string table"]
+    C -->|"a plugin's container<br/>(BIG/VIV, PAK, DAS, RCF…)"| P["plugin.expand()<br/>members walked like RARC"]
+    C -->|"no magic anyone knows"| G["generic fallback<br/>formats.generic: zlib/LZ10/LZ11/LZSS<br/>stream? (offset,size) table?"]
     D --> C
     E --> C
+    P --> C
+    G -->|"members / payload"| C
+    G -->|"nothing"| F
     C -->|"leaf"| F["classify()<br/>magic first, then extension"]
     F --> G["ManifestEntry<br/>path, kind, fmt, sha1,<br/>container, offset, depth"]
     G --> H["disc_manifest.json"]
@@ -40,7 +52,10 @@ flowchart TD
 ```
 
 Kinds that matter downstream: `model` (BMD/BDL), `animation` (BCK/BTP/BVA…), `texture` (BTI/TPL).
-Recursion goes eight archives deep; identical files are recognised by SHA-1.
+Recursion goes eight archives deep; identical files are recognised by SHA-1. Plugin containers
+are tried in name order and the two fallbacks (`generic`, `gx`) only when no real plugin
+claims a file, so a known format always wins over a guess; a member byte-identical to its
+container is refused (index-only headers would otherwise recurse forever).
 
 ## 3. One model: J3D → glTF
 
@@ -149,6 +164,31 @@ Actor positions are world-space; MULT moves only room geometry (verified against
 Outset's actors sit at the island's world slot, X≈-200k Z≈+300k). Rotation uses only the
 Y angle (x/z fields usually carry parameters), s16 angle units, 0x8000 = 180°.
 
+## 7. Non-J3D formats and the universal fallback
+
+Every plugin turns one file into `ripcore.scene.Scene` objects (joints, materials,
+primitives, decoded textures, clips) and hands them to the same exporter, so the chart in
+§1 is the whole story for every engine. What differs is only how much a format gives up:
+
+```mermaid
+flowchart TD
+    F["file no J3D parser wants"] --> D{"plugins_for(path, head, size)"}
+    D -->|"retro / hsd / gma / pikmin / lm / sfa / jade /<br/>re4 / neversoft / renderware / ea / ttyd / feporr"| R["real parser<br/>meshes + materials + textures<br/>(+ rig, + clips where the format has them)"]
+    D -->|"no ordinary plugin"| S["gx (fallback)<br/>entropy < 7.5 → gxscan.scan_blob(budget)"]
+    S --> L["GX display lists<br/>opcode · count · index tuples,<br/>stride chained, NOP padding"]
+    S --> N["neutral meshes<br/>f32 vertex run + u16 index run"]
+    L & N --> SC["geometry score<br/>mean edge / percentile bbox · √N<br/>real ≈ 1-2, spaghetti ≈ 0.5·√N"]
+    SC -->|"accepted"| M["Scene: one primitive per mesh,<br/>extras.gxscan = true"]
+    R & M --> E["ripcore.gltf.export<br/>+ thumbnail + report row"]
+```
+
+The fallback is a map as much as a rip: its hits say where in an archive the models live
+and how the vertices are laid out, which is most of what a real plugin needs. Multi-platform
+engines that store only vertex/index buffers (Treyarch, Radical P3D) reach the scanner only
+after their container - and often their own compression - is opened; `formats.generic`
+handles the common table and LZ shapes, the rest is per-studio work in the order the
+compatibility list's developer column suggests.
+
 ## What is heuristic (and where to look when it's wrong)
 
 | step | assumption | if wrong |
@@ -158,3 +198,5 @@ Y angle (x/z fields usually carry parameters), s16 angle units, 0x8000 = 180°.
 | clip → model | joint count (+ names for twins), same directory, name affinity | wrong actor animates → `--anim-map ANIM=MODEL` |
 | expressions | BTP swaps only the diffuse slot; alternate must match size/format/name family | missing switch → the texture is on another slot / a different TEX1 order |
 | bone names | keyword + hierarchy walk from hands/feet/head | unmapped bone → add the token to `rig._KEYWORDS` |
+| generic table | (offset,size) rows near the start or at a header pointer; 4-aligned, non-overlapping, ≥40 % coverage | members look wrong → the archive has a name/hash column layout `find_toc` mis-picked; write a plugin |
+| gx scan | display lists chain at one stride; a position array exists for the biggest index; triangles are compact | slivers / spaghetti → wrong stride or array won the score; raise `_accept` limits or write a plugin |

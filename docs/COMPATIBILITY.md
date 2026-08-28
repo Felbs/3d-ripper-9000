@@ -6,8 +6,8 @@ survey + dump over a 638-disc GameCube library (USA set), 2026-08-28. 638 discs 
 
 | game | ID | models | dups | failed | clips | animated | expressions | Mixamo rigs | textured % | textures | extras | s | notes |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---|
-| Beyond Good and Evil | GGEE41 | 21,440 | 0 | 0 | 0 | 0 | 0 | 0 | 0.4 | 3 |  | 676 |  |
-| Prince of Persia : The Sands of Time | GPTE41 | 10,624 | 0 | 0 | 0 | 0 | 0 | 0 | 91.9 | 2 |  | 721 |  |
+| Beyond Good and Evil | GGEE41 | 21,786 | 0 | 0 | 0 | 0 | 0 | 0 | 45.6 | 3 |  | 846 |  |
+| Prince of Persia : The Sands of Time | GPTE41 | 10,624 | 0 | 0 | 0 | 0 | 0 | 0 | 91.9 | 2 |  | 766 |  |
 | Madden NFL 06 | G6ME69 | 7,726 | 1,363 | 0 | 0 | 0 | 0 | 0 | 100.0 | 0 |  | 110 |  |
 | Madden NFL 07 | G7ME69 | 7,634 | 1,652 | 0 | 0 | 0 | 0 | 0 | 100.0 | 0 |  | 108 |  |
 | Madden NFL 08 | GQ8E69 | 7,557 | 1,804 | 0 | 0 | 0 | 0 | 0 | 100.0 | 0 |  | 128 |  |
@@ -16,8 +16,8 @@ survey + dump over a 638-disc GameCube library (USA set), 2026-08-28. 638 discs 
 | Madden NFL 2003 | GM3E69 | 5,489 | 514 | 0 | 0 | 0 | 0 | 0 | 100.0 | 0 |  | 66 |  |
 | Madden NFL 2002 | GMDE69 | 5,354 | 588 | 2 | 0 | 0 | 0 | 0 | 100.0 | 0 |  | 52 |  |
 | SONIC HEROES | G9SE8P | 5,202 | 2,147 | 0 | 0 | 0 | 0 | 0 | 92.3 | 0 |  | 487 |  |
-| Prince of Persia The Two Thrones | GKME41 | 4,499 | 0 | 0 | 0 | 0 | 0 | 0 | 100.0 | 2 |  | 683 |  |
-| PoP:WW | G2OE41 | 4,049 | 0 | 0 | 0 | 0 | 0 | 0 | 100.0 | 3 |  | 500 |  |
+| Prince of Persia The Two Thrones | GKME41 | 4,499 | 0 | 0 | 0 | 0 | 0 | 0 | 100.0 | 2 |  | 734 |  |
+| PoP:WW | G2OE41 | 4,049 | 0 | 0 | 0 | 0 | 0 | 0 | 100.0 | 3 |  | 532 |  |
 | TMNT | GYRE41 | 3,630 | 0 | 0 | 0 | 0 | 0 | 0 | 99.9 | 2 |  | 425 |  |
 | NCAA Football 2004 | GNXE69 | 3,354 | 1,234 | 0 | 0 | 0 | 0 | 0 | 100.0 | 0 |  | 32 |  |
 | NCAA Football 2003 | GNGE69 | 3,316 | 1,294 | 1 | 0 | 0 | 0 | 0 | 100.0 | 0 |  | 1547 |  |
@@ -34,19 +34,19 @@ survey + dump over a 638-disc GameCube library (USA set), 2026-08-28. 638 discs 
 | NASCAR Thunder 2003 | GNCE69 | 1,890 | 357 | 847 | 0 | 0 | 0 | 0 | 100.0 | 0 |  | 23 |  |
 | THE LEGEND OF ZELDA The Wind Waker for USA | GZLE01 | 1,856 | 902 | 0 | 4,175 | 432 | 117 | 76 | 95.6 | 1,867 | stages 156, text, streams 76, music 93, cutscenes 48 | 616 |  |
 | The Incredibles | GICE78 | 1,851 | 647 | 0 | 0 | 0 | 0 | 0 | 27.0 | 2 |  | 99 |  |
-| Tony Hawk's Underground 2 | G2TE52 | 1,805 | 1,809 | 2507 | 0 | 0 | 0 | 0 | 100.0 | 0 |  | 198 |  |
+| Tony Hawk's Underground 2 | G2TE52 | 1,805 | 1,809 | 2507 | 0 | 0 | 0 | 0 | 100.0 | 0 |  | 221 |  |
 | NCAA Football 2005 | GCUE69 | 1,768 | 899 | 0 | 0 | 0 | 0 | 0 | 100.0 | 0 |  | 28 |  |
 | The Legend of Zelda: Collector's Edition | PZLE01 | 1,710 | 624 | 0 | 4,175 | 432 | 117 | 76 | 95.3 | 1,784 |  | 280 | the Wind Waker demo inside `ZL_WindWakerUSASHOP_*.tgc`; OoT/MM are N64 ROMs (not J3D) |
 | PokemonChannelMainDisk | GPAE01 | 1,578 | 5 | 3 | 0 | 0 | 0 | 0 | 93.1 | 4 |  | 138 |  |
 | Super Smash Bros Melee | GALE01 | 1,495 | 8 | 0 | 33,824 | 189 | 0 | 0 | 90.1 | 0 |  | 721 |  |
 | Zoids: Battle Legends | GZSE70 | 1,389 | 110 | 0 | 0 | 0 | 0 | 0 | 91.9 | 846 |  | 260 |  |
 | NFL STREET 2 | GN7E69 | 1,291 | 979 | 1 | 0 | 0 | 0 | 0 | 100.0 | 0 |  | 33 |  |
-| Tony Hawk's Underground | GTDE52 | 1,232 | 3,012 | 1352 | 0 | 0 | 0 | 0 | 98.1 | 0 |  | 282 |  |
+| Tony Hawk's Underground | GTDE52 | 1,232 | 3,012 | 1352 | 0 | 0 | 0 | 0 | 98.1 | 0 |  | 289 |  |
 | The SpongeBob SquarePants Movie | GGVE78 | 1,193 | 1,013 | 0 | 0 | 0 | 0 | 0 | 15.1 | 2 |  | 56 |  |
 | LUIGI'S MANSION | GLME01 | 1,182 | 275 | 0 | 98 | 56 | 0 | 0 | 99.2 | 1,393 | streams 2 | 256 | few BMDs; rooms/characters use Luigi's Mansion's own `.mdl` + `.bin` formats - future module |
 | ZOIDS VS. | GZOJDA | 1,125 | 56 | 0 | 0 | 0 | 0 | 0 | 92.4 | 192 |  | 238 |  |
-| FIRE EMBLEM GC US | GFEE01 | 1,060 | 382 | 0 | 0 | 0 | 0 | 0 | 99.9 | 2,395 |  | 352 |  |
-| Paper Mario | G8ME01 | 982 | 3 | 0 | 0 | 0 | 0 | 0 | 92.7 | 1,263 |  | 194 |  |
+| FIRE EMBLEM GC US | GFEE01 | 1,060 | 382 | 0 | 0 | 0 | 0 | 0 | 99.9 | 2,395 |  | 360 |  |
+| Paper Mario | G8ME01 | 982 | 3 | 0 | 0 | 0 | 0 | 0 | 92.7 | 1,263 |  | 184 |  |
 | Kirby Air Ride | GKYE01 | 960 | 0 | 0 | 0 | 0 | 0 | 0 | 88.9 | 0 |  | 87 |  |
 | Killer7 Disk2 | GK7E08 | 921 | 27 | 0 | 0 | 0 | 0 | 0 | 88.4 | 1 |  | 164 |  |
 | NFS Most Wanted | GOWE69 | 921 | 3 | 0 | 0 | 0 | 0 | 0 | 99.0 | 0 |  | 272 |  |
@@ -54,8 +54,8 @@ survey + dump over a 638-disc GameCube library (USA set), 2026-08-28. 638 discs 
 | F-ZERO GX (US Version) | GFZE01 | 896 | 0 | 0 | 0 | 0 | 0 | 0 | 27.6 | 0 |  | 432 |  |
 | NHL 2003 | GH3E69 | 868 | 1 | 0 | 0 | 0 | 0 | 0 | 100.0 | 0 |  | 62 |  |
 | Killer7 Disk1 | GK7E08 | 850 | 27 | 0 | 0 | 0 | 0 | 0 | 80.2 | 1 |  | 165 |  |
-| resident evil 4 disc1 | G4BE08 | 837 | 1,401 | 1 | 0 | 0 | 0 | 0 | 87.8 | 1,557 |  | 1650 |  |
-| resident evil 4 disc2 | G4BE08 | 780 | 1,383 | 3 | 0 | 0 | 0 | 0 | 87.1 | 1,518 |  | 1033 |  |
+| resident evil 4 disc1 | G4BE08 | 837 | 1,401 | 1 | 0 | 0 | 0 | 0 | 87.8 | 1,557 |  | 1793 |  |
+| resident evil 4 disc2 | G4BE08 | 780 | 1,383 | 3 | 0 | 0 | 0 | 0 | 87.1 | 1,518 |  | 1069 |  |
 | Super Mario Sunshine | GMSE01 | 712 | 8,072 | 0 | 10,039 | 633 | 32 | 4 | 90.7 | 754 |  | 538 | byte-identical duplicates skipped (every level .szs repeats the NPC set) |
 | PIKMIN2 for GAMECUBE | GPVE01 | 683 | 438 | 0 | 372 | 299 | 0 | 1 | 97.4 | 17,232 |  | 211 |  |
 | Outlaw Golf | GOFE7L | 667 | 35 | 0 | 0 | 0 | 0 | 0 | 0.0 | 1 |  | 35 |  |
@@ -103,7 +103,7 @@ survey + dump over a 638-disc GameCube library (USA set), 2026-08-28. 638 discs 
 | FIFA 06 | GF6E69 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 100.0 | 4 |  | 170 |  |
 | FIFA 07 | G4FE69 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 100.0 | 2 |  | 207 |  |
 
-**Total: 96 games, 167,651 unique models, 68,660 animation clips, 6068 model failures.**
+**Total: 96 games, 167,997 unique models, 68,660 animation clips, 6068 model failures.**
 
 ## Games where only standalone textures come out (no J3D models)
 

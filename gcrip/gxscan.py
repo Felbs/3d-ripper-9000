@@ -23,6 +23,7 @@ usage: python -m gcrip.gxscan <disc.iso> [--only substr] [--out dir] [--limit n]
 from __future__ import annotations
 
 import sys
+import time
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -142,7 +143,6 @@ def _chain(blob: _Blob, start: int, stride: int) -> DisplayList | None:
             break
     if not prims:
         return None
-    last_end = prims[-1][2] + prims[-1][1] * stride
     ends_clean = p >= n or blob.op_at(p) is not None or p > prims[-1][2] + prims[-1][1] * stride
     if not ends_clean and len(prims) < 2 and prims[0][1] < 12:
         return None
@@ -369,10 +369,15 @@ def _accept(m: Mesh) -> bool:
     return m.compactness < limit
 
 
-def scan_blob(data: bytes, max_lists: int = 2000) -> list[Mesh]:
+def scan_blob(data: bytes, max_lists: int = 2000, budget: float | None = None) -> list[Mesh]:
+    """Every mesh the blob yields; `budget` (seconds) stops the search early on huge
+    files so one archive cannot stall a disc rip."""
+    deadline = time.monotonic() + budget if budget else None
     blob = _Blob(data)
     meshes = []
     for cands in candidate_lists(data, blob=blob)[:max_lists]:
+        if deadline and time.monotonic() > deadline:
+            break
         best: Mesh | None = None
         for dl in cands:
             m = best_mesh(blob, dl)
@@ -382,6 +387,126 @@ def scan_blob(data: bytes, max_lists: int = 2000) -> list[Mesh]:
                 best = m
         if best is not None:
             meshes.append(best)
+    if not deadline or time.monotonic() < deadline:
+        meshes += find_neutral_meshes(blob)
+    return meshes
+
+
+def to_scene(name: str, meshes: list[Mesh]):
+    """One Scene: every mesh its own primitive + material, so a viewer can tell them
+    apart and the report can show what was found.  Topology is what the scanner inferred,
+    so the extras say so."""
+    from ripcore.scene import MaterialDef, Primitive, Scene
+
+    scene = Scene(name=name)
+    for i, m in enumerate(sorted(meshes, key=lambda x: -x.triangles)):
+        scene.materials.append(
+            MaterialDef(name=f"gx{i:03d}_{m.pos_kind}", texture=None, double_sided=True)
+        )
+        scene.primitives.append(Primitive(material=i, positions=m.positions, indices=m.indices))
+    scene.extras = {
+        "gxscan": True,
+        "meshes": len(meshes),
+        "kinds": sorted({m.pos_kind for m in meshes}),
+        "note": "geometry found by structure (no rig, names, UVs or textures)",
+    }
+    return scene
+
+
+# ---------------------------------------------------------------------------
+# 5. platform-neutral meshes: vertex array + index array, no GX display list
+# ---------------------------------------------------------------------------
+
+
+def _u16_runs(blob: _Blob, max_value: int = 0xFFF0, min_words: int = 60) -> list[tuple[int, int]]:
+    """(byte offset, word count) of maximal runs of big-endian u16 below max_value."""
+    if "u16" in blob._runs:
+        return blob._runs["u16"]
+    data, n = blob.data, len(blob.data)
+    arr = np.frombuffer(data[: n - n % 2], ">u2")
+    ok = arr < max_value
+    bad = np.flatnonzero(~ok)
+    edges = np.concatenate(([-1], bad, [len(ok)]))
+    runs = [(int(a + 1) * 2, int(b - a - 1)) for a, b in zip(edges[:-1], edges[1:], strict=True)
+            if b - a - 1 >= min_words]
+    blob._runs["u16"] = runs
+    return runs
+
+
+def _index_candidates(blob: _Blob, run_off: int, words: int, nverts: int) -> list[np.ndarray]:
+    """Index streams inside a u16 run that address exactly `nverts` vertices: the run is
+    cut where values exceed nverts-1; a stream must use most of the range and be sized
+    like an index buffer for that many vertices (~2 triangles per vertex for a list,
+    ~1 index per vertex for a strip) so audio and tables do not qualify."""
+    arr = np.frombuffer(blob.data, ">u2", words, run_off).astype(np.int64)
+    over = np.flatnonzero(arr >= nverts)
+    edges = np.concatenate(([-1], over, [len(arr)]))
+    out = []
+    lo, hi = int(nverts * 0.8), int(nverts * 12)
+    for a, b in zip(edges[:-1], edges[1:], strict=True):
+        seg = arr[a + 1 : b]
+        if not lo <= len(seg) <= hi or len(seg) < 60:
+            continue
+        if seg.max() < nverts * 0.9:
+            continue
+        uniq = len(np.unique(seg))
+        if uniq < nverts * 0.6:
+            continue
+        out.append(seg)
+    return out
+
+
+def _neutral_triangulate(seg: np.ndarray) -> list[tuple[str, np.ndarray]]:
+    """A u16 stream as a triangle list and as one strip (both are common)."""
+    out = []
+    m = len(seg) - len(seg) % 3
+    if m >= 3:
+        out.append(("list", seg[:m].astype(np.uint32)))
+    if len(seg) >= 3:
+        i = np.arange(len(seg) - 2)
+        a, b, c = seg[i], seg[i + 1], seg[i + 2]
+        odd = i % 2 == 1
+        tri = np.stack([np.where(odd, b, a), np.where(odd, a, b), c], 1).astype(np.uint32)
+        out.append(("strip", tri.reshape(-1)))
+    return out
+
+
+def find_neutral_meshes(blob: _Blob, max_score: float = 1.4) -> list[Mesh]:
+    """Meshes stored as a float32 vertex array plus a u16 index array, with no display
+    list at all - what multi-platform engines write, then convert to GX at load time.
+    Every float run is tried as positions at strides 3..12 floats; u16 runs sized like
+    an index buffer for that vertex count are tried as its indices, nearest first; the
+    geometry score decides (stricter than for display lists: no opcode evidence here)."""
+    data = blob.data
+    meshes: list[Mesh] = []
+    u16 = _u16_runs(blob)
+    if not u16:
+        return meshes
+    for off, length in blob.runs("f32"):
+        if length < 48 * 12:
+            continue
+        floats = np.frombuffer(data, ">f4", length // 4, off)
+        found: Mesh | None = None
+        for fstride in (3, 4, 5, 6, 7, 8, 9, 10, 11, 12):
+            nverts = len(floats) // fstride
+            if nverts < 48:
+                continue
+            pos = np.ascontiguousarray(floats[: nverts * fstride].reshape(nverts, fstride)[:, :3])
+            if not np.all(np.isfinite(pos)):
+                continue
+            near = sorted((r for r in u16 if r[1] >= nverts * 0.8), key=lambda r: abs(r[0] - off))[:12]
+            for uoff, words in near:
+                for seg in _index_candidates(blob, uoff, words, nverts):
+                    for layout, tri in _neutral_triangulate(seg):
+                        if len(tri) < 60:
+                            continue
+                        sc = _compactness(pos, tri)
+                        if sc < max_score and (found is None or sc < found.compactness):
+                            dl = DisplayList(uoff, uoff + words * 2, 2, [(0x90, len(seg), uoff)])
+                            found = Mesh(dl, 0, 2, off, f"neutral-f32x{fstride}-{layout}",
+                                         pos, tri, sc)
+        if found is not None and _accept(found):
+            meshes.append(found)
     return meshes
 
 
@@ -390,7 +515,8 @@ def scan_blob(data: bytes, max_lists: int = 2000) -> list[Mesh]:
 # ---------------------------------------------------------------------------
 
 
-def scan_disc(iso, only: str | None = None, limit: int | None = None, out=None, quiet=False):
+def scan_disc(iso, only: str | None = None, limit: int | None = None, out=None, quiet=False,
+              max_mb: float = 48.0):
     from pathlib import Path
 
     from gcrip.disc.image import DiscImage
@@ -405,7 +531,7 @@ def scan_disc(iso, only: str | None = None, limit: int | None = None, out=None, 
         files = [
             f
             for f in manifest.files
-            if f.kind in ("unknown", "archive") and 1024 <= f.size <= (48 << 20)
+            if f.kind in ("unknown", "archive") and 1024 <= f.size <= int(max_mb * (1 << 20))
             and not f.path.startswith("sys/") and (not only or only in f.path)
         ]
         if limit:
@@ -451,9 +577,10 @@ def main(argv=None) -> int:
     ap.add_argument("--only")
     ap.add_argument("--limit", type=int)
     ap.add_argument("--out")
+    ap.add_argument("--max-mb", type=float, default=48.0)
     ap.add_argument("-q", "--quiet", action="store_true")
     a = ap.parse_args(argv)
-    game, report = scan_disc(a.iso, a.only, a.limit, a.out, a.quiet)
+    game, report = scan_disc(a.iso, a.only, a.limit, a.out, a.quiet, a.max_mb)
     tri = sum(m.triangles for _, _, ms in report for m in ms)
     print(f"{game['id']} {game['title']}: {len(report)} files with geometry, "
           f"{sum(len(ms) for _, _, ms in report)} meshes, {tri:,} triangles")

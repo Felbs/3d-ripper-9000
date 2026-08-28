@@ -16,6 +16,10 @@ Optional - container support, so the disc walker expands archives the plugin kno
 The manifest walks the returned entries like RARC members (nested paths, classification,
 further expansion), so models inside such archives reach the plugins as plain files.
 
+A plugin may set ``FALLBACK = True``: it is only consulted for files (or containers) that
+no ordinary plugin claimed - the structure-based crackers in ``generic`` and ``gx`` live
+there, so a known format always wins over a guess.
+
 The rip calls every plugin whose detect() says yes, exports each returned Scene through
 ripcore.gltf (same glTF/thumbnail/report path as J3D and Dreamcast models), and records
 warnings/errors per file - one broken plugin never stops a rip. Plugins are discovered by
@@ -51,11 +55,18 @@ def all_plugins() -> list[ModuleType]:
     return _loaded
 
 
+def is_fallback(mod: ModuleType) -> bool:
+    return bool(getattr(mod, "FALLBACK", False))
+
+
 def container_plugins() -> list[ModuleType]:
-    return [m for m in all_plugins() if hasattr(m, "is_container") and hasattr(m, "expand")]
+    """Ordinary container plugins first, fallbacks (generic table/compression) last."""
+    mods = [m for m in all_plugins() if hasattr(m, "is_container") and hasattr(m, "expand")]
+    return sorted(mods, key=is_fallback)
 
 
 def plugins_for(path: str, head: bytes, size: int) -> list[ModuleType]:
+    """Plugins claiming this file; fallbacks only when no ordinary plugin does."""
     out = []
     for mod in all_plugins():
         try:
@@ -63,4 +74,5 @@ def plugins_for(path: str, head: bytes, size: int) -> list[ModuleType]:
                 out.append(mod)
         except Exception:  # noqa: BLE001 - a plugin's sniff must never break the walk
             continue
-    return out
+    ordinary = [m for m in out if not is_fallback(m)]
+    return ordinary or out
