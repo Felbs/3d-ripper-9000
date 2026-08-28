@@ -152,6 +152,9 @@ def _pad(body: bytes, need: int) -> bytes:
     return body if len(body) >= need else bytes(body) + b"\0" * (need - len(body))
 
 
+_GC_MIP_CODES = {0x16: 6, 0x1E: 14, 0x19: 1}
+
+
 def _decode_image(code: int, w: int, h: int, body: bytes, palette, gc: bool, warn: list[str]):
     n = w * h
     if code == 0x7D:
@@ -192,6 +195,14 @@ def _decode_image(code: int, w: int, h: int, body: bytes, palette, gc: bool, war
     if gc and code in (0x5B, 0x5C):
         warn.append(f"GameCube shape code {code:#x} decoded as GX CMPR (guess)")
         return gx_texture.decode(14, w, h, body)
+    if gc and code in _GC_MIP_CODES:
+        # EA Canada SHPG (FIFA 2004 ...): native GX tiles with the whole mip chain in the
+        # body; sizes identify the format (0x16: 32 bpp RGBA8, 0x1e: 4 bpp CMPR, 0x19: 8 bpp,
+        # which decodes as I8 - FIFA's button icons look right that way)
+        fmt = _GC_MIP_CODES[code]
+        if fmt == 1:
+            warn.append("GameCube shape code 0x19 decoded as GX I8 (guess between I8/IA4)")
+        return gx_texture.decode(fmt, w, h, body)
     warn.append(f"unsupported shape image code {code:#x}")
     return None
 

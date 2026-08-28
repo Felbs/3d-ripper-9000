@@ -355,3 +355,13 @@ def test_pack_scan_ignores_non_stream_sectors():
     members = ea.expand(pack)
     assert [n for n, _ in members] == ["CARS/TST/GEOMETRY.BIN"]
     assert members[0][1] == geo
+
+
+def test_gamecube_shape_mip_codes_decode_as_gx():
+    warn: list[str] = []
+    rgba8 = ea_shape._decode_image(0x16, 4, 4, bytes(64) + bytes(16), None, True, warn)
+    assert rgba8.shape == (4, 4, 4) and not warn
+    cmpr = ea_shape._decode_image(0x1E, 8, 8, bytes(32) + bytes(8), None, True, warn)
+    assert cmpr.shape == (8, 8, 4)
+    i8 = ea_shape._decode_image(0x19, 8, 4, bytes(32), None, True, warn)
+    assert i8.shape == (4, 8, 4) and any("0x19" in w for w in warn)
