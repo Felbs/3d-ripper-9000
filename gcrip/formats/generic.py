@@ -33,16 +33,6 @@ class Member:
     packed: bool = False  # size differs from a second "unpacked size" column
 
 
-def _u32_matrix(data: bytes, base: int, stride: int, count: int) -> np.ndarray:
-    """count x (stride/4) big-endian u32 rows starting at base."""
-    end = base + stride * count
-    buf = np.frombuffer(data, np.uint8, end - base, base).reshape(count, stride)
-    cols = stride // 4
-    return buf[:, : cols * 4].reshape(count, cols, 4).astype(np.uint32) @ np.array(
-        [1 << 24, 1 << 16, 1 << 8, 1], np.uint32
-    )
-
-
 def _table_ok(offs: np.ndarray, sizes: np.ndarray, n: int, table_end: int) -> float:
     """0 if the (offset, size) rows cannot be a member table, else a quality score:
     entry count, boosted when offsets are 16/32-aligned (almost every real archive)."""
@@ -80,9 +70,9 @@ def _header_pointers(data: bytes, n: int) -> list[int]:
     return sorted(out)
 
 
-def find_toc(data: bytes, max_scan: int = 1024) -> list[Member] | None:
+def find_toc(data: bytes, max_scan: int = 512, max_rows: int = 2048) -> list[Member] | None:
     """Look for an (offset, size) record table near the start of the blob (or where a
-    header pointer says).  Tries record strides 8..64 and every pair of u32 columns as
+    header pointer says).  Tries record strides 4..64 and every pair of u32 columns as
     (offset, size), in either file order or arbitrary order (hash-sorted tables), with
     offsets absolute or relative to the end of the table; a table wins on entry count.
     Falls back to offset-only tables (sizes = gaps).  Returns None when nothing holds."""
@@ -91,39 +81,49 @@ def find_toc(data: bytes, max_scan: int = 1024) -> list[Member] | None:
         return None
     limit = min(max_scan, n // 2)
     bases = sorted(set(range(0, limit, 4)) | set(_header_pointers(data, n)))
+    # one big-endian u32 view of the head of the blob covers every 4-aligned base/stride
+    head_words = min(n // 4, (max(bases) // 4) + max_rows * 16 + 16)
+    words = np.frombuffer(data, ">u4", head_words).astype(np.int64)
     best: tuple[float, list[Member]] | None = None
     for stride in range(4, 65, 4):
         cols = stride // 4
         for base in bases:
-            max_rows = (n - base) // stride
-            if max_rows < 4:
+            b = base // 4
+            rows = min(max_rows, (len(words) - b) // cols)
+            if rows < 4:
                 continue
-            m = _u32_matrix(data, base, stride, min(max_rows, 8192)).astype(np.int64)
-            for oc in range(cols):
+            m = words[b : b + rows * cols].reshape(rows, cols)
+            # an offset column has its first four values inside the blob and distinct;
+            # a size column has them positive and inside the blob
+            h = m[:4]
+            hs = np.sort(h, axis=0)
+            head_ok = (h < n).all(axis=0) & (hs[1:] != hs[:-1]).all(axis=0)
+            size_ok = ((h > 0) & (h <= n)).all(axis=0)
+            if not head_ok.any():
+                continue
+            size_cols = np.flatnonzero(size_ok)
+            for oc in np.flatnonzero(head_ok):
                 col = m[:, oc]
                 inb = col < n
-                k_any = int(np.argmin(inb)) if not inb.all() else len(col)  # in-bounds run
+                k_any = int(np.argmin(inb)) if not inb.all() else len(col)
                 if k_any < 4:
                     continue
-                for sc in range(cols):
+                for sc in size_cols:
                     if sc == oc:
                         continue
+                    sizes_all = m[:k_any, sc]
                     for rel in (0, None):
-                        for k in (k_any,):
-                            table_end = base + k * stride
-                            offs = col[:k] + (table_end if rel is None else 0)
-                            sizes = m[:k, sc]
-                            # trim trailing rows that break the table (member bytes read
-                            # as records): shrink k while the tail is out of bounds
-                            good = (offs >= table_end) & (offs + sizes <= n) & (sizes >= 0)
-                            kk = int(np.argmin(good)) if not good.all() else k
-                            if kk < 4:
-                                continue
-                            sc_ = _table_ok(offs[:kk], sizes[:kk], n, base + kk * stride)
-                            if sc_ > 0 and (best is None or sc_ > best[0]):
-                                rows = zip(offs[:kk], sizes[:kk], strict=True)
-                                best = (sc_, [Member(f"{i:04d}", int(o), int(s))
-                                              for i, (o, s) in enumerate(rows)])
+                        table_end = base + k_any * stride
+                        offs = col[:k_any] + (table_end if rel is None else 0)
+                        good = (offs >= table_end) & (offs + sizes_all <= n) & (sizes_all >= 0)
+                        kk = int(np.argmin(good)) if not good.all() else k_any
+                        if kk < 4:
+                            continue
+                        score = _table_ok(offs[:kk], sizes_all[:kk], n, base + kk * stride)
+                        if score > 0 and (best is None or score > best[0]):
+                            rows_ = zip(offs[:kk], sizes_all[:kk], strict=True)
+                            best = (score, [Member(f"{i:04d}", int(o), int(s))
+                                            for i, (o, s) in enumerate(rows_)])
                 # offset-only table: sizes are the gaps to the next offset
                 col_k = col[:k_any]
                 for rel in (0, None):
@@ -140,9 +140,9 @@ def find_toc(data: bytes, max_scan: int = 1024) -> list[Member] | None:
                     if float(sizes.sum()) / max(1, n - o[0]) >= 0.9:
                         score = kk * 0.5 * (1.0 + float(np.mean(o % 16 == 0)))
                         if best is None or score > best[0]:
-                            rows = zip(o, sizes, strict=True)
+                            rows_ = zip(o, sizes, strict=True)
                             best = (score, [Member(f"{i:04d}", int(a), int(s))
-                                            for i, (a, s) in enumerate(rows)])
+                                            for i, (a, s) in enumerate(rows_)])
     return best[1] if best else None
 
 
