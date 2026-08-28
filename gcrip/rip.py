@@ -357,7 +357,18 @@ def _run_plugins(src, manifest, result, game_dir, quiet, thumbnails, limit, path
         return
     if limit:
         cands = cands[:limit]
-    _log(quiet, f"[2c/3] {len(cands)} files in plugin formats")
+    # real formats in disc order, then fallback-only files biggest first so a per-disc
+    # time budget goes to the archives most likely to hold models
+    from gcrip.plugins import is_fallback
+
+    real = [c for c in cands if not all(is_fallback(m) for m in c[1])]
+    fb = sorted((c for c in cands if all(is_fallback(m) for m in c[1])), key=lambda c: -c[0].size)
+    cands = real + fb
+    for mod in {m for _, mods in cands for m in mods}:
+        begin = getattr(mod, "begin_disc", None)
+        if begin:
+            begin()
+    _log(quiet, f"[2c/3] {len(cands)} files in plugin formats ({len(fb)} fallback)")
     seen_hash: dict[str, str] = {}
     for i, (e, mods) in enumerate(cands):
         if not quiet and (i % 10 == 0 or i == len(cands) - 1):
