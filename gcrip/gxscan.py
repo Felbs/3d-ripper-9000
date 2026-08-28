@@ -496,7 +496,8 @@ def find_neutral_meshes(blob: _Blob, max_score: float = 1.4) -> list[Mesh]:
             pos = np.ascontiguousarray(floats[: nverts * fstride].reshape(nverts, fstride)[:, :3])
             if not np.all(np.isfinite(pos)):
                 continue
-            near = sorted((r for r in u16 if r[1] >= nverts * 0.8), key=lambda r: abs(r[0] - off))[:12]
+            big = (r for r in u16 if r[1] >= nverts * 0.8)
+            near = sorted(big, key=lambda r: abs(r[0] - off))[:12]
             for uoff, words in near:
                 for seg in _index_candidates(blob, uoff, words, nverts):
                     for layout, tri in _neutral_triangulate(seg):
