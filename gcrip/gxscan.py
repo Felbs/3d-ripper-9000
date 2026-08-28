@@ -369,7 +369,9 @@ def _accept(m: Mesh) -> bool:
     return m.compactness < limit
 
 
-def scan_blob(data: bytes, max_lists: int = 2000, budget: float | None = None) -> list[Mesh]:
+def scan_blob(
+    data: bytes, max_lists: int = 2000, budget: float | None = None
+) -> list[Mesh]:
     """Every mesh the blob yields; `budget` (seconds) stops the search early on huge
     files so one archive cannot stall a disc rip."""
     deadline = time.monotonic() + budget if budget else None

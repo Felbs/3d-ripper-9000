@@ -31,7 +31,8 @@ def test_offset_size_table_with_hash_column():
     for m in members:
         offs.append(pos)
         pos += (len(m) + 31) & ~31
-    recs = [struct.pack(">III", 0xDEAD0000 + i, o, len(m)) for i, (o, m) in enumerate(zip(offs, members, strict=True))]
+    rows = enumerate(zip(offs, members, strict=True))
+    recs = [struct.pack(">III", 0xDEAD0000 + i, o, len(m)) for i, (o, m) in rows]
     blob = _archive(recs, header, members, 12)
     toc = generic.find_toc(blob)
     assert toc is not None and len(toc) == len(members)
