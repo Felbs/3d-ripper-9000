@@ -126,6 +126,7 @@ def batch(
                         warn[w.split(":")[0][:60]] += 1
                 row.update(
                     game_id=res.game_id,
+                    dir=res.out_dir.name,
                     title=res.title,
                     models_total=len(res.models),
                     exported=len(ok),
@@ -266,7 +267,8 @@ def write_dump_readme(out_root: Path, rows: list[dict]) -> Path:
         if not r.get("exported") and not r.get("textures"):
             continue
         lines.append(
-            f"| [{r['title']}]({r['game_id']}/report.html) | {r['game_id']} | {r['exported']} | "
+            f"| [{r['title']}]({r.get('dir') or r['game_id']}/report.html) | "
+            f"{r['game_id']} | {r['exported']} | "
             f"{r['clips']} | {r['textures']} | {_extras_cell(r)} |"
         )
     p = out_root / "README.md"

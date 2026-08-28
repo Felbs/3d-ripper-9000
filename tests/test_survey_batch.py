@@ -62,3 +62,42 @@ def test_batch_matrix_handles_errors(tmp_path):
     p = batch.write_matrix(tmp_path, rows)
     txt = p.read_text(encoding="utf-8")
     assert "boom" in txt and "[OK](out/GOKE01/report.html)" in txt and "1,234" in txt
+
+
+def test_multi_disc_games_get_their_own_dump_folders(tmp_path):
+    """Both discs of a 2-disc game carry the same game id; disc 2 must not overwrite
+    disc 1 (which also made `verify` compare disc 1's image against disc 2's manifest)."""
+    from gcrip.rip import rip
+
+    folder = tmp_path / "roms"
+    folder.mkdir()
+    for n, name in ((0, "g (Disc 1).iso"), (1, "g (Disc 2).iso")):
+        (folder / name).write_bytes(
+            build_disc(
+                {f"data{n}.bin": bytes([n]) * 64},
+                game_id=b"GMDE01",
+                title=b"Two Disc Game",
+                disc_number=n,
+            )
+        )
+    out = tmp_path / "out"
+    d1 = rip(folder / "g (Disc 1).iso", out, quiet=True)
+    d2 = rip(folder / "g (Disc 2).iso", out, quiet=True)
+
+    assert d1.game_id == d2.game_id == "GMDE01"
+    assert d1.out_dir.name == "GMDE01" and d2.out_dir.name == "GMDE01_disc2"
+    assert d1.out_dir != d2.out_dir
+    # each folder describes its own disc, so verify() compares like with like
+    for d, n in ((d1, 0), (d2, 1)):
+        m = json.loads((d.out_dir / "disc_manifest.json").read_text(encoding="utf-8"))
+        assert m["game"]["disc_number"] == n
+        assert any(f["path"].endswith(f"data{n}.bin") for f in m["files"])
+
+
+def test_dump_dir_name_only_suffixes_later_discs():
+    from gcrip.rip import dump_dir_name
+
+    assert dump_dir_name("GMDE01", 0) == "GMDE01"  # disc 1 keeps existing dumps in place
+    assert dump_dir_name("GMDE01") == "GMDE01"
+    assert dump_dir_name("GMDE01", 1) == "GMDE01_disc2"
+    assert dump_dir_name("GMDE01", 3) == "GMDE01_disc4"

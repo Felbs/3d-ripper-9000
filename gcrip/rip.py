@@ -64,6 +64,12 @@ class TextureResult:
     error: str | None = None
 
 
+def dump_dir_name(game_id: str, disc_number: int = 0) -> str:
+    """Output folder for a disc: bare game id, plus `_disc<N>` for disc 2 and later
+    (`disc_number` is the raw header byte, 0-based)."""
+    return game_id if disc_number < 1 else f"{game_id}_disc{disc_number + 1}"
+
+
 @dataclass
 class RipResult:
     game_id: str
@@ -183,7 +189,10 @@ def rip(
         _log(quiet, f"[1/3] walking disc {image_path.name} ...")
         manifest = build_manifest(image, recurse=True, hash_files=True)
         game_id = manifest.game["id"]
-        game_dir = out_root / game_id
+        # Both discs of a 2-disc game share one game id; without the suffix the second
+        # disc overwrites the first (and `verify` then compares disc 1 against disc 2's
+        # manifest).  Disc 1 keeps the bare id so existing dumps stay where they are.
+        game_dir = out_root / dump_dir_name(game_id, manifest.game.get("disc_number", 0))
         game_dir.mkdir(parents=True, exist_ok=True)
         (game_dir / "disc_manifest.json").write_text(
             json.dumps(manifest.to_dict(), indent=1, ensure_ascii=False), encoding="utf-8"

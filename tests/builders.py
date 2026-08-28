@@ -150,6 +150,7 @@ def build_disc(
     game_id: bytes = b"GTST01",
     title: bytes = b"Test Disc",
     dirs: list[str] | None = None,
+    disc_number: int = 0,
 ) -> bytes:
     """Build a minimal GameCube disc image with the given files (paths like 'a/b.bin').
 
@@ -204,7 +205,7 @@ def build_disc(
 
     img = bytearray(data_pos)
     img[0:6] = game_id
-    img[6] = 0  # disc number
+    img[6] = disc_number  # 0-based: 0 is disc 1
     img[7] = 1  # revision
     img[0x1C:0x20] = struct.pack(">I", 0xC2339F3D)
     img[0x20 : 0x20 + len(title)] = title
