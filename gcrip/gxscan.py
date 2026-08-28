@@ -314,6 +314,7 @@ def _inline_mesh(blob: _Blob, dl: DisplayList, vb: np.ndarray, max_score: float)
     """Direct display lists (no index arrays): the vertex tuple holds the position itself
     as 3 x f32 (or 3 x s16) at some offset.  The triangle list is simply 0..V-1."""
     best: Mesh | None = None
+    best_key = 0.0
     v = vb.shape[0]
     idx = np.arange(v, dtype=np.uint32)
     tri = _triangulate(dl, idx)
@@ -329,9 +330,10 @@ def _inline_mesh(blob: _Blob, dl: DisplayList, vb: np.ndarray, max_score: float)
                 nz = np.abs(pos[pos != 0])
                 if nz.size and nz.min() < 1e-6:
                     continue
-            sc = _compactness(pos, tri) * (1.0 if kind == "f32" else 1.25)
-            if sc < max_score and (best is None or sc < best.compactness):
-                best = Mesh(dl, k, size, -1, "inline-" + kind, pos, tri, sc)
+            sc = _compactness(pos, tri)
+            key = sc * (1.0 if kind == "f32" else 1.25)  # f32 is the stronger evidence
+            if sc < max_score and (best is None or key < best_key):
+                best, best_key = Mesh(dl, k, size, -1, "inline-" + kind, pos, tri, sc), key
     return best
 
 
@@ -340,6 +342,7 @@ def best_mesh(blob: _Blob, dl: DisplayList, max_score: float = 2.5) -> Mesh | No
     vb = _vertex_bytes(data, dl)
     fields = infer_fields(vb)
     best: Mesh | None = _inline_mesh(blob, dl, vb, max_score) if dl.stride >= 6 else None
+    best_key = best.compactness * 1.25 if best is not None else 0.0
     for off, size in fields:
         idx = field_values(vb, off, size)
         needed = int(idx.max()) + 1
@@ -354,19 +357,23 @@ def best_mesh(blob: _Blob, dl: DisplayList, max_score: float = 2.5) -> Mesh | No
                 pos = np.frombuffer(data, dt, needed * 3, po).reshape(-1, 3).astype(np.float32)
                 if not np.all(np.isfinite(pos)):
                     continue
-                sc = _compactness(pos, tri) * (1.0 if kind == "f32" else 1.25)
-                if sc < max_score and (best is None or sc < best.compactness):
-                    best = Mesh(dl, off, size, po, kind, pos, tri, sc)
+                sc = _compactness(pos, tri)
+                key = sc * (1.0 if kind == "f32" else 1.25)
+                if sc < max_score and (best is None or key < best_key):
+                    best, best_key = Mesh(dl, off, size, po, kind, pos, tri, sc), key
     return best
 
 
 def _accept(m: Mesh) -> bool:
-    """Tiny meshes and s16 arrays are where noise can pass the score: any bytes read
-    as plausible s16, so those kinds need a stricter score."""
+    """Tiny meshes and s16 arrays are where noise can pass the score: any bytes read as
+    plausible s16, so an *indexed* s16 mesh must be big, multi-primitive and tight (the
+    Crash Tag Team Racing smoke run exported 12 sliver false positives of exactly this
+    kind from whole-archive blobs); inline s16 carries opcode evidence and stays looser."""
     if m.triangles < 20:
         return False
-    limit = 1.6 if "s16" in m.pos_kind else 2.2
-    return m.compactness < limit
+    if m.pos_kind == "s16":
+        return m.triangles >= 200 and len(m.dl.prims) >= 3 and m.compactness < 1.2
+    return m.compactness < 2.2
 
 
 def scan_blob(
