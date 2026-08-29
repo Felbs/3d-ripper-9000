@@ -127,3 +127,19 @@ by raw object data (state frames + tagged properties) and only later the package
 (SC1 seg0: 107 headers from 0x681c, CT: 172 magics from 0xa84c, versions 100/119 and
 396/114).  Object data blocks are interleaved with header groups; which block belongs to
 which package is the open question (the first entry's 26 KB cannot hold the map's 279 KB).
+
+SC1 `warlins.umd` mapped further (2026-08-29 evening): 36 zlib segments = one linearized pack
+per level (`0_0_2.unr` ... `menu.unr`, 11-22 MB inflated each, 443 MB total), each holding
+~110 package headers (sequential tables) interleaved with data blocks (after packages 36, 45,
+63, 106 in `0_0_2`).  `Sounds/MAPS.SM3` / `.LM3` / `*.LS3` are sound bundles (level names +
+`.wav` names), so meshes and textures live in the `.umd` data blocks.  The map's actors sit in
+the block after package 106 (state-frame signatures `[80-bf][80-bf] ff*8 00000000` from
+0x4fb101): the first three objects match export order and sizes exactly (LevelInfo0 211,
+PhysicsVolume4 85, EZoneInfo1 147) but the stream then diverges - the bundle stores objects
+in its own order with its own sizes, so export offsets / sizes / cumulative sums do not
+locate objects.  Viable next step: scan the block for state frames and parse tagged
+properties with the map package's name table (Location / Rotation / StaticMesh come out),
+then find the StaticMesh objects (props start with the `Materials` array) in the same or
+earlier blocks and test whether they follow their package's export order for name binding.
+Chaos Theory `.lin`: chunks `u32 csize | zlib` (416 chunks -> one 13.6 MB segment), versions
+100/119 and 396/114, 172 headers - a different engine build, not yet examined further.
