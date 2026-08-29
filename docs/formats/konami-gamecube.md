@@ -20,8 +20,10 @@
   rwID_IMAGE chunks each followed by rwID_TEXTURE (struct | name | mask) - `konami_pac.parse`
   handles both layouts.  Census disc 1: 434 scenes / 743k triangles, 663 textures, 400 of
   2,839 materials bound (world sectors carry no texture names in either game).
-  TMNT 3: Mutant Nightmare (G3QEA4): same AFS + LPAC wrappers but the 13k record payloads are
-  not RenderWare streams (records start with zero words: a different wrapper, open).
+  TMNT 3: Mutant Nightmare (G3QEA4, 2 discs): same AFS + LPAC wrappers with a 0x80-byte record
+  header (`plugins/lpac.py` probes 0x40 / 0x80 for the RenderWare chunk).  Census disc 1: 13,200
+  members (10,996 `.anm`, 1,103 packs, 351 `.dff`, 192 worlds) -> 543 scenes / 771k triangles,
+  1,105 textures, 450 of 2,050 materials bound.
   TMNT: Mutant Melee: `archive.dat` (219 MB, `1b 00 00 00 dc 16 00 00`), `.bkt`, `.mcp` - not
   AFS, open.  (TMNT 2007 is Ubisoft Jade and already rips.)
 - Frogger Beyond: `.bin` x35 (238 MB), `.mcp` 66 MB, `.bkt`; Frogger's Adventures similar.

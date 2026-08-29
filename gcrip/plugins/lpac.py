@@ -39,7 +39,14 @@ def expand(data: bytes) -> list[tuple[str, bytes]]:
             p = o + 4
             continue
         name = data[o + 16 : o + 64].split(b"\x00")[0].decode("latin-1", "replace")
-        body = data[o + 0x40 : o + 0x40 + size]
+        hdr = 0x40  # TMNT 2; TMNT 3 records carry a 0x80-byte header
+        if (
+            o + 0x80 + 12 <= len(data)
+            and not _rw_header(data, o + 0x40)
+            and _rw_header(data, o + 0x80)
+        ):
+            hdr = 0x80
+        body = data[o + hdr : o + hdr + size]
         if len(body) >= 12:
             rtype = struct.unpack_from("<I", body, 0)[0]
             ext = _EXT.get(rtype, "bin")
@@ -50,5 +57,13 @@ def expand(data: bytes) -> list[tuple[str, bytes]]:
             else:
                 seen[full] = 0
             out.append((full, body))
-        p = o + 0x40 + size
+        p = o + hdr + size
     return out
+
+
+def _rw_header(data: bytes, o: int) -> bool:
+    t, size, lib = struct.unpack_from("<3I", data, o)
+    new_style = (lib & 0xFFFF) == 0xFFFF and lib >> 16 <= 0x3FFF
+    return (
+        0 < t < 0x100 and 0 < size <= len(data) and (new_style or 0x1800_0000 <= lib < 0x1C10_0000)
+    )
