@@ -1,6 +1,19 @@
 # Traveller's Tales NU2 on GameCube (LEGO Star Wars 1/2, Crash: Wrath of Cortex, Finding Nemo, Super Monkey Ball Adventure, Narnia, Bionicle Heroes)
 
-Status 2026-08-29: mapped, NOT decoded (no plugin). Samples: LEGO Star Wars 1 (USA)
+Status 2026-08-29 (later): the LSW1 `.gsc` / `.csc` vertex stream IS decoded (`gcrip/formats/nu2.py`,
+`gcrip/plugins/nu2.py`): inside OBJ0 every mesh is a run of tagged blocks - `03 01 00 01 | u8
+fmt|0x80, u8 count, u8 0x6c` + count x `f32 x y z nz`; `01 00 00 05 | .., count, 0x6d` + count x
+`s16 u v nx ny` (/4096); optional `00 00 00 05 | .., count, 0x6e` RGBA8 colours; optional `04 80
+count 65` second UV set; `01 01 00 01 00 03 00 14` ends the mesh. Each block is one triangle
+strip in vertex order (no index list; 255 verts max per block, hence 400+ blocks per model).
+Verified: Gungan Bongo 404 blocks / 15.5k tris, Pod Race level chunk 420 blocks. Materials /
+texture binding (MS00 + the 16-byte descriptors `d2 80 01 6c | count 80 .. | 00 40 02 30 | 12 05`
+before each block) still open -> meshes export untextured with UVs. The same stream appears in
+Bionicle Heroes `.csc` and a few Finding Nemo `.nus`; NOT in LSW1 `.nus` (chunk sizes stored
+negated, geometry encoded differently), Crash WoC / Nemo `.hgo`, SMB Adventure `.chr`, LSW2 /
+Narnia `.gcm` - those variants are still open.
+
+Earlier mapping (kept for the containers): Samples: LEGO Star Wars 1 (USA)
 `files/Chars/GunganBongo/gunganbongo.{gsc,nus,ghg}`, `files/Levels/.../PodRace_A/a.gsc`.
 
 ## Files on the LSW1 disc (6219 files)

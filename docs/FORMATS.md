@@ -47,6 +47,7 @@ Chart of how these plug into the pipeline: [PIPELINE.md](PIPELINE.md) section 7.
 | Sega PRS, SA2B chunk models (big-endian Ninja), GVM / GVR | Sonic Adventure 2: Battle | rigged characters, textures (stages open) | `gcrip/plugins/segaprs.py`, `sa2b.py`, `gvm.py`, `gcrip/formats/prs.py`, `sa2b.py`, `gvr.py` | [formats/sonic-team-gamecube.md](formats/sonic-team-gamecube.md) |
 | Nintendo REL modules + SA Tools split tables: SADX Basic models / land tables, SA2B stage land tables (Ginja) | Sonic Adventure DX, Sonic Adventure 2: Battle stages | characters rigged, stages textured (SADX stage textures open) | `gcrip/plugins/sadx.py`, `gcrip/formats/rel.py`, `satools.py`, `sadx.py`, `gcrip/data/satools/` | [formats/sonic-team-gamecube.md](formats/sonic-team-gamecube.md) |
 | PSO BML, NJCM (GC order), GJCM "Ginja" | Phantasy Star Online Ep I & II (+ Plus) | rigged models, textures (`.rel` levels open) | `gcrip/plugins/bml.py`, `ninja_gc.py`, `gcrip/formats/bml.py`, `ginja.py` | same note |
+| Traveller's Tales NU2 vertex stream (`03 01 00 01` blocks in NU20 `.gsc` / `.csc`) | LEGO Star Wars: The Video Game (chars + levels), Bionicle Heroes cutscene scenes | meshes with UVs, normals, colours (materials / textures open) | `gcrip/plugins/nu2.py`, `gcrip/formats/nu2.py` | [formats/tt-nu2-gamecube.md](formats/tt-nu2-gamecube.md) |
 | Dreamcast Ninja (NJ / NJCM / NJBM, PVR, AFS, PRS) | Dreamcast library (dcrip) | rigged models, clips | `dcrip/` | |
 
 ## Universal fallback
@@ -62,7 +63,7 @@ Chart of how these plug into the pipeline: [PIPELINE.md](PIPELINE.md) section 7.
 | --- | --- | --- | --- |
 | Ubisoft UE2 GameCube builds (`.umd` zlib archives of Unreal packages, `.lin`) | Splinter Cell x3 (5 dumps), Rainbow Six 3, Ghost Recon 2, XIII | containers understood, package reader needed | [formats/ubisoft-gamecube.md](formats/ubisoft-gamecube.md) |
 | Ubisoft OpenSpace / CPA (`.lvl` + `.ptr`) | Rayman 3, Rayman Arena | reference loader exists (byvar/raymap) | same note |
-| Traveller's Tales NU2 (NU20 chunks, `.ghg`) | LEGO Star Wars 1-2, Crash WoC, Finding Nemo, SMB Adventure, Narnia, Bionicle Heroes | chunk tree mapped, OBJ0 mesh records open | [formats/tt-nu2-gamecube.md](formats/tt-nu2-gamecube.md) |
+| Traveller's Tales later / older variants: LSW2 & Narnia `.gcm`/`.cc2`, Crash WoC & Nemo `.hgo`/`.bsa`, SMB Adventure `.chr`/`.chg`, LSW1 `.nus` scenes, `.ghg` | LEGO Star Wars II, Narnia, Crash WoC, Finding Nemo, SMB Adventure | containers seen, vertex encodings differ from the `.gsc` stream | [formats/tt-nu2-gamecube.md](formats/tt-nu2-gamecube.md) |
 | Avalanche DBL / DBU | Tak 1-3, Chicken Little, DBZ Sagas, Rugrats | container + texture records mapped | [formats/avalanche-dbl-gamecube.md](formats/avalanche-dbl-gamecube.md) |
 | Sega PSO `.rel` levels, Billy Hatcher `.prd`/`.arc` (PRS + `U:8-` archives of Ginja objects), Sonic Riders `80 00 00 01` containers | PSO, Billy Hatcher, Sonic Riders | containers mapped | [formats/sonic-team-gamecube.md](formats/sonic-team-gamecube.md) |
 | Treyarch (Spider-Man 1-2, Ultimate Spider-Man, ...) | 7 | parked by decision | |
