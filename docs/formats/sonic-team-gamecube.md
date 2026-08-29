@@ -83,17 +83,54 @@ models (Tails 1,651 tris / 68 joints), `stg00.rel` Emerald Coast 4,460 tris (sta
 archive name not in the table - BEACH01/02/03.GVM by act - open). Entry `texture=NAME` ->
 `NAME.gvm`.
 
-## Billy Hatcher and the Giant Egg (GEZE8P) - `.prd` / `.arc` (mapped, not decoded)
+## Billy Hatcher and the Giant Egg (GEZE8P) - `.prd` / `.arc` / `.lnd` (ripped 2026-08-29)
 
-`.prd` (91 files, 295 MB): `u32 1 | u32 unpacked | u32 packed | u32 | u32` then a standard
-Sega PRS stream from 0x20 that inflates to a `Uª8-` ("U:8-") archive: `magic | u32 table
-offset (0x20) | u32 | u32 data offset (0x80)`, 0xcc padding, entries with member names
-(`ae_msg_window.arc`, `mes_tv_config_e.bin`). `.arc` members (65 loose ones too, e.g.
-`item_ani_btfly2.arc`): `u32 size | u32 texture (GVM) offset | u32 0x38 | 0 | 0 | "0100" |
-... | u32 offsets 0x20, 0x24, 0x1474, 0x14a0, u32 1, 0x1700, 0x40, 0x11e0`; the model is a
-Ginja object (vertex sets `01 0c 00 28 ... 02 0c 00 28 ... 05 04 00 56 ... ff` at 0xb8+, GX
-display lists) with the GVM at the texture offset. Next step: locate the NJS_OBJECT /
-attach pointer in the `.arc` header and feed `formats/ginja.GinjaParser`.
+`.prd` (91 files, 295 MB; `gcrip/formats/prd.py`): `u32 1 | u32 unpacked | u32 packed | u32
+| u32` then a standard Sega PRS stream from 0x20 that inflates to a `Uª8-` ("U:8-")
+archive: `magic | u32 table (0x20) | u32 names size | u32 data offset`; at the table `u32 1 |
+u32 0 | u32 count + 1` then `count` entries `u32 name offset, u32 offset, u32 size` (name
+offsets relative to the byte after the entries).  Members per stage package: `stg_*.lnd`
+terrain, `stg_*.mc2` ("CSNI" collision, not ripped), `geobj_*.arc` placed objects,
+`ge_player*.arc` Billy variants, `ar_ene_*.arc` enemies + sibling `ene_*.gvm` textures,
+`egg_*.arc`, `set_*.bin` placement, `ptcl2_*` particles, `ae_*.arc` UI textures.
+
+`.arc` (`gcrip/formats/billy.py`): `u32 size | u32 pointer table (relocation list at the
+end) | u32 | 0 | 0 | "0100" | 0 | 0`, a resource record list at 0x20 (first word = type:
+0x20 model, 0x10 UI, 0x1c animated model, 0x1a0 player, 0x84080 motion-only
+`ge_player.arc`, ...).  **Every pointer is relative to 0x20**, so `data[0x20:]` is a plain
+Ginja buffer.  Objects are NJS_OBJECTs (`u32 flags | u32 attach | f32 pos[3] | s32 BAMS
+rot[3] | f32 scale[3] | u32 child | u32 sibling`) padded to 0x38 with `FD FD FD FD`; roots
+are found by scanning for that pad (objects not referenced as child/sibling).  The attach is
+SA Tools' GCAttach (`vertex sets | skin sets | opaque meshes | translucent meshes | u16
+counts | bounds`).  Vertex sets and meshes are the PSO `GJCM` layout
+(`gcrip/formats/ginja.py`); mesh parameter type 0 (`u16 attribute | u8 | u8 fraction bits`)
+gives the fixed-point scale of `s16` vertex sets (positions/normals/uvs all `/256` here).
+
+Skinning (new for Ginja): mesh nodes of a character carry only a UV set and index the GX
+vertex cache; bone nodes carry skin-set records `u16 type | u16 size | u16 slot | u16 count
+| u32 rows | u32 weights` where rows are `s16 pos[3] + s16 nrm[3]` in bone space and weights
+are `u16 slot, u16 weight/255` pairs: type 0 = single bone (slot + i, weight 1), 1 = first
+weighted write at slot + i, 2 = accumulate into the named slot.  Because the drawing node
+comes *before* its bones, `dcrip.ninja_eval` evaluates `kind="ginja"` trees in two passes
+(all cache writes, then draws).  Results: Billy 141 joints / 2.3k tris, Sonic 51 joints,
+zako enemies (root object directly after the record list at 0x40), bosses (240 joints).
+Textures: embedded `GVMH` or sibling `<name minus ar_>.gvm`.  Disc census: 1,247 arcs ->
+5,053 rigged scenes, 852k triangles, 0 failures; empties are particles / params / events.
+
+`stg_*.lnd` terrain (`gcrip/formats/billy_lnd.py`): same `0100` header; 0x20: `u32 level |
+u32 n extra | u32 0x18 | u32 extra ptr | u32 0x20 | u32 GVM | u32 extra[n] | u32 texlist |
+u32 count` (12-byte NJS_TEXNAME entries follow; GVM in texlist order).  level -> parts:
+`(count, ptr)` pairs for materials (`(1, ptr)` -> 40 bytes, word 9 = texlist index),
+vertex pools (`u32 0 | u32 slots`, six slots `u8 0 | u8 kind | u16 count | u32 data`:
+f32 positions, f32 normals, RGBA8 colours, colour 1, s16/256 uvs, uv 1), display lists
+(`(0, ptr)` -> `flags | data' | size' | data | size`, one pair used; flags bit 0 pos, 1 nrm,
+2 col, 3 col1, 4 uv, 5 uv1 = one u16 index per set bit in every strip row), groups (64
+bytes, bounds), then `u32 1 | u32 batch count | u32 batches` (`kind 1 / 2 / 4 (translucent)
+| count | entries`; entries `u32 group | u32 pool | u32 material | 0 | u32 display list`).
+Stages: 19-23k triangles, 32-63 textures each; boss arenas 4k.
+
+Open: `ge_player.arc` motions (type 0x84080, keyframe blocks with scale triplets), `.mc2`
+collision, the alternate-lighting pool (`ge_player1n.arc` "night" variants use it).
 
 ## Sonic Riders (GXEE8P)
 
@@ -103,5 +140,5 @@ attach pointer in the `.arc` header and feed `formats/ginja.GinjaParser`.
 ## Open
 
 - SADX (GXSE8P): models are Basic/Chunk data inside `.rel` modules + `.bin`; textures `.gvm`.
-- Billy Hatcher `.prd`/`.arc`; PSO Ep I&II / III (`.rel` + `.xj`/`.nj` in .bin?); Sonic Riders.
+- PSO Ep I&II / III (`.rel` + `.xj`/`.nj` in .bin?); Sonic Riders; Billy Hatcher motions.
 - SA2B `.rel` stage land tables, `*mtn.prs` motions.

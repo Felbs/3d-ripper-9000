@@ -14,7 +14,7 @@ flowchart LR
     WALK --> MAN["disc_manifest.json<br/>every file, format, hash"]
     MAN --> RIP["2  Rip loop<br/>gcrip.rip"]
     RIP -->|"BMD / BDL"| J3D["3  J3D parse<br/>gcrip.formats.j3d"]
-    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, eurocom, hsf, sa2b, sadx, ninja_gc, nu2, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
+    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, eurocom, hsf, sa2b, sadx, ninja_gc, billy, nu2, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
     RIP -->|"nothing claims it"| GX["3c  Structure scan (fallback)<br/>gcrip.gxscan: GX display lists,<br/>vertex + index arrays"]
     J3D --> ANIM["4  Clip matching<br/>rip._AnimIndex + j3d_anim"]
     ANIM --> GLTF["5  glTF export<br/>gcrip.export.gltf / ripcore.gltf"]
@@ -182,6 +182,7 @@ flowchart LR
         BML["PSO .bml<br/>plugins.bml"] --> NJ["NJCM / GJCM Ninja + Ginja<br/>plugins.ninja_gc"]
         GVM["GVM / GVR<br/>plugins.gvm"]
         REL[".rel modules + SA Tools tables<br/>plugins.sadx"] --> SADX["Basic / Ginja land tables<br/>formats.sadx"]
+        PRD["Billy Hatcher .prd (PRS + U:8-)<br/>plugins.billy"] --> BILLY[".arc Ginja trees + skins,<br/>.lnd terrain<br/>formats.billy, billy_lnd"]
     end
     subgraph KROME["Krome (Merkury)"]
         RKV["RKV v1 / RKV2<br/>plugins.rkv"] --> MDL2["MDL2 .gmd<br/>plugins.mdl2"]
@@ -208,7 +209,7 @@ flowchart LR
         NU2["TT NU20 .gsc/.csc<br/>plugins.nu2"]
         DBL["Avalanche .dbl/.dbu<br/>plugins.dbl"] --> GX
     end
-    EAGL & EBO & SA2B & SADX & RW & NJ & MDL2 & MDL3 & HSD & EDB & HSF & P3D & DAS & BF & PRE & NU2 & GX --> SCENE["ripcore Scene → glTF"]
+    EAGL & EBO & SA2B & SADX & BILLY & RW & NJ & MDL2 & MDL3 & HSD & EDB & HSF & P3D & DAS & BF & PRE & NU2 & GX --> SCENE["ripcore Scene → glTF"]
 ```
 
 
@@ -219,7 +220,7 @@ primitives, decoded textures, clips) and hands them to the same exporter, so the
 ```mermaid
 flowchart TD
     F["file no J3D parser wants"] --> D{"plugins_for(path, head, size)"}
-    D -->|"retro / hsd / gma / pikmin / lm / sfa / jade /<br/>re4 / neversoft / renderware / ea / eagl / ebo / p3d / mdl2 / mdl3 / eurocom / hsf / sa2b / ninja_gc / ttyd / feporr"| R["real parser<br/>meshes + materials + textures<br/>(+ rig, + clips where the format has them)"]
+    D -->|"retro / hsd / gma / pikmin / lm / sfa / jade /<br/>re4 / neversoft / renderware / ea / eagl / ebo / p3d / mdl2 / mdl3 / eurocom / hsf / sa2b / ninja_gc / billy / ttyd / feporr"| R["real parser<br/>meshes + materials + textures<br/>(+ rig, + clips where the format has them)"]
     D -->|"no ordinary plugin"| S["gx (fallback)<br/>entropy < 7.5 → gxscan.scan_blob(budget)"]
     S --> L["GX display lists<br/>opcode · count · index tuples,<br/>stride chained, NOP padding"]
     S --> N["neutral meshes<br/>f32 vertex run + u16 index run"]
@@ -317,6 +318,17 @@ PRS-compressed Ninja model + GVM pairs) and ships `.nj` files whose `NJCM` block
 Dreamcast chunk format in GameCube byte order, plus `GJCM` "Ginja" blocks - GX-native
 attaches with vertex sets, parameter lists and raw display lists (`formats/ginja.py`);
 `plugins/ninja_gc.py` feeds both through dcrip's Ninja scene builder.
+Billy Hatcher and the Giant Egg is the same Ginja lineage one step further: its `.prd`
+packages are PRS streams over a `U:8-` archive (`formats/prd.py`), the `.arc` members are
+Ninja object trees whose pointers are relative to 0x20 (`formats/billy.py` slices the file
+and finds the tree roots by the `FDFDFDFD` pad after every NJS_OBJECT), and skinned
+characters use the attach's skin-set pointer - bone nodes write `s16` position/normal rows
+with weights into the shared GX vertex cache that the mesh node then indexes, which
+`formats/ginja.py` now decodes and `dcrip.ninja_eval` evaluates in two passes (all writes,
+then draws).  Stage terrain (`stg_*.lnd`, `formats/billy_lnd.py`) is not an object tree:
+one vertex pool (f32 positions, RGBA colours, s16 UVs) drawn by ~1,300 raw GX display
+lists through batch entries that name the material, whose word 9 indexes the file's texlist
+/ GVM.
 
 The fallback is a map as much as a rip: its hits say where in an archive the models live
 and how the vertices are laid out, which is most of what a real plugin needs. Multi-platform
