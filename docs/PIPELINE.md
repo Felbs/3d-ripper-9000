@@ -14,7 +14,7 @@ flowchart LR
     WALK --> MAN["disc_manifest.json<br/>every file, format, hash"]
     MAN --> RIP["2  Rip loop<br/>gcrip.rip"]
     RIP -->|"BMD / BDL"| J3D["3  J3D parse<br/>gcrip.formats.j3d"]
-    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, eurocom, hsf, sa2b, sadx, ninja_gc, billy, nu2, ttdisp, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
+    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, eurocom, hsf, sa2b, sadx, ninja_gc, billy, nu2, ttdisp, unreal, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
     RIP -->|"nothing claims it"| GX["3c  Structure scan (fallback)<br/>gcrip.gxscan: GX display lists,<br/>vertex + index arrays"]
     J3D --> ANIM["4  Clip matching<br/>rip._AnimIndex + j3d_anim"]
     ANIM --> GLTF["5  glTF export<br/>gcrip.export.gltf / ripcore.gltf"]
@@ -208,9 +208,10 @@ flowchart LR
         GCP["Blitz .gcp<br/>plugins.blitz"] --> GX["structure scan<br/>plugins.gx"]
         NU2["TT NU20 .gsc/.csc (LSW1)<br/>plugins.nu2"]
         TTPK["TT .fpk/.cpk packs<br/>plugins.ttdisp"] --> DISP["DISP programs .csc/.chg<br/>(LSW2, Narnia)<br/>formats.ttdisp"]
+        UMD["Ubisoft .umd/.lin<br/>chunked zlib<br/>plugins.unreal"] --> UE2["UE2 packages .usx/.utx<br/>StaticMesh + Texture<br/>formats.unreal"]
         DBL["Avalanche .dbl/.dbu<br/>plugins.dbl"] --> GX
     end
-    EAGL & EBO & SA2B & SADX & BILLY & RW & NJ & MDL2 & MDL3 & HSD & EDB & HSF & P3D & DAS & BF & PRE & NU2 & DISP & GX --> SCENE["ripcore Scene → glTF"]
+    EAGL & EBO & SA2B & SADX & BILLY & RW & NJ & MDL2 & MDL3 & HSD & EDB & HSF & P3D & DAS & BF & PRE & NU2 & DISP & UE2 & GX --> SCENE["ripcore Scene → glTF"]
 ```
 
 
@@ -221,7 +222,7 @@ primitives, decoded textures, clips) and hands them to the same exporter, so the
 ```mermaid
 flowchart TD
     F["file no J3D parser wants"] --> D{"plugins_for(path, head, size)"}
-    D -->|"retro / hsd / gma / pikmin / lm / sfa / jade /<br/>re4 / neversoft / renderware / ea / eagl / ebo / p3d / mdl2 / mdl3 / eurocom / hsf / sa2b / ninja_gc / billy / ttdisp / ttyd / feporr"| R["real parser<br/>meshes + materials + textures<br/>(+ rig, + clips where the format has them)"]
+    D -->|"retro / hsd / gma / pikmin / lm / sfa / jade /<br/>re4 / neversoft / renderware / ea / eagl / ebo / p3d / mdl2 / mdl3 / eurocom / hsf / sa2b / ninja_gc / billy / ttdisp / unreal / ttyd / feporr"| R["real parser<br/>meshes + materials + textures<br/>(+ rig, + clips where the format has them)"]
     D -->|"no ordinary plugin"| S["gx (fallback)<br/>entropy < 7.5 → gxscan.scan_blob(budget)"]
     S --> L["GX display lists<br/>opcode · count · index tuples,<br/>stride chained, NOP padding"]
     S --> N["neutral meshes<br/>f32 vertex run + u16 index run"]
@@ -341,6 +342,18 @@ draw table at the head of the chunk maps command indices to materials; `.chg` ch
 files wrap the same chunk in a skeleton (bone names, parents, bind matrices) whose per-bone
 lists name the draws, so LEGO minifigs come out rigged; `.fpk` / `.cpk` packs are plain
 28-byte-entry containers.
+
+Ubisoft's Unreal Engine 2 titles (the Splinter Cell series, Rainbow Six 3, Ghost Recon 2,
+XIII) are read as Unreal packages (`formats/unreal.py`): the header's name / import /
+export tables with UE's compact-index encoding in either byte order, tagged property
+lists, and the Splinter Cell-family object layouts - a simplified `StaticMesh` (32-byte
+position / normal / UV vertices, a u16 triangle strip, wireframe edges and per-material
+sections) and `Texture` mips (DXT1 / DXT3 / DXT5 blocks, palettised P8).  Pandora Tomorrow
+ships its `.usx` mesh and `.utx` texture packages uncompressed and little-endian, so
+`plugins/unreal.py` rips them directly, binding materials to the texture package named by
+each import; the chunked-zlib `.umd` / `.lin` archives of the other titles are expanded to
+their member packages, but their big-endian map packages use a table encoding that is not
+decoded yet.
 
 The fallback is a map as much as a rip: its hits say where in an archive the models live
 and how the vertices are laid out, which is most of what a real plugin needs. Multi-platform
