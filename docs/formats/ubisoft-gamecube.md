@@ -90,3 +90,40 @@ Beyond Good & Evil and Prince of Persia: Sands of Time / Warrior Within / The Tw
 already rip through the jade plugin (`files/prince.bf` BIG file -> ~2.5k `.bin` members;
 Warrior Within check 2026-08-29: 301 members -> 3,067 scenes / 4.19 M triangles). Peter
 Jackson's King Kong (GWKE41) is textures-only: its later Jade build is not decoded yet.
+
+## Level assembly (2026-08-29)
+
+The "big-endian map tables" were a red herring. Pandora Tomorrow's `.lin` files are plain
+load-order indexes: `u32 0 | u32 0 | u32 1 | u32 name length | "../datagcn/Maps/x.unr" |
+package ...` repeated per entry, and every entry is a package with header + name table +
+import table + export table stored *sequentially* (the header's table offsets are the
+original file's, not the bundle's; export data offsets stay relative to the original file).
+The map / texture / static-mesh entries carry no object data (only `animations/*.ukx` do) -
+the real packages are the standalone `.unr` / `.utx` / `.usx` files, all little-endian,
+standard v102/33 layout.
+
+Map package (`dataGCN/Maps/4_3_1_B_TV.unr`, 912 KB): 2,924 exports - ReachSpec 950,
+StaticMeshInstance 447 (per-instance lighting), StaticMeshActor 333, PathNode 249, Model /
+Polys 120 (BSP), CollisionMeshActor 113, Brush 91, SpriteEmitter 81, Light 71.  Actor exports
+have `RF_HasStack` (0x02000000): the data starts with the state frame `index node | index
+state | u64 probe mask | u32 latent action | index offset (if node)` (15 bytes here) and only
+then the tagged properties.  Placement properties: `StaticMesh` (object -> import
+`<usx package>.<group>.<mesh>`; `Col` groups / `COL*` names and CollisionMeshActor are
+collision), `Location` (Vector), `Rotation` (Rotator pitch/yaw/roll, 65536 = 360 deg, UE's
+FRotationMatrix with row vectors: world = local @ M), `DrawScale`, `DrawScale3D`, `PrePivot`.
+Other placed classes: Mover, ESwingingDoor, ELgtSpot, ELgt1Lamp, EGamePlayObjectLight,
+ELightSwitch.  Unreal is X forward / Y right / Z up left-handed -> glTF by (x, z, y) with the
+winding flipped (`plugins/unreal.py: _yup`, applied to standalone `.usx` scenes as well).
+
+Census (plugins/unreal.py `_level`): 34 maps, 11,830 actors placed, 0 missing meshes, 818,993
+triangles, 1,633 of 2,287 materials textured, 7 s for the disc.  Open: BSP world geometry
+(`Model` exports: UModel Bounds / Vectors / Points / Nodes / Surfs / Verts; brush `Polys`
+FPoly arrays), sky-dome actors are placed as-is (huge), Shader / Combiner materials.
+
+Bundles of the other titles (same day): SC1 `warlins.umd` (190 MB, chunks `u32 usize 0x18000
+| u32 csize | zlib`, segments end with (0, 0)) and Chaos Theory `.lin` (chunks `u32 csize |
+zlib`, 416 chunks -> one 13.6 MB segment) start with an entry name (`0a "0_0_2.unr"`) followed
+by raw object data (state frames + tagged properties) and only later the package headers
+(SC1 seg0: 107 headers from 0x681c, CT: 172 magics from 0xa84c, versions 100/119 and
+396/114).  Object data blocks are interleaved with header groups; which block belongs to
+which package is the open question (the first entry's 26 KB cannot hold the map's 279 KB).

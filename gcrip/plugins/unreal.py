@@ -160,6 +160,173 @@ def _strip_triangles(idx: np.ndarray, first: int, count: int) -> np.ndarray:
     return np.array(tris, np.uint32).reshape(-1, 3)
 
 
+def _yup(a: np.ndarray) -> np.ndarray:
+    """Unreal (X forward, Y right, Z up, left-handed) -> glTF (Y up, right-handed)."""
+    return np.ascontiguousarray(a[:, [0, 2, 1]], dtype=np.float32)
+
+
+def _add_mesh(
+    scene: Scene,
+    pkg: unreal.Package,
+    m: unreal.StaticMesh,
+    src,
+    own: dict[str, np.ndarray | None],
+    mats: dict[str, int],
+    xform: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] | None = None,
+) -> int:
+    """Append the mesh's sections to ``scene`` (materials shared through ``mats``), optionally
+    placed by ``xform`` = (scale, rotation matrix, translation, pre-pivot).  Returns the
+    number of triangles added."""
+    added = 0
+    for s in m.sections:
+        tris = _strip_triangles(
+            m.indices, s.first_index, min(s.triangles, len(m.indices) - s.first_index - 2)
+        )
+        if len(tris) == 0:
+            continue
+        tex = None
+        key = f"{id(pkg)}:{s.material}"
+        if s.material < 0 and -s.material - 1 < len(pkg.imports):
+            imp = pkg.imports[-s.material - 1]
+            package = unreal.full_name(pkg, imp.package).split(".", 1)[0]
+            key = f"{package}.{imp.name}"
+            if key not in mats:
+                rgba = own.get(imp.name)
+                if rgba is None:
+                    rgba = _sibling_textures(src, package).get(imp.name)
+                if rgba is not None:
+                    tex = key
+                    scene.textures.setdefault(tex, rgba)
+        if key not in mats:
+            label = tex or unreal.object_name(pkg, s.material) or f"mat{len(mats)}"
+            alpha = bool(tex) and bool(np.any(scene.textures[tex][..., 3] < 255))
+            scene.materials.append(
+                MaterialDef(name=label, texture=tex, alpha_blend=alpha, double_sided=True)
+            )
+            mats[key] = len(scene.materials) - 1
+        used = np.unique(tris)
+        remap = np.zeros(int(used.max()) + 1, np.uint32)
+        remap[used] = np.arange(len(used), dtype=np.uint32)
+        pos = m.positions[used].astype(np.float64)
+        nrm = m.normals[used].astype(np.float64)
+        if xform is not None:
+            scale, rot, loc, pivot = xform
+            pos = ((pos - pivot) * scale) @ rot + loc
+            nrm = nrm @ rot
+            ln = np.linalg.norm(nrm, axis=1, keepdims=True)
+            nrm = np.divide(nrm, ln, out=np.zeros_like(nrm), where=ln > 0)
+        scene.primitives.append(
+            Primitive(
+                material=mats[key],
+                positions=_yup(pos),
+                indices=remap[tris[:, [0, 2, 1]].reshape(-1)],
+                normals=_yup(nrm),
+                uvs=m.uvs[used],
+            )
+        )
+        added += len(tris)
+    return added
+
+
+_pkg_cache: dict[str, tuple[unreal.Package, bytes, dict] | None] = {}
+
+
+def _sibling_package(src, package: str, ext: str):
+    """(Package, bytes, own textures) of ``<package><ext>`` found anywhere on the disc."""
+    if src is None:
+        return None
+    key = package.lower() + ext
+    if key in _pkg_cache:
+        return _pkg_cache[key]
+    found = None
+    by_path = getattr(src, "by_path", None) or {}
+    for path in by_path:
+        if path.lower().rsplit("/", 1)[-1] == key:
+            try:
+                blob = src.get(path)
+                pkg = unreal.parse(blob)
+                own = (
+                    _package_textures(pkg, blob)
+                    if any(e.class_name == "Texture" for e in pkg.exports)
+                    else {}
+                )
+                found = (pkg, blob, own)
+            except Exception:  # noqa: BLE001
+                found = None
+            break
+    _pkg_cache[key] = found
+    return found
+
+
+_mesh_cache: dict[str, unreal.StaticMesh | None] = {}
+_SKIP_ACTORS = {"CollisionMeshActor"}
+
+
+def _level(pkg: unreal.Package, data: bytes, name: str, src) -> list[Scene]:
+    """Place every actor with a StaticMesh property (StaticMeshActor, Mover, lamps ...) using
+    its Location / Rotation / DrawScale / DrawScale3D / PrePivot; meshes come from the
+    ``<package>.usx`` siblings.  Collision meshes (CollisionMeshActor, ``Col`` groups) are
+    skipped."""
+    scene = Scene(name=name)
+    mats: dict[str, int] = {}
+    placed = missing = tris = 0
+    packages: set[str] = set()
+    for e in pkg.exports:
+        if not e.flags & unreal.RF_HAS_STACK or e.class_name in _SKIP_ACTORS:
+            continue
+        try:
+            props = unreal.actor_props(pkg, data, e)
+        except (struct.error, IndexError, ValueError):
+            continue
+        ref = props.get("StaticMesh")
+        if ref is None or ref[0] != 5 or not ref[2]:
+            continue
+        full = unreal.full_name(pkg, ref[2])
+        parts = full.split(".")
+        if len(parts) < 2 or "Col" in parts[1:-1] or parts[-1].upper().startswith("COL"):
+            continue
+        package, mesh_name = parts[0], parts[-1]
+        ckey = f"{package}.{mesh_name}".lower()
+        if ckey not in _mesh_cache:
+            m = None
+            found = _sibling_package(src, package, ".usx")
+            if found is not None:
+                upkg, udata, _own = found
+                for ue in upkg.exports:
+                    if ue.class_name == "StaticMesh" and ue.name.lower() == mesh_name.lower():
+                        try:
+                            m = unreal.static_mesh(upkg, udata, ue)
+                        except (struct.error, IndexError, ValueError):
+                            m = None
+                        break
+            _mesh_cache[ckey] = m if m is not None and m.sections else None
+        m = _mesh_cache[ckey]
+        if m is None:
+            missing += 1
+            continue
+        upkg, _udata, own = _sibling_package(src, package, ".usx")
+        o = pkg.order
+        scale = np.array([props["DrawScale"][2]] * 3 if "DrawScale" in props else [1.0] * 3)
+        scale = scale * unreal.vec3(props.get("DrawScale3D"), o, (1.0, 1.0, 1.0))
+        rot = unreal.rotation_matrix(*unreal.rotator(props.get("Rotation"), o))
+        loc = unreal.vec3(props.get("Location"), o)
+        pivot = unreal.vec3(props.get("PrePivot"), o)
+        tris += _add_mesh(scene, upkg, m, src, own, mats, (scale, rot, loc, pivot))
+        placed += 1
+        packages.add(package)
+    if not scene.primitives:
+        return []
+    scene.extras = {
+        "format": "unreal-level",
+        "version": pkg.version,
+        "actors": placed,
+        "missing_meshes": missing,
+        "triangles": tris,
+        "mesh_packages": sorted(packages),
+    }
+    return [scene]
+
+
 def extract(data: bytes, path: str, src) -> list[Scene]:
     try:
         pkg = unreal.parse(data)
@@ -168,6 +335,10 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
     name = posixpath.basename(path).rsplit(".", 1)[0]
     meshes = [e for e in pkg.exports if e.class_name == "StaticMesh"]
     if not meshes:
+        if any(e.flags & unreal.RF_HAS_STACK for e in pkg.exports):
+            level = _level(pkg, data, name, src)
+            if level:
+                return level
         texs = {k: v for k, v in _package_textures(pkg, data).items() if v is not None}
         if not texs:
             return []
@@ -187,42 +358,7 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
         if m is None or not m.sections:
             continue
         scene = Scene(name=e.name if len(meshes) > 1 else name)
-        mats: dict[int, int] = {}
-        for s in m.sections:
-            tris = _strip_triangles(
-                m.indices, s.first_index, min(s.triangles, len(m.indices) - s.first_index - 2)
-            )
-            if len(tris) == 0:
-                continue
-            if s.material not in mats:
-                tex = None
-                if s.material < 0 and -s.material - 1 < len(pkg.imports):
-                    imp = pkg.imports[-s.material - 1]
-                    package = unreal.full_name(pkg, imp.package).split(".", 1)[0]
-                    rgba = own.get(imp.name)
-                    if rgba is None:
-                        rgba = _sibling_textures(src, package).get(imp.name)
-                    if rgba is not None:
-                        tex = f"{package}.{imp.name}"
-                        scene.textures.setdefault(tex, rgba)
-                label = tex or unreal.object_name(pkg, s.material) or f"mat{len(mats)}"
-                alpha = bool(tex) and bool(np.any(scene.textures[tex][..., 3] < 255))
-                scene.materials.append(
-                    MaterialDef(name=label, texture=tex, alpha_blend=alpha, double_sided=True)
-                )
-                mats[s.material] = len(scene.materials) - 1
-            used = np.unique(tris)
-            remap = np.zeros(int(used.max()) + 1, np.uint32)
-            remap[used] = np.arange(len(used), dtype=np.uint32)
-            scene.primitives.append(
-                Primitive(
-                    material=mats[s.material],
-                    positions=m.positions[used],
-                    indices=remap[tris.reshape(-1)],
-                    normals=m.normals[used],
-                    uvs=m.uvs[used],
-                )
-            )
+        _add_mesh(scene, pkg, m, src, own, {})
         if scene.primitives:
             scene.extras = {
                 "format": "unreal-staticmesh",

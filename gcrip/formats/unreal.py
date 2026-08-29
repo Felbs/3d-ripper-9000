@@ -245,6 +245,56 @@ def read_props(r: Reader, pkg: Package) -> list[tuple]:
     return out
 
 
+RF_HAS_STACK = 0x02000000
+
+
+def actor_props(pkg: Package, d: bytes, e: Export) -> dict[str, tuple]:
+    """Tagged properties of an actor export (first occurrence per name) as name -> (type,
+    struct name, value).  Exports with ``RF_HasStack`` start with the state frame ``index
+    node | index state node | u64 probe mask | u32 latent action | index offset (node != 0)``."""
+    r = Reader(d, e.offset, pkg.order)
+    if e.flags & RF_HAS_STACK:
+        node = r.index()
+        r.index()
+        r.p += 12
+        if node:
+            r.index()
+    out: dict[str, tuple] = {}
+    for name, ptype, sname, _size, idx, val in read_props(r, pkg):
+        if idx == 0 and name not in out:
+            out[name] = (ptype, sname, val)
+    return out
+
+
+def vec3(prop: tuple | None, order: str, default=(0.0, 0.0, 0.0)) -> np.ndarray:
+    if prop is None or prop[0] != 10 or len(prop[2]) < 12:
+        return np.array(default, np.float64)
+    return np.array(struct.unpack_from(order + "3f", prop[2], 0), np.float64)
+
+
+def rotator(prop: tuple | None, order: str) -> tuple[int, int, int]:
+    """(pitch, yaw, roll) in Unreal units (65536 = 360 degrees)."""
+    if prop is None or prop[0] != 10 or len(prop[2]) < 12:
+        return (0, 0, 0)
+    return struct.unpack_from(order + "3i", prop[2], 0)
+
+
+def rotation_matrix(pitch: int, yaw: int, roll: int) -> np.ndarray:
+    """Unreal's FRotationMatrix (row-vector convention: world = local @ M)."""
+    f = 2.0 * np.pi / 65536.0
+    sp, cp = np.sin(pitch * f), np.cos(pitch * f)
+    sy, cy = np.sin(yaw * f), np.cos(yaw * f)
+    sr, cr = np.sin(roll * f), np.cos(roll * f)
+    return np.array(
+        [
+            [cp * cy, cp * sy, sp],
+            [sr * sp * cy - cr * sy, sr * sp * sy + cr * cy, -sr * cp],
+            [-(cr * sp * cy + sr * sy), cy * sr - cr * sp * sy, cr * cp],
+        ],
+        np.float64,
+    )
+
+
 @dataclass
 class Section:
     first_index: int

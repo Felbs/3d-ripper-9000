@@ -213,7 +213,7 @@ flowchart LR
         GCP["Blitz .gcp<br/>plugins.blitz"] --> GX["structure scan<br/>plugins.gx"]
         NU2["TT NU20 .gsc/.csc (LSW1)<br/>plugins.nu2"]
         TTPK["TT .fpk/.cpk packs<br/>plugins.ttdisp"] --> DISP["DISP programs .csc/.chg<br/>(LSW2, Narnia)<br/>formats.ttdisp"]
-        UMD["Ubisoft .umd/.lin<br/>chunked zlib<br/>plugins.unreal"] --> UE2["UE2 packages .usx/.utx<br/>StaticMesh + Texture<br/>formats.unreal"]
+        UMD["Ubisoft .umd/.lin<br/>chunked zlib<br/>plugins.unreal"] --> UE2["UE2 packages .usx/.utx/.unr<br/>StaticMesh + Texture + level actors<br/>formats.unreal"]
         LVL["OpenSpace .lvl + .ptr<br/>(Rayman 3 / Arena)<br/>plugins.openspace"] --> CPA["super objects -> GeometricObjects<br/>+ TPL textures<br/>formats.openspace"]
         DBL["Avalanche .dbl/.dbu/.mdb<br/>plugins.dbl"] --> DBLM["mesh records: GX arrays +<br/>FIFO display lists, texture tables<br/>formats.dbl_mesh"]
     end
