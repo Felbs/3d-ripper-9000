@@ -13,6 +13,17 @@ Bionicle Heroes `.csc` and a few Finding Nemo `.nus`; NOT in LSW1 `.nus` (chunk 
 negated, geometry encoded differently), Crash WoC / Nemo `.hgo`, SMB Adventure `.chr`, LSW2 /
 Narnia `.gcm` - those variants are still open.
 
+LSW1 `.nus` (24 files, 223 MB, the big level scenes): chunk sizes are stored NEGATED
+(`GSC0 | -size`, `TST0 | -313940`), chunks VERS, NTBL, NAME, NAMS, TST0, MS0X x3, PLGT (484
+KB), LDIR, GST0 (580 KB), BNDS, INST, SPEC, SST0, DYNO. PLGT and GST0 hold PC-style 32-byte
+vertex records (`f32 xyz | RGBA 7f7f7fff | f32 nx ny nz | u32 0` in PLGT; `f32 xyz | f32 nrm
+| RGBA | f32 uv` in GST0, header `u32 1 | 0 x5 | u32 0x12 | 0 | u32 vertex count`) with a small
+index / strip table at the chunk end - not decoded; the same level geometry also exists as the
+decoded stream in the level's `.gsc`, so `.nus` is not needed for a first rip.
+Finding Nemo / Crash WoC `.hgo` = the same NU2 chunk tree big-endian with reversed tags
+(`FOGH | size | LBTN | size | names...`, `TSH0` ...) - the vertex encoding was not located
+(no `03 01 00 01` markers in either byte order); open.
+
 Earlier mapping (kept for the containers): Samples: LEGO Star Wars 1 (USA)
 `files/Chars/GunganBongo/gunganbongo.{gsc,nus,ghg}`, `files/Levels/.../PodRace_A/a.gsc`.
 
