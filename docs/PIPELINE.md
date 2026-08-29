@@ -14,7 +14,7 @@ flowchart LR
     WALK --> MAN["disc_manifest.json<br/>every file, format, hash"]
     MAN --> RIP["2  Rip loop<br/>gcrip.rip"]
     RIP -->|"BMD / BDL"| J3D["3  J3D parse<br/>gcrip.formats.j3d"]
-    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
+    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, eurocom, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
     RIP -->|"nothing claims it"| GX["3c  Structure scan (fallback)<br/>gcrip.gxscan: GX display lists,<br/>vertex + index arrays"]
     J3D --> ANIM["4  Clip matching<br/>rip._AnimIndex + j3d_anim"]
     ANIM --> GLTF["5  glTF export<br/>gcrip.export.gltf / ripcore.gltf"]
@@ -173,7 +173,7 @@ primitives, decoded textures, clips) and hands them to the same exporter, so the
 ```mermaid
 flowchart TD
     F["file no J3D parser wants"] --> D{"plugins_for(path, head, size)"}
-    D -->|"retro / hsd / gma / pikmin / lm / sfa / jade /<br/>re4 / neversoft / renderware / ea / eagl / ebo / p3d / mdl2 / mdl3 / ttyd / feporr"| R["real parser<br/>meshes + materials + textures<br/>(+ rig, + clips where the format has them)"]
+    D -->|"retro / hsd / gma / pikmin / lm / sfa / jade /<br/>re4 / neversoft / renderware / ea / eagl / ebo / p3d / mdl2 / mdl3 / eurocom / ttyd / feporr"| R["real parser<br/>meshes + materials + textures<br/>(+ rig, + clips where the format has them)"]
     D -->|"no ordinary plugin"| S["gx (fallback)<br/>entropy < 7.5 → gxscan.scan_blob(budget)"]
     S --> L["GX display lists<br/>opcode · count · index tuples,<br/>stride chained, NOP padding"]
     S --> N["neutral meshes<br/>f32 vertex run + u16 index run"]
@@ -238,6 +238,18 @@ to the members of an archive a real plugin opened: their contents are that plugi
 formats, and guessing tables inside them only manufactures pseudo-files (RE4's `.das`
 members became 25 k of them).
 
+Eurocom's EngineX (`plugins/eurocom.py`, `formats/eurocom.py`: Sphinx and the Cursed
+Mummy, Buffy: Chaos Bleeds, Spyro: A Hero's Tail, Robots, Batman Begins, Ice Age 2) keeps
+the whole game in `Filelist.000` with the directory in the sibling `Filelist.bin` - the
+first container whose members cannot be listed from its own bytes, hence the
+`NEEDS_SIBLING` / `expand_with` hook the manifest walker and the ripper both honour. The
+`GEOM` `.edb` databases inside are relocatable hash-array files (the layouts follow
+eurotools' `eurochef`); each mesh entity is f32 positions, s16 texture coordinates scaled
+by a per-entity shift, RGBA colours and GX strips with four u16 index columns, and the
+field offsets shift with the EDB version (170/182, 240/248, 251/252 are all in the
+library). Textures are GX pixels behind a 64-byte header found by scanning the texture
+struct for the (size, pointer) pair that lands on one.
+
 The fallback is a map as much as a rip: its hits say where in an archive the models live
 and how the vertices are laid out, which is most of what a real plugin needs. Multi-platform
 engines that store only vertex/index buffers (Treyarch, Radical P3D) reach the scanner only
@@ -257,6 +269,7 @@ compatibility list's developer column suggests.
 | eagl skin | weight row = 4 f32 summing to 1 with the bone index in the low mantissa byte; the counted pointer right before the `__const MATRIX4` tag | limbs tear when posed → a packet's slot table is elsewhere in the entry list; compare with `_packet_entries` order |
 | ebo streams | a stream is an `i8` record with a 12-byte `{size, stride, offset}` header just before its bytes; kind by stride (12/6/3 positions or normals, 4 UV or RGBA, 8 f32 UV, 2 RGB565); the command buffer is the header-less buffer that chains as GX strips | a list drops out → its stride guess (prefix + index widths) missed; check `_layout` against the stream counts |
 | p3d display list | stride = whatever chains through the zero-padded list; column widths (0/1/2 per attribute in GX order) picked by index ranges + compactness | a group drops out → the descriptor's second byte (2 = INDEX8, 3 = INDEX16, 1 = none) disagrees with the chain; check `_best_layout` |
+| eurocom entity | version-keyed field table for the strip / vertex / uv / colour pointers and the count block; vertex record 12 or 16 B chosen so the block ends at the UV pointer | a game with an EDB version outside 170-252 → dump the entity words with their relative targets and add a row to `_layout` |
 | mdl3 positions | 16-byte records (xyz + bone a, bone b, weight) when the model has bones, else 12; the first size the display-list indices fit wins | a rigged prop comes out as a spray of points → the record size guess flipped; check the block's indices against both sizes |
 | mdl2 display list | four u16 index columns per vertex (pos, nrm, col, uv) into the single interleaved buffer; an index beyond the vertex count means "same as position" | wrong UVs → the column order is not GX order for that model; compare `_gather` columns with the vertex count |
 | generic table | (offset,size) rows near the start or at a header pointer; 4-aligned, non-overlapping, ≥40 % coverage | members look wrong → the archive has a name/hash column layout `find_toc` mis-picked; write a plugin |
