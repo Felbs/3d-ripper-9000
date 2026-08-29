@@ -48,8 +48,8 @@ def build_fpk() -> tuple[bytes, bytes, bytes]:
 def test_fpk_wide_names():
     dff = b"\x10\x00\x00\x00" + bytes(28)
     name = b"chr/ar2/0000_gc.dff".ljust(32, b"\0")
-    entries = name + struct.pack(">3I", 16 + 44, len(dff), len(dff))
-    data = struct.pack(">4I", 0, 1, 16, 16 + 44 + len(dff)) + entries + dff
+    entries = name + struct.pack(">3I", 16 + 48, len(dff), len(dff))
+    data = struct.pack(">4I", 0, 1, 16, 16 + 48 + len(dff)) + entries + dff
     assert [(m.name, m.size) for m in fpk.members(data)] == [("chr/ar2/0000_gc.dff", 32)]
     assert plug.expand(data) == [("chr/ar2/0000_gc.dff", dff)]
 
