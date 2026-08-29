@@ -198,7 +198,7 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
                 tex = None
                 if s.material < 0 and -s.material - 1 < len(pkg.imports):
                     imp = pkg.imports[-s.material - 1]
-                    package = unreal.object_name(pkg, imp.package)
+                    package = unreal.full_name(pkg, imp.package).split(".", 1)[0]
                     rgba = own.get(imp.name)
                     if rgba is None:
                         rgba = _sibling_textures(src, package).get(imp.name)
