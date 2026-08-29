@@ -90,7 +90,12 @@ def looks_like_stream(
     if len(head) < 12:
         return False
     t, sz, lib = struct.unpack_from("<3I", head, 0)
-    if t not in types or lib & 0xFFFF != 0xFFFF or lib >> 16 > 0x3FFF:
+    if t not in types:
+        return False
+    # new-style stamps carry 0xffff build bits; RW 3.2-3.7 builds without them (Bloody
+    # Roar: 0x1c02002d) still decode through rw_version
+    old_style = 0x1800_0000 <= lib < 0x1C10_0000
+    if not old_style and (lib & 0xFFFF != 0xFFFF or lib >> 16 > 0x3FFF):
         return False
     return 12 + sz <= size and sz >= 4
 
