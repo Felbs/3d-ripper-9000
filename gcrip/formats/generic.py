@@ -15,6 +15,7 @@ less random than what it came from.
 
 from __future__ import annotations
 
+import time
 import zlib
 from dataclasses import dataclass
 
@@ -54,7 +55,24 @@ def _table_ok(offs: np.ndarray, sizes: np.ndarray, n: int, table_end: int) -> fl
     aligned = float(np.mean(offs % 16 == 0))
     if float(np.mean(offs % 4 == 0)) < 0.95:
         return 0.0
+    if not _members_plausible(sizes, n - table_end):
+        return 0.0
     return k * (1.0 + aligned)
+
+
+MIN_MEMBER = 16  # bytes: a table whose members are mostly smaller is a number array
+
+
+def _members_plausible(sizes: np.ndarray, span: int) -> bool:
+    """A member table describes files: most members are at least MIN_MEMBER bytes and the
+    average member is not tiny (an increasing u32 array - sample offsets, loop points -
+    would otherwise pass as thousands of 4-byte "members")."""
+    k = len(sizes)
+    if k == 0:
+        return False
+    if float(np.mean(sizes >= MIN_MEMBER)) < 0.75:
+        return False
+    return float(sizes.sum()) / k >= 64 or k <= 16 and span >= 64 * k
 
 
 def _header_pointers(data: bytes, n: int) -> list[int]:
@@ -70,7 +88,16 @@ def _header_pointers(data: bytes, n: int) -> list[int]:
     return sorted(out)
 
 
-def find_toc(data: bytes, max_scan: int = 512, max_rows: int = 2048) -> list[Member] | None:
+TOC_BUDGET = 0.15  # seconds per call: return the best table found so far when it runs out
+
+
+def find_toc(
+    data: bytes,
+    max_scan: int = 512,
+    max_rows: int = 2048,
+    budget: float = TOC_BUDGET,
+    offset_only: bool = True,
+) -> list[Member] | None:
     """Look for an (offset, size) record table near the start of the blob (or where a
     header pointer says).  Tries record strides 4..64 and every pair of u32 columns as
     (offset, size), in either file order or arbitrary order (hash-sorted tables), with
@@ -85,9 +112,14 @@ def find_toc(data: bytes, max_scan: int = 512, max_rows: int = 2048) -> list[Mem
     head_words = min(n // 4, (max(bases) // 4) + max_rows * 16 + 16)
     words = np.frombuffer(data, ">u4", head_words).astype(np.int64)
     best: tuple[float, list[Member]] | None = None
-    for stride in range(4, 65, 4):
-        cols = stride // 4
-        for base in bases:
+    deadline = time.monotonic() + budget
+    # base-major: the first bases (where real tables live) see every stride before the
+    # budget can run out
+    for base in bases:
+        if time.monotonic() > deadline:
+            return best[1] if best else None
+        for stride in range(4, 65, 4):
+            cols = stride // 4
             b = base // 4
             rows = min(max_rows, (len(words) - b) // cols)
             if rows < 4:
@@ -124,7 +156,11 @@ def find_toc(data: bytes, max_scan: int = 512, max_rows: int = 2048) -> list[Mem
                             rows_ = zip(offs[:kk], sizes_all[:kk], strict=True)
                             best = (score, [Member(f"{i:04d}", int(o), int(s))
                                             for i, (o, s) in enumerate(rows_)])
-                # offset-only table: sizes are the gaps to the next offset
+                # offset-only table: sizes are the gaps to the next offset (weak evidence:
+                # members must be 16-aligned like real archives, and callers walking the
+                # members of a table we found do not get to use it again)
+                if not offset_only:
+                    continue
                 col_k = col[:k_any]
                 for rel in (0, None):
                     table_end = base + k_any * stride
@@ -134,9 +170,11 @@ def find_toc(data: bytes, max_scan: int = 512, max_rows: int = 2048) -> list[Mem
                     if kk < 4 or offs[0] < base + kk * stride or offs[kk - 1] >= n:
                         continue
                     o = offs[:kk]
-                    if np.mean(o % 4 == 0) < 0.95:
+                    if np.mean(o % 16 == 0) < 0.9:
                         continue
                     sizes = np.diff(np.append(o, n))
+                    if not _members_plausible(sizes, n - o[0]):
+                        continue
                     if float(sizes.sum()) / max(1, n - o[0]) >= 0.9:
                         score = kk * 0.5 * (1.0 + float(np.mean(o % 16 == 0)))
                         if best is None or score > best[0]:

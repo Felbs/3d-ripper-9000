@@ -96,3 +96,24 @@ def test_decompress_rejects_noise():
     rnd = np.random.default_rng(2).integers(0, 256, 4096, dtype=np.uint8).tobytes()
     assert generic.try_decompress(rnd) is None
     assert generic.try_decompress(bytes(4096)) is None
+
+
+def test_number_array_is_not_a_table():
+    """Sample-offset arrays (audio banks) used to become thousands of 4-byte members."""
+    import numpy as np
+
+    from gcrip.formats import generic
+
+    offs = (np.arange(2048, dtype=">u4") * 4 + 8192).tobytes()
+    blob = offs + bytes(range(256)) * 64
+    assert generic.find_toc(blob) is None
+
+
+def test_generic_plugin_nesting_cap():
+    from gcrip.plugins import generic as plug
+
+    head = bytes(64)
+    assert plug._level_of("files/a.bin") == ""
+    assert plug._level_of("files/a.bin/g0003") == "g"
+    assert plug._level_of("files/a.bin/g0003/gg0001") is None
+    assert not plug.is_container("x/gg0001", head)
