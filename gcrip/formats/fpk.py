@@ -55,11 +55,12 @@ def _entries(data: bytes, count: int, hsize: int, width: int) -> list[Member] | 
             return None
         name = data[o : o + width].split(b"\0")[0].decode("latin-1", "replace")
         off, packed, size = struct.unpack_from(">3I", data, o + width)
-        if not name or off < first or off + packed > len(data) or size == 0:
+        if not name or any(ord(c) < 32 or ord(c) > 126 for c in name):
             return None
-        if any(ord(c) < 32 or ord(c) > 126 for c in name):
+        if off < first or off + packed > len(data):
             return None
-        out.append(Member(name.replace("\\", "/"), off, packed, size))
+        if size:
+            out.append(Member(name.replace("\\", "/"), off, packed, size))
     return out
 
 
