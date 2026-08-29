@@ -24,7 +24,22 @@
   header (`plugins/lpac.py` probes 0x40 / 0x80 for the RenderWare chunk).  Census disc 1: 13,200
   members (10,996 `.anm`, 1,103 packs, 351 `.dff`, 192 worlds) -> 543 scenes / 771k triangles,
   1,105 textures, 450 of 2,050 materials bound.
-  TMNT: Mutant Melee: `archive.dat` (219 MB, `1b 00 00 00 dc 16 00 00`), `.bkt`, `.mcp` - not
+  TMNT: Mutant Melee (GNMEA4, 2004) - RIPPED 2026-08-29 (`gcrip/formats/melee_arc.py`,
+  `plugins/melee.py`): `files/archive.arc` (218 KB) is the directory of the 220 MB
+  `files/archive.dat` blob.  Header `char "archive\0" | 0x5c bytes of 0xcd | u32 size | u32
+  folder count (238) | u32 file count (8371) | u32 | u32 name-table offset | u32 file-record
+  offset`, then 20-byte folder records `u32 name offset | i32 parent | u32 | u32 index | u32
+  hash`, the C-string name table, and 20-byte file records `u32 name offset | u32 folder |
+  u32 data offset | u32 size | u16 resource type | u16 group`.  Offsets address `archive.dat`
+  directly; the member's own magic gives the extension (RW chunk id -> dff / txd / anm / pac,
+  `DDS `, `ktf\0`, UTF-16 text).  Contents: 2,256 RenderWare 3.4 clumps (lib 0x1003ffff),
+  1,777 animations, 2,081 DDS (DXT1 atlases, several DDS per member for UI), 427 `ktf`
+  Konami images (`"ktf\0" | u32 format 9 | u32 w | u32 h | RGBA palette | pixels`, not decoded
+  - UI only), 39 TXDs holding the model textures by name (`characters.txd`, `effects.txd`,
+  `weapons.txd`).  Census: 2,331 scenes / 614,914 triangles, all rigged, 3,851 of 4,674
+  materials textured, 3 s once the disc read is done.  The sound banks (`MUSIC.MCP`,
+  `VCLIP.BKT`) and the `.thp` videos are the rest of the disc.
+  Earlier note: `archive.dat` (219 MB, `1b 00 00 00 dc 16 00 00`), `.bkt`, `.mcp` - not
   AFS, open.  (TMNT 2007 is Ubisoft Jade and already rips.)
 - Frogger Beyond: `.bin` x35 (238 MB), `.mcp` 66 MB, `.bkt`; Frogger's Adventures similar.
 - Yu-Gi-Oh! The Falsebound Kingdom: `.pac` x2 (221 MB), `.mrg` x62 (165 MB).

@@ -14,7 +14,7 @@ flowchart LR
     WALK --> MAN["disc_manifest.json<br/>every file, format, hash"]
     MAN --> RIP["2  Rip loop<br/>gcrip.rip"]
     RIP -->|"BMD / BDL"| J3D["3  J3D parse<br/>gcrip.formats.j3d"]
-    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, eurocom, hsf, sa2b, sadx, ninja_gc, billy, nu2, ttdisp, unreal, openspace, afs, lpac, dbl, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
+    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, eurocom, hsf, sa2b, sadx, ninja_gc, billy, nu2, ttdisp, unreal, openspace, afs, lpac, melee, dbl, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
     RIP -->|"nothing claims it"| GX["3c  Structure scan (fallback)<br/>gcrip.gxscan: GX display lists,<br/>vertex + index arrays"]
     J3D --> ANIM["4  Clip matching<br/>rip._AnimIndex + j3d_anim"]
     ANIM --> GLTF["5  glTF export<br/>gcrip.export.gltf / ripcore.gltf"]
@@ -193,6 +193,7 @@ flowchart LR
         FPK --> RW
     end
     subgraph KONAMI["Konami (TMNT 1-3)"]
+        MELEE["Mutant Melee archive.dat<br/>+ archive.arc index<br/>plugins.melee"] --> RW
         AFS["AFS .DAT archives<br/>plugins.afs"] --> RW
         AFS --> LPAC["LPAC packs (TMNT 2)<br/>plugins.lpac"] --> RW
         AFS --> KPAC["texture packs 0x23<br/>formats.konami_pac"] --> RW
