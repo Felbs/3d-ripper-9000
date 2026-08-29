@@ -61,8 +61,8 @@ program - decoded in `gcrip/formats/ttdisp.py` + `gcrip/plugins/ttdisp.py`:
   hash | 0 | 0 | 28-byte entries (name offset, data offset, size, 0x10, 0 x3) | names`;
   members are `.ca3` animations (ANI4/ANI5 tags, open).
 - Open: `.ca3`/`.can` animations, Narnia `.cct` (cutscene anim), `.cc2`, `.ctr` terrain
-  heightfields?, `.obj` (5 MB Wavefront text = collision), `.hgo` (Crash / Nemo: same BE
-  chunk tree, geometry inside `HGO0` after 3x4 node matrices - not located).
+  heightfields?, `.obj` (5 MB Wavefront text = collision); `.hgo` / `.nus` of Crash / Nemo are
+  ripped (see below).
 
 LSW1 `.nus` (24 files, 223 MB, the big level scenes): chunk sizes are stored NEGATED
 (`GSC0 | -size`, `TST0 | -313940`), chunks VERS, NTBL, NAME, NAMS, TST0, MS0X x3, PLGT (484
@@ -71,9 +71,29 @@ vertex records (`f32 xyz | RGBA 7f7f7fff | f32 nx ny nz | u32 0` in PLGT; `f32 x
 | RGBA | f32 uv` in GST0, header `u32 1 | 0 x5 | u32 0x12 | 0 | u32 vertex count`) with a small
 index / strip table at the chunk end - not decoded; the same level geometry also exists as the
 decoded stream in the level's `.gsc`, so `.nus` is not needed for a first rip.
-Finding Nemo / Crash WoC `.hgo` = the same NU2 chunk tree big-endian with reversed tags
-(`FOGH | size | LBTN | size | names...`, `TSH0` ...) - the vertex encoding was not located
-(no `03 01 00 01` markers in either byte order); open.
+Finding Nemo / Crash WoC `.hgo` / `.nus` - CRACKED 2026-08-29 (`gcrip/formats/hgo.py`,
+`plugins/hgo.py`): the NU2 chunk tree with reversed 4CC tags and big-endian sizes (`FOGH` =
+HGOF, `0CSG` = GSC0, `LBTN` = NTBL, `0TST` = TST0 > `0HST` TSH0 count + `0MXT` TXM0 per
+texture, `00SM` MS00 (Crash) / `30SM` MS03 (Nemo), `0OGH` HGO0, `0TSG` GST0, `TSNI` INST,
+`CEPS` SPEC, `0TSS` SST0).  TXM0 = `u32 code | u32 w | u32 h | u32 bytes | GX pixels` with
+0x80 = CMPR and 0x81 = RGB5A3 (verified visually on the narwhal eye / skin).  Materials are
+84-byte records: `s32 | u32 flags | u32 x3 | f32 rgb | u32 x4 | f32 x2 | s32 texture (-1 none)`
+(same offsets in MS00 and MS03).  HGO0 = `u8 node count | u8` + variable node records (4x4
+f32 local matrix, flag bytes, optional bind matrix; NTBL names in node order) followed by the
+meshes; GST0 = `u32 mesh count` + meshes.  A mesh is `u32 1 | u32 x4 | u32 blocks | u32
+material | u32 vertex count | vertices | index groups | skin`, its further blocks `u32 0 |
+u32 0 | u32 material | count ...` (NarWhal: one mesh of 10 blocks, one per material; Bruce:
+2 meshes, 139 blocks).  Vertices are big-endian `f32 xyz | f32 normal | RGBA8 | [f32 uv]`
+(28 bytes when the material has no texture, 36 with uv) in model space; index groups `u32 |
+u32 | u32 prim (5 = triangle list, Crash; 6 = strip, Nemo) | u32 count | u16 indices` 4-aligned;
+a skinned mesh ends with `u16 0x0101` + per-vertex `f32 w0 w1 w2 | u8 bone[4]` (4th weight
+implied).  INST = `u32 count` + 80-byte `f32 4x4 (row vectors, translation in row 3) | u32 x4`,
+one per GST0 mesh in order (alphbet.nus: 36 meshes, 36 placements -> the letter grid).  The
+parser finds meshes by scanning for plausible vertex blocks (unit normals) so the node
+records are not walked; joints are exported flat with identity binds (vertices are already in
+the bind pose).  Census: Crash Bandicoot: 244 of 250 `.hgo` characters (267,839 triangles, 157 skinned, 2933 of 4146 materials textured), 66 of 74 `.nus` levels (4,137,424 triangles, 2585 of 3030 materials textured), 387 s; Finding Nemo: 57 of 71 `.hgo` characters (78,145 triangles, 50 skinned, 310 of 386 materials textured), 3 of 54 `.nus` levels (135,940 triangles, 82 of 112 materials textured), 729 s.
+Open: node hierarchy / bind matrices (for animation), transforms of unskinned `.hgo` parts,
+SPEC records (35 x 80 bytes, named objects), `.ter` terrain (Crash 41 files / 19 MB), `.ani`.
 
 Earlier mapping (kept for the containers): Samples: LEGO Star Wars 1 (USA)
 `files/Chars/GunganBongo/gunganbongo.{gsc,nus,ghg}`, `files/Levels/.../PodRace_A/a.gsc`.
