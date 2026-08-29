@@ -14,7 +14,7 @@ flowchart LR
     WALK --> MAN["disc_manifest.json<br/>every file, format, hash"]
     MAN --> RIP["2  Rip loop<br/>gcrip.rip"]
     RIP -->|"BMD / BDL"| J3D["3  J3D parse<br/>gcrip.formats.j3d"]
-    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, eurocom, hsf, sa2b, sadx, ninja_gc, billy, nu2, ttdisp, unreal, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
+    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, eurocom, hsf, sa2b, sadx, ninja_gc, billy, nu2, ttdisp, unreal, openspace, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
     RIP -->|"nothing claims it"| GX["3c  Structure scan (fallback)<br/>gcrip.gxscan: GX display lists,<br/>vertex + index arrays"]
     J3D --> ANIM["4  Clip matching<br/>rip._AnimIndex + j3d_anim"]
     ANIM --> GLTF["5  glTF export<br/>gcrip.export.gltf / ripcore.gltf"]
@@ -209,9 +209,10 @@ flowchart LR
         NU2["TT NU20 .gsc/.csc (LSW1)<br/>plugins.nu2"]
         TTPK["TT .fpk/.cpk packs<br/>plugins.ttdisp"] --> DISP["DISP programs .csc/.chg<br/>(LSW2, Narnia)<br/>formats.ttdisp"]
         UMD["Ubisoft .umd/.lin<br/>chunked zlib<br/>plugins.unreal"] --> UE2["UE2 packages .usx/.utx<br/>StaticMesh + Texture<br/>formats.unreal"]
+        LVL["OpenSpace .lvl + .ptr<br/>(Rayman 3 / Arena)<br/>plugins.openspace"] --> CPA["super objects -> GeometricObjects<br/>+ TPL textures<br/>formats.openspace"]
         DBL["Avalanche .dbl/.dbu<br/>plugins.dbl"] --> GX
     end
-    EAGL & EBO & SA2B & SADX & BILLY & RW & NJ & MDL2 & MDL3 & HSD & EDB & HSF & P3D & DAS & BF & PRE & NU2 & DISP & UE2 & GX --> SCENE["ripcore Scene → glTF"]
+    EAGL & EBO & SA2B & SADX & BILLY & RW & NJ & MDL2 & MDL3 & HSD & EDB & HSF & P3D & DAS & BF & PRE & NU2 & DISP & UE2 & CPA & GX --> SCENE["ripcore Scene → glTF"]
 ```
 
 
@@ -222,7 +223,7 @@ primitives, decoded textures, clips) and hands them to the same exporter, so the
 ```mermaid
 flowchart TD
     F["file no J3D parser wants"] --> D{"plugins_for(path, head, size)"}
-    D -->|"retro / hsd / gma / pikmin / lm / sfa / jade /<br/>re4 / neversoft / renderware / ea / eagl / ebo / p3d / mdl2 / mdl3 / eurocom / hsf / sa2b / ninja_gc / billy / ttdisp / unreal / ttyd / feporr"| R["real parser<br/>meshes + materials + textures<br/>(+ rig, + clips where the format has them)"]
+    D -->|"retro / hsd / gma / pikmin / lm / sfa / jade /<br/>re4 / neversoft / renderware / ea / eagl / ebo / p3d / mdl2 / mdl3 / eurocom / hsf / sa2b / ninja_gc / billy / ttdisp / unreal / openspace / ttyd / feporr"| R["real parser<br/>meshes + materials + textures<br/>(+ rig, + clips where the format has them)"]
     D -->|"no ordinary plugin"| S["gx (fallback)<br/>entropy < 7.5 → gxscan.scan_blob(budget)"]
     S --> L["GX display lists<br/>opcode · count · index tuples,<br/>stride chained, NOP padding"]
     S --> N["neutral meshes<br/>f32 vertex run + u16 index run"]
@@ -354,6 +355,17 @@ ships its `.usx` mesh and `.utx` texture packages uncompressed and little-endian
 each import; the chunked-zlib `.umd` / `.lin` archives of the other titles are expanded to
 their member packages, but their big-endian map packages use a table encoding that is not
 decoded yet.
+
+Rayman 3 and Rayman Arena (Ubisoft Montpellier's OpenSpace / CPA engine) store each level
+as a relocated memory image: `formats/openspace.py` applies the `.ptr` relocation table
+(every pointer field's position and target file), walks the super-object tree from the
+world down through sectors and IPOs to physical objects and their visual sets, and decodes
+the GeometricObjects - on GameCube the plain triangle lists are empty and the geometry
+lives in the "optimized" strip / disconnected-triangle indices over vertex and UV mapping
+arrays.  Materials point at TextureInfos whose order in the level's texture table gives the
+image index inside the sibling Nintendo TPL (`<level>_lvl.tpl` / `_trans.tpl` for Rayman 3,
+`<level>.tpl` for Arena), aligned by image size to absorb the console downscales.  The
+layouts come from the raymap project (github.com/byvar/raymap), checked against the discs.
 
 The fallback is a map as much as a rip: its hits say where in an archive the models live
 and how the vertices are laid out, which is most of what a real plugin needs. Multi-platform

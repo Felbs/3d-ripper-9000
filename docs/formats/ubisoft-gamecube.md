@@ -41,11 +41,48 @@ Status 2026-08-29: `gcrip/formats/unreal.py` + `gcrip/plugins/unreal.py`.
   Agent `.lin` need the single-block variant checked; SkeletalMesh / Mesh (LodMesh)
   serialisation for characters.
 
-## OpenSpace / CPA (Ubisoft Montpellier) - Rayman 3, Rayman Arena
+## OpenSpace / CPA (Ubisoft Montpellier) - Rayman 3, Rayman Arena (ripped 2026-08-29)
 
-`.hst` (sound), `.lvl` + `.ptr` (level + pointer relocation), `.hxg`/`.hxd`, `.tpl` (GC
-textures, 139 files). Reference implementation: github.com/byvar/raymap (C# Unity loader for
-Rayman 2/3/Arena incl. GC). Parked.
+`gcrip/formats/openspace.py` + `gcrip/plugins/openspace.py`; layouts from raymap
+(github.com/byvar/raymap: GeometricObject.cs, GeometricObjectElementTriangles.cs,
+SuperObject.cs, TextureInfo.cs, LVL.cs) verified on the discs.
+
+- Files: `<level>.lvl` (big-endian memory image, one header u32 then the image; pointer
+  positions are relative to lvl + 4), `<level>.ptr` = `u32 count | count x (u32 target file,
+  u32 position)` then 16-byte fill-in records; target file 0 = `fix.lvl`, 1 = the level, 2 =
+  `transit.lvl`.  A pointer value is an offset into the target file (+ 4).  `*kf.lvl` =
+  keyframe animations, `*_vb.lvl` = empty vertex-buffer stubs, `transit.lvl` = tiny.
+- Level header: texture table = pointers to TextureInfo records (`u16 height +0x1c | u16 width
+  +0x1e | ... | name +0x4a` e.g. `knagrott\dead_head.tga`) followed by one u32 per texture =
+  TPL file id: Rayman 3 2 -> `<level>_lvl.tpl` (94 of 94 entries in knaar_10), 6 ->
+  `<level>_trans.tpl`; Rayman Arena keeps every entry in `<level>.tpl` preceded by two
+  extra images.  The plugin aligns table order to TPL order by image size (DP) because a few
+  textures are downscaled on the console.
+- SuperObject (0x3c): `u32 type (1 world, 2 perso, 4 sector, 8 physical object, 0x20 / 0x40
+  IPO) | data | first child | last child | u32 children | next | prev | parent | matrix |
+  static matrix | i32 | u32 draw flags | u32 flags | u32 | bounding volume`.  Matrix = `u32
+  type | f32[16] row-major with the translation in row 3 (row-vector convention) | f32[4]
+  scale`; global = local @ parent.  Rayman 3 knaar_10: 373 super objects (190 perso, 140
+  IPO, 22 sectors, 21 worlds).
+- IPO: `physical object | radiosity | 4 x u32 | portal camera | 3 x u32 | name[0x32]`;
+  PhysicalObject: `visual set | collide set | bounding volumes`; visual set: `u32 0 | u16 LOD
+  count | u16 type (0 = GeometricObject) | LOD distances | LOD data pointers`.
+- GeometricObject (Rayman 3 GC): `vertices | normals | blend weights | i32 | element types |
+  elements | i32 | parallel boxes | u32 look-at | u16 vertex count | u16 element count | u16 |
+  u16 boxes | f32 sphere radius | f32 centre[3] | i32 | i32 | i16`; Rayman Arena has no i32
+  after the blend weights.  Vertices / normals f32 x y z, Z up (exported as x, z, -y).
+- Triangle element (type 1, 0xb8 bytes on GC): `material | u16 triangles (0 on GC) | u16 uvs
+  | u16 uv maps | i16 lightmap | triangles | u32 (Rayman 3 GC only) | uv mapping | normals |
+  uvs | 3 x u32 | u8 visible | u8 | u16 mapping entries | mapping vertices (u16) | mapping uvs
+  (u16) | u16 strip length | u16 disconnected triangles | strip (u16) | disconnected (u16 x
+  3) | name[0x34]`; strip / disconnected indices address the mapping arrays.
+- VisualMaterial: `u32 flags | colours ... | u32 texture count +0x64 | texture entry +0x68 ->
+  TextureInfo`.  TPL images decode through `gcrip/formats/tpl.py` (Nintendo SDK TPL, magic
+  0x0020AF30; CMPR mostly).
+- Disc census 2026-08-29: Rayman 3 113 .lvl -> 59 levels / 5,751 placed instances / 1.65 M triangles / 1,495 textured materials (6 s); Rayman Arena 53 .lvl -> 33 levels / 2,754 instances / 336k triangles / 205 textured materials.
+- Open: characters (Perso super objects -> families / object lists with bone hierarchies and
+  `*kf.lvl` animations), textures that live in `fix.tpl` (file id 0 in Rayman 3), `.hxg` /
+  `.hxd` sound.
 
 ## Jade (Ubisoft Montpellier)
 
