@@ -12,6 +12,16 @@
   `formats/konami_pac.py`, read by `plugins/renderware.py`'s texture index (`.pac` counts as a
   texture dictionary path).  Models decode through the existing RenderWare plugin (bg.dff
   14,836 triangles / 14 materials).  Census: TMNT 1: 4 AFS archives -> 749 members (401 .txd, 179 .pac, 109 .dff), 466 texture packs; 187 RenderWare streams -> 177 scenes / 127k triangles (6 s); TMNT 2 / 3 use .lpac packs (open), Mutant Melee its own archive (open).
+  TMNT 2: Battle Nexus (GNIEA4, 2 discs): the AFS members are `LPAC` packs (`"LPAC" | u32
+  records | 0xcd x 56`, records `u32 kind | u32 size | u32 | u32 | char name[48] | stream`
+  separated by 0xcd padding and 0x80-byte index blocks -> `plugins/lpac.py` finds records by
+  their header signature) holding RW 3.4 streams (lib 0x1c02000a): 5,829 `.anm`, 663 texture
+  packs, 236 `.dff`, 198 worlds.  Its texture pack is `u16 n | u16 1 | u32 count` then
+  rwID_IMAGE chunks each followed by rwID_TEXTURE (struct | name | mask) - `konami_pac.parse`
+  handles both layouts.  Census disc 1: 434 scenes / 743k triangles, 663 textures, 400 of
+  2,839 materials bound (world sectors carry no texture names in either game).
+  TMNT 3: Mutant Nightmare (G3QEA4): same AFS + LPAC wrappers but the 13k record payloads are
+  not RenderWare streams (records start with zero words: a different wrapper, open).
   TMNT: Mutant Melee: `archive.dat` (219 MB, `1b 00 00 00 dc 16 00 00`), `.bkt`, `.mcp` - not
   AFS, open.  (TMNT 2007 is Ubisoft Jade and already rips.)
 - Frogger Beyond: `.bin` x35 (238 MB), `.mcp` 66 MB, `.bkt`; Frogger's Adventures similar.
