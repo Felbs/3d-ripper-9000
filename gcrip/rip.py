@@ -128,11 +128,24 @@ class _Source:
         from gcrip.plugins import container_plugins
 
         name = container.rsplit("/", 1)[-1]
+        folder = container.rsplit("/", 1)[0] if "/" in container else ""
+
+        def sibling(n: str) -> bytes | None:
+            want = f"{folder}/{n}".lower() if folder else n.lower()
+            for p in self.by_path:
+                if p.lower() == want:
+                    return self.get(p)
+            return None
+
         members: dict[str, bytes] = {}
         for mod in container_plugins():
             try:
                 if mod.is_container(name, payload[:64]):
-                    members = {f"{container}/{inner}": blob for inner, blob in mod.expand(payload)}
+                    if getattr(mod, "NEEDS_SIBLING", False):
+                        entries = mod.expand_with(payload, name, sibling)
+                    else:
+                        entries = mod.expand(payload)
+                    members = {f"{container}/{inner}": blob for inner, blob in entries}
                     break
             except Exception:  # noqa: BLE001
                 continue

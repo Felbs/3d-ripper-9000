@@ -254,6 +254,20 @@ class ManifestBuilder:
                 path, name, payload, disc_offset=payload_disc_offset, depth=depth + 1
             )
 
+    def _sibling_reader(self, path: str):
+        """Reader for a container that keeps its directory in a sibling file (Eurocom
+        ``Filelist.000`` + ``Filelist.bin``): top-level disc files by name, case-insensitive."""
+        folder = path.rsplit("/", 1)[0] if "/" in path else ""
+
+        def read(name: str) -> bytes | None:
+            want = f"{folder}/{name}".lower() if folder else name.lower()
+            for e in self.fst:
+                if not e.is_dir and f"files/{e.path}".lower() == want:
+                    return self.image.read(e.offset, e.size)
+            return None
+
+        return read
+
     @staticmethod
     def _plugin_container(name: str, head: bytes) -> bool:
         from gcrip.plugins import container_plugins
@@ -281,7 +295,10 @@ class ManifestBuilder:
             try:
                 if not mod.is_container(name, data[:SNIFF_BYTES]):
                     continue
-                entries = mod.expand(data)
+                if getattr(mod, "NEEDS_SIBLING", False):
+                    entries = mod.expand_with(data, name, self._sibling_reader(path))
+                else:
+                    entries = mod.expand(data)
             except Exception as e:  # noqa: BLE001
                 self.manifest.errors.append(f"{path}: {mod.__name__} expand failed: {e}")
                 continue
