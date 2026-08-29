@@ -21,7 +21,7 @@ from gcrip.formats import lzr
 MAGIC = b"P3D\xff"
 MAGIC_BE = b"\xffD3P"
 
-MESH, SKIN, PRIMGROUP = 0x10000, 0x10001, 0x10002
+MESH, SKIN, PRIMGROUP, PRIMGROUP2 = 0x10000, 0x10001, 0x10002, 0x10020
 BBOX, BSPHERE = 0x10003, 0x10004
 POSITION_LIST, NORMAL_LIST, UV_LIST, COLOUR_LIST = 0x10005, 0x10006, 0x10007, 0x10008
 INDEX_LIST, MATRIX_LIST, WEIGHT_LIST, MATRIX_PALETTE = 0x1000A, 0x1000B, 0x1000C, 0x1000D
@@ -350,7 +350,7 @@ def meshes(chunks: list[Chunk]) -> list[Mesh]:
             skel, o = _str(c.body, o)
         groups = []
         for pg in c.children:
-            if pg.id != PRIMGROUP:
+            if pg.id not in (PRIMGROUP, PRIMGROUP2):
                 continue
             shader, _ = _str(pg.body, 4)
             g = _gx_group(pg, shader) or _list_group(pg, shader)
