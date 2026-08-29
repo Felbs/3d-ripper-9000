@@ -14,24 +14,28 @@ from ripcore.scene import Joint, MaterialDef, Primitive, Scene
 
 NAME = "mdl2"
 
-_INDEX_ATTR = "_mdl2_gtx_index"
+_INDEX_ATTR = "_krome_tex_index"
 
 
 def detect(path: str, head: bytes, size: int) -> bool:
     return path.lower().endswith(".gmd") and mdl2.is_mdl2(head)
 
 
-def _gtx_index(src) -> dict[str, str]:
-    """lower-case texture stem -> manifest path of every .gtx the source knows (cached)."""
+def _gtx_index(src, ext: str = ".gtx") -> dict[str, str]:
+    """lower-case texture stem -> manifest path of every Krome texture (``.gtx`` on Ty 1,
+    ``.tex`` on the MDL3 games) the source knows (cached on the source)."""
     cache = getattr(src, _INDEX_ATTR, None)
-    if cache is not None:
-        return cache
+    if cache is None:
+        cache = {}
+        with contextlib.suppress(Exception):
+            setattr(src, _INDEX_ATTR, cache)
+    if ext in cache:
+        return cache[ext]
     index: dict[str, str] = {}
     for p in getattr(src, "by_path", {}) or {}:
-        if p.lower().endswith(".gtx"):
-            index.setdefault(posixpath.basename(p)[:-4].lower(), p)
-    with contextlib.suppress(Exception):
-        setattr(src, _INDEX_ATTR, index)
+        if p.lower().endswith(ext):
+            index.setdefault(posixpath.basename(p)[: -len(ext)].lower(), p)
+    cache[ext] = index
     return index
 
 
@@ -55,9 +59,14 @@ def _texture(src, scene: Scene, lookup: dict[str, str], material: str) -> str | 
 
 def extract(data: bytes, path: str, src) -> list[Scene]:
     model = mdl2.parse(data, posixpath.basename(path)[:-4])
+    return scenes(model, _gtx_index(src), src, "mdl2")
+
+
+def scenes(model: mdl2.Model, lookup: dict[str, str], src, fmt: str) -> list[Scene]:
+    """One Scene for a parsed Krome model (MDL2 or MDL3): a primitive per part, materials
+    by texture name, bone positions as flat joints."""
     if not model.parts:
         return []
-    lookup = _gtx_index(src)
     scene = Scene(name=model.name)
     scene.joints = [
         Joint(
@@ -91,7 +100,7 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
             )
         )
     scene.extras = {
-        "format": "mdl2",
+        "format": fmt,
         "subobjects": sorted({p.name for p in model.parts}),
         "bones": len(model.bones),
         "skeleton": "bone positions only - hierarchy lives in the sibling .bad text file",

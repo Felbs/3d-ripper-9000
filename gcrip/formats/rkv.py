@@ -34,9 +34,38 @@ def _footer_ok(tail: bytes) -> bool:
     return 0 < nfiles < 1_000_000 and 0 < ndirs < 100_000
 
 
+def _members_v2(data: bytes) -> list[Member]:
+    """RKV2: ``"RKV2" | u32 nfiles | u32 names size | u32 nsources | u32 source names size
+    | u32 directory offset | u32 directory size`` (all LE); the directory holds 20-byte
+    entries ``u32 name offset, u32 flags, u32 size, u32 offset, u32 crc`` then the name
+    table (then per-file build source paths + mtimes, ignored).  Data archives keep the
+    directory at 0x80, media archives at the end."""
+    n = len(data)
+    if n < 0x40:
+        return []
+    nfiles, names_size, _nsrc, _ssz, dir_off, dir_size = struct.unpack_from("<6I", data, 4)
+    if not (0 < nfiles < 1_000_000) or dir_off + dir_size > n:
+        return []
+    if nfiles * 20 + names_size > dir_size:
+        return []
+    names_off = dir_off + nfiles * 20
+    names = data[names_off : names_off + names_size]
+    out = []
+    for i in range(nfiles):
+        name_off, _flags, size, off, _crc = struct.unpack_from("<5I", data, dir_off + i * 20)
+        end = names.find(b"\0", name_off)
+        name = names[name_off : end if end >= 0 else names_size].decode("latin-1", "replace")
+        if not name or off + size > n or size == 0:
+            continue
+        out.append(Member(name.replace("\\", "/").lstrip("./"), off, size))
+    return out
+
+
 def members(data: bytes) -> list[Member]:
     n = len(data)
-    if data[:4] == MAGIC_V2 or n < 8 or not _footer_ok(data[-8:]):
+    if data[:4] == MAGIC_V2:
+        return _members_v2(data)
+    if n < 8 or not _footer_ok(data[-8:]):
         return []
     nfiles, ndirs = struct.unpack_from("<II", data, n - 8)
     dirs_off = n - 8 - ndirs * 256

@@ -20,6 +20,27 @@ def build_rkv() -> tuple[bytes, bytes, bytes]:
     return bytes(data), a, b
 
 
+def build_rkv2() -> tuple[bytes, bytes, bytes]:
+    a, b = b"MDL3" + bytes(60), b"MDG3" + bytes(28)
+    names = b"ty.mdl\0ty.mdg\0"
+    ents = struct.pack("<5I", 0, 0, len(a), 0x80, 0x11111111)
+    ents += struct.pack("<5I", 7, 0, len(b), 0x80 + len(a), 0x22222222)
+    body = a + b
+    dir_off = 0x80 + len(body)
+    directory = ents + names
+    head = b"RKV2" + struct.pack("<6I", 2, len(names), 0, 16, dir_off, len(directory))
+    head = head.ljust(0x80, b"\0")
+    return head + body + directory, a, b
+
+
+def test_rkv2_members():
+    data, a, b = build_rkv2()
+    assert rkv.is_rkv(data[:64])
+    got = [(m.name, m.offset, m.size) for m in rkv.members(data)]
+    assert got == [("ty.mdl", 0x80, 64), ("ty.mdg", 0x80 + 64, 32)]
+    assert plug.expand(data) == [("ty.mdl", a), ("ty.mdg", b)]
+
+
 def test_rkv_members():
     data, a, b = build_rkv()
     ms = rkv.members(data)

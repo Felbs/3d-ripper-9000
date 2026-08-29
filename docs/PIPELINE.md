@@ -14,7 +14,7 @@ flowchart LR
     WALK --> MAN["disc_manifest.json<br/>every file, format, hash"]
     MAN --> RIP["2  Rip loop<br/>gcrip.rip"]
     RIP -->|"BMD / BDL"| J3D["3  J3D parse<br/>gcrip.formats.j3d"]
-    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
+    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
     RIP -->|"nothing claims it"| GX["3c  Structure scan (fallback)<br/>gcrip.gxscan: GX display lists,<br/>vertex + index arrays"]
     J3D --> ANIM["4  Clip matching<br/>rip._AnimIndex + j3d_anim"]
     ANIM --> GLTF["5  glTF export<br/>gcrip.export.gltf / ripcore.gltf"]
@@ -173,7 +173,7 @@ primitives, decoded textures, clips) and hands them to the same exporter, so the
 ```mermaid
 flowchart TD
     F["file no J3D parser wants"] --> D{"plugins_for(path, head, size)"}
-    D -->|"retro / hsd / gma / pikmin / lm / sfa / jade /<br/>re4 / neversoft / renderware / ea / eagl / ebo / p3d / mdl2 / ttyd / feporr"| R["real parser<br/>meshes + materials + textures<br/>(+ rig, + clips where the format has them)"]
+    D -->|"retro / hsd / gma / pikmin / lm / sfa / jade /<br/>re4 / neversoft / renderware / ea / eagl / ebo / p3d / mdl2 / mdl3 / ttyd / feporr"| R["real parser<br/>meshes + materials + textures<br/>(+ rig, + clips where the format has them)"]
     D -->|"no ordinary plugin"| S["gx (fallback)<br/>entropy < 7.5 → gxscan.scan_blob(budget)"]
     S --> L["GX display lists<br/>opcode · count · index tuples,<br/>stride chained, NOP padding"]
     S --> N["neutral meshes<br/>f32 vertex run + u16 index run"]
@@ -220,7 +220,13 @@ interleaved 28-byte vertex buffer (f32 position, s8 normal, s16 UV /4096, a two-
 RGBA) and per-mesh GX display lists whose vertices are four u16 indices (position, normal,
 colour, uv) into that buffer. Material names are the `.gtx` texture stems (CMPR with mips,
 or RGB5A3 for alpha textures); bones are positions only, the hierarchy lives in `.bad` text
-files. Blitz Games' `.gcp` packs (`plugins/blitz.py`) are only split into their packages so
+files. The later Merkury games (Ty 2 / 3, Spyro: A New Beginning, King Arthur) use RKV2
+archives (directory at 0x80, 20-byte entries) and MDL3 pairs (`formats/mdl3.py`,
+`plugins/mdl3.py`): the `.mdl` holds the tables - subobjects, texture names, bone
+positions and a textures × subobjects grid of offsets into the `.mdg` - and each `.mdg`
+block is a GX display list with 9-byte vertices (position index, inline s8 normal, colour
+and UV indices) over f32 positions that carry two bone indices and a weight when the model
+is rigged. Blitz Games' `.gcp` packs (`plugins/blitz.py`) are only split into their packages so
 the fallback scanner can read them.
 
 The fallback is a map as much as a rip: its hits say where in an archive the models live
@@ -242,6 +248,7 @@ compatibility list's developer column suggests.
 | eagl skin | weight row = 4 f32 summing to 1 with the bone index in the low mantissa byte; the counted pointer right before the `__const MATRIX4` tag | limbs tear when posed → a packet's slot table is elsewhere in the entry list; compare with `_packet_entries` order |
 | ebo streams | a stream is an `i8` record with a 12-byte `{size, stride, offset}` header just before its bytes; kind by stride (12/6/3 positions or normals, 4 UV or RGBA, 8 f32 UV, 2 RGB565); the command buffer is the header-less buffer that chains as GX strips | a list drops out → its stride guess (prefix + index widths) missed; check `_layout` against the stream counts |
 | p3d display list | stride = whatever chains through the zero-padded list; column widths (0/1/2 per attribute in GX order) picked by index ranges + compactness | a group drops out → the descriptor's second byte (2 = INDEX8, 3 = INDEX16, 1 = none) disagrees with the chain; check `_best_layout` |
+| mdl3 positions | 16-byte records (xyz + bone a, bone b, weight) when the model has bones, else 12; the first size the display-list indices fit wins | a rigged prop comes out as a spray of points → the record size guess flipped; check the block's indices against both sizes |
 | mdl2 display list | four u16 index columns per vertex (pos, nrm, col, uv) into the single interleaved buffer; an index beyond the vertex count means "same as position" | wrong UVs → the column order is not GX order for that model; compare `_gather` columns with the vertex count |
 | generic table | (offset,size) rows near the start or at a header pointer; 4-aligned, non-overlapping, ≥40 % coverage | members look wrong → the archive has a name/hash column layout `find_toc` mis-picked; write a plugin |
 | gx scan | display lists chain at one stride; a position array exists for the biggest index; triangles are compact | slivers / spaghetti → wrong stride or array won the score; raise `_accept` limits or write a plugin |
