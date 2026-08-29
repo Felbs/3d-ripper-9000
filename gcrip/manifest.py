@@ -268,9 +268,16 @@ class ManifestBuilder:
 
     def _walk_plugin_container(self, path, name, data, *, disc_offset, depth) -> None:
         """Archives known to a format plugin (gcrip.plugins: is_container/expand)."""
-        from gcrip.plugins import container_plugins
+        from gcrip.plugins import container_plugins, is_fallback
 
+        # members of an archive a real plugin opened are that plugin's own formats: the
+        # structure-guessing fallbacks must not carve them up (RE4 .das members exploded into
+        # 25k pseudo-files that way)
+        roots = self.__dict__.setdefault("_ordinary_roots", set())
+        under_ordinary = any(path.startswith(r + "/") for r in roots)
         for mod in container_plugins():
+            if under_ordinary and is_fallback(mod):
+                continue
             try:
                 if not mod.is_container(name, data[:SNIFF_BYTES]):
                     continue
@@ -278,6 +285,8 @@ class ManifestBuilder:
             except Exception as e:  # noqa: BLE001
                 self.manifest.errors.append(f"{path}: {mod.__name__} expand failed: {e}")
                 continue
+            if not is_fallback(mod):
+                roots.add(path)
             self.manifest.dirs.append(path)
             for inner, blob in entries:
                 if len(blob) == len(data) and blob == data:
