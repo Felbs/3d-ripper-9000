@@ -25,11 +25,11 @@ def build_ebo() -> bytes:
     body += bytes(0x30)  # three records, filled below
     body += bytes(0x10)  # gap
     dl_struct = len(body)
-    body += struct.pack(">I", 3 + 16 * 5) + bytes(28)
+    body += struct.pack(">I", 3 + 16 * 2) + bytes(28)
     dl_start = len(body)
     dl = bytearray(b"\x98\x00\x10")
-    for i in range(16):
-        dl += struct.pack(">HBH", i, 0, i)
+    for i in range(16):  # 16-entry streams -> u8 indices: [pos][uv]
+        dl += struct.pack(">BB", i, i)
     body += dl
     body += bytes(-len(body) % 16)
     # positions with header
@@ -43,7 +43,7 @@ def build_ebo() -> bytes:
     body += uv.tobytes()
     body += bytes(-len(body) % 16)
     i8 = TYPES.index("i8")
-    struct.pack_into("<IHHII", body, rec_dl, dl_struct - rec_dl, 1, i8, 32 + 3 + 80, 0)
+    struct.pack_into("<IHHII", body, rec_dl, dl_struct - rec_dl, 1, i8, 32 + 3 + 32, 0)
     struct.pack_into("<IHHII", body, rec_pos, pos_hdr + 12 - rec_pos, 1, i8, 16 * 12, 0)
     struct.pack_into("<IHHII", body, rec_uv, uv_hdr + 12 - rec_uv, 1, i8, 16 * 4, 0)
     t_types = len(body)
