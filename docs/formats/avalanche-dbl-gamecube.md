@@ -29,6 +29,15 @@ u16 4 | "1000"`), then the member's BE records + data (`size` bytes). Members in
 model databases (`blowgun.dbl`, `chicken.dbl`, `mumking.sdb`, `shrineorbs.mdb`,
 `burial.env`, `burial.dbv`) whose record types are the open work.
 
+## Chicken Little variant (GHCE4Q)
+
+`Data_GCN/Characters/*.DBL` and `*.mdb` have NO text header: the 0x60 binary header starts
+at 0 (`0x30 | 0 | "GCN" | 0 | 0x100 | 0 | 3 | payload size | 0x82000e | .. | u16 4 |
+"1000"`), then records of a different shape than Tak's texture record: `u32 1 | 0 | 0 | u32 1
+| 0 | 0 | source path (c:\dev\chick\data_gcn\character ...)`. `.mdb` = LE "DB" header +
+named node table (`cannon`, `cannon1`, `thrust1`, identity matrices) = model/bone database.
+Still undecoded.
+
 ## Open
 
 - record types for meshes / skeletons / materials (look at `chicken.dbl` inside Burial.dbu);
