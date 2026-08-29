@@ -66,6 +66,23 @@ offset, u32 pointer count, u32 1, u32 0, u32 root offset, ...` (the table lists 
 offsets that hold pointers); the geometry is tag-less Ginja-style attaches reached from the
 root - not decoded; `.gsl`, Episode III.
 
+## SADX / SA2B `.rel` modules (SA Tools split tables)
+
+X-Hax SA Tools ships `GameConfig/GC_SADX` (53 INIs) and `GC_SA2B` (93) listing every model /
+land table / animation address inside the GameCube `.rel` modules (`datafile=STG00.rel`,
+`key=C900000`; INIs without a datafile line map to `<stem>.rel`). gcrip bundles them under
+`gcrip/data/satools/`. Pipeline: `formats/rel.py` resolves the Nintendo REL relocations
+against base 0 (so pointers become file offsets: OSModuleHeader, section table, imp table,
+`u16 offset, u8 type, u8 section, u32 addend` entries with 201 NOP / 202 SECTION / 203 END),
+then `formats/sadx.py` reads Basic models (NJS_MODEL BE, 28-byte "DX" meshsets, materials
+whose texture id is valid even though NJD_FLAG_USE_TEXTURE is clear), SA2B chunk models,
+Ginja models and land tables (SADX 0x24 COLs: object @0x18; SA2B 0x20 COLs: object @0x10,
+first `chunk count` entries visible Ginja, rest Basic collision). Results: SA2B City Escape
+`stg13D.rel` -> 26,106 tris textured from `landtx13.prs`; SADX `ModelsMiles.rel` -> 44
+models (Tails 1,651 tris / 68 joints), `stg00.rel` Emerald Coast 4,460 tris (stage texture
+archive name not in the table - BEACH01/02/03.GVM by act - open). Entry `texture=NAME` ->
+`NAME.gvm`.
+
 ## Open
 
 - SADX (GXSE8P): models are Basic/Chunk data inside `.rel` modules + `.bin`; textures `.gvm`.

@@ -14,7 +14,7 @@ flowchart LR
     WALK --> MAN["disc_manifest.json<br/>every file, format, hash"]
     MAN --> RIP["2  Rip loop<br/>gcrip.rip"]
     RIP -->|"BMD / BDL"| J3D["3  J3D parse<br/>gcrip.formats.j3d"]
-    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, eurocom, hsf, sa2b, ninja_gc, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
+    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, eurocom, hsf, sa2b, sadx, ninja_gc, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
     RIP -->|"nothing claims it"| GX["3c  Structure scan (fallback)<br/>gcrip.gxscan: GX display lists,<br/>vertex + index arrays"]
     J3D --> ANIM["4  Clip matching<br/>rip._AnimIndex + j3d_anim"]
     ANIM --> GLTF["5  glTF export<br/>gcrip.export.gltf / ripcore.gltf"]
@@ -181,6 +181,7 @@ flowchart LR
         ONE[".one v0.60 (Shadow)<br/>formats.one"] --> RW["RenderWare DFF/TXD<br/>plugins.renderware"]
         BML["PSO .bml<br/>plugins.bml"] --> NJ["NJCM / GJCM Ninja + Ginja<br/>plugins.ninja_gc"]
         GVM["GVM / GVR<br/>plugins.gvm"]
+        REL[".rel modules + SA Tools tables<br/>plugins.sadx"] --> SADX["Basic / Ginja land tables<br/>formats.sadx"]
     end
     subgraph KROME["Krome (Merkury)"]
         RKV["RKV v1 / RKV2<br/>plugins.rkv"] --> MDL2["MDL2 .gmd<br/>plugins.mdl2"]
@@ -205,7 +206,7 @@ flowchart LR
         PRE["Neversoft PRE<br/>plugins.neversoft"]
         GCP["Blitz .gcp<br/>plugins.blitz"] --> GX["structure scan<br/>plugins.gx"]
     end
-    EAGL & EBO & SA2B & RW & NJ & MDL2 & MDL3 & HSD & EDB & HSF & P3D & DAS & BF & PRE & GX --> SCENE["ripcore Scene → glTF"]
+    EAGL & EBO & SA2B & SADX & RW & NJ & MDL2 & MDL3 & HSD & EDB & HSF & P3D & DAS & BF & PRE & GX --> SCENE["ripcore Scene → glTF"]
 ```
 
 
