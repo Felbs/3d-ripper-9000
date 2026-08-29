@@ -14,7 +14,7 @@ flowchart LR
     WALK --> MAN["disc_manifest.json<br/>every file, format, hash"]
     MAN --> RIP["2  Rip loop<br/>gcrip.rip"]
     RIP -->|"BMD / BDL"| J3D["3  J3D parse<br/>gcrip.formats.j3d"]
-    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, eurocom, hsf, sa2b, sadx, ninja_gc, billy, nu2, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
+    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, eurocom, hsf, sa2b, sadx, ninja_gc, billy, nu2, ttdisp, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
     RIP -->|"nothing claims it"| GX["3c  Structure scan (fallback)<br/>gcrip.gxscan: GX display lists,<br/>vertex + index arrays"]
     J3D --> ANIM["4  Clip matching<br/>rip._AnimIndex + j3d_anim"]
     ANIM --> GLTF["5  glTF export<br/>gcrip.export.gltf / ripcore.gltf"]
@@ -206,10 +206,11 @@ flowchart LR
         BF["Jade .bf<br/>plugins.jade"]
         PRE["Neversoft PRE<br/>plugins.neversoft"]
         GCP["Blitz .gcp<br/>plugins.blitz"] --> GX["structure scan<br/>plugins.gx"]
-        NU2["TT NU20 .gsc/.csc<br/>plugins.nu2"]
+        NU2["TT NU20 .gsc/.csc (LSW1)<br/>plugins.nu2"]
+        TTPK["TT .fpk/.cpk packs<br/>plugins.ttdisp"] --> DISP["DISP programs .csc/.chg<br/>(LSW2, Narnia)<br/>formats.ttdisp"]
         DBL["Avalanche .dbl/.dbu<br/>plugins.dbl"] --> GX
     end
-    EAGL & EBO & SA2B & SADX & BILLY & RW & NJ & MDL2 & MDL3 & HSD & EDB & HSF & P3D & DAS & BF & PRE & NU2 & GX --> SCENE["ripcore Scene → glTF"]
+    EAGL & EBO & SA2B & SADX & BILLY & RW & NJ & MDL2 & MDL3 & HSD & EDB & HSF & P3D & DAS & BF & PRE & NU2 & DISP & GX --> SCENE["ripcore Scene → glTF"]
 ```
 
 
@@ -220,7 +221,7 @@ primitives, decoded textures, clips) and hands them to the same exporter, so the
 ```mermaid
 flowchart TD
     F["file no J3D parser wants"] --> D{"plugins_for(path, head, size)"}
-    D -->|"retro / hsd / gma / pikmin / lm / sfa / jade /<br/>re4 / neversoft / renderware / ea / eagl / ebo / p3d / mdl2 / mdl3 / eurocom / hsf / sa2b / ninja_gc / billy / ttyd / feporr"| R["real parser<br/>meshes + materials + textures<br/>(+ rig, + clips where the format has them)"]
+    D -->|"retro / hsd / gma / pikmin / lm / sfa / jade /<br/>re4 / neversoft / renderware / ea / eagl / ebo / p3d / mdl2 / mdl3 / eurocom / hsf / sa2b / ninja_gc / billy / ttdisp / ttyd / feporr"| R["real parser<br/>meshes + materials + textures<br/>(+ rig, + clips where the format has them)"]
     D -->|"no ordinary plugin"| S["gx (fallback)<br/>entropy < 7.5 → gxscan.scan_blob(budget)"]
     S --> L["GX display lists<br/>opcode · count · index tuples,<br/>stride chained, NOP padding"]
     S --> N["neutral meshes<br/>f32 vertex run + u16 index run"]
@@ -329,6 +330,17 @@ then draws).  Stage terrain (`stg_*.lnd`, `formats/billy_lnd.py`) is not an obje
 one vertex pool (f32 positions, RGBA colours, s16 UVs) drawn by ~1,300 raw GX display
 lists through batch entries that name the material, whose word 9 indexes the file's texlist
 / GVM.
+
+Traveller's Tales' GameCube titles after LEGO Star Wars 1 (LEGO Star Wars II, The
+Chronicles of Narnia) keep their geometry in a `DISP` chunk that is a display *program*
+rather than a mesh list (`formats/ttdisp.py`): 8-byte commands select a material, load a
+node matrix and draw a mesh descriptor, every pointer is relative to its own position, and
+each descriptor is a GX vertex-descriptor word (which index attributes each strip row
+carries and at what width) over s16 positions, s8 normals, u8 UVs and RGBA colours.  The
+draw table at the head of the chunk maps command indices to materials; `.chg` character
+files wrap the same chunk in a skeleton (bone names, parents, bind matrices) whose per-bone
+lists name the draws, so LEGO minifigs come out rigged; `.fpk` / `.cpk` packs are plain
+28-byte-entry containers.
 
 The fallback is a map as much as a rip: its hits say where in an archive the models live
 and how the vertices are laid out, which is most of what a real plugin needs. Multi-platform
