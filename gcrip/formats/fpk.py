@@ -33,18 +33,32 @@ def is_fpk(head: bytes, size: int | None = None) -> bool:
 
 
 def members(data: bytes) -> list[Member]:
+    """Entries carry a 20-byte name (Naruto GNT) or a 32-byte one (RenderWare-based
+    Bloody Roar / D.O.N.: ``chr/ar2/0000_gc.dff``); the width whose entries all fit wins."""
     if not is_fpk(data[:64]):
         return []
     count, hsize, _total = struct.unpack_from(">3I", data, 4)
+    for width in (20, 32):
+        out = _entries(data, count, hsize, width)
+        if out is not None:
+            return out
+    return []
+
+
+def _entries(data: bytes, count: int, hsize: int, width: int) -> list[Member] | None:
+    esize = width + 12
+    first = hsize + count * esize
     out = []
     for i in range(count):
-        o = hsize + i * 32
-        if o + 32 > len(data):
-            break
-        name = data[o : o + 20].split(b"\0")[0].decode("latin-1", "replace")
-        off, packed, size = struct.unpack_from(">3I", data, o + 20)
-        if not name or off + packed > len(data) or size == 0:
-            continue
+        o = hsize + i * esize
+        if o + esize > len(data):
+            return None
+        name = data[o : o + width].split(b"\0")[0].decode("latin-1", "replace")
+        off, packed, size = struct.unpack_from(">3I", data, o + width)
+        if not name or off < first or off + packed > len(data) or size == 0:
+            return None
+        if any(ord(c) < 32 or ord(c) > 126 for c in name):
+            return None
         out.append(Member(name.replace("\\", "/"), off, packed, size))
     return out
 
