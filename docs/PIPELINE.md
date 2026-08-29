@@ -14,7 +14,7 @@ flowchart LR
     WALK --> MAN["disc_manifest.json<br/>every file, format, hash"]
     MAN --> RIP["2  Rip loop<br/>gcrip.rip"]
     RIP -->|"BMD / BDL"| J3D["3  J3D parse<br/>gcrip.formats.j3d"]
-    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
+    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
     RIP -->|"nothing claims it"| GX["3c  Structure scan (fallback)<br/>gcrip.gxscan: GX display lists,<br/>vertex + index arrays"]
     J3D --> ANIM["4  Clip matching<br/>rip._AnimIndex + j3d_anim"]
     ANIM --> GLTF["5  glTF export<br/>gcrip.export.gltf / ripcore.gltf"]
@@ -173,7 +173,7 @@ primitives, decoded textures, clips) and hands them to the same exporter, so the
 ```mermaid
 flowchart TD
     F["file no J3D parser wants"] --> D{"plugins_for(path, head, size)"}
-    D -->|"retro / hsd / gma / pikmin / lm / sfa / jade /<br/>re4 / neversoft / renderware / ea / eagl / ebo / ttyd / feporr"| R["real parser<br/>meshes + materials + textures<br/>(+ rig, + clips where the format has them)"]
+    D -->|"retro / hsd / gma / pikmin / lm / sfa / jade /<br/>re4 / neversoft / renderware / ea / eagl / ebo / p3d / ttyd / feporr"| R["real parser<br/>meshes + materials + textures<br/>(+ rig, + clips where the format has them)"]
     D -->|"no ordinary plugin"| S["gx (fallback)<br/>entropy < 7.5 → gxscan.scan_blob(budget)"]
     S --> L["GX display lists<br/>opcode · count · index tuples,<br/>stride chained, NOP padding"]
     S --> N["neutral meshes<br/>f32 vertex run + u16 index run"]
@@ -203,6 +203,16 @@ positions are normalised to the Geometry's own bounding box, and the per-list sk
 objects (`preload/gmisc.viv/bodyskel.ebo`, `faceskel.ebo`, `handskel.ebo`), which give
 names, parents and inverse-bind matrices - so players export rigged, in T-pose.
 
+Radical Entertainment's Pure3D (`plugins/p3d.py`, `plugins/rcf.py`: Simpsons Hit & Run and
+Road Rage, Hulk, The Incredible Hulk, Crash Tag Team Racing, Dark Summit, Monsters Inc,
+Godzilla) is a documented chunk tree - in both endians on GameCube - but its geometry is
+GX-native: each prim group carries a vertex-attribute descriptor, a big-endian fixed-point
+vertex buffer and a display list, which `formats/p3d.py` decodes with the same
+index-width search as EBO. Files are usually wrapped in `P3DZ`, Radical's LZR byte-LZ
+(`formats/lzr.py`, blocks of 4 KB), and on Hulk/Crash sit inside RCF archives
+(`formats/rcf.py`). Skins name their skeleton (`Skeleton`/`SkeletonJoint` rest poses),
+shaders name their textures (DXT1 DDS or PNG inside the file).
+
 The fallback is a map as much as a rip: its hits say where in an archive the models live
 and how the vertices are laid out, which is most of what a real plugin needs. Multi-platform
 engines that store only vertex/index buffers (Treyarch, Radical P3D) reach the scanner only
@@ -221,5 +231,6 @@ compatibility list's developer column suggests.
 | bone names | keyword + hierarchy walk from hands/feet/head | unmapped bone → add the token to `rig._KEYWORDS` |
 | eagl skin | weight row = 4 f32 summing to 1 with the bone index in the low mantissa byte; the counted pointer right before the `__const MATRIX4` tag | limbs tear when posed → a packet's slot table is elsewhere in the entry list; compare with `_packet_entries` order |
 | ebo streams | a stream is an `i8` record with a 12-byte `{size, stride, offset}` header just before its bytes; kind by stride (12/6/3 positions or normals, 4 UV or RGBA, 8 f32 UV, 2 RGB565); the command buffer is the header-less buffer that chains as GX strips | a list drops out → its stride guess (prefix + index widths) missed; check `_layout` against the stream counts |
+| p3d display list | stride = whatever chains through the zero-padded list; column widths (0/1/2 per attribute in GX order) picked by index ranges + compactness | a group drops out → the descriptor's second byte (2 = INDEX8, 3 = INDEX16, 1 = none) disagrees with the chain; check `_best_layout` |
 | generic table | (offset,size) rows near the start or at a header pointer; 4-aligned, non-overlapping, ≥40 % coverage | members look wrong → the archive has a name/hash column layout `find_toc` mis-picked; write a plugin |
 | gx scan | display lists chain at one stride; a position array exists for the biggest index; triangles are compact | slivers / spaghetti → wrong stride or array won the score; raise `_accept` limits or write a plugin |
