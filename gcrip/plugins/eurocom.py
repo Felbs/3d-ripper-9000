@@ -5,6 +5,7 @@ textures (gcrip.formats.eurocom).  One Scene per mesh entity."""
 
 from __future__ import annotations
 
+import math
 import posixpath
 import re
 import struct
@@ -60,51 +61,114 @@ def detect(path: str, head: bytes, size: int) -> bool:
     return path.lower().endswith(".edb") and eurocom.is_edb(head)
 
 
+def _rotation(rot) -> np.ndarray:
+    """Euler radians (X, then Y, then Z) as a row-vector rotation matrix."""
+    cx, sx = math.cos(rot[0]), math.sin(rot[0])
+    cy, sy = math.cos(rot[1]), math.sin(rot[1])
+    cz, sz = math.cos(rot[2]), math.sin(rot[2])
+    rx = np.array([[1, 0, 0], [0, cx, sx], [0, -sx, cx]], np.float64)
+    ry = np.array([[cy, 0, -sy], [0, 1, 0], [sy, 0, cy]], np.float64)
+    rz = np.array([[cz, sz, 0], [-sz, cz, 0], [0, 0, 1]], np.float64)
+    return rx @ ry @ rz
+
+
+def _entity_scene(edb, m, stem: str, decoded: dict) -> Scene | None:
+    scene = Scene(name=f"{stem}_{m.hashcode:08x}")
+    _add_strips(edb, m, scene, {}, decoded)
+    if not scene.primitives:
+        return None
+    scene.extras = {
+        "format": "eurocom-edb",
+        "edb_version": edb.version,
+        "hashcode": f"{m.hashcode:08x}",
+        "strips": len(m.strips),
+    }
+    return scene
+
+
+def _add_strips(edb, m, scene: Scene, mats: dict, decoded: dict, xform=None) -> None:
+    """Append a mesh entity's strips to ``scene``; ``xform`` = (scale, rotation, translation)."""
+    for s in m.strips:
+        ti = m.textures[s.texture] if s.texture < len(m.textures) else s.texture
+        key = ti
+        if key not in mats:
+            tex_key = None
+            if 0 <= ti < len(edb.textures):
+                if ti not in decoded:
+                    decoded[ti] = eurocom.texture_rgba(edb, edb.textures[ti])
+                if decoded[ti] is not None:
+                    tex_key = f"{edb.textures[ti].hashcode:08x}"
+                    scene.textures.setdefault(tex_key, decoded[ti])
+            alpha = bool(tex_key) and bool(np.any(scene.textures[tex_key][..., 3] < 255))
+            scene.materials.append(
+                MaterialDef(
+                    name=f"tex{ti}",
+                    texture=tex_key,
+                    alpha_blend=alpha or bool(s.transparency),
+                    double_sided=True,
+                )
+            )
+            mats[key] = len(scene.materials) - 1
+        pos = s.positions
+        nrm = s.normals
+        if xform is not None:
+            scale, rot, loc = xform
+            pos = ((pos.astype(np.float64) * scale) @ rot + loc).astype(np.float32)
+            if nrm is not None:
+                n2 = nrm.astype(np.float64) @ rot
+                ln = np.linalg.norm(n2, axis=1, keepdims=True)
+                nrm = np.divide(n2, ln, out=np.zeros_like(n2), where=ln > 0).astype(np.float32)
+        scene.primitives.append(
+            Primitive(
+                material=mats[key],
+                positions=pos,
+                indices=s.indices,
+                normals=nrm,
+                uvs=s.uvs,
+                colors=s.colors,
+            )
+        )
+
+
 def extract(data: bytes, path: str, src) -> list[Scene]:
     edb = eurocom.parse(data)
     stem = posixpath.basename(path)[:-4]
     decoded: dict[int, np.ndarray | None] = {}
-    scenes = []
+    by_hash = {el.hashcode: el for el in edb.entities}
+    scenes: list[Scene] = []
+    placed: set[int] = set()
+    for mp in eurocom.maps(edb):
+        pls = eurocom.placements(edb, mp)
+        if not pls:
+            continue
+        scene = Scene(name=f"{stem}_map")
+        mats: dict[int, int] = {}
+        used = missing = 0
+        for pl in pls:
+            el = by_hash.get(pl.object_ref)
+            if el is None:
+                missing += 1
+                continue
+            xform = (np.array(pl.scale), _rotation(pl.rotation), np.array(pl.position))
+            for m in eurocom.mesh_entity(edb, el):
+                _add_strips(edb, m, scene, mats, decoded, xform)
+            placed.add(pl.object_ref)
+            used += 1
+        if not scene.primitives:
+            continue
+        scene.extras = {
+            "format": "eurocom-map",
+            "edb_version": edb.version,
+            "placements": used,
+            "missing": missing,
+            "triangles": sum(len(p.indices) // 3 for p in scene.primitives),
+        }
+        scenes.append(scene)
     for el in edb.entities:
+        if el.hashcode in placed:
+            continue
         for m in eurocom.mesh_entity(edb, el):
-            scene = Scene(name=f"{stem}_{m.hashcode:08x}")
-            mats: dict[int, int] = {}
-            for s in m.strips:
-                if s.texture not in mats:
-                    ti = m.textures[s.texture] if s.texture < len(m.textures) else s.texture
-                    tex_key = None
-                    if 0 <= ti < len(edb.textures):
-                        if ti not in decoded:
-                            decoded[ti] = eurocom.texture_rgba(edb, edb.textures[ti])
-                        if decoded[ti] is not None:
-                            tex_key = f"{edb.textures[ti].hashcode:08x}"
-                            scene.textures.setdefault(tex_key, decoded[ti])
-                    alpha = bool(tex_key) and bool(np.any(scene.textures[tex_key][..., 3] < 255))
-                    scene.materials.append(
-                        MaterialDef(
-                            name=f"tex{ti}",
-                            texture=tex_key,
-                            alpha_blend=alpha or bool(s.transparency),
-                            double_sided=True,
-                        )
-                    )
-                    mats[s.texture] = len(scene.materials) - 1
-                scene.primitives.append(
-                    Primitive(
-                        material=mats[s.texture],
-                        positions=s.positions,
-                        indices=s.indices,
-                        normals=s.normals,
-                        uvs=s.uvs,
-                        colors=s.colors,
-                    )
-                )
-            if scene.primitives:
-                scene.extras = {
-                    "format": "eurocom-edb",
-                    "edb_version": edb.version,
-                    "hashcode": f"{m.hashcode:08x}",
-                    "strips": len(m.strips),
-                }
+            scene = _entity_scene(edb, m, stem, decoded)
+            if scene is not None:
                 scenes.append(scene)
     return scenes

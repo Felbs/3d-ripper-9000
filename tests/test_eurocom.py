@@ -116,3 +116,60 @@ def test_plugin_extract():
     scenes = plug.extract(data, "files/Filelist.000/game/binary/_bin_gc/quad.edb", None)
     assert len(scenes) == 1 and scenes[0].triangles == 2
     assert scenes[0].materials[0].texture == "06000001" and len(scenes[0].textures) == 1
+
+
+def build_edb_with_map() -> bytes:
+    """The quad EDB plus a map whose single placement puts the entity at (10, 20, 30)."""
+    d = bytearray(build_edb())
+    d += bytes(0x200)
+    map_elem, map_hdr, placements = 0x400, 0x420, 0x4C0
+    map_list = 0x54 + 6 * 8
+    struct.pack_into(">hh", d, map_list, 1, 1)
+    d[map_list + 4 : map_list + 8] = rel(map_list + 4, map_elem)
+    struct.pack_into(">IHHI", d, map_elem, 0x0A000001, 0, 0, map_hdr)
+    struct.pack_into(">I", d, map_hdr, 0x500)
+    struct.pack_into(">I", d, map_hdr + 0x48, 1)
+    d[map_hdr + 0x4C : map_hdr + 0x50] = rel(map_hdr + 0x4C, placements)
+    struct.pack_into(
+        ">I3fI3f3fHHIHh",
+        d,
+        placements,
+        0xFFFFFFFF,
+        10.0,
+        20.0,
+        30.0,
+        0,
+        0.0,
+        0.0,
+        0.0,
+        2.0,
+        2.0,
+        2.0,
+        1,
+        0,
+        0x02000001,
+        0,
+        -1,
+    )
+    struct.pack_into(">I", d, 0x14, len(d))
+    return bytes(d)
+
+
+def test_map_placements_assemble_a_level():
+    data = build_edb_with_map()
+    edb = eurocom.parse(data)
+    maps = eurocom.maps(edb)
+    assert len(maps) == 1
+    pls = eurocom.placements(edb, maps[0])
+    assert len(pls) == 1 and pls[0].object_ref == 0x02000001
+    assert pls[0].position == (10.0, 20.0, 30.0) and pls[0].scale == (2.0, 2.0, 2.0)
+    scenes = plug.extract(data, "files/level.edb", None)
+    level = [s for s in scenes if s.extras.get("format") == "eurocom-map"]
+    assert len(level) == 1
+    s = level[0]
+    assert s.extras["placements"] == 1 and s.extras["missing"] == 0
+    pos = s.primitives[0].positions
+    np.testing.assert_allclose(pos[0], [10, 20, 30], atol=1e-4)
+    np.testing.assert_allclose(pos[1], [12, 20, 30], atol=1e-4)
+    # the placed entity is not emitted a second time on its own
+    assert [x.extras["format"] for x in scenes] == ["eurocom-map"]
