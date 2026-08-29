@@ -57,10 +57,11 @@ def _entries(data: bytes, count: int, hsize: int, width: int) -> list[Member] | 
         off, packed, size = struct.unpack_from(">3I", data, o + width)
         if not name or any(ord(c) < 32 or ord(c) > 126 for c in name):
             return None
+        if not size:
+            continue  # empty slot (offset may be 0)
         if off < first or off + packed > len(data):
             return None
-        if size:
-            out.append(Member(name.replace("\\", "/"), off, packed, size))
+        out.append(Member(name.replace("\\", "/"), off, packed, size))
     return out
 
 
