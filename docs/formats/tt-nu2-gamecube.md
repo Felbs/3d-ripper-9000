@@ -54,6 +54,9 @@ program - decoded in `gcrip/formats/ttdisp.py` + `gcrip/plugins/ttdisp.py`:
   (14 bones), Narnia fox (4.4k tris, CI8 fur texture), rhino, ankle slicer, Narnia
   BonusFollow level (243 draws, 16 textures), LSW2 E5VehicleBonus level (527 draws, 132k
   tris, 23 textures).
+- Disc census 2026-08-29 through `plugins/ttdisp.py`: LEGO Star Wars II 687 files -> 682 scenes
+  (476 `.csc`, 206 `.chg`, 47 rigged), 18.2 M triangles, 6,737 textures, 0 failures (48 s);
+  Narnia 145 files -> 145 scenes, 4.2 M triangles, 2,295 textures, 0 failures.
 - `.fpk` (LSW2, LE) / `.cpk` (Narnia, BE): `magic 0x12345678 | u32 count | u32 total | u32
   hash | 0 | 0 | 28-byte entries (name offset, data offset, size, 0x10, 0 x3) | names`;
   members are `.ca3` animations (ANI4/ANI5 tags, open).
