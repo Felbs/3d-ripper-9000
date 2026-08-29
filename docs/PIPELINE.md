@@ -14,7 +14,7 @@ flowchart LR
     WALK --> MAN["disc_manifest.json<br/>every file, format, hash"]
     MAN --> RIP["2  Rip loop<br/>gcrip.rip"]
     RIP -->|"BMD / BDL"| J3D["3  J3D parse<br/>gcrip.formats.j3d"]
-    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
+    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
     RIP -->|"nothing claims it"| GX["3c  Structure scan (fallback)<br/>gcrip.gxscan: GX display lists,<br/>vertex + index arrays"]
     J3D --> ANIM["4  Clip matching<br/>rip._AnimIndex + j3d_anim"]
     ANIM --> GLTF["5  glTF export<br/>gcrip.export.gltf / ripcore.gltf"]
@@ -228,6 +228,15 @@ block is a GX display list with 9-byte vertices (position index, inline s8 norma
 and UV indices) over f32 positions that carry two bone indices and a weight when the model
 is rigged. Blitz Games' `.gcp` packs (`plugins/blitz.py`) are only split into their packages so
 the fallback scanner can read them.
+
+Eighting's `.fpk` packs (`plugins/fpk.py`: Naruto Clash of Ninja / Gekitou Ninja Taisen,
+Bloody Roar: Primal Fury, Zatch Bell!, Battle Stadium D.O.N) only needed a container: the
+members are PRS-compressed (GNTool's variant - MSB-first flags, big-endian long copies)
+and turn out to be HAL sysdope `.dat` models or RenderWare `.dff`/`.txd`, which the `hsd`
+and `renderware` plugins already read. Fallback containers (`generic`) are never applied
+to the members of an archive a real plugin opened: their contents are that plugin's own
+formats, and guessing tables inside them only manufactures pseudo-files (RE4's `.das`
+members became 25 k of them).
 
 The fallback is a map as much as a rip: its hits say where in an archive the models live
 and how the vertices are laid out, which is most of what a real plugin needs. Multi-platform
