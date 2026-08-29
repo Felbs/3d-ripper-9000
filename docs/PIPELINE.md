@@ -166,6 +166,49 @@ Y angle (x/z fields usually carry parameters), s16 angle units, 0x8000 = 180°.
 
 ## 7. Non-J3D formats and the universal fallback
 
+Which studio's disc goes through which container and model parser. Every box on the right
+is a `gcrip.plugins` module; the routes all end in the same ripcore Scene → glTF export.
+The full ledger with byte-layout notes is [FORMATS.md](FORMATS.md).
+
+```mermaid
+flowchart LR
+    subgraph EA["Electronic Arts"]
+        BIG["BIG / VIV / TERF / ZZDATA<br/>plugins.ea"] --> EAGL["EAGL .ord/.orp<br/>plugins.eagl"]
+        BIG --> EBO["EBO .ebo<br/>plugins.ebo"]
+    end
+    subgraph SEGA["Sega / Sonic Team"]
+        PRS["Sega PRS .prs<br/>plugins.segaprs"] --> SA2B["SA2B chunk tables<br/>plugins.sa2b"]
+        ONE[".one v0.60 (Shadow)<br/>formats.one"] --> RW["RenderWare DFF/TXD<br/>plugins.renderware"]
+        BML["PSO .bml<br/>plugins.bml"] --> NJ["NJCM / GJCM Ninja + Ginja<br/>plugins.ninja_gc"]
+        GVM["GVM / GVR<br/>plugins.gvm"]
+    end
+    subgraph KROME["Krome (Merkury)"]
+        RKV["RKV v1 / RKV2<br/>plugins.rkv"] --> MDL2["MDL2 .gmd<br/>plugins.mdl2"]
+        RKV --> MDL3["MDL3 .mdl + .mdg<br/>plugins.mdl3"]
+    end
+    subgraph EIGHT["Eighting"]
+        FPK["FPK + PRS<br/>plugins.fpk"] --> HSD["HAL HSD .dat<br/>plugins.hsd"]
+        FPK --> RW
+    end
+    subgraph EURO["Eurocom (EngineX)"]
+        FL["Filelist.bin + .000<br/>plugins.eurocom (sibling hook)"] --> EDB["GEOM .edb v170-252<br/>plugins.eurocom"]
+    end
+    subgraph HUDSON["Hudson"]
+        MPB["Mario Party .bin<br/>plugins.mpbin"] --> HSF["HSF<br/>plugins.hsf"]
+    end
+    subgraph RADICAL["Radical"]
+        RCF["RCF (RADCORE / ATG)<br/>plugins.rcf"] --> P3D["Pure3D P3DZ / LZR<br/>plugins.p3d"]
+    end
+    subgraph OTHER["Capcom / Ubisoft / Neversoft / Blitz"]
+        DAS["RE4 DAS / DRS<br/>plugins.re4"]
+        BF["Jade .bf<br/>plugins.jade"]
+        PRE["Neversoft PRE<br/>plugins.neversoft"]
+        GCP["Blitz .gcp<br/>plugins.blitz"] --> GX["structure scan<br/>plugins.gx"]
+    end
+    EAGL & EBO & SA2B & RW & NJ & MDL2 & MDL3 & HSD & EDB & HSF & P3D & DAS & BF & PRE & GX --> SCENE["ripcore Scene → glTF"]
+```
+
+
 Every plugin turns one file into `ripcore.scene.Scene` objects (joints, materials,
 primitives, decoded textures, clips) and hands them to the same exporter, so the chart in
 §1 is the whole story for every engine. What differs is only how much a format gives up:

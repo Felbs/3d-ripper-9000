@@ -255,7 +255,8 @@ name-based retargeter). Fingers, hair, clothing and weapon bones keep their orig
 256 more yield their standalone textures, 0 discs error - see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)**
 for the per-game matrix and the engine guesses for the rest.
 
-See [docs/PIPELINE.md](docs/PIPELINE.md) for diagrams of the whole pipeline (disc walk → J3D → glTF →
+See [docs/FORMATS.md](docs/FORMATS.md) for the ledger of every cracked file format (with the
+reverse-engineering notes under docs/formats/), and [docs/PIPELINE.md](docs/PIPELINE.md) for diagrams of the whole pipeline (disc walk → J3D → glTF →
 animation matching → Blender) and the list of heuristics with where to look when one is wrong.
 `tools/reel/make_reel.py` rebuilds the demo reel from a rip with Blender headless.
 
