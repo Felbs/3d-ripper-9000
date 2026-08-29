@@ -13,7 +13,9 @@ NAME = "nu2"
 
 
 def detect(path: str, head: bytes, size: int) -> bool:
-    return size > 64 and nu2.is_nu2(head)
+    # LSW2 / Narnia files share the magic but are big-endian with reversed tags (LBTN at
+    # 0x10) and belong to plugins.ttdisp
+    return size > 64 and nu2.is_nu2(head) and head[0x10:0x14] != b"LBTN"
 
 
 def extract(data: bytes, path: str, src) -> list[Scene]:
