@@ -66,7 +66,8 @@ def test_parse_and_geometry():
     assert obj.types == TYPES
     assert [(e.type, e.name) for e in obj.exports] == [("Geometry", "quad")]
     streams = ebo._streams(obj)
-    assert [s.stride for s in streams] == [0, 12, 4]
+    assert [s.stride for s in streams] == [12, 4]
+    assert len(ebo._command_buffers(obj, streams)) == 1
     meshes = ebo.geometry(obj)
     assert len(meshes) == 1
     m = meshes[0]

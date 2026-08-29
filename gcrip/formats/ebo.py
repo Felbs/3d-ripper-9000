@@ -147,31 +147,99 @@ def _triangulate(prims, idx: np.ndarray) -> np.ndarray:
 
 @dataclass
 class Stream:
-    rec: Record
+    rec: Record | None
     data_off: int  # file offset of the bytes
     size: int
     stride: int  # from the 12-byte {size, stride, offset} header before the data (0 if none)
 
 
+KNOWN_STRIDES = {2, 3, 4, 6, 8, 12, 16}
+
+
 def _streams(obj: Ebo) -> list[Stream]:
-    """Byte buffers of the file: ``i8`` records with flag 1, data at record + offset.  Real
-    vertex streams carry a big-endian ``{size, stride, data offset}`` header right before
-    the bytes (size may be rounded up to the record's count); command buffers do not."""
+    """Vertex streams of the file: every 12-byte big-endian ``{size, stride, data
+    offset}`` header whose offset points right after itself (NHL 2005 references them
+    through ``i8`` records, NBA Live 2005 through typed ``Short3``/``Short2`` records;
+    the header is the same)."""
     d = obj.data
     out = []
-    for r in obj.records:
-        if r.type != "i8" or r.flag != 1 or r.count < 2:
-            continue
-        off = r.at + r.offset
-        if off + r.count > len(d):
-            continue
-        stride = 0
-        if off >= 12:
-            size, stride_, off_ = struct.unpack_from(">III", d, off - 12)
-            if off_ == off and size <= r.count <= size + 64 and 1 <= stride_ <= 64:
-                stride = stride_
-        out.append(Stream(r, off, r.count, stride))
+    hi = min(len(d) - 12, obj.data_off + (len(d) - obj.data_off))
+    words = np.frombuffer(d, ">u4", (hi - obj.data_off) // 4, obj.data_off)
+    base = obj.data_off
+    cand = np.flatnonzero(words[2:] == (np.arange(len(words) - 2) * 4 + base + 12))
+    for i in cand:
+        size, stride = int(words[i]), int(words[i + 1])
+        off = base + i * 4 + 12
+        if stride in KNOWN_STRIDES and 0 < size <= len(d) - off and size % stride == 0:
+            out.append(Stream(None, off, size, stride))
     return out
+
+
+def _command_buffers(obj: Ebo, streams: list[Stream]) -> list[Stream]:
+    """Command-buffer candidates: header-less ``i8`` records (NHL) and the targets of
+    ``GcDisplayList`` / ``GcCommandBuffer`` records with flag 1 (NBA).  Each is a Stream
+    with stride 0 whose size runs to the next stream header or candidate."""
+    d = obj.data
+    header_offs = {s.data_off - 12 for s in streams}
+    data_offs = {s.data_off for s in streams}
+    starts = set()
+    for r in obj.records:
+        tgt = r.at + r.offset
+        if tgt >= len(d):
+            continue
+        raw_i8 = r.type == "i8" and r.flag == 1 and r.count >= 64 and tgt not in data_offs
+        if raw_i8 or (r.type in ("GcDisplayList", "GcCommandBuffer") and r.flag == 1):
+            starts.add(tgt)
+    bounds = sorted(header_offs | starts | {len(d)})
+    out = []
+    for s in sorted(starts):
+        nxt = next((b for b in bounds if b > s), len(d))
+        if nxt - s >= 64:
+            out.append(Stream(None, s, nxt - s, 0))
+    return out
+
+
+def _list_streams(d: bytes, c: Stream, streams: list[Stream], cmds: list[Stream], nxt_cmd: int):
+    """The streams a command buffer draws with.  The GcDisplayList's pointer table holds
+    the stream-header offsets and, 0x10 before the buffer, the display-list object; take
+    the header pointers in the table window around that word (NBA Live shares normal
+    streams between far-apart lists).  Without a table: the streams laid out between this
+    buffer and the next one (NHL 2005)."""
+    by_hdr = {s.data_off - 12: s for s in streams}
+    found: list[Stream] = []
+    for delta in (0x10, 0, 0x18):
+        key = struct.pack(">I", c.data_off - delta)
+        pos = d.find(key)
+        while pos >= 0 and not found:
+            for o in range(max(0, pos - 13 * 4), min(len(d) - 4, pos + 9 * 4), 4):
+                s = by_hdr.get(struct.unpack_from(">I", d, o)[0])
+                if s is not None and s not in found:
+                    found.append(s)
+            if len(found) < 2:
+                found = []
+                pos = d.find(key, pos + 4)
+        if found:
+            break
+    if found:
+        return found
+    return [s for s in streams if c.data_off < s.data_off < nxt_cmd]
+
+
+def _unit_like(d: bytes, s: Stream) -> bool:
+    """True when the xyz stream holds unit vectors (normals) rather than positions."""
+    n = s.size // s.stride
+    if s.stride == 6:
+        v = np.frombuffer(d, ">i2", n * 3, s.data_off).reshape(n, 3) / 32767.0
+    elif s.stride == 3:
+        v = np.frombuffer(d, np.int8, n * 3, s.data_off).reshape(n, 3) / 127.0
+    elif s.stride == 12:
+        v = np.frombuffer(d, ">f4", n * 3, s.data_off).reshape(n, 3)
+    else:
+        return False
+    if not np.isfinite(v).all():
+        return False
+    ln = np.linalg.norm(v.astype(np.float64), axis=1)
+    return bool(np.mean(np.abs(ln - 1.0) < 0.08) > 0.9)
 
 
 _BBOX_TAG = bytes.fromhex("ffffffff00000000")
@@ -184,9 +252,10 @@ def _bbox(obj: Ebo, start: int | None = None, end: int | None = None):
     lo_ = obj.data_off if start is None else start
     hi_ = len(d) if end is None else min(end, len(d))
     for o in range(lo_, hi_ - 40, 4):
-        if d[o : o + 8] == _BBOX_TAG:
+        if d[o : o + 4] == _BBOX_TAG[:4]:
             f = np.frombuffer(d, ">f4", 6, o + 8).astype(np.float64)
-            if np.isfinite(f).all() and (f[:3] <= f[3:]).all() and np.abs(f).max() < 1e7:
+            ok = np.isfinite(f).all() and (f[:3] <= f[3:]).all() and np.abs(f).max() < 1e7
+            if ok and (f[3:] - f[:3]).max() > 0:
                 return f[:3], f[3:]
     return None
 
@@ -200,16 +269,24 @@ Layout = tuple[int, list[tuple[str, int, int]]]
 def _layout(kinds: list[tuple[str, int]], stride: int) -> Layout | None:
     """(matrix prefix bytes, [(kind, byte offset, width)]) of a display-list vertex: the
     streams in GX attribute order, each index u8 when the stream has at most 256 entries
-    and u16 otherwise, after an optional 1-2 byte position/texture matrix prefix."""
+    and u16 otherwise, after an optional 1-2 byte position/texture matrix prefix.  Bytes
+    the known streams do not account for are an index into a stream the file describes
+    elsewhere (a colour, typically) and sit in its GX slot, after the normals."""
     ordered = sorted(kinds, key=lambda kn: GX_ORDER[kn[0]])
     widths = [1 if n <= 256 else 2 for _, n in ordered]
     base = sum(widths)
-    prefix = stride - base
-    if prefix not in (0, 1, 2):
+    extra = stride - base
+    if extra < 0 or extra > 4:
         return None
+    prefix = min(extra, 2)
+    unknown = extra - prefix
     out = []
     k = prefix
+    placed_unknown = unknown == 0
     for (kind, _n), w in zip(ordered, widths, strict=True):
+        if not placed_unknown and GX_ORDER[kind] >= GX_ORDER["col"]:
+            k += unknown
+            placed_unknown = True
         out.append((kind, k, w))
         k += w
     return prefix, out
@@ -242,6 +319,10 @@ def _decode_stream(d: bytes, s: Stream, bbox, kind: str) -> np.ndarray | None:
         return (raw * half + ctr).astype(np.float32)
     if kind == "nrm" and s.stride == 3:
         return np.frombuffer(d, np.int8, n * 3, s.data_off).reshape(n, 3) / np.float32(127.0)
+    if kind == "nrm" and s.stride == 6:
+        return np.frombuffer(d, ">i2", n * 3, s.data_off).reshape(n, 3) / np.float32(32767.0)
+    if kind == "nrm" and s.stride == 12:
+        return np.frombuffer(d, ">f4", n * 3, s.data_off).reshape(n, 3).astype(np.float32)
     if kind == "uv":
         if s.stride == 4:
             uv = np.frombuffer(d, ">i2", n * 2, s.data_off).reshape(n, 2).astype(np.float32)
@@ -265,7 +346,7 @@ def _find_list(d: bytes, c: Stream, strides=range(2, 17)):
     """(start, stride, used, prims) of the GX list inside a command buffer: the first
     opcode whose chain, at one of the strides, consumes most of the buffer."""
     best = None
-    for p in range(c.data_off, min(c.data_off + 0x60, len(d) - 3)):
+    for p in range(c.data_off, min(c.data_off + 0x200, len(d) - 3)):
         if (d[p] & 0xF8) not in PRIM_OPS or d[p + 1] != 0:
             continue
         for stride in strides:
@@ -278,19 +359,24 @@ def _find_list(d: bytes, c: Stream, strides=range(2, 17)):
     return best
 
 
-def _kinds(streams: list[Stream]) -> list[tuple[str, Stream]]:
+def _kinds(streams: list[Stream], d: bytes | None = None) -> list[tuple[str, Stream]]:
     """Attribute kind of each vertex stream in a group, in GX order.  Positions are the
-    first xyz stream (stride 12 / 6 / 3); a later xyz stream (12 / 3) is normals; the UV
-    stream is the last stride-8 (f32) or stride-4 (s16) stream; a stride-2 (RGB565) or
-    remaining stride-4 (RGBA) stream is colours."""
+    first xyz stream (stride 12 / 6 / 3) that is not made of unit vectors; a unit-vector
+    xyz stream is normals; the UV stream is the last stride-8 (f32) or the biggest
+    stride-4 (s16) stream; a stride-2 (RGB565) or remaining stride-4 (RGBA) stream is
+    colours."""
     out: list[tuple[str, Stream]] = []
     rest = list(streams)
-    pos = next((s for s in rest if s.stride in (12, 6, 3)), None)
-    if pos is None:
+    xyz = [s for s in rest if s.stride in (12, 6, 3)]
+    if not xyz:
         return []
+    unit = [s for s in xyz if d is not None and _unit_like(d, s)]
+    pos = next((s for s in xyz if s not in unit), xyz[0])
     out.append(("pos", pos))
     rest.remove(pos)
-    nrm = next((s for s in rest if s.stride in (12, 3)), None)
+    nrm = next((s for s in unit if s is not pos), None)
+    if nrm is None:
+        nrm = next((s for s in rest if s.stride in (12, 3)), None)
     if nrm is not None:
         out.append(("nrm", nrm))
         rest.remove(nrm)
@@ -369,9 +455,8 @@ def geometry(obj: Ebo) -> list[Mesh]:
     if "GcDisplayList" not in obj.types:
         return []
     d = obj.data
-    streams = _streams(obj)
-    cmd = [s for s in streams if s.stride == 0 and s.size >= 64]
-    arrays = [s for s in streams if s.stride > 0]
+    arrays = _streams(obj)
+    cmd = _command_buffers(obj, arrays)
     if not cmd or not arrays:
         return []
     bbox = _bbox(obj)
@@ -387,70 +472,92 @@ def geometry(obj: Ebo) -> list[Mesh]:
     meshes: list[Mesh] = []
     for mi, c in enumerate(cmd):
         nxt = min((x.data_off for x in cmd if x.data_off > c.data_off), default=len(d))
-        mine = [s for s in arrays if c.data_off < s.data_off < nxt]
-        kinds = _kinds(mine)
-        if not kinds or kinds[0][0] != "pos":
-            continue
-        counts = [(k, s.size // s.stride) for k, s in kinds]
-        base = sum(1 if n <= 256 else 2 for _, n in counts)
-        found = _find_list(d, c, (base, base + 1, base + 2))
-        if found is None:
-            continue
-        p0, stride, _used, prims = found
-        dl = d[p0 : c.data_off + c.size]
-        rows = np.concatenate(
-            [np.frombuffer(dl, np.uint8, cnt * stride, o).reshape(cnt, stride)
-             for _, cnt, o in prims]
-        )
-        lay = _layout(counts, stride)
-        if lay is None:
-            continue
-        prefix, cols = lay
-        obj_pos = _list_object(d, [s for _, s in kinds])
         bi = max((i for i, b in enumerate(blocks) if b <= c.data_off), default=-1)
-        box = (block_box[bi] if bi >= 0 else None) or _list_box(d, obj_pos) or bbox
-        decoded: dict[str, tuple[np.ndarray, np.ndarray]] = {}
-        by_kind = dict(kinds)
-        for kind, off, w in cols:
-            arr = _decode_stream(d, by_kind[kind], box, kind)
-            if arr is None:
+        box = (block_box[bi] if bi >= 0 else None) or bbox
+        near = [s for s in arrays if c.data_off < s.data_off < nxt]
+        table = _list_streams(d, c, arrays, cmd, nxt)
+        candidates = [near, table] if table != near else [near]
+        best = None
+        for mine in candidates:
+            mesh = _decode_list(d, c, mine, box, bbox)
+            if mesh is None:
                 continue
-            idx = _column(rows, off, w)
-            if idx.max() >= len(arr):
-                continue
-            decoded[kind] = (arr, idx)
-        if "pos" not in decoded:
+            score = sum(x is not None for x in (mesh.uvs, mesh.normals, mesh.colors))
+            if best is None or score > best[0]:
+                best = (score, mesh)
+        if best is None:
             continue
-        pos, pidx = decoded["pos"]
-        if not np.isfinite(pos).all():
-            continue
-        tri = _triangulate(prims, pidx)
-        if len(tri) < 3:
-            continue
-        joints = weights = None
-        if prefix >= 1:
-            slot = rows[:, 0] // 3
-            table = _skin_table(d, obj_pos, int(slot.max()) + 1)
-            if table is not None:
-                bones, w = table
-                joints = np.zeros((len(pos), 4), np.uint16)
-                weights = np.zeros((len(pos), 4), np.float32)
-                joints[pidx] = bones[slot]
-                weights[pidx] = w[slot]
+        mesh = best[1]
         name = names[bi] if 0 <= bi < len(names) else (names[0] if names else "geometry")
-        meshes.append(
-            Mesh(
-                f"{name}#{mi}" if len(cmd) > 1 else name,
-                pos.astype(np.float32),
-                tri,
-                _per_vertex(decoded, "uv", 2, len(pos), pidx),
-                _per_vertex(decoded, "nrm", 3, len(pos), pidx),
-                _per_vertex(decoded, "col", 4, len(pos), pidx),
-                joints,
-                weights,
-            )
-        )
+        mesh.name = f"{name}#{mi}" if len(cmd) > 1 else name
+        meshes.append(mesh)
     return meshes
+
+
+def _decode_list(d: bytes, c: Stream, mine: list[Stream], box, bbox) -> Mesh | None:
+    """One display list against a candidate stream set: None unless the vertex layout
+    fits the chain stride and every index column stays inside its stream."""
+    kinds = _kinds(mine, d)
+    if not kinds or kinds[0][0] != "pos":
+        return None
+    counts = [(k, s.size // s.stride) for k, s in kinds]
+    base = sum(1 if n <= 256 else 2 for _, n in counts)
+    found = _find_list(d, c, (base, base + 1, base + 2, base + 3))
+    if found is None:
+        return None
+    p0, stride, _used, prims = found
+    dl = d[p0 : c.data_off + c.size]
+    rows = np.concatenate(
+        [np.frombuffer(dl, np.uint8, cnt * stride, o).reshape(cnt, stride)
+         for _, cnt, o in prims]
+    )
+    lay = _layout(counts, stride)
+    if lay is None:
+        return None
+    prefix, cols = lay
+    obj_pos = _list_object(d, [s for _, s in kinds])
+    if box is None:
+        box = _list_box(d, obj_pos) or bbox
+    decoded: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+    by_kind = dict(kinds)
+    for kind, off, w in cols:
+        arr = _decode_stream(d, by_kind[kind], box, kind)
+        if arr is None:
+            continue
+        idx = _column(rows, off, w)
+        if idx.max() >= len(arr):
+            if kind == "pos":
+                return None
+            continue
+        decoded[kind] = (arr, idx)
+    if "pos" not in decoded:
+        return None
+    pos, pidx = decoded["pos"]
+    if not np.isfinite(pos).all():
+        return None
+    tri = _triangulate(prims, pidx)
+    if len(tri) < 3:
+        return None
+    joints = weights = None
+    if prefix >= 1:
+        slot = rows[:, 0] // 3
+        table = _skin_table(d, obj_pos, int(slot.max()) + 1)
+        if table is not None:
+            bones, w = table
+            joints = np.zeros((len(pos), 4), np.uint16)
+            weights = np.zeros((len(pos), 4), np.float32)
+            joints[pidx] = bones[slot]
+            weights[pidx] = w[slot]
+    return Mesh(
+        "",
+        pos.astype(np.float32),
+        tri,
+        _per_vertex(decoded, "uv", 2, len(pos), pidx),
+        _per_vertex(decoded, "nrm", 3, len(pos), pidx),
+        _per_vertex(decoded, "col", 4, len(pos), pidx),
+        joints,
+        weights,
+    )
 
 
 # ---------------------------------------------------------------------------
