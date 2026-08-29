@@ -281,6 +281,22 @@ def is_model_archive(d: bytes) -> bool:
     return bool(model_table(d))
 
 
+def looks_like_table(head: bytes, size: int) -> bool:
+    """Cheap sniff on a file head: id / offset pairs ending in 0xffffffff, offsets inside
+    the file and past the table."""
+    p = 0
+    n = 0
+    while p + 8 <= len(head):
+        i, o = struct.unpack_from(">2I", head, p)
+        p += 8
+        if i == 0xFFFFFFFF:
+            return n > 0
+        if i > 0xFFFF or o + 52 > size or o < p:
+            return False
+        n += 1
+    return n > 0 and len(head) < size
+
+
 def parse(d: bytes) -> list[tuple[int, ninja.Ninja]]:
     """[(id, Ninja)] - one tree per table entry."""
     out = []

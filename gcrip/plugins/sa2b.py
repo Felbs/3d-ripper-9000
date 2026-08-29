@@ -17,8 +17,7 @@ NAME = "sa2b"
 def detect(path: str, head: bytes, size: int) -> bool:
     if not path.lower().endswith(".prs/payload.bin") or size < 64:
         return False
-    # the head alone holds the first table rows; the full check runs in extract
-    return sa2b.model_table(head) != [] or head[:4] != b"\0\0\0\0" and False
+    return sa2b.looks_like_table(head, size)  # the full object check runs in extract
 
 
 def _texture_archive(src, path: str, stem: str) -> list[gvr.Texture]:
