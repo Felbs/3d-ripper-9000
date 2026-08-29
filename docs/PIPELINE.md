@@ -14,7 +14,7 @@ flowchart LR
     WALK --> MAN["disc_manifest.json<br/>every file, format, hash"]
     MAN --> RIP["2  Rip loop<br/>gcrip.rip"]
     RIP -->|"BMD / BDL"| J3D["3  J3D parse<br/>gcrip.formats.j3d"]
-    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, eurocom, hsf, sa2b, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
+    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, eurocom, hsf, sa2b, ninja_gc, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
     RIP -->|"nothing claims it"| GX["3c  Structure scan (fallback)<br/>gcrip.gxscan: GX display lists,<br/>vertex + index arrays"]
     J3D --> ANIM["4  Clip matching<br/>rip._AnimIndex + j3d_anim"]
     ANIM --> GLTF["5  glTF export<br/>gcrip.export.gltf / ripcore.gltf"]
@@ -173,7 +173,7 @@ primitives, decoded textures, clips) and hands them to the same exporter, so the
 ```mermaid
 flowchart TD
     F["file no J3D parser wants"] --> D{"plugins_for(path, head, size)"}
-    D -->|"retro / hsd / gma / pikmin / lm / sfa / jade /<br/>re4 / neversoft / renderware / ea / eagl / ebo / p3d / mdl2 / mdl3 / eurocom / hsf / sa2b / ttyd / feporr"| R["real parser<br/>meshes + materials + textures<br/>(+ rig, + clips where the format has them)"]
+    D -->|"retro / hsd / gma / pikmin / lm / sfa / jade /<br/>re4 / neversoft / renderware / ea / eagl / ebo / p3d / mdl2 / mdl3 / eurocom / hsf / sa2b / ninja_gc / ttyd / feporr"| R["real parser<br/>meshes + materials + textures<br/>(+ rig, + clips where the format has them)"]
     D -->|"no ordinary plugin"| S["gx (fallback)<br/>entropy < 7.5 → gxscan.scan_blob(budget)"]
     S --> L["GX display lists<br/>opcode · count · index tuples,<br/>stride chained, NOP padding"]
     S --> N["neutral meshes<br/>f32 vertex run + u16 index run"]
@@ -266,6 +266,11 @@ attaches byte-swapped to big-endian (`formats/sa2b.py` subclasses dcrip's chunk 
 (`plugins/gvm.py`, GX pixel formats behind a `GVRT` header), and Shadow the Hedgehog's
 `One Ver 0.60` archives (`formats/one.py`) unpack to RenderWare DFF/TXD for the
 `renderware` plugin.
+Phantasy Star Online Episode I & II packs its objects in `.bml` archives (`plugins/bml.py`:
+PRS-compressed Ninja model + GVM pairs) and ships `.nj` files whose `NJCM` blocks are the
+Dreamcast chunk format in GameCube byte order, plus `GJCM` "Ginja" blocks - GX-native
+attaches with vertex sets, parameter lists and raw display lists (`formats/ginja.py`);
+`plugins/ninja_gc.py` feeds both through dcrip's Ninja scene builder.
 
 The fallback is a map as much as a rip: its hits say where in an archive the models live
 and how the vertices are laid out, which is most of what a real plugin needs. Multi-platform
