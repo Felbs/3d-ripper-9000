@@ -21,6 +21,9 @@ dcrip = "dcrip.cli:main"
 [tool.setuptools.packages.find]
 include = ["gcrip*", "dcrip*", "ripcore*"]
 
+[tool.setuptools.package-data]
+gcrip = ["data/*.json", "data/**/*.ini", "data/**/*.INI"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py310"
