@@ -4,7 +4,7 @@ import struct
 
 import numpy as np
 
-from gcrip.formats import billy, prd, prs
+from gcrip.formats import billy, billy_lnd, prd, prs
 from gcrip.plugins import billy as plug
 
 
@@ -26,7 +26,7 @@ def make_arc() -> bytes:
     hdr = struct.pack(">3I", total, table, 0x38) + bytes(8) + b"0100" + bytes(8)
     hdr += struct.pack(">I", rel(0x40)).ljust(0x20, b"\0")
     hdr += struct.pack(">2I", rel(0x60), 0).ljust(0x20, b"\0")
-    obj = struct.pack(">2I", 7, 0x78) + struct.pack(">3f", 1, 2, 3) + bytes(12)
+    obj = struct.pack(">2I", 0, 0x78) + struct.pack(">3f", 1, 2, 3) + bytes(12)
     obj += struct.pack(">3f", 1, 1, 1) + struct.pack(">3I", 0, 0, 0xFDFDFDFD)
     obj += struct.pack(">5I", rel(vsets), 0, rel(record_off), 0, 1 << 16) + bytes(16)
     assert len(obj) == 0x5C
@@ -125,3 +125,78 @@ def test_prd_package():
     assert prd.is_prd(data[:0x20])
     assert plug.is_container("files/k_x.prd", data[:0x20])
     assert plug.expand(data) == [("a.arc", b"ARC!"), ("b.bin", b"BB")]
+
+
+def make_lnd() -> bytes:
+    """A stage with one material, one pool (4 positions / colours / uvs) and one strip."""
+    rel = lambda o: o - 0x20  # noqa: E731
+    name_off = 0x48 + 12
+    texlist = struct.pack(">3I", rel(name_off), 0, 0) + b"grass\0".ljust(8, b"\0")
+    gvm_off = 0x48 + len(texlist)
+    gvm = b"GVMH" + bytes(28)
+    mat_off = gvm_off + len(gvm)
+    material = bytes(0x24) + struct.pack(">I", 0)  # word 9: texlist index 0
+    pos_off = mat_off + len(material)
+    positions = struct.pack(">12f", 0, 0, 0, 10, 0, 0, 10, 0, 10, 0, 0, 10)
+    col_off = pos_off + len(positions)
+    colours = bytes([255, 0, 0, 255] * 4)
+    uv_off = col_off + len(colours)
+    uvs = struct.pack(">8h", 0, 0, 256, 0, 256, 256, 0, 256)
+    slots_off = uv_off + len(uvs)
+    slots = struct.pack(">BBHI", 0, 1, 4, rel(pos_off)) + struct.pack(">BBHI", 0, 3, 0, 0)
+    slots += struct.pack(">BBHI", 0, 2, 4, rel(col_off)) + struct.pack(">BBHI", 0, 2, 0, 0)
+    slots += struct.pack(">BBHI", 0, 1, 4, rel(uv_off)) + struct.pack(">BBHI", 0, 1, 0, 0)
+    dl_off = slots_off + len(slots)
+    dl = bytes([0x98, 0, 4]) + struct.pack(">12H", 0, 0, 0, 1, 1, 1, 3, 3, 3, 2, 2, 2) + bytes(5)
+    desc_off = dl_off + len(dl)
+    desc = struct.pack(">5I", 0x15, 0, 0, rel(dl_off), len(dl))
+    entry_off = desc_off + len(desc)
+    entry = struct.pack(">5I", 0, 0, 0, 0, 0)
+    batch_off = entry_off + len(entry)
+    batch = struct.pack(">3I", 1, 1, rel(entry_off))
+    tables_off = batch_off + len(batch)
+    mat_table = struct.pack(">2I", 1, rel(mat_off))
+    pool_table = struct.pack(">2I", 0, rel(slots_off))
+    dl_table = struct.pack(">2I", 0, rel(desc_off))
+    parts_off = tables_off + 24
+    parts = struct.pack(
+        ">11I",
+        1,
+        rel(tables_off),
+        1,
+        rel(tables_off + 8),
+        1,
+        rel(tables_off + 16),
+        0,
+        0,
+        1,
+        1,
+        rel(batch_off),
+    )
+    level_off = parts_off + len(parts)
+    level = struct.pack(">4I", rel(parts_off), 0, 2, 0)
+    table_off = level_off + len(level)
+    total = table_off + 8
+    head = struct.pack(">3I", total, table_off, 0) + bytes(8) + b"0100" + bytes(8)
+    head += struct.pack(">8I", rel(level_off), 2, 0x18, 0, 0x20, rel(gvm_off), 0, 0)
+    head += struct.pack(">2I", 0x28, 1)  # two extra tables -> the texlist pair sits at 0x40
+    data = head.ljust(0x48, b"\0") + texlist + gvm + material + positions + colours + uvs
+    data += slots + dl + desc + entry + batch + mat_table + pool_table + dl_table
+    data += parts + level + bytes(8)
+    assert len(data) == total, (len(data), total)
+    return data
+
+
+def test_billy_lnd():
+    data = make_lnd()
+    assert billy_lnd.is_lnd(data[:0x60], len(data))
+    level = billy_lnd.parse(data)
+    assert level.texnames == ["grass"] and level.material_texture == {0: 0}
+    assert len(level.meshes) == 1
+    m = level.meshes[0]
+    assert len(m.indices) == 6 and m.colors is not None and m.uvs is not None
+    np.testing.assert_allclose(m.positions[2], [0, 0, 10])
+    np.testing.assert_allclose(m.uvs[3], [1, 1])
+    assert plug.detect("k_green1.prd/stg_green.lnd", data[:0x60], len(data))
+    scenes = plug.extract(data, "k_green1.prd/stg_green.lnd", None)
+    assert scenes[0].triangles == 2 and scenes[0].materials[0].name == "mat000"

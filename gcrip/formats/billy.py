@@ -49,7 +49,7 @@ def objects(p: bytes) -> list[int]:
             break
         o = q - 0x34
         q += 4
-        if o < 0x40 or o % 4:
+        if o < 0x20 or o % 4:
             continue
         w = struct.unpack_from(">II3f3i3fII", p, o)
         if w[0] >= 0x10000 or w[1] >= n or w[11] >= n or w[12] >= n:
