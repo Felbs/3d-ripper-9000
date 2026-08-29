@@ -65,8 +65,9 @@ class GinjaParser:
 
     # -- attach -------------------------------------------------------------------
 
-    def _vertex_sets(self, off: int) -> dict[int, np.ndarray]:
+    def _vertex_sets(self, off: int, fracs: dict[int, int] | None = None) -> dict[int, np.ndarray]:
         d = self.d
+        fracs = fracs or {}
         sets: dict[int, np.ndarray] = {}
         p = off
         for _ in range(16):
@@ -80,15 +81,16 @@ class GinjaParser:
             ncomp = {0: 2, 1: 3, 2: 3, 3: 9, 4: 3, 5: 3, 6: 4, 7: 1, 8: 2}.get(stype, 3)
             if ptr + count * ssize > len(d) or count == 0:
                 continue
+            scale = float(1 << fracs.get(attr, 8 if attr >= 5 else 0))
             if dtype == 4:
                 arr = np.frombuffer(d, ">f4", count * ssize // 4, ptr).reshape(count, -1)
                 arr = arr[:, :ncomp].astype(np.float32)
             elif dtype == 3:
                 arr = np.frombuffer(d, ">i2", count * ssize // 2, ptr).reshape(count, -1)
-                arr = arr[:, :ncomp].astype(np.float32) / (256.0 if attr >= 5 else 1.0)
+                arr = arr[:, :ncomp].astype(np.float32) / scale
             elif dtype == 2:
                 arr = np.frombuffer(d, ">u2", count * ssize // 2, ptr).reshape(count, -1)
-                arr = arr[:, :ncomp].astype(np.float32) / (256.0 if attr >= 5 else 1.0)
+                arr = arr[:, :ncomp].astype(np.float32) / scale
             elif dtype == 1:
                 arr = np.frombuffer(d, np.int8, count * ssize, ptr).reshape(count, -1)
                 arr = arr[:, :ncomp].astype(np.float32) / 127.0
@@ -114,18 +116,67 @@ class GinjaParser:
             sets[attr] = arr
         return sets
 
+    def _fracs(self, base: int, count: int) -> dict[int, int]:
+        """Fixed-point fraction bits per vertex attribute from the meshes' VtxAttrFmt
+        parameters (type 0: ``u16 attribute | u8 | u8 fraction``)."""
+        d = self.d
+        fracs: dict[int, int] = {}
+        for k in range(count):
+            mo = base + k * 16
+            if mo + 16 > len(d):
+                break
+            pp, pc = struct.unpack_from(">2I", d, mo)
+            for j in range(min(pc, 64)):
+                q = pp + j * 8
+                if q + 8 > len(d):
+                    break
+                if d[q] == 0:
+                    data = struct.unpack_from(">I", d, q + 4)[0]
+                    fracs.setdefault(data >> 16, data & 0xFF)
+        return fracs
+
+    def _skin(self, m: Model, sp: int, fracs: dict[int, int]) -> None:
+        """Skin-set records: bone-space rows written into the shared vertex cache."""
+        d = self.d
+        pscale = float(1 << fracs.get(1, 8))
+        nscale = float(1 << fracs.get(2, 8))
+        r = sp
+        for _ in range(256):
+            if r + 16 > len(d):
+                break
+            kind, _size, slot, count, rows, weights = struct.unpack_from(">4H2I", d, r)
+            r += 16
+            if kind > 2:
+                break
+            if rows + count * 12 > len(d) or (kind and weights + count * 4 > len(d)):
+                break
+            for i in range(count):
+                v = struct.unpack_from(">6h", d, rows + i * 12)
+                pos = np.array(v[:3], np.float32) / pscale
+                nrm = np.array(v[3:], np.float32) / nscale
+                if kind == 0:
+                    dest, w = slot + i, 1.0
+                else:
+                    idx, wt = struct.unpack_from(">2H", d, weights + i * 4)
+                    dest = slot + i if kind == 1 else idx
+                    w = wt / 255.0
+                m.vertices.append(VertexWrite(dest, pos, nrm, None, w, 0 if kind < 2 else 1))
+
     def attach(self, off: int) -> Model:
         d = self.d
-        vp, _sp, op, tp, oc, tc = struct.unpack_from(">4I2H", d, off)
+        vp, sp, op, tp, oc, tc = struct.unpack_from(">4I2H", d, off)
         m = Model(center=(0.0, 0.0, 0.0), radius=0.0)
-        sets = self._vertex_sets(vp) if vp else {}
+        fracs = {**self._fracs(tp, tc), **self._fracs(op, oc)}
+        sets = self._vertex_sets(vp, fracs) if vp else {}
         pos = sets.get(1)
-        if pos is None or len(pos) == 0:
-            raise NinjaError("attach without positions")
+        if sp:
+            self._skin(m, sp, fracs)
+        if (pos is None or len(pos) == 0) and not sp and not (oc or tc):
+            return m  # bounds-only attach (Billy Hatcher bone nodes)
         nrm = sets.get(2)
         col = sets.get(3)
         uv = sets.get(5)
-        for i in range(len(pos)):
+        for i in range(len(pos) if pos is not None else 0):
             m.vertices.append(
                 VertexWrite(
                     i,
@@ -142,7 +193,8 @@ class GinjaParser:
                 mo = base + k * 16
                 if mo + 16 > len(d):
                     break
-                mat = self._mesh(mo, m, mat, translucent, len(pos), nrm, col, uv)
+                npos = len(pos) if pos is not None else 0x10000
+                mat = self._mesh(mo, m, mat, translucent, npos, nrm, col, uv)
         return m
 
     def _mesh(self, mo, m, mat, translucent, npos, nrm, col, uv) -> Material:

@@ -30,8 +30,8 @@ def make_arc() -> bytes:
     obj += struct.pack(">3f", 1, 1, 1) + struct.pack(">3I", 0, 0, 0xFDFDFDFD)
     obj += struct.pack(">5I", rel(vsets), 0, rel(record_off), 0, 1 << 16) + bytes(16)
     assert len(obj) == 0x5C
-    vs = struct.pack(">BBHII", 1, 12, 4, 0x40, rel(verts_off)) + bytes(4)
-    vs += struct.pack(">BBHII", 5, 4, 4, 0x30, rel(uvs_off)) + bytes(4)
+    vs = struct.pack(">BBHII", 1, 12, 4, 0x41, rel(verts_off)) + bytes(4)
+    vs += struct.pack(">BBHII", 5, 4, 4, 0x38, rel(uvs_off)) + bytes(4)
     vs += bytes([0xFF]) + bytes(15)
     params = struct.pack(">BBHI", 1, 0, 0, 0x808) + struct.pack(">BBHI", 8, 0, 0, 3)
     record = struct.pack(">4I", rel(params_off), 2, rel(prims_off), len(prims))
@@ -44,16 +44,53 @@ def make_arc() -> bytes:
 def test_billy_arc():
     data = make_arc()
     assert billy.is_arc(data[:0x60], len(data))
-    meshes, textures = billy.parse(data)
-    assert len(meshes) == 1 and textures == []
-    m = meshes[0]
-    assert m.texture == 3
-    assert m.indices.tolist() == [0, 1, 2, 1, 3, 2]
-    np.testing.assert_allclose(m.positions[3], [1, 3, 3])
-    np.testing.assert_allclose(m.uvs[2], [1, 1])
+    assert billy.roots(data[0x20:]) == [0x40]
+    scenes, textures = billy.scenes(data, "item")
+    assert len(scenes) == 1 and textures == []
+    s = scenes[0]
+    assert s.triangles == 2 and len(s.joints) == 1
+    assert s.materials[0].name == "tex003"
+    prim = s.primitives[0]
+    corner = prim.indices[np.where(np.isclose(prim.uvs, [1, 1]).all(1))[0][0]]
+    np.testing.assert_allclose(prim.positions[corner], [2, 3, 3])
     assert plug.detect("x/item.arc", data[:64], len(data))
-    scenes = plug.extract(data, "x/item.arc", None)
-    assert scenes[0].triangles == 2 and scenes[0].materials[0].name == "tex3"
+    assert plug.extract(data, "x/item.arc", None)[0].triangles == 2
+
+
+def test_billy_skin():
+    """A bone node writes weighted rows into the vertex cache; the mesh node indexes it."""
+    data = bytearray(make_arc())
+    rel = lambda o: o - 0x20  # noqa: E731
+    # append: rows (s16 pos+nrm) for 4 vertices, weights, one type-1 skin record + end
+    rows_off = len(data)
+    rows = b"".join(
+        struct.pack(">6h", x * 256, y * 256, 0, 0, 0, 256)
+        for x, y in ((0, 0), (1, 0), (1, 1), (0, 1))
+    )
+    data += rows
+    w_off = len(data)
+    data += b"".join(struct.pack(">2H", 0, 255) for _ in range(4))
+    skin_off = len(data)
+    data += struct.pack(">4H2I", 1, 16, 0, 4, rel(rows_off), rel(w_off)) + struct.pack(
+        ">4H2I", 3, 0, 0, 0, 0, 0
+    )
+    # child bone at +2 in x with that skin, and make the root's attach cache-only
+    bone_off = len(data)
+    obj = struct.pack(">2I", 0, rel(bone_off + 0x38)) + struct.pack(">3f", 2, 0, 0) + bytes(12)
+    obj += struct.pack(">3f", 1, 1, 1) + struct.pack(">3I", 0, 0, 0xFDFDFDFD)
+    obj += struct.pack(">4I2H", 0, rel(skin_off), 0, 0, 0, 0) + bytes(16)
+    data += obj
+    struct.pack_into(">I", data, 0x60 + 0x2C, rel(bone_off))  # root.child
+    root_attach = 0x60 + 0x38
+    struct.pack_into(">I", data, root_attach, 0)  # no vertex sets: positions from the cache
+    struct.pack_into(">I", data, 0, len(data))
+    struct.pack_into(">I", data, 4, len(data) - 8)
+    scenes, _ = billy.scenes(bytes(data), "skin")
+    s = scenes[0]
+    assert len(s.joints) == 2 and s.triangles == 2
+    prim = s.primitives[0]
+    assert prim.positions[:, 0].min() >= 2.0  # cache rows carry the bone translation
+    assert prim.weights is not None and prim.joints.max() == 1
 
 
 def prs_literals(raw: bytes) -> bytes:

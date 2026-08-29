@@ -8,7 +8,7 @@ import posixpath
 import numpy as np
 
 from gcrip.formats import billy, prd
-from ripcore.scene import MaterialDef, Primitive, Scene
+from ripcore.scene import Scene
 
 NAME = "billy"
 
@@ -30,38 +30,21 @@ def detect(path: str, head: bytes, size: int) -> bool:
 
 
 def extract(data: bytes, path: str, src) -> list[Scene]:
-    meshes, textures = billy.parse(data)
-    scene = Scene(name=posixpath.basename(path).rsplit(".", 1)[0])
-    if not meshes:
-        for i, t in enumerate(textures):
-            if t.rgba is not None:
-                scene.textures[f"{i}_{t.name}"] = t.rgba
-        if not scene.textures:
+    name = posixpath.basename(path).rsplit(".", 1)[0]
+    scenes, textures = billy.scenes(data, name)
+    rgba = {t.name: t.rgba for t in textures if t.rgba is not None}
+    if not scenes:
+        if not rgba:
             return []
+        scene = Scene(name=name)
+        scene.textures.update(rgba)
         scene.extras = {"format": "billy-arc", "textures_only": True}
         return [scene]
-    mats: dict[int, int] = {}
-    for m in meshes:
-        if m.texture not in mats:
-            key = None
-            if 0 <= m.texture < len(textures) and textures[m.texture].rgba is not None:
-                key = f"{m.texture}_{textures[m.texture].name}"
-                scene.textures.setdefault(key, textures[m.texture].rgba)
-            alpha = bool(key) and bool(np.any(scene.textures[key][..., 3] < 255))
-            scene.materials.append(
-                MaterialDef(
-                    name=f"tex{m.texture}", texture=key, alpha_blend=alpha, double_sided=True
-                )
-            )
-            mats[m.texture] = len(scene.materials) - 1
-        scene.primitives.append(
-            Primitive(
-                material=mats[m.texture],
-                positions=m.positions,
-                indices=m.indices,
-                normals=m.normals,
-                uvs=m.uvs,
-            )
-        )
-    scene.extras = {"format": "billy-arc", "meshes": len(meshes), "textures": len(textures)}
-    return [scene]
+    for scene in scenes:
+        for m in scene.materials:
+            if m.texture and m.texture in rgba:
+                scene.textures.setdefault(m.texture, rgba[m.texture])
+                m.alpha_blend = m.alpha_blend or bool(np.any(rgba[m.texture][..., 3] < 255))
+            elif m.texture:
+                m.texture = None
+    return scenes

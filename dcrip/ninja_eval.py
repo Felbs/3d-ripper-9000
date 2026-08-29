@@ -141,9 +141,7 @@ def evaluate(nj: ninja.Ninja, name: str, *, fps: float = 30.0) -> Scene:
                 vdata.append((e, uv, col, n))
             idx.append(vi)
 
-    for o in objs:
-        if o.model is None:
-            continue
+    def write(o):
         wm = world[o.index]
         rot = wm[:3, :3]
         for v in o.model.vertices:
@@ -158,12 +156,25 @@ def evaluate(nj: ninja.Ninja, name: str, *, fps: float = 30.0) -> Scene:
             if v.color is not None:
                 e.color = v.color
             e.influences.append((o.index, v.weight))
+
+    def show(o):
         if o.model.cache_slot is not None:
             cached_lists[o.model.cache_slot] = o.model.strips
-            continue
+            return
         if o.hidden:
-            continue
-        draw(o.model.strips, o, rot)
+            return
+        draw(o.model.strips, o, world[o.index][:3, :3])
+
+    # Ginja (GameCube) skins fill the vertex cache from bone nodes that come *after* the
+    # node drawing them, so the whole tree writes before anything is drawn; Dreamcast
+    # chunk models interleave writes and draws in traversal order (slots are reused).
+    passes = ([write], [show]) if nj.kind == "ginja" else ([write, show],)
+    for steps in passes:
+        for o in objs:
+            if o.model is None:
+                continue
+            for step in steps:
+                step(o)
 
     missing = 0
     for mi, b in buckets.items():
