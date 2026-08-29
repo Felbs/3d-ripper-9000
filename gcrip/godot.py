@@ -10561,25 +10561,22 @@ glow_bloom = 0.05"""
 
 def _sun_env_nodes(physical: bool) -> str:
     sun = (
-        '''[node name="Sun" type="DirectionalLight3D" parent="."]
+        """[node name="Sun" type="DirectionalLight3D" parent="."]
 transform = Transform3D(%s, 0, 10000, 0)
 light_intensity_lux = 100000.0
 light_temperature = 5500.0
 light_angular_distance = 0.53
 shadow_enabled = true
 directional_shadow_max_distance = 60000.0
-shadow_blur = 1.5'''
+shadow_blur = 1.5"""
         if physical
-        else '''[node name="Sun" type="DirectionalLight3D" parent="."]
+        else """[node name="Sun" type="DirectionalLight3D" parent="."]
 transform = Transform3D(%s, 0, 10000, 0)
 light_energy = 1.15
 shadow_enabled = true
-directional_shadow_max_distance = 60000.0'''
+directional_shadow_max_distance = 60000.0"""
     ) % _sun_basis()
-    env = (
-        '[node name="Env" type="WorldEnvironment" parent="."]\n'
-        'environment = SubResource("env")'
-    )
+    env = '[node name="Env" type="WorldEnvironment" parent="."]\nenvironment = SubResource("env")'
     if physical:
         env += '\ncamera_attributes = SubResource("camattr")'
     return sun + "\n\n" + env
@@ -10955,8 +10952,8 @@ _STORY_DEFEAT = {
 # itself, its scale and its EVNT index all come from the ripped TagMd placement.
 _STORY_NPC_TAG = {
     "dr_throw_medli_to_ledge": {
-        "tag": "TagMd",          # the tag actor whose placement carries the volume
-        "actor": "Md1",          # who it watches (never the player)
+        "tag": "TagMd",  # the tag actor whose placement carries the volume
+        "actor": "Md1",  # who it watches (never the player)
         "ground_min": 600.0,
         "ground_max": 700.0,
     },
@@ -10988,12 +10985,22 @@ _STORY_HIT = {
 # ww_story_labyrinths.json; sources are on each step there.
 _STORY_TIMER = {
     "icering_timer_starts": {
-        "start": True, "switch": 27, "room": 40, "seconds": 300.0,
-        "cave_stage": "MiniHyo", "isle_room": 40, "after_event": "MELT_ICE",
+        "start": True,
+        "switch": 27,
+        "room": 40,
+        "seconds": 300.0,
+        "cave_stage": "MiniHyo",
+        "isle_room": 40,
+        "after_event": "MELT_ICE",
     },
     "firemountain_timer_starts": {
-        "start": True, "switch": 24, "room": 20, "seconds": 300.0,
-        "cave_stage": "MiniKaz", "isle_room": 20, "after_event": "FREEZE_VOLCANO",
+        "start": True,
+        "switch": 24,
+        "room": 20,
+        "seconds": 300.0,
+        "cave_stage": "MiniKaz",
+        "isle_room": 20,
+        "after_event": "FREEZE_VOLCANO",
     },
     # the failure branch; only Ice Ring was mined as its own step, Fire Mountain shares the code
     "icering_timeout": {"timeout": True, "cave_stage": "MiniHyo"},
@@ -11224,7 +11231,8 @@ def _story_with_actors(path: Path) -> dict:
             step["defeat"] = dict(beat)
         if (step.get("trigger") or {}).get("kind") == "item":
             step["item_nos"] = [
-                int(h, 16) for h in re.findall(r"0x([0-9A-Fa-f]{2})", str(step.get("gives_item") or ""))
+                int(h, 16)
+                for h in re.findall(r"0x([0-9A-Fa-f]{2})", str(step.get("gives_item") or ""))
             ]
             pick = _STORY_PICKUPS.get(str(step.get("id", "")))
             if pick:
@@ -11560,10 +11568,21 @@ def _write_particles(rip_dir: Path, out_dir: Path) -> None:
                 "fields": ef.has_fields,
             }
             if en is not None:
-                rec["alpha"] = [en.alpha_in_timing, en.alpha_out_timing, en.alpha_in_value,
-                                en.alpha_base_value, en.alpha_out_value]
-                rec["scale"] = [en.scale_in_timing, en.scale_out_timing, en.scale_in_x,
-                                en.scale_out_x, en.scale_in_y, en.scale_out_y]
+                rec["alpha"] = [
+                    en.alpha_in_timing,
+                    en.alpha_out_timing,
+                    en.alpha_in_value,
+                    en.alpha_base_value,
+                    en.alpha_out_value,
+                ]
+                rec["scale"] = [
+                    en.scale_in_timing,
+                    en.scale_out_timing,
+                    en.scale_in_x,
+                    en.scale_out_x,
+                    en.scale_in_y,
+                    en.scale_out_y,
+                ]
             (fx / f"{ef.res_id:04x}.json").write_text(json.dumps(rec), encoding="utf-8")
             n += 1
         print(f"  particles: {n} effects, {len(written_tex)} textures -> fx/")
@@ -12131,8 +12150,11 @@ def export_godot(
             if e.get("dest_stage") == "sea" and island in available:
                 e["dest_stage"] = island
             # collect where every door lands, so the --doors harness can stand on each one
-            key = (str(e.get("dest_stage", "")), int(e.get("dest_room", 0)),
-                   int(e.get("dest_spawn", 0)))
+            key = (
+                str(e.get("dest_stage", "")),
+                int(e.get("dest_room", 0)),
+                int(e.get("dest_spawn", 0)),
+            )
             door_targets.setdefault(
                 key, {"stage": key[0], "room": key[1], "spawn": key[2], "from": []}
             )["from"].append(name)
@@ -12141,7 +12163,12 @@ def export_godot(
         water = 0.0 if name.lower().startswith("sea") else -1.0e9
         (out_dir / "scenes" / f"{name}.tscn").write_text(
             _stage_tscn(
-                name, spawn, has_col=has_col, exits=exits, water_level=water, spawns=spawns,
+                name,
+                spawn,
+                has_col=has_col,
+                exits=exits,
+                water_level=water,
+                spawns=spawns,
                 physical=physical_on,
             ),
             encoding="utf-8",
@@ -12221,9 +12248,7 @@ def export_godot(
     (out_dir / "player.gd").write_text(_PLAYER_GD, encoding="utf-8")
     (out_dir / "player.tscn").write_text(_player_tscn(has_model), encoding="utf-8")
     (out_dir / "game.gd").write_text(_GAME_GD, encoding="utf-8")
-    (out_dir / "lighting.json").write_text(
-        json.dumps({"physical": physical_on}), encoding="utf-8"
-    )
+    (out_dir / "lighting.json").write_text(json.dumps({"physical": physical_on}), encoding="utf-8")
     # Four variants of each cel shader, because BOTH facts are fixed at shader compile time:
     #   cull mode   - the game's GX cull mode, carried through glTF as doubleSided
     #   blending    - whether the material writes ALPHA, which decides opaque vs transparent
@@ -12243,7 +12268,9 @@ def export_godot(
         (out_dir / f"ww_material{suffix}.gdshader").write_text(src, encoding="utf-8")
     mats_src = Path(__file__).parent / "data" / "ww_materials.json"
     if mats_src.exists():
-        (out_dir / "materials.json").write_text(mats_src.read_text(encoding="utf-8"), encoding="utf-8")
+        (out_dir / "materials.json").write_text(
+            mats_src.read_text(encoding="utf-8"), encoding="utf-8"
+        )
     _write_footsteps(rip_dir, out_dir)
     _write_particles(rip_dir, out_dir)
     (out_dir / "fx.gdshader").write_text(_FX_SHADER, encoding="utf-8")

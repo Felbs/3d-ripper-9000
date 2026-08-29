@@ -43,6 +43,7 @@ def build_p3d() -> bytes:
     desc += bytes([13, 2, 1, 2, 15, 4]) + struct.pack(">H", 4)
     dl = b"\x98\x00\x04" + bytes([0, 0, 1, 1, 2, 2, 3, 3])
     dl += bytes(-len(dl) % 32)
+
     def mem(cid, payload):
         return _chunk(cid, struct.pack("<HHII", 3, 3, len(payload), len(payload)) + payload)
 

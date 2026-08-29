@@ -73,8 +73,7 @@ def batch(
             f
             for f in files
             if any(
-                o.lower() == f.name.lower() if single else o.lower() in f.name.lower()
-                for o in only
+                o.lower() == f.name.lower() if single else o.lower() in f.name.lower() for o in only
             )
         ]
     if limit:

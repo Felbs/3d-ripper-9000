@@ -182,8 +182,8 @@ class Material:
     zwrite: bool
     material_color: tuple[float, float, float, float]
     tex_matrices: list = field(default_factory=lambda: [None] * 10)  # TexMtx per slot
-    konsts: list = field(default_factory=lambda: [None] * 4)      # GX konst RGBA, 0-255
-    kcolor_sel: tuple = ()                                        # per-stage KONST selector
+    konsts: list = field(default_factory=lambda: [None] * 4)  # GX konst RGBA, 0-255
+    kcolor_sel: tuple = ()  # per-stage KONST selector
     tev_colors: list = field(default_factory=lambda: [None] * 4)  # TEV registers C0..C3
 
     def flat_color(self) -> tuple[float, float, float] | None:

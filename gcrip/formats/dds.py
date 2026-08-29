@@ -90,7 +90,8 @@ def decode(data: bytes) -> np.ndarray:
             gt = a0 > a1
             for i in range(2, 8):
                 table[:, i] = np.where(
-                    gt, ((8 - i) * a0 + (i - 1) * a1) // 7,
+                    gt,
+                    ((8 - i) * a0 + (i - 1) * a1) // 7,
                     np.where(i < 6, ((6 - i) * a0 + (i - 1) * a1) // 5, np.where(i == 6, 0, 255)),
                 )
             a4 = np.zeros((n, 16), np.uint8)

@@ -131,7 +131,7 @@ def _bridge_spans(placements, paths, mult, offset) -> list[dict]:
         # (dzs.py's header note), so the export offset is the whole transform
         ends = [[px - offset[0], py, pz - offset[2]] for px, py, pz in pts[:2]]
         key = (round(ends[0][0]), round(ends[0][2]), round(ends[1][0]), round(ends[1][2]))
-        if key in seen:      # the same bridge repeats on every story layer
+        if key in seen:  # the same bridge repeats on every story layer
             continue
         seen.add(key)
         dx = ends[1][0] - ends[0][0]
@@ -140,16 +140,18 @@ def _bridge_spans(placements, paths, mult, offset) -> list[dict]:
         length = math.sqrt(dx * dx + dy * dy + dz * dz)
         spacing = (47.0 + (3.0 if length > 1300.0 else 0.0)) * 1.5
         planks = int(length / spacing)
-        if planks >= 50 or planks < 2:   # the game refuses this one too
+        if planks >= 50 or planks < 2:  # the game refuses this one too
             continue
-        out.append({
-            "room": room_no,
-            "a": [round(v, 2) for v in ends[0]],
-            "b": [round(v, 2) for v in ends[1]],
-            "planks": planks,
-            "spacing": round(spacing, 2),
-            "type": pl.params & 0xFF,
-        })
+        out.append(
+            {
+                "room": room_no,
+                "a": [round(v, 2) for v in ends[0]],
+                "b": [round(v, 2) for v in ends[1]],
+                "planks": planks,
+                "spacing": round(spacing, 2),
+                "type": pl.params & 0xFF,
+            }
+        )
     return out
 
 
@@ -281,7 +283,17 @@ def build_stage(
     disc = _Disc(_find_iso(rip_dir, iso))
     try:
         return _build(
-            disc, rip_dir, stage_name, rooms, layers, spawns, rigs, world, out_dir, quiet, t0,
+            disc,
+            rip_dir,
+            stage_name,
+            rooms,
+            layers,
+            spawns,
+            rigs,
+            world,
+            out_dir,
+            quiet,
+            t0,
             layer=layer,
         )
     finally:
@@ -289,7 +301,17 @@ def build_stage(
 
 
 def _build(
-    disc, rip_dir, stage_name, rooms, layers, spawns, rigs, world, out_dir, quiet, t0,
+    disc,
+    rip_dir,
+    stage_name,
+    rooms,
+    layers,
+    spawns,
+    rigs,
+    world,
+    out_dir,
+    quiet,
+    t0,
     layer: int | None = None,
 ) -> dict:
     stages = disc.stages()
@@ -352,16 +374,25 @@ def _build(
             scls = d.scls or stage_scls
             placements += [(room_no, p, scls) for p in d.placements]
             ship_pts += [
-                {"room": room_no, "id": sp.ship_id, "pos": list(sp.pos),
-                 "rot_y_deg": round(sp.rot_y_deg, 2)}
+                {
+                    "room": room_no,
+                    "id": sp.ship_id,
+                    "pos": list(sp.pos),
+                    "rot_y_deg": round(sp.rot_y_deg, 2),
+                }
                 for sp in d.ships
             ]
             # RCAM/RARO: most authored cameras are per ROOM, not per stage - the stage-level
             # CAMR/AROB pair is only a fraction of the 574 on the disc
             cameras += [{**vars(c), "room": room_no} for c in d.cameras]
             cam_arrows += [
-                {**vars(a), "room": room_no, "pos": list(a.pos),
-                 "yaw_deg": a.yaw_deg, "pitch_deg": a.pitch_deg}
+                {
+                    **vars(a),
+                    "room": room_no,
+                    "pos": list(a.pos),
+                    "yaw_deg": a.yaw_deg,
+                    "pitch_deg": a.pitch_deg,
+                }
                 for a in d.cam_arrows
             ]
 
@@ -458,9 +489,7 @@ def _build(
             if target:
                 break
         if target is None:  # doors/props shipped inside this stage's own Stage.arc
-            target = index.find_stage_local(
-                stage_name, STAGE_LOCAL_MODELS.get(p.name, p.name)
-            )
+            target = index.find_stage_local(stage_name, STAGE_LOCAL_MODELS.get(p.name, p.name))
         if target is None:
             counts["unresolved"] += 1
             unresolved[p.name] += 1
@@ -755,8 +784,18 @@ def build_all(
         for i, name in enumerate(names):
             try:
                 r = _build(
-                    disc, rip_dir, name, None, layers, spawns, rigs, world, None, quiet,
-                    time.monotonic(), layer=layer,
+                    disc,
+                    rip_dir,
+                    name,
+                    None,
+                    layers,
+                    spawns,
+                    rigs,
+                    world,
+                    None,
+                    quiet,
+                    time.monotonic(),
+                    layer=layer,
                 )
             except Exception as e:  # noqa: BLE001
                 r = {"stage": name, "error": f"{type(e).__name__}: {e}"}
@@ -764,8 +803,7 @@ def build_all(
             if not quiet:
                 continue
             tag = r.get("error") or (
-                f"{r['room_models']} rooms {r['placed']} actors "
-                f"{r['unresolved']} unresolved"
+                f"{r['room_models']} rooms {r['placed']} actors {r['unresolved']} unresolved"
             )
             print(f"[{i + 1}/{len(names)}] {name:12} {tag}", flush=True)
     finally:

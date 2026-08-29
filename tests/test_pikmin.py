@@ -71,9 +71,7 @@ def _disp_list_chunk(flags: int, faces: int, dl: bytes, at: int) -> bytes:
 
 
 def build_mod() -> bytes:
-    pos = np.array(
-        [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 0, 1], [0, 1, 1]], np.float32
-    )
+    pos = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 0, 1], [0, 1, 1]], np.float32)
     nrm = np.array([[0, 0, 1], [0, 1, 0]], np.float32)
     uv = np.array([[0, 0], [1, 0], [0, 1]], np.float32)
     tex = pm.TexImg(8, 8, 0, 1, b"\xf8\x00" * 64)  # Pikmin format 0 = RGB565, red

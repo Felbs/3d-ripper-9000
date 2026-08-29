@@ -78,7 +78,7 @@ class _Blob:
         b = np.frombuffer(data, np.uint8)
         op_ok = np.zeros(n, bool)
         if n >= 3:
-            ops = (b[:-2] & 0xF8)
+            ops = b[:-2] & 0xF8
             is_op = (ops == 0x80) | (ops == 0x90) | (ops == 0x98) | (ops == 0xA0)
             count = (b[1:-1].astype(np.uint32) << 8) | b[2:]
             op_ok[:-2] = is_op & (count >= 3) & (count <= MAX_COUNT)
@@ -165,14 +165,16 @@ def _stride_candidates(blob: _Blob, p: int, count: int) -> list[int]:
     return out
 
 
-def find_display_lists(data: bytes, min_prims: int = 2, min_verts: int = 12,
-                       blob: _Blob | None = None) -> list[DisplayList]:
+def find_display_lists(
+    data: bytes, min_prims: int = 2, min_verts: int = 12, blob: _Blob | None = None
+) -> list[DisplayList]:
     """Best chain per start (most primitives), non-overlapping."""
     return [c[0] for c in candidate_lists(data, min_prims, min_verts, blob)]
 
 
-def candidate_lists(data: bytes, min_prims: int = 2, min_verts: int = 12,
-                    blob: _Blob | None = None) -> list[list[DisplayList]]:
+def candidate_lists(
+    data: bytes, min_prims: int = 2, min_verts: int = 12, blob: _Blob | None = None
+) -> list[list[DisplayList]]:
     """For every start offset that chains at some stride, the chains for each viable
     stride (longest first).  Which stride is right is decided by the geometry score in
     `scan_blob`, not here - a wrong stride can chain by accident but yields spaghetti."""
@@ -220,8 +222,11 @@ def infer_fields(vb: np.ndarray) -> list[tuple[int, int]]:
     fields = []
     c = 0
     while c < s:
-        if c + 1 < s and vb[:, c].max() <= 0x3F and vb[:, c + 1].max() > 0 and (
-            vb[:, c].max() > 0 or len(np.unique(vb[:, c + 1])) > 2
+        if (
+            c + 1 < s
+            and vb[:, c].max() <= 0x3F
+            and vb[:, c + 1].max() > 0
+            and (vb[:, c].max() > 0 or len(np.unique(vb[:, c + 1])) > 2)
         ):
             fields.append((c, 2))
             c += 2
@@ -376,9 +381,7 @@ def _accept(m: Mesh) -> bool:
     return m.compactness < 2.2
 
 
-def scan_blob(
-    data: bytes, max_lists: int = 2000, budget: float | None = None
-) -> list[Mesh]:
+def scan_blob(data: bytes, max_lists: int = 2000, budget: float | None = None) -> list[Mesh]:
     """Every mesh the blob yields; `budget` (seconds) stops the search early on huge
     files so one archive cannot stall a disc rip."""
     deadline = time.monotonic() + budget if budget else None
@@ -436,8 +439,11 @@ def _u16_runs(blob: _Blob, max_value: int = 0xFFF0, min_words: int = 60) -> list
     ok = arr < max_value
     bad = np.flatnonzero(~ok)
     edges = np.concatenate(([-1], bad, [len(ok)]))
-    runs = [(int(a + 1) * 2, int(b - a - 1)) for a, b in zip(edges[:-1], edges[1:], strict=True)
-            if b - a - 1 >= min_words]
+    runs = [
+        (int(a + 1) * 2, int(b - a - 1))
+        for a, b in zip(edges[:-1], edges[1:], strict=True)
+        if b - a - 1 >= min_words
+    ]
     blob._runs["u16"] = runs
     return runs
 
@@ -513,8 +519,9 @@ def find_neutral_meshes(blob: _Blob, max_score: float = 1.4) -> list[Mesh]:
                         sc = _compactness(pos, tri)
                         if sc < max_score and (found is None or sc < found.compactness):
                             dl = DisplayList(uoff, uoff + words * 2, 2, [(0x90, len(seg), uoff)])
-                            found = Mesh(dl, 0, 2, off, f"neutral-f32x{fstride}-{layout}",
-                                         pos, tri, sc)
+                            found = Mesh(
+                                dl, 0, 2, off, f"neutral-f32x{fstride}-{layout}", pos, tri, sc
+                            )
         if found is not None and _accept(found):
             meshes.append(found)
     return meshes
@@ -525,8 +532,14 @@ def find_neutral_meshes(blob: _Blob, max_score: float = 1.4) -> list[Mesh]:
 # ---------------------------------------------------------------------------
 
 
-def scan_disc(iso, only: str | None = None, limit: int | None = None, out=None, quiet=False,
-              max_mb: float = 48.0):
+def scan_disc(
+    iso,
+    only: str | None = None,
+    limit: int | None = None,
+    out=None,
+    quiet=False,
+    max_mb: float = 48.0,
+):
     from pathlib import Path
 
     from gcrip.disc.image import DiscImage
@@ -541,8 +554,10 @@ def scan_disc(iso, only: str | None = None, limit: int | None = None, out=None, 
         files = [
             f
             for f in manifest.files
-            if f.kind in ("unknown", "archive") and 1024 <= f.size <= int(max_mb * (1 << 20))
-            and not f.path.startswith("sys/") and (not only or only in f.path)
+            if f.kind in ("unknown", "archive")
+            and 1024 <= f.size <= int(max_mb * (1 << 20))
+            and not f.path.startswith("sys/")
+            and (not only or only in f.path)
         ]
         if limit:
             files = files[:limit]
@@ -592,14 +607,18 @@ def main(argv=None) -> int:
     a = ap.parse_args(argv)
     game, report = scan_disc(a.iso, a.only, a.limit, a.out, a.quiet, a.max_mb)
     tri = sum(m.triangles for _, _, ms in report for m in ms)
-    print(f"{game['id']} {game['title']}: {len(report)} files with geometry, "
-          f"{sum(len(ms) for _, _, ms in report)} meshes, {tri:,} triangles")
+    print(
+        f"{game['id']} {game['title']}: {len(report)} files with geometry, "
+        f"{sum(len(ms) for _, _, ms in report)} meshes, {tri:,} triangles"
+    )
     for path, _size, ms in sorted(report, key=lambda r: -sum(m.triangles for m in r[2]))[:25]:
         t = sum(m.triangles for m in ms)
         kinds = {m.pos_kind for m in ms}
         sc = min(m.compactness for m in ms)
-        print(f"  {t:8,} tris {len(ms):4} meshes {'/'.join(sorted(kinds)):10} "
-              f"best {sc:.3f}  {path[-70:]}")
+        print(
+            f"  {t:8,} tris {len(ms):4} meshes {'/'.join(sorted(kinds)):10} "
+            f"best {sc:.3f}  {path[-70:]}"
+        )
     return 0
 
 

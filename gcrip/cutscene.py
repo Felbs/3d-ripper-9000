@@ -15,6 +15,7 @@ What is baked (the features a scene needs to read on screen):
 
 Sound and particle objects are recorded by name only - the engine has no emitter for them yet.
 """
+
 from __future__ import annotations
 
 import json
@@ -28,7 +29,7 @@ from gcrip.formats import rarc, stb, yay0, yaz0
 
 DEMO_ANIMS = Path(__file__).with_name("data") / "ww_demo_anims.json"
 FPS = 30.0
-POS_ROUND = 0      # game units are ~100 per metre: whole units are far below what shows
+POS_ROUND = 0  # game units are ~100 per metre: whole units are far below what shows
 ANGLE_ROUND = 2
 
 
@@ -97,14 +98,22 @@ def _views(obj: stb.Object, functions: list[stb.Function]) -> dict[str, _TrackVi
     return {t.name: _TrackView(t.keys, functions) for t in obj.tracks}
 
 
-def _vec(views: dict[str, _TrackView], frame: int, triple: str, axes: tuple[str, str, str],
-         last: list[float] | None) -> list[float] | None:
+def _vec(
+    views: dict[str, _TrackView],
+    frame: int,
+    triple: str,
+    axes: tuple[str, str, str],
+    last: list[float] | None,
+) -> list[float] | None:
     """Sample a vector feature: the XYZ track sets all three, the per-axis tracks override
     one component each (the game writes both, e.g. TRANSLATION_XYZ plus TRANSLATION_Y)."""
     out = list(last) if last else None
     v = views[triple].value_at(frame) if triple in views else None
-    if (isinstance(v, (list, tuple)) and len(v) >= 3
-            and all(isinstance(x, (int, float)) and math.isfinite(x) for x in v[:3])):
+    if (
+        isinstance(v, (list, tuple))
+        and len(v) >= 3
+        and all(isinstance(x, (int, float)) and math.isfinite(x) for x in v[:3])
+    ):
         out = [float(x) for x in v[:3]]
     for i, axis in enumerate(axes):
         if axis not in views:
@@ -212,10 +221,15 @@ def bake(scene: stb.Stb, *, name: str = "") -> dict:
             tgt: list[float] | None = None
             cam: dict[str, Any] = {"id": obj.id, "eye": [], "target": [], "fov": [], "roll": []}
             for f in range(frames):
-                eye = _vec(views, f, "POSITION_XYZ", ("POSITION_X", "POSITION_Y", "POSITION_Z"), eye)
+                eye = _vec(
+                    views, f, "POSITION_XYZ", ("POSITION_X", "POSITION_Y", "POSITION_Z"), eye
+                )
                 tgt = _vec(
-                    views, f, "TARGET_POSITION_XYZ",
-                    ("TARGET_POSITION_X", "TARGET_POSITION_Y", "TARGET_POSITION_Z"), tgt,
+                    views,
+                    f,
+                    "TARGET_POSITION_XYZ",
+                    ("TARGET_POSITION_X", "TARGET_POSITION_Y", "TARGET_POSITION_Z"),
+                    tgt,
                 )
                 cam["eye"].append([round(v, POS_ROUND) for v in eye] if eye else None)
                 cam["target"].append([round(v, POS_ROUND) for v in tgt] if tgt else None)
@@ -233,15 +247,26 @@ def bake(scene: stb.Stb, *, name: str = "") -> dict:
             rot: list[float] | None = None
             scl: list[float] | None = None
             a: dict[str, Any] = {
-                "id": obj.id, "pos": [], "rot_y": [], "scale": [],
-                "anim": [], "anim_frame": [], "anim_mode": [], "shape": [],
+                "id": obj.id,
+                "pos": [],
+                "rot_y": [],
+                "scale": [],
+                "anim": [],
+                "anim_frame": [],
+                "anim_mode": [],
+                "shape": [],
             }
             for f in range(frames):
                 pos = _vec(
-                    views, f, "TRANSLATION_XYZ",
-                    ("TRANSLATION_X", "TRANSLATION_Y", "TRANSLATION_Z"), pos,
+                    views,
+                    f,
+                    "TRANSLATION_XYZ",
+                    ("TRANSLATION_X", "TRANSLATION_Y", "TRANSLATION_Z"),
+                    pos,
                 )
-                rot = _vec(views, f, "ROTATION_XYZ", ("ROTATION_X", "ROTATION_Y", "ROTATION_Z"), rot)
+                rot = _vec(
+                    views, f, "ROTATION_XYZ", ("ROTATION_X", "ROTATION_Y", "ROTATION_Z"), rot
+                )
                 scl = _vec(views, f, "SCALING_XYZ", ("SCALING_X", "SCALING_Y", "SCALING_Z"), scl)
                 a["pos"].append([round(v, POS_ROUND) for v in pos] if pos else None)
                 a["rot_y"].append(round(rot[1], ANGLE_ROUND) if rot else None)
@@ -258,7 +283,7 @@ def bake(scene: stb.Stb, *, name: str = "") -> dict:
             for k in ("anim", "anim_frame", "anim_mode", "shape"):
                 a[k] = _rle(a[k])
             if all(a[k] is None for k in ("pos", "rot_y", "scale", "anim", "shape", "clip")):
-                continue   # a demo-only prop the file never actually drives
+                continue  # a demo-only prop the file never actually drives
             out["actors"].append(a)
         elif obj.kind == "message":
             msgs = _rle([_ident(views, f, "MESSAGE") for f in range(frames)])
@@ -335,9 +360,7 @@ def dump_cutscenes(rip_dir, out_dir=None, *, iso=None, quiet: bool = False) -> d
                 print(f"[{i}/{len(found)}] {name}: FAILED {ex}")
             continue
         # allow_nan=False: NaN/Infinity are not JSON and Godot's parser rejects the file
-        (out_dir / f"{name}.json").write_text(
-            json.dumps(baked, allow_nan=False), encoding="utf-8"
-        )
+        (out_dir / f"{name}.json").write_text(json.dumps(baked, allow_nan=False), encoding="utf-8")
         index[name] = {
             "arc": arc_path,
             "frames": baked["frames"],

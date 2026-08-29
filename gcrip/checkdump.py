@@ -117,7 +117,10 @@ def check_iso(path: Path, dat: Dat, quiet: bool = True) -> Verdict:
     size = path.stat().st_size
     if expect is not None and size != expect.size:
         return Verdict(
-            path.name, "SIZE", f"{size} bytes, Redump has {expect.size}", expect.game,
+            path.name,
+            "SIZE",
+            f"{size} bytes, Redump has {expect.size}",
+            expect.game,
             time.monotonic() - t0,
         )
     if expect is None and not any(r.size == size for r in dat.roms):
@@ -140,7 +143,10 @@ def check_iso(path: Path, dat: Dat, quiet: bool = True) -> Verdict:
         return Verdict(path.name, "MATCH", note, hit.game, time.monotonic() - t0)
     if expect is not None:
         return Verdict(
-            path.name, "HASH", f"sha1 {sha1} != Redump {expect.sha1}", expect.game,
+            path.name,
+            "HASH",
+            f"sha1 {sha1} != Redump {expect.sha1}",
+            expect.game,
             time.monotonic() - t0,
         )
     return Verdict(path.name, "UNKNOWN", f"sha1 {sha1} not in datfile", "", time.monotonic() - t0)

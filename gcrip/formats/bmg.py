@@ -61,18 +61,18 @@ MAGIC = b"MESGbmg1"
 
 # Counts are from the USA disc's zel_00.bmg (4411 entries), so every type here really occurs.
 TEXT_BOX_TYPES = {
-    0: "dialog",            # 3319
-    1: "special",           # 38
-    2: "wood",              # 24 - its own MSG2 process and its own palette
-    5: "demo",              # 22
-    6: "wood2",             # 6  - MSG2, like type 2
-    7: "wood3",             # 27 - MSG2, like type 2
-    8: "type_8",            # 13 - no separate screen; meaning not established
-    9: "item_get",          # 193
+    0: "dialog",  # 3319
+    1: "special",  # 38
+    2: "wood",  # 24 - its own MSG2 process and its own palette
+    5: "demo",  # 22
+    6: "wood2",  # 6  - MSG2, like type 2
+    7: "wood3",  # 27 - MSG2, like type 2
+    8: "type_8",  # 13 - no separate screen; meaning not established
+    9: "item_get",  # 193
     0xA: "talk_unfollowed",  # 550 - an ordinary talk box that does NOT follow the actor
-    0xB: "type_b",          # 181 - overrides the colour palette
-    0xC: "credits",         # 15
-    0xD: "centered",        # 14 - the one type that keeps its own alignment
+    0xB: "type_b",  # 181 - overrides the colour palette
+    0xC: "credits",  # 15
+    0xD: "centered",  # 14 - the one type that keeps its own alignment
     0xE: "wind_waker_song",  # 9
 }
 

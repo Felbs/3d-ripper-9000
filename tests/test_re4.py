@@ -47,7 +47,27 @@ def build_bin(texture: int = 0) -> bytes:
         faces += struct.pack(">HHH", i, i, i)
     hdr = struct.pack(
         ">IIIIIIBBHIIIBBHIIIHHI",
-        bone_off, 0, 0, 0, uv_off, 0, 0, 1, 1, mat_off, 0, 1, 0, 0, 0, 0, pos_off, nrm_off, 3, 3, 0,
+        bone_off,
+        0,
+        0,
+        0,
+        uv_off,
+        0,
+        0,
+        1,
+        1,
+        mat_off,
+        0,
+        1,
+        0,
+        0,
+        0,
+        0,
+        pos_off,
+        nrm_off,
+        3,
+        3,
+        0,
     )
     assert len(hdr) == 0x40
     out = hdr

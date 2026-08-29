@@ -103,8 +103,19 @@ def parse(data: bytes) -> WaveBank:
             wave_id = _u32(data, ctrl_wave_off) & 0xFFFF
             f = struct.unpack_from(">BBBxfIIIIIIhh", data, wave_off)
             group.waves[wave_id] = Wave(
-                wave_id, f[1], f[2], f[0], f[3], f[4], f[5], bool(f[6]), f[7], f[8], f[9],
-                f[10], f[11],
+                wave_id,
+                f[1],
+                f[2],
+                f[0],
+                f[3],
+                f[4],
+                f[5],
+                bool(f[6]),
+                f[7],
+                f[8],
+                f[9],
+                f[10],
+                f[11],
             )
         bank.groups.append(group)
     return bank

@@ -78,16 +78,24 @@ def test_report_lists_stages(tmp_path):
     d = tmp_path / "stages" / "M_Test"
     d.mkdir(parents=True)
     (d / "M_Test.gltf").write_text("{}")
-    (d / "M_Test_report.json").write_text(json.dumps(
-        {"stage": "M_Test", "rooms": [0, 1], "room_models": 3, "placed": 42,
-         "triangles": 1234, "unresolved": 1}
-    ))
+    (d / "M_Test_report.json").write_text(
+        json.dumps(
+            {
+                "stage": "M_Test",
+                "rooms": [0, 1],
+                "room_models": 3,
+                "placed": 42,
+                "triangles": 1234,
+                "unresolved": 1,
+            }
+        )
+    )
     out = write_report(res)
     html_text = out.read_text(encoding="utf-8")
     assert "Levels" in html_text
     assert "stages/M_Test/M_Test.gltf" in html_text
     assert "42 actors" in html_text
-    assert "GCRIP_GAME=\"GTST01\"" in html_text or "GCRIP_GAME=" in html_text
+    assert 'GCRIP_GAME="GTST01"' in html_text or "GCRIP_GAME=" in html_text
 
 
 def test_serve_root_redirects_cache_busted(tmp_path):

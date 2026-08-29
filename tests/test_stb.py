@@ -88,9 +88,9 @@ def make_file() -> bytes:
         6,
         para(0x12, struct.pack(">2f", 0.0, 2.0)),  # range 0..2 s
         para(0x16, struct.pack(">I", 1)),  # linear (ignored by hermite)
-        para(1, struct.pack(">I", (3 << 28) | 2) + struct.pack(">6f",
-                                                              0.0, 10.0, 0.0,
-                                                              2.0, 30.0, 0.0)),
+        para(
+            1, struct.pack(">I", (3 << 28) | 2) + struct.pack(">6f", 0.0, 10.0, 0.0, 2.0, 30.0, 0.0)
+        ),
         para(0, b""),
     )
     constant = fvb_block(2, para(1, struct.pack(">f", 7.5)), para(0, b""))
@@ -107,8 +107,11 @@ def make_file() -> bytes:
         + seq_wait(10)
         + seq_paragraphs(
             para(pt(59, 0x12), struct.pack(">I", 0)),  # ANIMATION_FRAME <- curve 0
-            data_paragraph(1, data_record(0x32, struct.pack(">3H", 0x27A, 0x26D, 0x21E), 3),
-                           data_record(0x31, b"\x04\x02", 2)),
+            data_paragraph(
+                1,
+                data_record(0x32, struct.pack(">3H", 0x27A, 0x26D, 0x21E), 3),
+                data_record(0x31, b"\x04\x02", 2),
+            ),
         )
         + seq_wait(5)
         + seq_end(),

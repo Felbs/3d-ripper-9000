@@ -969,6 +969,7 @@ def index_montpellier(
 @dataclass
 class SlotMaterial:
     """What a GEO element's material slot resolves to."""
+
     key: int
     texture: int
     color: tuple[float, float, float, float]

@@ -37,8 +37,13 @@ def _win_chunks(path: Path, chunk: int) -> Iterator[bytes]:
         ctypes.c_void_p,
     ]
     h = k32.CreateFileW(
-        str(path), GENERIC_READ, FILE_SHARE_READ, None, OPEN_EXISTING,
-        FILE_FLAG_NO_BUFFERING | FILE_FLAG_SEQUENTIAL_SCAN, None,
+        str(path),
+        GENERIC_READ,
+        FILE_SHARE_READ,
+        None,
+        OPEN_EXISTING,
+        FILE_FLAG_NO_BUFFERING | FILE_FLAG_SEQUENTIAL_SCAN,
+        None,
     )
     if h == INVALID or h is None:
         raise OSError(ctypes.get_last_error(), "CreateFileW failed")

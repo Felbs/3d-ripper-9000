@@ -60,8 +60,16 @@ class _Builder:
 
 
 def _vtx_attr(b: _Builder, attr, atype, cnt, ctype, frac, stride, ptr) -> list:
-    return [("I", attr), ("I", atype), ("I", cnt), ("I", ctype), ("B", frac), ("B", 0),
-            ("H", stride), ("p", ptr)]
+    return [
+        ("I", attr),
+        ("I", atype),
+        ("I", cnt),
+        ("I", ctype),
+        ("B", frac),
+        ("B", 0),
+        ("H", stride),
+        ("p", ptr),
+    ]
 
 
 def build_dat() -> tuple[bytes, dict]:
@@ -98,16 +106,36 @@ def build_dat() -> tuple[bytes, dict]:
     img = b.struct([("p", tex_off), ("H", 4), ("H", 4), ("I", 4), ("I", 0), ("f", 0.0), ("f", 0.0)])
     tobj = b.struct(
         [("p", 0), ("p", 0), ("I", 0), ("I", 4)]
-        + [("f", 0.0)] * 3 + [("f", 1.0)] * 3 + [("f", 0.0)] * 3
-        + [("I", 1), ("I", 1), ("B", 1), ("B", 1), ("H", 0), ("I", 0x50010), ("f", 1.0), ("I", 1),
-           ("p", img), ("p", 0), ("p", 0), ("p", 0)]
+        + [("f", 0.0)] * 3
+        + [("f", 1.0)] * 3
+        + [("f", 0.0)] * 3
+        + [
+            ("I", 1),
+            ("I", 1),
+            ("B", 1),
+            ("B", 1),
+            ("H", 0),
+            ("I", 0x50010),
+            ("f", 1.0),
+            ("I", 1),
+            ("p", img),
+            ("p", 0),
+            ("p", 0),
+            ("p", 0),
+        ]
     )
     mat = b.struct(
         [("I", 0x7F7F7FFF), ("I", 0xFFFFFFFF), ("I", 0xFFFFFFFF), ("f", 1.0), ("f", 50.0)]
     )
     mobj = b.struct(
-        [("p", 0), ("I", hsd.RENDER_DIFFUSE | hsd.RENDER_TEX0), ("p", tobj), ("p", mat),
-         ("p", 0), ("p", 0)]
+        [
+            ("p", 0),
+            ("I", hsd.RENDER_DIFFUSE | hsd.RENDER_TEX0),
+            ("p", tobj),
+            ("p", mat),
+            ("p", 0),
+            ("p", 0),
+        ]
     )
     # joints: child first (it has no children), then root; envelopes need both offsets
     ident = struct.pack(">12f", 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0)
@@ -116,22 +144,39 @@ def build_dat() -> tuple[bytes, dict]:
     child_ibm_off = b.add(child_ibm)
     child = b.struct(
         [("p", 0), ("I", hsd.JOBJ_SKELETON), ("p", 0), ("p", 0), ("p", 0)]
-        + [("f", 0.0), ("f", 0.0), ("f", math.pi / 2)] + [("f", 1.0)] * 3
-        + [("f", 0.0), ("f", 2.0), ("f", 0.0)] + [("p", child_ibm_off), ("p", 0)]
+        + [("f", 0.0), ("f", 0.0), ("f", math.pi / 2)]
+        + [("f", 1.0)] * 3
+        + [("f", 0.0), ("f", 2.0), ("f", 0.0)]
+        + [("p", child_ibm_off), ("p", 0)]
     )
     # placeholders for the envelope list: env0 = root only, env1 = child only
     # (jobj offsets known only after the root is written, so write root now with dobj later)
     root = b.struct(
-        [("p", 0), ("I", hsd.JOBJ_SKELETON_ROOT | hsd.JOBJ_ENVELOPE_MODEL),
-         ("p", child), ("p", 0), ("p", 0)]
-        + [("f", 0.0)] * 3 + [("f", 1.0)] * 3 + [("f", 0.0)] * 3 + [("p", root_ibm_off), ("p", 0)]
+        [
+            ("p", 0),
+            ("I", hsd.JOBJ_SKELETON_ROOT | hsd.JOBJ_ENVELOPE_MODEL),
+            ("p", child),
+            ("p", 0),
+            ("p", 0),
+        ]
+        + [("f", 0.0)] * 3
+        + [("f", 1.0)] * 3
+        + [("f", 0.0)] * 3
+        + [("p", root_ibm_off), ("p", 0)]
     )
     env0 = b.struct([("p", root), ("f", 1.0), ("p", 0), ("f", 0.0)])
     env1 = b.struct([("p", child), ("f", 1.0), ("p", 0), ("f", 0.0)])
     env_list = b.struct([("p", env0), ("p", env1), ("p", 0)])
     pobj = b.struct(
-        [("p", 0), ("p", 0), ("p", attrs), ("H", hsd.POBJ_ENVELOPE | (1 << 15)), ("H", n_disp),
-         ("p", dl_off), ("p", env_list)]
+        [
+            ("p", 0),
+            ("p", 0),
+            ("p", attrs),
+            ("H", hsd.POBJ_ENVELOPE | (1 << 15)),
+            ("H", n_disp),
+            ("p", dl_off),
+            ("p", env_list),
+        ]
     )
     dobj = b.struct([("p", 0), ("p", 0), ("p", mobj), ("p", pobj)])
     # patch the root's dobj pointer
@@ -225,9 +270,16 @@ def _figatree_archive(joint_count: int) -> bytes:
     # stream, little endian: LIN(op 2, 1 key): value=0.0 f32, wait 10;
     # SPL(op 4, 1 key): value=pi/2 f32, slope 0.0 f32, wait 10; CON(op 1): value 0, wait 0
     rotz = (
-        bytes([0x02]) + struct.pack("<f", 0.0) + bytes([10])
-        + bytes([0x04]) + struct.pack("<f", math.pi / 2) + struct.pack("<f", 0.0) + bytes([10])
-        + bytes([0x01]) + struct.pack("<f", 0.0) + bytes([0])
+        bytes([0x02])
+        + struct.pack("<f", 0.0)
+        + bytes([10])
+        + bytes([0x04])
+        + struct.pack("<f", math.pi / 2)
+        + struct.pack("<f", 0.0)
+        + bytes([10])
+        + bytes([0x01])
+        + struct.pack("<f", 0.0)
+        + bytes([0])
     )
     trax = bytes([0x01]) + struct.pack("<h", 0x0100) + bytes([0])  # s16 frac 8 -> 1.0
     rotz_off = b.add(rotz, 32)

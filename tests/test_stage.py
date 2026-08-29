@@ -87,8 +87,14 @@ def tiny_gltf(dirpath: Path, name: str, *, hidden_clone=False) -> Path:
         "samplers": [{}],
         "images": [{"uri": f"{name}_tex/t.png"}],
         "accessors": [
-            {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3",
-             "min": [0, 0, 0], "max": [1, 1, 0]},
+            {
+                "bufferView": 0,
+                "componentType": 5126,
+                "count": 3,
+                "type": "VEC3",
+                "min": [0, 0, 0],
+                "max": [1, 1, 0],
+            },
             {"bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"},
         ],
         "bufferViews": [
@@ -242,7 +248,7 @@ def test_bind_exits_by_arrival_inversion():
     class FakeDisc:
         def all_scls(self):
             return {
-                "Ojhous": [Exit("sea", 3, 44, 0)],   # interior returns to sea r44 spawn 3
+                "Ojhous": [Exit("sea", 3, 44, 0)],  # interior returns to sea r44 spawn 3
                 "Omasao": [Exit("sea", 5, 44, 0)],
                 "Nowhere": [Exit("sea", 9, 40, 0)],  # returns to a different island
             }

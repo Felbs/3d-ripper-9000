@@ -428,9 +428,29 @@ WW_ACTORS: dict[str, list[tuple[str, str | None]]] = {
 # Actors drawn from display lists embedded in the game executable (d_flower.o /
 # d_wood.o / d_grass.o symbol data) or pure effects - no archive model exists.
 CODE_DRAWN_PREFIXES = (
-    "kusa", "flwr", "pflwr", "flower", "pflower", "swood", "woodb",
-    "bonbori", "zenfire", "zenshut", "salvag", "salvfm", "swslvg", "pitfall",
-    "fire", "magma", "akabe", "kuro_", "ykgr", "ygstp", "mwtrsb", "mtflag", "quake",
+    "kusa",
+    "flwr",
+    "pflwr",
+    "flower",
+    "pflower",
+    "swood",
+    "woodb",
+    "bonbori",
+    "zenfire",
+    "zenshut",
+    "salvag",
+    "salvfm",
+    "swslvg",
+    "pitfall",
+    "fire",
+    "magma",
+    "akabe",
+    "kuro_",
+    "ykgr",
+    "ygstp",
+    "mwtrsb",
+    "mtflag",
+    "quake",
     # LOD01..LOD49: the ocean's distant-island stand-ins.  d_a_lod_bg.cpp:160 streams
     # "/lod%02d/bdl/model.bdl" out of res/Stage/sea/LODALL.arc at run time, keyed on the
     # placement's param - not an Object archive, and the real island rooms are placed
@@ -440,9 +460,25 @@ CODE_DRAWN_PREFIXES = (
 
 # Invisible logic actors: triggers, switches, tags, Tingle Tuner (agb) hooks, cameras.
 NO_MODEL_PREFIXES = (
-    "tag", "atttag", "agb", "and_sw", "sw_", "ky_tag", "kytag", "ltag",
-    "windtag", "alldie", "com_", "attag", "evt", "evsw", "gyctrl", "ky00you",
-    "camera", "arrow", "ajav",
+    "tag",
+    "atttag",
+    "agb",
+    "and_sw",
+    "sw_",
+    "ky_tag",
+    "kytag",
+    "ltag",
+    "windtag",
+    "alldie",
+    "com_",
+    "attag",
+    "evt",
+    "evsw",
+    "gyctrl",
+    "ky00you",
+    "camera",
+    "arrow",
+    "ajav",
 )
 
 # Names placed on the disc that d_stage.cpp's OBJNAME table (l_objectName) does not
@@ -451,7 +487,13 @@ NO_MODEL_PREFIXES = (
 # ignores them: editor leftovers and test junk.  Krock00 is the old name for the
 # falling rock that ships as "frock" (d_a_fallrock.cpp:56 loads Always/krock_00).
 DEAD_NAMES = (
-    "Krock00", "Stgate", "Sttoge", "Stdoorl", "Stdoorr", "TestPo", "speakun",
+    "Krock00",
+    "Stgate",
+    "Sttoge",
+    "Stdoorl",
+    "Stdoorr",
+    "TestPo",
+    "speakun",
 )
 
 # Model-less actors matched by exact name rather than prefix.  Each was traced from
@@ -459,23 +501,33 @@ DEAD_NAMES = (
 # where an archive is loaded at all it holds only collision or a texture.
 NO_MODEL_NAMES = frozenset(
     (
-        "ITat00",                            # fpcNm_SW_ITEM_e - "item taken" switch
-        "Ystm0", "Ystm1",                    # fpcNm_SteamTag_e - steam vent triggers
-        "NBOX", "NBOX10",                    # fpcNm_Obj_Akabe_e - NBOX.arc is one .dzb
-        "CmTrap", "TnTrap", "FgTrap",        # fpcNm_Obj_TnTrap_e - TnTrap.arc is one .dzb
-        "Owater", "Astop",                   # fpcNm_Obj_Mtest_e 6/7 - .dzb-only archives
-        "ReTag0",                            # fpcNm_Tag_Ret_e
-        "PScnChg",                           # fpcNm_TAG_GSHIP_e - ghost-ship scene change
-        "ObjTime",                           # fpcNm_Obj_Timer_e
-        "Warpfo",                            # fpcNm_WARPFOUT_e - warp-out trigger
-        "VolTag",                            # fpcNm_Tag_Volcano_e
-        "WLvTag",                            # fpcNm_Tag_Waterlevel_e
-        "SWat00",                            # fpcNm_SW_ATTACK_e
-        "frock",                             # fpcNm_TagRock_e - spawns falling rocks
-        "BLK_CR", "CrTrS3", "CrTrS4", "CrTrS5", "CrTrM1", "CrTrM2",  # fpcNm_Obj_Correct_e
-        "Mmusic",                            # fpcNm_Mmusic_e - music region
-        "spotbx1",                           # fpcNm_SPOTBOX_e
-        "Tpota",                             # fpcNm_Tpota_e
+        "ITat00",  # fpcNm_SW_ITEM_e - "item taken" switch
+        "Ystm0",
+        "Ystm1",  # fpcNm_SteamTag_e - steam vent triggers
+        "NBOX",
+        "NBOX10",  # fpcNm_Obj_Akabe_e - NBOX.arc is one .dzb
+        "CmTrap",
+        "TnTrap",
+        "FgTrap",  # fpcNm_Obj_TnTrap_e - TnTrap.arc is one .dzb
+        "Owater",
+        "Astop",  # fpcNm_Obj_Mtest_e 6/7 - .dzb-only archives
+        "ReTag0",  # fpcNm_Tag_Ret_e
+        "PScnChg",  # fpcNm_TAG_GSHIP_e - ghost-ship scene change
+        "ObjTime",  # fpcNm_Obj_Timer_e
+        "Warpfo",  # fpcNm_WARPFOUT_e - warp-out trigger
+        "VolTag",  # fpcNm_Tag_Volcano_e
+        "WLvTag",  # fpcNm_Tag_Waterlevel_e
+        "SWat00",  # fpcNm_SW_ATTACK_e
+        "frock",  # fpcNm_TagRock_e - spawns falling rocks
+        "BLK_CR",
+        "CrTrS3",
+        "CrTrS4",
+        "CrTrS5",
+        "CrTrM1",
+        "CrTrM2",  # fpcNm_Obj_Correct_e
+        "Mmusic",  # fpcNm_Mmusic_e - music region
+        "spotbx1",  # fpcNm_SPOTBOX_e
+        "Tpota",  # fpcNm_Tpota_e
     )
     + DEAD_NAMES
 )
@@ -485,9 +537,10 @@ NO_MODEL_NAMES = frozenset(
 # all), and "sea" is the procedural ocean mesh d_a_sea.cpp builds from Always textures.
 CODE_DRAWN_NAMES = frozenset(
     (
-        "MjFlag", "HcFlag",                  # fpcNm_MAJUU_FLAG_e, d_a_majuu_flag.cpp:818-833
-        "Gflag",                             # fpcNm_Goal_Flag_e, d_a_goal_flag.cpp:30-33
-        "sea",                               # fpcNm_SEA_e, d_a_sea.cpp:195-215
+        "MjFlag",
+        "HcFlag",  # fpcNm_MAJUU_FLAG_e, d_a_majuu_flag.cpp:818-833
+        "Gflag",  # fpcNm_Goal_Flag_e, d_a_goal_flag.cpp:30-33
+        "sea",  # fpcNm_SEA_e, d_a_sea.cpp:195-215
     )
 )
 
@@ -501,10 +554,10 @@ STAGE_LOCAL_MODELS = {
 # Treasure chests: model chosen from Object/Dalways.arc by (params >> 20) & 0xF.
 CHEST_PREFIXES = ("takara", "tkr")
 CHEST_MODELS = {
-    0: ("Dalways", "bdli/boxa.bdl"),   # light wood
-    1: ("Dalways", "bdli/boxb.bdl"),   # dark wood
-    2: ("Dalways", "bdli/boxc.bdl"),   # metal
-    3: ("Dalways", "bdlm/boxd.bdl"),   # big key
+    0: ("Dalways", "bdli/boxa.bdl"),  # light wood
+    1: ("Dalways", "bdli/boxb.bdl"),  # dark wood
+    2: ("Dalways", "bdli/boxc.bdl"),  # metal
+    3: ("Dalways", "bdlm/boxd.bdl"),  # big key
 }
 
 # Generic locked/plain doors ("KNOB..") share the Knob archive.

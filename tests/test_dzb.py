@@ -27,8 +27,18 @@ def build_dzb(verts, tris, groups, infs) -> bytes:
     out = bytearray(
         struct.pack(
             ">12I",
-            len(verts), o_vtx, len(tris), o_tri, 0, 0, 0, 0,
-            len(groups), o_grp, len(infs), o_inf,
+            len(verts),
+            o_vtx,
+            len(tris),
+            o_tri,
+            0,
+            0,
+            0,
+            0,
+            len(groups),
+            o_grp,
+            len(infs),
+            o_inf,
         )
     )
     out += names
@@ -94,8 +104,13 @@ def test_dzb_group_transform_baked():
 def test_dzb_property_decode_and_tags():
     # a floor quad (y=0) plus three vertical walls in the XY plane, one per wall code
     verts = [
-        (0, 0, 0), (10, 0, 0), (0, 0, 10),  # floor
-        (0, 0, 20), (10, 0, 20), (10, 100, 20), (0, 100, 20),  # wall quad corners
+        (0, 0, 0),
+        (10, 0, 0),
+        (0, 0, 10),  # floor
+        (0, 0, 20),
+        (10, 0, 20),
+        (10, 100, 20),
+        (0, 100, 20),  # wall quad corners
     ]
     inf1 = lambda wall, special=0, attr=0, ground=0, link=0: (  # noqa: E731
         link | (wall << 8) | (special << 12) | (attr << 16) | (ground << 21)
@@ -131,9 +146,14 @@ def test_dzb_property_decode_and_tags():
     assert list(d.tri_wall) == [0, 4, 1, 2, 0]
     assert list(d.is_wall()) == [False, True, True, True, True]
     assert d.tag_counts() == {
-        "ladder": 1, "ladder_top": 0, "climb": 1, "nohang": 1, "grab": 0,
+        "ladder": 1,
+        "ladder_top": 0,
+        "climb": 1,
+        "nohang": 1,
+        "grab": 0,
         "hang": 2,  # ladder + vine walls; nohang and Link-pass-through excluded
-        "hookshot": 1, "slide": 1,
+        "hookshot": 1,
+        "slide": 1,
     }
     _, lt = d.tagged("ladder")
     assert len(lt) == 1

@@ -37,6 +37,7 @@ Not modelled: the DSP biquads (IIR/FIR), Dolby, the scene's own fx settings (JAI
 outer fxmix lives in game data, not in the sequence), timed-parameter ramps inside a
 note. Pure numpy, no audio libraries.
 """
+
 from __future__ import annotations
 
 import math
@@ -65,13 +66,63 @@ REVERB_RETURN = 0.7  # fx-line return level
 # fxmix at roughly the flat 15 % wet mix this synth used before per-track sends existed.
 BASE_FXMIX = 0.16
 # TOscillator curve tables (index 0..16 over the segment); 0 = linear
-_REL_SAMPLE_CELL = [1.0, 0.970489, 0.781274, 0.546281, 0.399792, 0.289315, 0.212104, 0.157476,
-                    0.112613, 0.0817896, 0.0579852, 0.0436415, 0.0308237, 0.0237129, 0.0152593,
-                    0.00915555, 0.0]
-_REL_SQ_ROOT = [1.0, 0.878906, 0.765625, 0.660156, 0.5625, 0.472656, 0.390625, 0.316406, 0.25,
-                0.191406, 0.140625, 0.0976562, 0.0625, 0.0351562, 0.015625, 0.00390625, 0.0]
-_REL_SQUARE = [1.0, 0.968246, 0.935414, 0.901388, 0.866025, 0.829156, 0.790569, 0.75, 0.707107,
-               0.661438, 0.612372, 0.559017, 0.5, 0.433013, 0.353553, 0.25, 0.0]
+_REL_SAMPLE_CELL = [
+    1.0,
+    0.970489,
+    0.781274,
+    0.546281,
+    0.399792,
+    0.289315,
+    0.212104,
+    0.157476,
+    0.112613,
+    0.0817896,
+    0.0579852,
+    0.0436415,
+    0.0308237,
+    0.0237129,
+    0.0152593,
+    0.00915555,
+    0.0,
+]
+_REL_SQ_ROOT = [
+    1.0,
+    0.878906,
+    0.765625,
+    0.660156,
+    0.5625,
+    0.472656,
+    0.390625,
+    0.316406,
+    0.25,
+    0.191406,
+    0.140625,
+    0.0976562,
+    0.0625,
+    0.0351562,
+    0.015625,
+    0.00390625,
+    0.0,
+]
+_REL_SQUARE = [
+    1.0,
+    0.968246,
+    0.935414,
+    0.901388,
+    0.866025,
+    0.829156,
+    0.790569,
+    0.75,
+    0.707107,
+    0.661438,
+    0.612372,
+    0.559017,
+    0.5,
+    0.433013,
+    0.353553,
+    0.25,
+    0.0,
+]
 _CURVES = {1: _REL_SQUARE, 2: _REL_SQ_ROOT, 3: _REL_SAMPLE_CELL}
 MAX_LOOP_NOTE_SEC = 30.0  # a held looping note longer than this is cut
 MASTER_GAIN = 0.35
@@ -135,7 +186,9 @@ def _track_curves(seq: Sequence) -> tuple[dict[int, Vibrato], dict[int, list[tup
     for e in seq.events:
         if e.kind == "vibrato":
             depth, rate = e.value  # type: ignore[misc]
-            vib_changes.setdefault(e.track, [(0.0, 0.0, VIB_DEFAULT_RATE)]).append((e.sec, depth, rate))
+            vib_changes.setdefault(e.track, [(0.0, 0.0, VIB_DEFAULT_RATE)]).append(
+                (e.sec, depth, rate)
+            )
         elif e.kind == "param" and e.value[0] == 2:  # type: ignore[index]
             fx.setdefault(e.track, [(0.0, 0.0)]).append((e.sec, float(e.value[1])))  # type: ignore[index]
     vibs = {t: Vibrato(c) for t, c in vib_changes.items() if any(d for _s, d, _r in c)}
@@ -171,7 +224,9 @@ def _segment(start: float, target: float, n: int, mode: int) -> np.ndarray:
     return (start + (target - start) * frac).astype(np.float32)
 
 
-def _run_table(table, phase: float, max_samples: int, out_rate: int) -> tuple[np.ndarray, float, bool]:
+def _run_table(
+    table, phase: float, max_samples: int, out_rate: int
+) -> tuple[np.ndarray, float, bool]:
     """Play oscillator rows until hold / stop / the sample budget. Returns (envelope,
     final phase, reached_stop)."""
     parts: list[np.ndarray] = []
@@ -254,8 +309,16 @@ def _region_for(bank: ibnk.Bank, note: Note):
         vr = perc.region(note.velocity)
         if vr is None:
             return None
-        return (vr, perc.volume * vr.volume, perc.pitch * vr.pitch, perc.pan, True, None,
-                perc.release & 0x3FFF, None)
+        return (
+            vr,
+            perc.volume * vr.volume,
+            perc.pitch * vr.pitch,
+            perc.pan,
+            True,
+            None,
+            perc.release & 0x3FFF,
+            None,
+        )
     vr = prog.region(note.key, note.velocity)
     if vr is None:
         return None
@@ -322,8 +385,22 @@ def build_voices(
         if vib is not None:
             missing["vibrato_voices"] += 1
         voices.append(
-            Voice(n.start_sec, end_sec, release, wave, pcm, ratio, gain_l, gain_r, osc,
-                  direct_rel, gain_l * send, gain_r * send, posc, vib)
+            Voice(
+                n.start_sec,
+                end_sec,
+                release,
+                wave,
+                pcm,
+                ratio,
+                gain_l,
+                gain_r,
+                osc,
+                direct_rel,
+                gain_l * send,
+                gain_r * send,
+                posc,
+                vib,
+            )
         )
     return voices, missing
 
@@ -453,7 +530,9 @@ def _allpass(x: np.ndarray, delay: int, g: float) -> np.ndarray:
         y[start:end] = -g * x[start:end]
         if start >= delay:
             w = end - start
-            y[start:end] += x[start - delay : start - delay + w] + g * y[start - delay : start - delay + w]
+            y[start:end] += (
+                x[start - delay : start - delay + w] + g * y[start - delay : start - delay + w]
+            )
     return y
 
 

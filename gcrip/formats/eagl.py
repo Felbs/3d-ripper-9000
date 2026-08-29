@@ -232,9 +232,7 @@ def _packet_entries(elf: _Elf, o_shader: int) -> list[tuple[int, int | None, str
 def _decode_packet(elf: _Elf, o_shader: int, shader: str, warn: list[str]) -> Packet | None:
     d = elf.data
     ents = _packet_entries(elf, o_shader)
-    i_m = next(
-        (i for i, e in enumerate(ents) if e[2] and e[2].startswith("__const MATRIX4")), None
-    )
+    i_m = next((i for i, e in enumerate(ents) if e[2] and e[2].startswith("__const MATRIX4")), None)
     if i_m is None:
         return None
     # skin table: the counted pointer right before the const MATRIX4 tag, one row per GX
@@ -275,8 +273,10 @@ def _decode_packet(elf: _Elf, o_shader: int, shader: str, warn: list[str]) -> Pa
             warn.append(f"packet @{o_shader:#x}: display list does not chain at stride {stride}")
             return None
     rows = np.concatenate(
-        [np.frombuffer(dl, np.uint8, count * stride, off).reshape(count, stride)
-         for _, count, off in prims]
+        [
+            np.frombuffer(dl, np.uint8, count * stride, off).reshape(count, stride)
+            for _, count, off in prims
+        ]
     )
     has_mtx = stride == 2 + 2 * nattr
     f0 = 2 if has_mtx else 0
@@ -348,7 +348,7 @@ def _parse_skeleton(elf: _Elf, warn: list[str]) -> list[Bone]:
             Bone(names[k], None, (0, 0, 0), (0, 0, 0, 1), (1, 1, 1), ident) for k in sorted(names)
         ]
     if d[sk : sk + 6] != _SKEL_MAGIC:
-        warn.append(f"skeleton @{sk:#x}: unknown header {d[sk:sk + 8].hex()}")
+        warn.append(f"skeleton @{sk:#x}: unknown header {d[sk : sk + 8].hex()}")
         return []
     count = elf.u32(sk + 8)
     if count > 1024 or sk + 16 + count * _BONE_REC > len(d):
@@ -376,8 +376,11 @@ def parse(data: bytes) -> EaglObject:
     elf = _Elf(data)
     warn: list[str] = []
     shader_refs = sorted(
-        o for o, s in elf.relocs.items()
-        if s != 1 and s < len(elf.syms) and elf.syms[s][3] == 0
+        o
+        for o, s in elf.relocs.items()
+        if s != 1
+        and s < len(elf.syms)
+        and elf.syms[s][3] == 0
         and not elf.syms[s][0].startswith("__")
     )
     packets: dict[int, Packet] = {}
@@ -387,8 +390,9 @@ def parse(data: bytes) -> EaglObject:
             packets[o - 0x1C] = pk  # packet base = shader pointer - 0x1c
     # every __Model variation of a file points at the same packet run (the variations
     # differ in bone tables / visibility, not geometry), so one Model per object
-    variations = [n[len("__Model:::") :] for n, _v, _s, sh in elf.syms
-                  if n.startswith("__Model:::") and sh]
+    variations = [
+        n[len("__Model:::") :] for n, _v, _s, sh in elf.syms if n.startswith("__Model:::") and sh
+    ]
     stem = variations[0].split(".variation")[0] if variations else "eagl"
     models = [Model(stem, [packets[k] for k in sorted(packets)])] if packets else []
     if models:

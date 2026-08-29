@@ -550,8 +550,11 @@ def models(dat: DatFile, parser: Parser | None = None) -> list[Model]:
         if root.reference:
             continue
         n, off = root.name, root.offset
-        if n.endswith("_joint") and not n.endswith(("_matanim_joint", "_animjoint")) and \
-                not n.endswith("_shapeanim_joint"):
+        if (
+            n.endswith("_joint")
+            and not n.endswith(("_matanim_joint", "_animjoint"))
+            and not n.endswith("_shapeanim_joint")
+        ):
             add(n[: -len("_joint")], [off])
         elif n.endswith("_head") and d.valid(off, 0x10):
             grp, count = d.u32(off + 8), d.u32(off + 12)

@@ -105,9 +105,14 @@ def _quad16():
     for x, y, z, nx, ny, nz, u, v in QUAD:
         out.append(
             (
-                int(x * 8192), int(y * 8192), int(z * 8192),
-                int(nx * 16384), int(ny * 16384), int(nz * 16384),
-                int(u * 8192), int(v * 8192),
+                int(x * 8192),
+                int(y * 8192),
+                int(z * 8192),
+                int(nx * 16384),
+                int(ny * 16384),
+                int(nz * 16384),
+                int(u * 8192),
+                int(v * 8192),
             )
         )
     return out

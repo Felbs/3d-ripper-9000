@@ -212,38 +212,113 @@ FEATURES = {
 #: them.  len() is the component count of an IMMEDIATE/TIME/FVR_INDEX payload.
 VALUE_INDICES: dict[str, dict[int, tuple[int, ...]]] = {
     "actor": {
-        9: (3,), 10: (4,), 11: (5,), 12: (3, 4, 5),
-        13: (6,), 14: (7,), 15: (8,), 16: (6, 7, 8),
-        17: (9,), 18: (10,), 19: (11,), 20: (9, 10, 11),
-        50: (12,), 53: (13,), 59: (0,), 75: (1,),
+        9: (3,),
+        10: (4,),
+        11: (5,),
+        12: (3, 4, 5),
+        13: (6,),
+        14: (7,),
+        15: (8,),
+        16: (6, 7, 8),
+        17: (9,),
+        18: (10,),
+        19: (11,),
+        20: (9, 10, 11),
+        50: (12,),
+        53: (13,),
+        59: (0,),
+        75: (1,),
     },
     "camera": {
-        21: (0,), 22: (1,), 23: (2,), 24: (0, 1, 2),
-        25: (3,), 26: (4,), 27: (5,), 28: (3, 4, 5),
-        38: (7,), 39: (6,), 40: (8,), 41: (9,), 42: (8, 9), 50: (10,),
+        21: (0,),
+        22: (1,),
+        23: (2,),
+        24: (0, 1, 2),
+        25: (3,),
+        26: (4,),
+        27: (5,),
+        28: (3, 4, 5),
+        38: (7,),
+        39: (6,),
+        40: (8,),
+        41: (9,),
+        42: (8, 9),
+        50: (10,),
     },
     "ambient_light": {29: (0,), 30: (1,), 31: (2,), 32: (3,), 33: (0, 1, 2), 34: (0, 1, 2, 3)},
     "fog": {
-        29: (0,), 30: (1,), 31: (2,), 32: (3,), 33: (0, 1, 2), 34: (0, 1, 2, 3),
-        43: (4,), 44: (5,), 45: (4, 5),
+        29: (0,),
+        30: (1,),
+        31: (2,),
+        32: (3,),
+        33: (0, 1, 2),
+        34: (0, 1, 2, 3),
+        43: (4,),
+        44: (5,),
+        45: (4, 5),
     },
     "light": {
-        29: (0,), 30: (1,), 31: (2,), 32: (3,), 33: (0, 1, 2), 34: (0, 1, 2, 3),
-        21: (4,), 22: (5,), 23: (6,), 24: (4, 5, 6),
-        25: (7,), 26: (8,), 27: (9,), 28: (7, 8, 9),
-        35: (10,), 36: (11,), 37: (10, 11), 54: (12,),
+        29: (0,),
+        30: (1,),
+        31: (2,),
+        32: (3,),
+        33: (0, 1, 2),
+        34: (0, 1, 2, 3),
+        21: (4,),
+        22: (5,),
+        23: (6,),
+        24: (4, 5, 6),
+        25: (7,),
+        26: (8,),
+        27: (9,),
+        28: (7, 8, 9),
+        35: (10,),
+        36: (11,),
+        37: (10, 11),
+        54: (12,),
     },
     "sound": {
-        21: (0,), 22: (1,), 23: (2,), 24: (0, 1, 2), 46: (3,), 47: (4,), 56: (5,),
-        61: (6,), 62: (7,), 63: (8,), 64: (9,), 65: (10,),
+        21: (0,),
+        22: (1,),
+        23: (2,),
+        24: (0, 1, 2),
+        46: (3,),
+        47: (4,),
+        56: (5,),
+        61: (6,),
+        62: (7,),
+        63: (8,),
+        64: (9,),
+        65: (10,),
     },
     "particle": {
-        9: (0,), 10: (1,), 11: (2,), 12: (0, 1, 2),
-        13: (3,), 14: (4,), 15: (5,), 16: (3, 4, 5),
-        17: (6,), 18: (7,), 19: (8,), 20: (6, 7, 8),
-        29: (9,), 30: (10,), 31: (11,), 32: (12,), 33: (9, 10, 11), 34: (9, 10, 11, 12),
-        69: (13,), 70: (14,), 71: (15,), 72: (16,), 73: (9, 10, 11), 74: (9, 10, 11, 12),
-        46: (18,), 47: (19,), 50: (17,),
+        9: (0,),
+        10: (1,),
+        11: (2,),
+        12: (0, 1, 2),
+        13: (3,),
+        14: (4,),
+        15: (5,),
+        16: (3, 4, 5),
+        17: (6,),
+        18: (7,),
+        19: (8,),
+        20: (6, 7, 8),
+        29: (9,),
+        30: (10,),
+        31: (11,),
+        32: (12,),
+        33: (9, 10, 11),
+        34: (9, 10, 11, 12),
+        69: (13,),
+        70: (14,),
+        71: (15,),
+        72: (16,),
+        73: (9, 10, 11),
+        74: (9, 10, 11, 12),
+        46: (18,),
+        47: (19,),
+        50: (17,),
     },
     "message": {},
 }
@@ -262,14 +337,27 @@ COMMAND_FEATURES: dict[str, frozenset[int]] = {
 }
 
 #: JStudio::fvb::TFactory::create - FVB block type -> curve kind.
-FVB_KINDS = {1: "composite", 2: "constant", 3: "transition", 4: "list",
-             5: "list_parameter", 6: "hermite"}
-COMPOSITE_OPS = {0: "none", 1: "raw", 2: "index", 3: "parameter",
-                 4: "add", 5: "subtract", 6: "multiply", 7: "divide"}
+FVB_KINDS = {
+    1: "composite",
+    2: "constant",
+    3: "transition",
+    4: "list",
+    5: "list_parameter",
+    6: "hermite",
+}
+COMPOSITE_OPS = {
+    0: "none",
+    1: "raw",
+    2: "index",
+    3: "parameter",
+    4: "add",
+    5: "subtract",
+    6: "multiply",
+    7: "divide",
+}
 INTERPOLATIONS = {0: "none", 1: "linear", 2: "plateau", 3: "bspline"}
 OUTSIDES = {0: "raw", 1: "repeat", 2: "turn", 3: "clamp"}
-PROGRESSES = {0: "forward", 1: "reverse", 2: "reverse_begin", 3: "reverse_end",
-              4: "reverse_center"}
+PROGRESSES = {0: "forward", 1: "reverse", 2: "reverse_begin", 3: "reverse_end", 4: "reverse_center"}
 ADJUSTS = {0: "none", 1: "begin", 2: "end", 3: "center", 4: "range"}
 
 #: gauDataSize_TEParagraph_data - status low 3 bits -> element size.
@@ -337,7 +425,7 @@ def parse_data_records(blob: bytes) -> list[DataRecord]:
             count = blob[p]
             p += 1
         size = DATA_ELEM_SIZES[status & 7]
-        out.append(DataRecord(status & ~0x08, size, count, blob[p:p + size * count]))
+        out.append(DataRecord(status & ~0x08, size, count, blob[p : p + size * count]))
         if size == 0:
             break
         p += size * count
@@ -515,7 +603,7 @@ class Stb:
 
 def _parse_paragraph(data: bytes, off: int, kind: str) -> tuple[Paragraph, int]:
     size, ptype, content = _var_uint(data, off)
-    raw = data[content:content + size]
+    raw = data[content : content + size]
     para = Paragraph(offset=off, type=ptype, size=size, raw=raw)
     nxt = content + _align4(size) if size else content
 
@@ -532,8 +620,8 @@ def _parse_paragraph(data: bytes, off: int, kind: str) -> tuple[Paragraph, int]:
             body = raw
             if ptype == 0x81 and size >= 4:
                 id_size = struct.unpack_from(">H", raw, 2)[0]
-                para.data_id = int.from_bytes(raw[4:4 + id_size], "big") if id_size else None
-                body = raw[4 + _align4(id_size):]
+                para.data_id = int.from_bytes(raw[4 : 4 + id_size], "big") if id_size else None
+                body = raw[4 + _align4(id_size) :]
             para.records = parse_data_records(body)
         elif ptype == 0x82:
             para.name = "NOP"
@@ -546,10 +634,10 @@ def _parse_paragraph(data: bytes, off: int, kind: str) -> tuple[Paragraph, int]:
     n = len(VALUE_INDICES.get(kind, {}).get(para.feature, ())) or 1
 
     if para.operation in (0x02, 0x03) and size >= 4:
-        vals = list(struct.unpack(f">{size // 4}f", raw[:size // 4 * 4]))
+        vals = list(struct.unpack(f">{size // 4}f", raw[: size // 4 * 4]))
         para.value = vals[0] if len(vals) == 1 else vals
     elif para.operation == 0x12 and size >= 4:
-        vals = list(struct.unpack(f">{size // 4}I", raw[:size // 4 * 4]))
+        vals = list(struct.unpack(f">{size // 4}I", raw[: size // 4 * 4]))
         para.value = vals[0] if len(vals) == 1 else vals
     elif para.operation == 0x19 and size >= 4:
         para.value = struct.unpack_from(">I", raw, 0)[0]
@@ -612,7 +700,7 @@ def _parse_sequence(data: bytes, start: int, end: int, kind: str) -> tuple[list[
 
 
 def _parse_fvb(data: bytes, base: int) -> list[Function]:
-    sig = data[base:base + 4]
+    sig = data[base : base + 4]
     if sig != FVB_MAGIC:
         raise ValueError(f"JFVB block at {base:#x}: bad signature {sig!r}")
     if struct.unpack_from(">H", data, base + 4)[0] != 0xFEFF:
@@ -624,13 +712,18 @@ def _parse_fvb(data: bytes, base: int) -> list[Function]:
         size, ftype, id_size = struct.unpack_from(">IHH", data, p)
         if size < 8:
             raise ValueError(f"FVB block {i} at {p:#x}: size {size}")
-        fn = Function(index=i, type=ftype, kind=FVB_KINDS.get(ftype, f"type_{ftype}"),
-                      id=_cstr(data[p + 8:p + 8 + id_size]) if id_size else "", offset=p)
+        fn = Function(
+            index=i,
+            type=ftype,
+            kind=FVB_KINDS.get(ftype, f"type_{ftype}"),
+            id=_cstr(data[p + 8 : p + 8 + id_size]) if id_size else "",
+            offset=p,
+        )
         end = p + size
         q = p + 8 + _align4(id_size)
         while q < end:
             psize, ptype, content = _var_uint(data, q)
-            raw = data[content:content + psize]
+            raw = data[content : content + psize]
             if ptype == 0:
                 break
             _fvb_paragraph(fn, ptype, raw)
@@ -648,7 +741,7 @@ def _fvb_paragraph(fn: Function, ptype: int, raw: bytes) -> None:
         off = 4
         for _ in range(n):
             ln = struct.unpack_from(">I", raw, off)[0]
-            fn.refer_names.append(_cstr(raw[off + 4:off + 4 + ln]))
+            fn.refer_names.append(_cstr(raw[off + 4 : off + 4 + ln]))
             off += 4 + _align4(ln)
     elif ptype == 0x11 and len(raw) >= 4:
         n = struct.unpack_from(">I", raw, 0)[0]
@@ -678,13 +771,13 @@ def _fvb_data(fn: Function, raw: bytes) -> None:
         n = struct.unpack_from(">I", raw, 0)[0]
         flat = struct.unpack_from(f">{n * 2}f", raw, 4)
         fn.stride = 2
-        fn.points = [tuple(flat[i * 2:i * 2 + 2]) for i in range(n)]
+        fn.points = [tuple(flat[i * 2 : i * 2 + 2]) for i in range(n)]
     elif fn.kind == "hermite" and len(raw) >= 4:
         packed = struct.unpack_from(">I", raw, 0)[0]
         n, stride = packed & 0x0FFFFFFF, packed >> 28
         fn.stride = stride
         flat = struct.unpack_from(f">{n * stride}f", raw, 4)
-        fn.points = [tuple(flat[i * stride:(i + 1) * stride]) for i in range(n)]
+        fn.points = [tuple(flat[i * stride : (i + 1) * stride]) for i in range(n)]
     elif fn.kind == "composite" and len(raw) >= 8:
         op = struct.unpack_from(">I", raw, 0)[0]
         fn.composite_op = COMPOSITE_OPS.get(op, f"op_{op}")
@@ -705,8 +798,12 @@ def parse(data: bytes) -> Stb:
         raise ValueError(f"stb: byte order {order:#06x} (expected 0xFEFF)")
     if not 1 <= version <= 3:
         raise ValueError(f"stb: unsupported version {version}")
-    stb = Stb(version=version, target=_cstr(data[0x10:0x18]),
-              target_version=struct.unpack_from(">H", data, 0x1E)[0], size=size)
+    stb = Stb(
+        version=version,
+        target=_cstr(data[0x10:0x18]),
+        target_version=struct.unpack_from(">H", data, 0x1E)[0],
+        size=size,
+    )
 
     p = HEADER_SIZE
     for i in range(count):
@@ -726,12 +823,13 @@ def parse(data: bytes) -> Stb:
             stb.control = Object("NONE", "control", 0, "", b"", p, bsize, cmds, frames)
         else:
             flag, id_size = struct.unpack_from(">HH", data, p + 8)
-            id_raw = data[p + 12:p + 12 + id_size]
+            id_raw = data[p + 12 : p + 12 + id_size]
             start = p + 12 + _align4(id_size)
             kind = BLOCK_KINDS.get(fourcc, "unknown")
             cmds, frames = _parse_sequence(data, start, p + bsize, kind)
-            stb.objects.append(Object(name, kind, flag, _cstr(id_raw), id_raw,
-                                      p, bsize, cmds, frames))
+            stb.objects.append(
+                Object(name, kind, flag, _cstr(id_raw), id_raw, p, bsize, cmds, frames)
+            )
         p += bsize
     return stb
 
@@ -759,8 +857,12 @@ def _range_param(fn: Function, t: float) -> float:
     if fn.range is None:
         return t
     begin, end = fn.range
-    origin, scale = {1: (0.0, -1.0), 2: (begin, -1.0), 3: (end, -1.0),
-                     4: (0.5 * (begin + end), -1.0)}.get(fn.progress, (0.0, 1.0))
+    origin, scale = {
+        1: (0.0, -1.0),
+        2: (begin, -1.0),
+        3: (end, -1.0),
+        4: (0.5 * (begin + end), -1.0),
+    }.get(fn.progress, (0.0, 1.0))
     t = origin + scale * (t - origin)
     t += {1: begin, 2: end, 3: 0.5 * (begin + end)}.get(fn.adjust, 0.0)
     span = end - begin
@@ -772,8 +874,7 @@ def _range_param(fn: Function, t: float) -> float:
     return off + begin
 
 
-def _hermite(t: float, t0: float, v0: float, m0: float,
-             t1: float, v1: float, m1: float) -> float:
+def _hermite(t: float, t0: float, v0: float, m0: float, t1: float, v1: float, m1: float) -> float:
     a = t - t0
     dt = t1 - t0
     b = a / dt if dt else 0.0
@@ -819,8 +920,7 @@ def _sample(fn: Function, t: float) -> float:
             return float(fn.values[i])
         if fn.interpolation == 3 and len(fn.values) >= 3:
             v0 = 2.0 * fn.values[i] - fn.values[i + 1] if i == 0 else fn.values[i - 1]
-            v3 = (2.0 * fn.values[i + 1] - fn.values[i] if i == last - 1
-                  else fn.values[i + 2])
+            v3 = 2.0 * fn.values[i + 1] - fn.values[i] if i == last - 1 else fn.values[i + 2]
             return _bspline_uniform(u, v0, fn.values[i], fn.values[i + 1], v3)
         if fn.interpolation == 2:
             return _hermite(idx, i, fn.values[i], 0.0, i + 1.0, fn.values[i + 1], 0.0)
@@ -926,8 +1026,13 @@ def _object_dict(obj: Object) -> dict[str, Any]:
                 "frame": frame,
                 "id": data_id,
                 "records": [
-                    {"status": hex(r.status), "elem_size": r.elem_size,
-                     "count": r.count, "values": r.values, "raw": r.raw.hex()}
+                    {
+                        "status": hex(r.status),
+                        "elem_size": r.elem_size,
+                        "count": r.count,
+                        "values": r.values,
+                        "raw": r.raw.hex(),
+                    }
                     for r in recs
                 ],
             }
@@ -945,8 +1050,7 @@ def to_dict(stb: Stb) -> dict[str, Any]:
         "size": stb.size,
         "frames": stb.frames,
         "seconds": round(stb.seconds, 4),
-        "blocks": [{"offset": b.offset, "size": b.size, "type": b.type_name}
-                   for b in stb.blocks],
+        "blocks": [{"offset": b.offset, "size": b.size, "type": b.type_name} for b in stb.blocks],
         "objects": [_object_dict(o) for o in stb.objects],
         "functions": [_function_dict(f) for f in stb.functions],
     }
@@ -964,9 +1068,11 @@ def dump_json(data: bytes, out_path: str | Path) -> Stb:
 
 def summary(stb: Stb) -> str:
     """One line per object: id, kind, frame span and the features it drives."""
-    lines = [f"STB v{stb.version} target {stb.target} v{stb.target_version}: "
-             f"{len(stb.objects)} objects, {len(stb.functions)} curves, "
-             f"{stb.frames} frames ({stb.seconds:.2f}s)"]
+    lines = [
+        f"STB v{stb.version} target {stb.target} v{stb.target_version}: "
+        f"{len(stb.objects)} objects, {len(stb.functions)} curves, "
+        f"{stb.frames} frames ({stb.seconds:.2f}s)"
+    ]
     for obj in stb.objects:
         feats = ", ".join(t.name for t in obj.tracks)
         flag = "" if obj.enabled else " [disabled]"

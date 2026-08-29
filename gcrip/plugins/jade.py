@@ -523,9 +523,12 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
             textures = jade.textures_montpellier(jade.walk_montpellier(dec or b""))
         else:
             _w, textures = ctx.level(map_key, src)
-            fix = ctx.fix[1] if ctx.fix is not None and map_key != FIX_KEYS.get(
-                ctx.container.rsplit("/", 1)[-1].lower()
-            ) else {}
+            fix = (
+                ctx.fix[1]
+                if ctx.fix is not None
+                and map_key != FIX_KEYS.get(ctx.container.rsplit("/", 1)[-1].lower())
+                else {}
+            )
             textures = {k: v for k, v in textures.items() if k not in fix}
         return [_textures_scene(f"{stem}_textures", textures)] if textures else []
     w, textures = ctx.level(key, src)

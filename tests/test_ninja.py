@@ -79,8 +79,12 @@ def build_chunk_model() -> bytes:
         p += len(n) + 1
     texlist = struct.pack("<II", 8, 4) + tl_entries + names
     return (
-        b"NJTL" + struct.pack("<I", len(texlist)) + texlist
-        + b"NJCM" + struct.pack("<I", len(payload)) + payload
+        b"NJTL"
+        + struct.pack("<I", len(texlist))
+        + texlist
+        + b"NJCM"
+        + struct.pack("<I", len(payload))
+        + payload
     )
 
 

@@ -73,8 +73,10 @@ def run_extras(
     runs the .blend pass when asked."""
     iso, game_dir = Path(iso), Path(game_dir)
     say = log or (lambda m: None)
-    todo = applicable(iso, game_id) if steps else dict.fromkeys(
-        ("stages", "text", "streams", "music", "cutscenes"), False
+    todo = (
+        applicable(iso, game_id)
+        if steps
+        else dict.fromkeys(("stages", "text", "streams", "music", "cutscenes"), False)
     )
     out: dict[str, dict] = {}
 

@@ -157,9 +157,7 @@ class LevelBuilder:
 
         tris = 0
         mesh_map: dict[int, int] = {}
-        used_meshes = sorted(
-            {src["nodes"][i]["mesh"] for i in kept if "mesh" in src["nodes"][i]}
-        )
+        used_meshes = sorted({src["nodes"][i]["mesh"] for i in kept if "mesh" in src["nodes"][i]})
         for mi in used_meshes:
             mesh = copy.deepcopy(src["meshes"][mi])
             for prim in mesh.get("primitives", []):
@@ -180,9 +178,7 @@ class LevelBuilder:
         for new, old in enumerate(kept):
             node_map[old] = base["nodes"] + new
         skin_map: dict[int, int] = {}
-        used_skins = sorted(
-            {src["nodes"][i]["skin"] for i in kept if "skin" in src["nodes"][i]}
-        )
+        used_skins = sorted({src["nodes"][i]["skin"] for i in kept if "skin" in src["nodes"][i]})
         for si in used_skins:
             skin = copy.deepcopy(src["skins"][si])
             if "inverseBindMatrices" in skin:
@@ -270,9 +266,7 @@ class LevelBuilder:
         mesh_idx = len(self.doc["meshes"])
         self.doc["meshes"].append({"primitives": prims_out})
         bounds = (bmin, bmax) if np.isfinite(bmin).all() else None
-        return _Template(
-            roots=[], nodes=[], skins=[], mesh=mesh_idx, bounds=bounds, triangles=tris
-        )
+        return _Template(roots=[], nodes=[], skins=[], mesh=mesh_idx, bounds=bounds, triangles=tris)
 
     def _push_vec3(self, arr: np.ndarray, *, with_bounds: bool = False) -> int:
         data = np.ascontiguousarray(arr, dtype="<f4")
@@ -354,8 +348,9 @@ class LevelBuilder:
         self._instances.append(idx)
         if tpl.bounds is not None:
             mn, mx = tpl.bounds
-            corners = np.array([[x, y, z] for x in (mn[0], mx[0])
-                                for y in (mn[1], mx[1]) for z in (mn[2], mx[2])])
+            corners = np.array(
+                [[x, y, z] for x in (mn[0], mx[0]) for y in (mn[1], mx[1]) for z in (mn[2], mx[2])]
+            )
             corners *= scale
             if rot_y_deg:
                 a = math.radians(rot_y_deg)

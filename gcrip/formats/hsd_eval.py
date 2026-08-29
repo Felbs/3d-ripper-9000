@@ -73,8 +73,19 @@ def _uv_transform(t: hsd.Tobj) -> np.ndarray | None:
 
 
 class _Bucket:
-    __slots__ = ("keys", "pos", "nrm", "uv", "col", "joints", "weights", "idx", "has_nrm",
-                 "has_uv", "has_col")
+    __slots__ = (
+        "keys",
+        "pos",
+        "nrm",
+        "uv",
+        "col",
+        "joints",
+        "weights",
+        "idx",
+        "has_nrm",
+        "has_uv",
+        "has_col",
+    )
 
     def __init__(self) -> None:
         self.keys: dict[tuple, int] = {}
@@ -161,8 +172,17 @@ def evaluate(dat: hsd.DatFile, model: hsd.Model, name: str, textures: TextureCac
             mirror_v=bool(tobj and tobj.wrap_t == 2),
             unlit=not (rm & hsd.RENDER_DIFFUSE),
         )
-        key = (mdef.texture, mdef.base_color, mdef.alpha_blend, mdef.double_sided, mdef.clamp_u,
-               mdef.clamp_v, mdef.mirror_u, mdef.mirror_v, mdef.unlit)
+        key = (
+            mdef.texture,
+            mdef.base_color,
+            mdef.alpha_blend,
+            mdef.double_sided,
+            mdef.clamp_u,
+            mdef.clamp_v,
+            mdef.mirror_u,
+            mdef.mirror_v,
+            mdef.unlit,
+        )
         mi = mat_index.get(key)
         if mi is None:
             mi = len(scene.materials)
@@ -202,6 +222,7 @@ def evaluate(dat: hsd.DatFile, model: hsd.Model, name: str, textures: TextureCac
         pos_a, nrm_a = attrs[hsd.VA_POS], attrs.get(hsd.VA_NRM) or attrs.get(hsd.VA_NBT)
         col_a = attrs.get(hsd.VA_CLR0) if use_vertex_color else None
         tex_a = attrs.get(uv_attr) if uv_attr is not None else None
+
         def values(call: hsd.DrawCall, a: hsd.VtxAttr | None) -> np.ndarray | None:
             if a is None or a.attr not in call.fields:
                 return None

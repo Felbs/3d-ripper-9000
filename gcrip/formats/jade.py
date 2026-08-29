@@ -443,8 +443,10 @@ def textures_montpellier(
                     palettes.append(pal)
                     phase = max(phase, 1)
             continue
-        is_content = t.type in (TEX_TGA, TEX_JTX) and len(t.body) > 18 or (
-            t.type == TEX_RAW and len(t.body) >= max(1, t.width * t.height * t.bpp // 8)
+        is_content = (
+            t.type in (TEX_TGA, TEX_JTX)
+            and len(t.body) > 18
+            or (t.type == TEX_RAW and len(t.body) >= max(1, t.width * t.height * t.bpp // 8))
         )
         if is_content:
             phase = 2

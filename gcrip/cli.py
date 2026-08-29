@@ -369,10 +369,13 @@ def cmd_godot(args: argparse.Namespace) -> int:
         hdri={
             k: Path(v)
             for k, v in {
-                "day": args.hdri, "sunset": args.hdri_sunset, "night": args.hdri_night
+                "day": args.hdri,
+                "sunset": args.hdri_sunset,
+                "night": args.hdri_night,
             }.items()
             if v
-        } or None,
+        }
+        or None,
         physical=args.physical,
     )
     return 0
@@ -558,12 +561,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--iso", default=None, help="disc image (default: found via disc_manifest)")
     p.add_argument("--rooms", default=None, help="only these room numbers, e.g. 0,1,2")
     p.add_argument(
-        "--layers", action="store_true",
+        "--layers",
+        action="store_true",
         help="(default) place every story layer; each actor records its layer so the engine "
-             "can show the set that matches the save's story state",
+        "can show the set that matches the save's story state",
     )
     p.add_argument(
-        "--layer", type=int, default=None,
+        "--layer",
+        type=int,
+        default=None,
         help="also place this story layer (default 0 = the game's opening state, where the "
         "villagers are; -1 = none)",
     )
@@ -612,23 +618,32 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("stage", nargs="*", help="stage folder names under stages/ (default: all)")
     p.add_argument("-o", "--out", default=None, help="output dir (default <ripdir>/godot)")
     p.add_argument(
-        "--renderer", default="forward_plus",
+        "--renderer",
+        default="forward_plus",
         choices=["forward_plus", "mobile", "gl_compatibility"],
         help="Godot rendering method; forward_plus enables SDFGI/SSR/SSAO (default)",
     )
     p.add_argument(
-        "--hdri", default=None,
+        "--hdri",
+        default=None,
         help="daytime HDR to light outdoor stages with (hidden behind a stylised sky; used for"
         " ambient and reflections only). The visible sun tracks the game clock.",
     )
     p.add_argument("--hdri-sunset", default=None, help="HDR used at dawn/dusk")
     p.add_argument("--hdri-night", default=None, help="HDR used at night")
     p.add_argument(
-        "--physical", dest="physical", action="store_true", default=None,
+        "--physical",
+        dest="physical",
+        action="store_true",
+        default=None,
         help="physical light units, exposure and the HDR sky dome (default: on only with --hdri)",
     )
-    p.add_argument("--no-physical", dest="physical", action="store_false",
-                   help="force the simple always-visible lighting even with an HDR")
+    p.add_argument(
+        "--no-physical",
+        dest="physical",
+        action="store_false",
+        help="force the simple always-visible lighting even with an HDR",
+    )
     p.add_argument("-q", "--quiet", action="store_true")
     p.set_defaults(fn=cmd_godot)
 

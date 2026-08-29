@@ -157,7 +157,14 @@ class Group:
 
     def local_matrix(self) -> np.ndarray:
         rx, ry, rz = (v * np.pi / 0x8000 for v in self.rot)
-        cx, sx, cy, sy, cz, sz = np.cos(rx), np.sin(rx), np.cos(ry), np.sin(ry), np.cos(rz), np.sin(rz)  # noqa: E501
+        cx, sx, cy, sy, cz, sz = (
+            np.cos(rx),
+            np.sin(rx),
+            np.cos(ry),
+            np.sin(ry),
+            np.cos(rz),
+            np.sin(rz),
+        )  # noqa: E501
         mx = np.array([[1, 0, 0], [0, cx, -sx], [0, sx, cx]])
         my = np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]])
         mz = np.array([[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]])

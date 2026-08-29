@@ -198,8 +198,10 @@ def _gx_group(pg: Chunk, shader: str) -> PrimGroup | None:
         if not prims:
             continue
         rows = np.concatenate(
-            [np.frombuffer(ib, np.uint8, cnt * stride, o).reshape(cnt, stride)
-             for _, cnt, o in prims]
+            [
+                np.frombuffer(ib, np.uint8, cnt * stride, o).reshape(cnt, stride)
+                for _, cnt, o in prims
+            ]
         )
         found = _best_layout(rows, stride, attrs, counts, arrays[GX_POS], prims)
         if found is not None and (best is None or found[0] < best[0]):

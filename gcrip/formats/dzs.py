@@ -92,20 +92,20 @@ class StagePath:
 class RoomSet:
     """One RTBL entry: which rooms are resident while Link stands on this collision group."""
 
-    rooms: list[int]        # room indices, byte & 0x3F
-    with_bg: list[bool]     # byte & 0x80 - load with BG collision and its dzr actors
-    reverb: int             # reverbAndFlags & 0x7F
-    time_pass: int          # timePassField & 0x03
+    rooms: list[int]  # room indices, byte & 0x3F
+    with_bg: list[bool]  # byte & 0x80 - load with BG collision and its dzr actors
+    reverb: int  # reverbAndFlags & 0x7F
+    time_pass: int  # timePassField & 0x03
 
 
 @dataclass
 class CameraRegion:
     """One CAMR (stage) or RCAM (room) entry: which camera type a region switches to."""
 
-    cam_type: str          # strcmp'd against dCamera_c::types[].name; "Keep" = no change
-    arrow_idx: int         # into the AROB/RARO table; >= that table's length means "none"
-    unknown_11: int        # no reader in the decomp
-    fov_deg: int           # 0xFF = use the style's own field of view
+    cam_type: str  # strcmp'd against dCamera_c::types[].name; "Keep" = no change
+    arrow_idx: int  # into the AROB/RARO table; >= that table's length means "none"
+    unknown_11: int  # no reader in the decomp
+    fov_deg: int  # 0xFF = use the style's own field of view
     transition_frames: int  # 0xFF = derive it from the distance moved
 
 
@@ -114,10 +114,10 @@ class CameraArrow:
     """One AROB (stage) or RARO (room) entry: a fixed eye point and orientation."""
 
     pos: tuple[float, float, float]
-    pitch: int             # angle.x - NEGATED where the engine uses it
-    yaw: int               # angle.y
-    roll: int              # angle.z - unused by every camera engine
-    unknown_12: int        # no reader in the decomp
+    pitch: int  # angle.x - NEGATED where the engine uses it
+    yaw: int  # angle.y
+    roll: int  # angle.z - unused by every camera engine
+    unknown_12: int  # no reader in the decomp
 
     @property
     def yaw_deg(self) -> float:
@@ -166,9 +166,7 @@ def parse(data: bytes) -> Dzs:
             for k in range(n):
                 base = off + k * size
                 nm = data[base : base + 8].split(b"\0")[0].decode("latin-1", "replace")
-                params, x, y, z, rx, ry, rz, enemy = struct.unpack_from(
-                    ">I3f3hH", data, base + 8
-                )
+                params, x, y, z, rx, ry, rz, enemy = struct.unpack_from(">I3f3hH", data, base + 8)
                 scale = (1.0, 1.0, 1.0)
                 if scaled:
                     sx, sy, sz = data[base + 0x20 : base + 0x23]

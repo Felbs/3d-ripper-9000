@@ -18,31 +18,39 @@ def build_object() -> tuple[bytes, bytes, int]:
     relocs: list[tuple[int, int]] = []  # (.data offset, symbol index)
     # symbol table: 0 null, 1 = .data section, 2 shader, 3 TAR, 4 anim buffer, 5 const matrix,
     # 6 GeoPrimState, 7 __Model, 8 __Bone
-    names = ["", "", SHADER, TAR, "__MATRIX4 *:::EAGLAnimationBuffer",
-             "__const MATRIX4:::EAGL::ViewPort::gpModelViewMatrix",
-             "__EAGL::GeoPrimState:::RUNTIME_ALLOC::UID=2;;",
-             "__Model:::Test__model1__.o_temp.variation1", "__Bone:::Test__model1__.Hips",
-             "__Bone:::Test__model1__.Spine", "__Skeleton:::Test__model1__"]
+    names = [
+        "",
+        "",
+        SHADER,
+        TAR,
+        "__MATRIX4 *:::EAGLAnimationBuffer",
+        "__const MATRIX4:::EAGL::ViewPort::gpModelViewMatrix",
+        "__EAGL::GeoPrimState:::RUNTIME_ALLOC::UID=2;;",
+        "__Model:::Test__model1__.o_temp.variation1",
+        "__Bone:::Test__model1__.Hips",
+        "__Bone:::Test__model1__.Spine",
+        "__Skeleton:::Test__model1__",
+    ]
     # streams
     pos = np.array([[0, 0, 0], [256, 0, 0], [0, 256, 0], [256, 256, 0]], ">i2")
     nrm = np.array([[0, 0, 127]] * 4, np.int8)
     uv = np.array([[0, 0], [256, 0], [0, 256], [256, 256]], ">i2")
     P_POS, P_NRM, P_UV, P_DL, P_PAL = 0x40, 0x60, 0x80, 0xA0, 0x100
-    data[P_POS:P_POS + 24] = pos.tobytes()
-    data[P_NRM:P_NRM + 12] = nrm.tobytes()
-    data[P_UV:P_UV + 16] = uv.tobytes()
+    data[P_POS : P_POS + 24] = pos.tobytes()
+    data[P_NRM : P_NRM + 12] = nrm.tobytes()
+    data[P_UV : P_UV + 16] = uv.tobytes()
     dl = bytearray(b"\x98\x00\x04")
     for i in range(4):
         dl += bytes([3, 33]) + struct.pack(">HHH", i, i, i)
     dl += b"\0" * (-len(dl) % 32)
-    data[P_DL:P_DL + len(dl)] = dl
+    data[P_DL : P_DL + len(dl)] = dl
     # skin table: two GX matrix slots; slot 1 = bone 1 at weight 1.0 (bone index lives in
     # the low mantissa byte of each weight float)
     w1 = struct.unpack(">I", struct.pack(">f", 1.0))[0]
-    data[P_PAL:P_PAL + 32] = struct.pack(">8I", w1 | 0, 0, 0, 0, w1 | 1, 0, 0, 0)
+    data[P_PAL : P_PAL + 32] = struct.pack(">8I", w1 | 0, 0, 0, 0, w1 | 1, 0, 0, 0)
     # skeleton @0x380: header + two 112-byte records (Hips root, Spine child at +10 y)
     SK = 0x380
-    data[SK:SK + 16] = bytes.fromhex("c0da01fec0da0000") + struct.pack(">II", 2, 0)
+    data[SK : SK + 16] = bytes.fromhex("c0da01fec0da0000") + struct.pack(">II", 2, 0)
     inv0 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]
     inv1 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, -10, 0, 1]
     for k, (parent, ty, inv) in enumerate([(-1, 0.0, inv0), (0, 10.0, inv1)]):
@@ -62,9 +70,20 @@ def build_object() -> tuple[bytes, bytes, int]:
 
     put_ptr(o, 0, 2)  # shader
     put_ptr(o + 4, P_PAL, 1)  # matrix palette (uncounted)
-    pairs = [(1, (0, 1)), (1, (0, 4)), (2, (P_PAL, 1)), (1, (0, 5)),
-             (4, (P_POS, 1)), (4, (P_NRM, 1)), (4, (P_UV, 1)), (len(dl), (P_DL, 1)),
-             (1, (0, 3)), (1, (0, 6)), (1, (PK, 1)), (0, (0, 1))]
+    pairs = [
+        (1, (0, 1)),
+        (1, (0, 4)),
+        (2, (P_PAL, 1)),
+        (1, (0, 5)),
+        (4, (P_POS, 1)),
+        (4, (P_NRM, 1)),
+        (4, (P_UV, 1)),
+        (len(dl), (P_DL, 1)),
+        (1, (0, 3)),
+        (1, (0, 6)),
+        (1, (PK, 1)),
+        (0, (0, 1)),
+    ]
     o += 8
     for count, (value, sym) in pairs:
         struct.pack_into(">I", data, o, count)
@@ -105,8 +124,12 @@ def build_object() -> tuple[bytes, bytes, int]:
     body += b"\0" * (-len(body) % 4)
     e_shoff = len(body)
     sections = [
-        (0, 0, 0, 0), (1, off_data, len(data), 1), (7, off_shstr, len(shstr), 3),
-        (17, off_str, len(strtab), 3), (25, off_sym, len(symtab), 2), (33, off_rel, len(rel), 9),
+        (0, 0, 0, 0),
+        (1, off_data, len(data), 1),
+        (7, off_shstr, len(shstr), 3),
+        (17, off_str, len(strtab), 3),
+        (25, off_sym, len(symtab), 2),
+        (33, off_rel, len(rel), 9),
     ]
     for name, off, size, typ in sections:
         link = 4 if typ == 9 else (3 if typ == 2 else 0)

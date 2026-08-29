@@ -53,8 +53,9 @@ def build_ebo() -> bytes:
     body += struct.pack("<III", offs["Geometry"], offs["quad"], 0xFFFF0000 | dl_struct)
     t_str = len(body)
     body += strtab
-    struct.pack_into("<4sIIHHIIIII", body, 0, b"EBO\0", 0x11, len(body), 1, 1, 0x60,
-                     t_types, t_imp, t_exp, t_str)
+    struct.pack_into(
+        "<4sIIHHIIIII", body, 0, b"EBO\0", 0x11, len(body), 1, 1, 0x60, t_types, t_imp, t_exp, t_str
+    )
     assert dl_start > 0
     return bytes(body)
 

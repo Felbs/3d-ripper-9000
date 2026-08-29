@@ -5,6 +5,7 @@ instrument banks to WAV (``<rip_dir>/audio/music/<song>.wav``) plus ``music.json
 Pipeline: JaiInit.aaf (bank / wave-bank tables, sound table) -> IBNK + WSYS parse ->
 .aw sample decode (cached per wave) -> :func:`bms.play` (note list) -> :mod:`gcrip.synth`.
 """
+
 from __future__ import annotations
 
 import json

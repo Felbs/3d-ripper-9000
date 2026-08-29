@@ -186,9 +186,7 @@ def survey_disc(path: Path, *, sample: int = 600, deep: int = 24) -> DiscSurvey:
                 t = tgc.parse(img.read(e.offset, e.size))
             except Exception:  # noqa: BLE001
                 continue
-            inner = sorted(
-                (f for f in t.files if 16 <= f.size <= 8 << 20), key=lambda f: f.size
-            )
+            inner = sorted((f for f in t.files if 16 <= f.size <= 8 << 20), key=lambda f: f.size)
             hit = False
             stepi = max(1, len(inner) // deep)
             for f in inner[::stepi][:deep]:

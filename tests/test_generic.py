@@ -1,4 +1,5 @@
 """Structure-based container cracking (gcrip.formats.generic)."""
+
 import struct
 import zlib
 

@@ -36,17 +36,70 @@ from dataclasses import dataclass, field
 
 # JASystem::Arglist: (argument count, 2-bit type per argument: 0 byte, 1 u16, 2 u24, 3 register)
 ARGLIST: tuple[tuple[int, int], ...] = (
-    (0, 0x0000), (2, 0x0008), (2, 0x0008), (1, 0x0002), (0, 0x0000), (0, 0x0000),
-    (1, 0x0000), (1, 0x0002), (0, 0x0000), (1, 0x0001), (0, 0x0000), (2, 0x0000),
-    (2, 0x000C), (1, 0x0000), (1, 0x0000), (1, 0x0003), (0, 0x0000), (2, 0x000C),
-    (2, 0x000C), (0, 0x0000), (1, 0x0000), (1, 0x0000), (1, 0x0000), (2, 0x0008),
-    (5, 0x0155), (1, 0x0000), (1, 0x0000), (1, 0x0000), (1, 0x0001), (2, 0x0004),
-    (1, 0x0000), (2, 0x0008), (1, 0x0000), (0, 0x0000), (0, 0x0000), (0, 0x0000),
-    (2, 0x0004), (1, 0x0000), (1, 0x0001), (1, 0x0001), (0, 0x0000), (0, 0x0000),
-    (1, 0x0002), (5, 0x0000), (4, 0x0055), (1, 0x0002), (1, 0x0002), (3, 0x0000),
-    (1, 0x0000), (1, 0x0000), (3, 0x0028), (1, 0x0000), (1, 0x0000), (0, 0x0000),
-    (0, 0x0000), (0, 0x0000), (0, 0x0000), (0, 0x0000), (1, 0x0001), (0, 0x0000),
-    (0, 0x0000), (1, 0x0001), (1, 0x0001), (0, 0x0000),
+    (0, 0x0000),
+    (2, 0x0008),
+    (2, 0x0008),
+    (1, 0x0002),
+    (0, 0x0000),
+    (0, 0x0000),
+    (1, 0x0000),
+    (1, 0x0002),
+    (0, 0x0000),
+    (1, 0x0001),
+    (0, 0x0000),
+    (2, 0x0000),
+    (2, 0x000C),
+    (1, 0x0000),
+    (1, 0x0000),
+    (1, 0x0003),
+    (0, 0x0000),
+    (2, 0x000C),
+    (2, 0x000C),
+    (0, 0x0000),
+    (1, 0x0000),
+    (1, 0x0000),
+    (1, 0x0000),
+    (2, 0x0008),
+    (5, 0x0155),
+    (1, 0x0000),
+    (1, 0x0000),
+    (1, 0x0000),
+    (1, 0x0001),
+    (2, 0x0004),
+    (1, 0x0000),
+    (2, 0x0008),
+    (1, 0x0000),
+    (0, 0x0000),
+    (0, 0x0000),
+    (0, 0x0000),
+    (2, 0x0004),
+    (1, 0x0000),
+    (1, 0x0001),
+    (1, 0x0001),
+    (0, 0x0000),
+    (0, 0x0000),
+    (1, 0x0002),
+    (5, 0x0000),
+    (4, 0x0055),
+    (1, 0x0002),
+    (1, 0x0002),
+    (3, 0x0000),
+    (1, 0x0000),
+    (1, 0x0000),
+    (3, 0x0028),
+    (1, 0x0000),
+    (1, 0x0000),
+    (0, 0x0000),
+    (0, 0x0000),
+    (0, 0x0000),
+    (0, 0x0000),
+    (0, 0x0000),
+    (1, 0x0001),
+    (0, 0x0000),
+    (0, 0x0000),
+    (1, 0x0001),
+    (1, 0x0001),
+    (0, 0x0000),
 )
 
 CMD_OPEN_TRACK = 0xC1
@@ -431,8 +484,15 @@ class _Player:
         else:
             self.voice_off(t, voice, 0)
             note = Note(
-                t.index, self.tick, key, min(vel, 127), t.bank, t.program,
-                t.effective_volume(), t.pan, t.effective_pitch(),
+                t.index,
+                self.tick,
+                key,
+                min(vel, 127),
+                t.bank,
+                t.program,
+                t.effective_volume(),
+                t.pan,
+                t.effective_pitch(),
             )
             self.seq.notes.append(note)
             if duration >= 0 and not tie:
@@ -803,9 +863,7 @@ def to_midi(seq: Sequence) -> bytes:
         per_track[tr] = []
     for tick, bpm in seq.tempo_map:
         us = int(60_000_000 / max(bpm, 1))
-        per_track.setdefault(0, []).append(
-            (tick, order, b"\xff\x51\x03" + us.to_bytes(3, "big"))
-        )
+        per_track.setdefault(0, []).append((tick, order, b"\xff\x51\x03" + us.to_bytes(3, "big")))
         order += 1
     chan_of: dict[int, int] = {}
     last_prog: dict[int, tuple[int, int]] = {}
@@ -821,7 +879,7 @@ def to_midi(seq: Sequence) -> bytes:
             order += 1
             msgs.append((n.start, order, bytes([0xC0 | ch, n.program & 0x7F])))
             order += 1
-        vol = int(min(1.0, n.volume ** 0.5) * 127)
+        vol = int(min(1.0, n.volume**0.5) * 127)
         msgs.append((n.start, order, bytes([0xB0 | ch, 7, vol])))
         order += 1
         msgs.append((n.start, order, bytes([0xB0 | ch, 10, int(n.pan * 127)])))

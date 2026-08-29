@@ -11,8 +11,11 @@ def build_rkv() -> tuple[bytes, bytes, bytes]:
     data = bytearray(a + b)
     dirs = [b"Models\\", b"Textures\\"]
     ents = []
-    for name, didx, off, size in ((b"ty.gmd", 0, 0, len(a)), (b"ty.gtx", 1, len(a), len(b)),
-                                  (b"src.tga", 1, 0xFFFFFFFF, 123)):
+    for name, didx, off, size in (
+        (b"ty.gmd", 0, 0, len(a)),
+        (b"ty.gtx", 1, len(a), len(b)),
+        (b"src.tga", 1, 0xFFFFFFFF, 123),
+    ):
         e = name.ljust(32, b"\0") + struct.pack("<8I", didx, size, 0, off, 0, 0, 0, 0)
         ents.append(e)
     data += b"".join(ents) + b"".join(x.ljust(256, b"\0") for x in dirs)

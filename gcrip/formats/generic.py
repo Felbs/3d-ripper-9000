@@ -154,8 +154,13 @@ def find_toc(
                         score = _table_ok(offs[:kk], sizes_all[:kk], n, base + kk * stride)
                         if score > 0 and (best is None or score > best[0]):
                             rows_ = zip(offs[:kk], sizes_all[:kk], strict=True)
-                            best = (score, [Member(f"{i:04d}", int(o), int(s))
-                                            for i, (o, s) in enumerate(rows_)])
+                            best = (
+                                score,
+                                [
+                                    Member(f"{i:04d}", int(o), int(s))
+                                    for i, (o, s) in enumerate(rows_)
+                                ],
+                            )
                 # offset-only table: sizes are the gaps to the next offset (weak evidence:
                 # members must be 16-aligned like real archives, and callers walking the
                 # members of a table we found do not get to use it again)
@@ -179,8 +184,13 @@ def find_toc(
                         score = kk * 0.5 * (1.0 + float(np.mean(o % 16 == 0)))
                         if best is None or score > best[0]:
                             rows_ = zip(o, sizes, strict=True)
-                            best = (score, [Member(f"{i:04d}", int(a), int(s))
-                                            for i, (a, s) in enumerate(rows_)])
+                            best = (
+                                score,
+                                [
+                                    Member(f"{i:04d}", int(a), int(s))
+                                    for i, (a, s) in enumerate(rows_)
+                                ],
+                            )
     return best[1] if best else None
 
 
@@ -263,8 +273,16 @@ def lz11(data: bytes, out_size: int, pos: int = 0) -> bytes:
     return bytes(out)
 
 
-def lzss_okumura(data: bytes, out_size: int, pos: int = 0, *, n_bits: int = 12,
-                 f_bits: int = 4, threshold: int = 2, init: int = 0x20) -> bytes:
+def lzss_okumura(
+    data: bytes,
+    out_size: int,
+    pos: int = 0,
+    *,
+    n_bits: int = 12,
+    f_bits: int = 4,
+    threshold: int = 2,
+    init: int = 0x20,
+) -> bytes:
     """Classic Okumura LZSS: ring buffer 2^n_bits, flag byte with bit 1 = literal,
     16-bit (position, length-threshold) references.  Used by many GC titles."""
     ring_n = 1 << n_bits
@@ -372,7 +390,7 @@ def try_decompress(data: bytes, max_out: int = 256 << 20) -> tuple[str, bytes] |
         if _plausible_size(size, n) and size <= max_out:
             try:
                 out = (lz10 if tag == 0x10 else lz11)(data, size, 4)
-                if (r := accept("lz10" if tag == 0x10 else "lz11", out)):
+                if r := accept("lz10" if tag == 0x10 else "lz11", out):
                     return r
             except (ValueError, IndexError):
                 pass
@@ -388,7 +406,7 @@ def try_decompress(data: bytes, max_out: int = 256 << 20) -> tuple[str, bytes] |
                     out = fn(data, size, hdr)
                 except (ValueError, IndexError):
                     continue
-                if (r := accept(f"{name}@{hdr}", out)):
+                if r := accept(f"{name}@{hdr}", out):
                     return r
     return None
 
@@ -413,8 +431,24 @@ def looks_like_text(head: bytes) -> bool:
 
 
 _KNOWN_MAGICS = (
-    b"THP", b"RIFF", b"BIK", b"HVQM", b"\x89PNG", b"\xff\xd8", b"TPL", b"J3D", b"RARC", b"Yaz0",
-    b"Yay0", b"U\xaa8-", b"AFS\0", b"BIGF", b"BIG4", b"TERF", b"SHPI", b"RSD6",
+    b"THP",
+    b"RIFF",
+    b"BIK",
+    b"HVQM",
+    b"\x89PNG",
+    b"\xff\xd8",
+    b"TPL",
+    b"J3D",
+    b"RARC",
+    b"Yaz0",
+    b"Yay0",
+    b"U\xaa8-",
+    b"AFS\0",
+    b"BIGF",
+    b"BIG4",
+    b"TERF",
+    b"SHPI",
+    b"RSD6",
 )
 
 
@@ -423,4 +457,3 @@ def worth_trying(head: bytes) -> bool:
     if len(head) < 16 or looks_like_text(head):
         return False
     return not any(head.startswith(m) for m in _KNOWN_MAGICS)
-

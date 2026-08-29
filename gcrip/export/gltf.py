@@ -290,7 +290,10 @@ def _material(m: j3d.Material, model: j3d.Model, comps: _Composites | None = Non
         flat = m.flat_color()
         if flat is not None:
             mat["pbrMetallicRoughness"]["baseColorFactor"] = [
-                round(flat[0], 4), round(flat[1], 4), round(flat[2], 4), 1.0
+                round(flat[0], 4),
+                round(flat[1], 4),
+                round(flat[2], 4),
+                1.0,
             ]
     if m.blend_type in (1, 3):
         mat["alphaMode"] = "BLEND"

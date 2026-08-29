@@ -508,8 +508,7 @@ def _decode_list(d: bytes, c: Stream, mine: list[Stream], box, bbox) -> Mesh | N
     p0, stride, _used, prims = found
     dl = d[p0 : c.data_off + c.size]
     rows = np.concatenate(
-        [np.frombuffer(dl, np.uint8, cnt * stride, o).reshape(cnt, stride)
-         for _, cnt, o in prims]
+        [np.frombuffer(dl, np.uint8, cnt * stride, o).reshape(cnt, stride) for _, cnt, o in prims]
     )
     lay = _layout(counts, stride)
     if lay is None:

@@ -159,8 +159,22 @@ def _dynamics(d: bytes, o: int) -> Dynamics:
     life_rndm, omni, axis, rndm, vdir, ratio = struct.unpack_from(">6f", d, o + 0x20)
     spread = struct.unpack_from(">f", d, o + 0x38)[0]
     return Dynamics(
-        flags, vsize, vdiv, rate, rate_rndm, rate_step, max_frame, start_frame, life,
-        life_rndm, omni, axis, rndm, vdir, ratio, spread,
+        flags,
+        vsize,
+        vdiv,
+        rate,
+        rate_rndm,
+        rate_step,
+        max_frame,
+        start_frame,
+        life,
+        life_rndm,
+        omni,
+        axis,
+        rndm,
+        vdir,
+        ratio,
+        spread,
     )
 
 
@@ -175,8 +189,20 @@ def _shape(d: bytes, o: int) -> Shape:
     env = tuple(struct.unpack_from(">4B", d, o + 0x24))
     sx, sy = struct.unpack_from(">ff", d, o + 0x40)
     return Shape(
-        flags, (bx, by), blend, aflags, ref0, ref1, zflags, tflags, tindex, cflags,
-        prm, env, tkeys, (sx, sy),  # type: ignore[arg-type]
+        flags,
+        (bx, by),
+        blend,
+        aflags,
+        ref0,
+        ref1,
+        zflags,
+        tflags,
+        tindex,
+        cflags,
+        prm,
+        env,
+        tkeys,
+        (sx, sy),  # type: ignore[arg-type]
     )
 
 
@@ -188,8 +214,23 @@ def _envelope(d: bytes, o: int) -> Envelope:
     )
     r_ang, r_spd, r_rang, r_rspd = struct.unpack_from(">4f", d, o + 0x4C)
     return Envelope(
-        flags, a_in_t, a_out_t, a_in, a_base, a_out, s_in_t, s_out_t, s_in_x, s_out_x,
-        s_in_y, s_out_y, s_rnd, r_ang, r_spd, r_rang, r_rspd,
+        flags,
+        a_in_t,
+        a_out_t,
+        a_in,
+        a_base,
+        a_out,
+        s_in_t,
+        s_out_t,
+        s_in_x,
+        s_out_x,
+        s_in_y,
+        s_out_y,
+        s_rnd,
+        r_ang,
+        r_spd,
+        r_rang,
+        r_rspd,
     )
 
 
