@@ -83,6 +83,23 @@ models (Tails 1,651 tris / 68 joints), `stg00.rel` Emerald Coast 4,460 tris (sta
 archive name not in the table - BEACH01/02/03.GVM by act - open). Entry `texture=NAME` ->
 `NAME.gvm`.
 
+## Billy Hatcher and the Giant Egg (GEZE8P) - `.prd` / `.arc` (mapped, not decoded)
+
+`.prd` (91 files, 295 MB): `u32 1 | u32 unpacked | u32 packed | u32 | u32` then a standard
+Sega PRS stream from 0x20 that inflates to a `Uª8-` ("U:8-") archive: `magic | u32 table
+offset (0x20) | u32 | u32 data offset (0x80)`, 0xcc padding, entries with member names
+(`ae_msg_window.arc`, `mes_tv_config_e.bin`). `.arc` members (65 loose ones too, e.g.
+`item_ani_btfly2.arc`): `u32 size | u32 texture (GVM) offset | u32 0x38 | 0 | 0 | "0100" |
+... | u32 offsets 0x20, 0x24, 0x1474, 0x14a0, u32 1, 0x1700, 0x40, 0x11e0`; the model is a
+Ginja object (vertex sets `01 0c 00 28 ... 02 0c 00 28 ... 05 04 00 56 ... ff` at 0xb8+, GX
+display lists) with the GVM at the texture offset. Next step: locate the NJS_OBJECT /
+attach pointer in the `.arc` header and feed `formats/ginja.GinjaParser`.
+
+## Sonic Riders (GXEE8P)
+
+1,563 extension-less files (`files/0`, `0M`, `0V`, `1`, `10`...) all starting `80 00 00 01`
+- an unknown Sonic Team container (no Ninja / GVM tags in the first 16 KB). Open.
+
 ## Open
 
 - SADX (GXSE8P): models are Basic/Chunk data inside `.rel` modules + `.bin`; textures `.gvm`.
