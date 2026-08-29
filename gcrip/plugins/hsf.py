@@ -92,7 +92,7 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
             p = prim.positions @ w[:3, :3].T + w[:3, 3]
             prim.positions = p.astype(np.float32)
             if prim.normals is not None:
-                n = prim.normals @ np.linalg.inv(w[:3, :3])
+                n = prim.normals @ np.linalg.pinv(w[:3, :3])
                 ln = np.linalg.norm(n, axis=1, keepdims=True)
                 ln[ln == 0] = 1.0
                 prim.normals = (n / ln).astype(np.float32)
