@@ -40,7 +40,7 @@ def members(data: bytes) -> list[Member]:
     count, hsize, _total = struct.unpack_from(">3I", data, 4)
     for width in (20, 36):
         out = _entries(data, count, hsize, width)
-        if out is not None:
+        if out:
             return out
     return []
 
