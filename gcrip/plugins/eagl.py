@@ -64,8 +64,8 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
         scene = Scene(name=model.name)
         scene.warnings += obj.warnings
         scene.joints = [
-            Joint(b, None, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0), (1.0, 1.0, 1.0))
-            for b in obj.bones
+            Joint(b.name, b.parent, tuple(b.translation), tuple(b.rotation), tuple(b.scale))
+            for b in obj.skeleton
         ]
         for pk in model.packets:
             tex_key = None
@@ -98,6 +98,8 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
                     indices=pk.indices,
                     normals=pk.normals,
                     uvs=pk.uvs,
+                    joints=pk.joints if scene.joints else None,
+                    weights=pk.weights if scene.joints else None,
                 )
             )
         if scene.primitives:
@@ -106,7 +108,8 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
                 "bones": len(obj.bones),
                 "packets": len(model.packets),
                 "variations": model.variations,
-                "skinning": "matrix slots kept in extras, weights not exported yet",
+                "skinned": sum(1 for pk in model.packets if pk.joints is not None),
+                "variations_are": "kit toggle sets (enable_* flags), not LODs",
             }
             scenes.append(scene)
     return scenes

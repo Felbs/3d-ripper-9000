@@ -50,8 +50,8 @@ class Packet:
     indices: np.ndarray  # (M,) u32 triangles
     uvs: np.ndarray | None
     normals: np.ndarray | None
-    mtx_slots: np.ndarray  # (V,) u8 per display-list vertex - position-matrix slot
-    palette: list[int]  # matrix palette entries (bone/anim buffer rows), may be empty
+    joints: np.ndarray | None  # (N,4) u16 bone record indices (skinned packets)
+    weights: np.ndarray | None  # (N,4) f32
     textures: list[str]  # SHAPENAME shape ids (4-char names) referenced, in order
 
 
@@ -63,10 +63,21 @@ class Model:
 
 
 @dataclass
+class Bone:
+    name: str
+    parent: int | None
+    translation: tuple[float, float, float]
+    rotation: tuple[float, float, float, float]  # quaternion x y z w
+    scale: tuple[float, float, float]
+    inverse_bind: np.ndarray  # (4,4) f32, row-vector convention (translation in row 3)
+
+
+@dataclass
 class EaglObject:
     models: list[Model]
     bones: list[str]
     warnings: list[str] = field(default_factory=list)
+    skeleton: list[Bone] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -226,12 +237,22 @@ def _decode_packet(elf: _Elf, o_shader: int, shader: str, warn: list[str]) -> Pa
     )
     if i_m is None:
         return None
-    # matrix palette: the first (uncounted) pointer right after the shader
-    palette: list[int] = []
-    pal_ptr = elf.ptr(o_shader + 4)
-    pal_count = next((c for c, p, x in ents if x and "EAGLAnimationBuffer" in x), 0)
-    if pal_ptr is not None and pal_count and pal_ptr + pal_count * 2 <= len(d):
-        palette = list(struct.unpack_from(f">{pal_count}H", d, pal_ptr))
+    # skin table: the counted pointer right before the const MATRIX4 tag, one row per GX
+    # position-matrix slot: 4 f32 weights whose low mantissa byte carries the bone index
+    slot_bones = slot_weights = None
+    if i_m >= 1:
+        cnt, wp, _ = ents[i_m - 1]
+        if wp is not None and 1 <= cnt <= 10 and wp + cnt * 16 <= len(d):
+            raw = np.frombuffer(d, ">u4", cnt * 4, wp).reshape(cnt, 4)
+            slot_bones = (raw & 0xFF).astype(np.uint16)
+            slot_weights = (raw & 0xFFFFFF00).astype(">u4").view(">f4").astype(np.float32)
+            slot_weights[~np.isfinite(slot_weights)] = 0.0
+            slot_weights = np.clip(slot_weights, 0.0, 1.0)
+            tot = slot_weights.sum(1, keepdims=True)
+            if not (tot > 0).all():
+                slot_bones = slot_weights = None
+            else:
+                slot_weights /= tot
     streams = []
     j = i_m + 1
     while j < len(ents) and ents[j][1] is not None and ents[j][2] is None:
@@ -293,13 +314,62 @@ def _decode_packet(elf: _Elf, o_shader: int, shader: str, warn: list[str]) -> Pa
         m = _SHAPENAME.search(x) if x and "TAR" in x else None
         if m:
             textures.append(m.group(1))
-    slots = rows[:, 0].copy() if has_mtx else np.zeros(len(rows), np.uint8)
-    return Packet(shader, stride, pos, tri, uvs, normals, slots, palette, textures)
+    joints = weights = None
+    if has_mtx and slot_bones is not None:
+        slot = np.minimum(rows[:, 0] // 3, len(slot_bones) - 1)
+        joints = np.zeros((nv, 4), np.uint16)
+        weights = np.zeros((nv, 4), np.float32)
+        joints[idx] = slot_bones[slot]
+        weights[idx] = slot_weights[slot]
+    return Packet(shader, stride, pos, tri, uvs, normals, joints, weights, textures)
 
 
 # ---------------------------------------------------------------------------
 # objects
 # ---------------------------------------------------------------------------
+
+
+_SKEL_MAGIC = bytes.fromhex("c0da01fec0da")
+_BONE_REC = 112  # scale3 parent quat4 trans3 id | inverse bind 4x4
+
+
+def _parse_skeleton(elf: _Elf, warn: list[str]) -> list[Bone]:
+    """``__Skeleton`` table: 16-byte header (magic, u32 bone count) then one 112-byte record
+    per bone.  ``__Bone`` symbols hold the record index of the bone they name."""
+    d = elf.data
+    names: dict[int, str] = {}
+    for n, v, _s, sh in elf.syms:
+        if n.startswith("__Bone:::") and sh and v + 4 <= len(d):
+            names[elf.u32(v)] = n.rsplit(".", 1)[-1]
+    sk = next((v for n, v, _s, sh in elf.syms if n.startswith("__Skeleton:::") and sh), None)
+    if sk is None:
+        ident = np.eye(4, dtype=np.float32)
+        return [
+            Bone(names[k], None, (0, 0, 0), (0, 0, 0, 1), (1, 1, 1), ident) for k in sorted(names)
+        ]
+    if d[sk : sk + 6] != _SKEL_MAGIC:
+        warn.append(f"skeleton @{sk:#x}: unknown header {d[sk:sk + 8].hex()}")
+        return []
+    count = elf.u32(sk + 8)
+    if count > 1024 or sk + 16 + count * _BONE_REC > len(d):
+        warn.append(f"skeleton @{sk:#x}: {count} bones do not fit")
+        return []
+    bones = []
+    for b in range(count):
+        o = sk + 16 + b * _BONE_REC
+        f = struct.unpack_from(">28f", d, o)
+        parent = struct.unpack_from(">i", d, o + 12)[0]
+        bones.append(
+            Bone(
+                names.get(b, f"bone{b}"),
+                parent if 0 <= parent < count and parent != b else None,
+                f[8:11],
+                f[4:8],
+                f[0:3],
+                np.array(f[12:28], np.float32).reshape(4, 4),
+            )
+        )
+    return bones
 
 
 def parse(data: bytes) -> EaglObject:
@@ -323,7 +393,5 @@ def parse(data: bytes) -> EaglObject:
     models = [Model(stem, [packets[k] for k in sorted(packets)])] if packets else []
     if models:
         models[0].variations = variations
-    bones = [
-        n[len("__Bone:::") :] for n, _v, _s, sh in elf.syms if n.startswith("__Bone:::") and sh
-    ]
-    return EaglObject(models, bones, warn)
+    skeleton = _parse_skeleton(elf, warn)
+    return EaglObject(models, [b.name for b in skeleton], warn, skeleton)
