@@ -1,9 +1,9 @@
 """Eighting FPK archives (Naruto: Clash of Ninja / Gekitou Ninja Taisen, Bloody Roar:
 Primal Fury, Zatch Bell!, Battle Stadium D.O.N).  Big-endian: ``u32 0 | u32 count | u32
 header size (16) | u32 file size`` then 32-byte entries ``char name[20], u32 offset, u32
-packed size, u32 unpacked size`` (36-byte names on the RenderWare games).  Members are PRS-compressed (Eighting's variant of Sega's
-PRS, as documented by GNTool: MSB-first flag bits, big-endian long-copy pairs) unless the
-two sizes are equal.
+packed size, u32 unpacked size`` (36-byte names on the RenderWare games).  Members are
+PRS-compressed (Eighting's variant of Sega's PRS, as documented by GNTool: MSB-first flag
+bits, big-endian long-copy pairs) unless the two sizes are equal.
 """
 
 from __future__ import annotations
