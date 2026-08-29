@@ -61,6 +61,53 @@ def detect(path: str, head: bytes, size: int) -> bool:
     return path.lower().endswith(".edb") and eurocom.is_edb(head)
 
 
+_entity_index: dict[int, dict[int, str]] = {}
+_edb_cache: dict[str, tuple] = {}
+
+
+def _index(src):
+    """hashcode -> EDB path for every entity on the disc (built once per source)."""
+    key = id(src)
+    idx = _entity_index.get(key)
+    if idx is not None:
+        return idx
+    _entity_index.clear()
+    _edb_cache.clear()
+    idx = {}
+    by_path = getattr(src, "by_path", None) or {}
+    for path in by_path:
+        if not path.lower().endswith(".edb"):
+            continue
+        try:
+            blob = src.get(path)
+            if not eurocom.is_edb(blob[:16]):
+                continue
+            edb = eurocom.parse(blob)
+        except Exception:  # noqa: BLE001
+            continue
+        for el in edb.entities:
+            idx.setdefault(el.hashcode, path)
+    _entity_index[key] = idx
+    return idx
+
+
+def _foreign(src, path: str):
+    """(Edb, {hashcode: element}, decoded-texture cache) of another EDB, LRU-cached."""
+    hit = _edb_cache.get(path)
+    if hit is not None:
+        return hit
+    try:
+        blob = src.get(path)
+        edb = eurocom.parse(blob)
+    except Exception:  # noqa: BLE001
+        return None
+    entry = (edb, {el.hashcode: el for el in edb.entities}, {})
+    _edb_cache[path] = entry
+    while len(_edb_cache) > 4:
+        _edb_cache.pop(next(iter(_edb_cache)))
+    return entry
+
+
 def _rotation(rot) -> np.ndarray:
     """Euler radians (X, then Y, then Z) as a row-vector rotation matrix."""
     cx, sx = math.cos(rot[0]), math.sin(rot[0])
@@ -143,23 +190,41 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
             continue
         scene = Scene(name=f"{stem}_map")
         mats: dict[int, int] = {}
-        used = missing = 0
+        used = missing = foreign = 0
+        foreign_mats: dict[str, dict] = {}
         for pl in pls:
+            xform = (np.array(pl.scale), _rotation(pl.rotation), np.array(pl.position))
             el = by_hash.get(pl.object_ref)
-            if el is None:
+            if el is not None:
+                for m in eurocom.mesh_entity(edb, el):
+                    _add_strips(edb, m, scene, mats, decoded, xform)
+                placed.add(pl.object_ref)
+                used += 1
+                continue
+            other = None
+            if src is not None:
+                where = _index(src).get(pl.object_ref)
+                other = _foreign(src, where) if where else None
+            if other is None:
                 missing += 1
                 continue
-            xform = (np.array(pl.scale), _rotation(pl.rotation), np.array(pl.position))
-            for m in eurocom.mesh_entity(edb, el):
-                _add_strips(edb, m, scene, mats, decoded, xform)
-            placed.add(pl.object_ref)
+            oedb, ohash, odec = other
+            oel = ohash.get(pl.object_ref)
+            if oel is None:
+                missing += 1
+                continue
+            omats = foreign_mats.setdefault(id(oedb), {})
+            for m in eurocom.mesh_entity(oedb, oel):
+                _add_strips(oedb, m, scene, omats, odec, xform)
             used += 1
+            foreign += 1
         if not scene.primitives:
             continue
         scene.extras = {
             "format": "eurocom-map",
             "edb_version": edb.version,
             "placements": used,
+            "foreign": foreign,
             "missing": missing,
             "triangles": sum(len(p.indices) // 3 for p in scene.primitives),
         }

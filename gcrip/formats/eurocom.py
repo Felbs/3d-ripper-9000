@@ -426,7 +426,8 @@ class Placement:
     group: int
 
 
-PLACEMENT = 56
+PLACEMENT_STRIDES = (56, 60)
+_ENTITY_TAGS = (0x02, 0x82)
 
 
 def maps(edb: Edb) -> list[ArrayElement]:
@@ -444,23 +445,12 @@ def maps(edb: Edb) -> list[ArrayElement]:
     return out
 
 
-def placements(edb: Edb, el: ArrayElement) -> list[Placement]:
-    """Object placements of a map: ``u32 count | i32 rel pointer`` at +0x48 of the map
-    header (``u32 0x500`` magic), then 56-byte records ``u32 hashcode | f32 position[3] |
-    u32 flags | f32 rotation[3] | f32 scale[3] | u16 engine flags | u16 map | u32 object
-    reference (an entity hashcode) | u16 light set | i16 group``."""
-    d = edb.data
-    a = el.address
-    if a + 0x50 > len(d) or struct.unpack_from(">I", d, a)[0] != 0x500:
-        return []
-    count = struct.unpack_from(">I", d, a + 0x48)[0]
-    rel = struct.unpack_from(">i", d, a + 0x4C)[0]
-    base = a + 0x4C + rel
-    if not (0 < count < 100000) or base < 0 or base + count * PLACEMENT > len(d):
-        return []
+def _placement_records(d: bytes, base: int, count: int, stride: int) -> list[Placement]:
     out = []
     for k in range(count):
-        o = base + k * PLACEMENT
+        o = base + k * stride
+        if o + 56 > len(d):
+            break
         h, px, py, pz, _flags, rx, ry, rz, sx, sy, sz, _eng, _mapon, obj, _ls, grp = (
             struct.unpack_from(">I3fI3f3fHHIHh", d, o)
         )
@@ -468,6 +458,33 @@ def placements(edb: Edb, el: ArrayElement) -> list[Placement]:
             continue
         out.append(Placement(h, (px, py, pz), (rx, ry, rz), (sx, sy, sz), obj, grp))
     return out
+
+
+def placements(edb: Edb, el: ArrayElement) -> list[Placement]:
+    """Object placements of a map: ``u32 count | i32 rel pointer`` at +0x48 of the map header
+    (``u32 0x500`` magic), then records ``u32 hashcode | f32 position[3] | u32 flags | f32
+    rotation[3] | f32 scale[3] | u16 engine flags | u16 map | u32 object reference (an entity
+    hashcode) | u16 light set | i16 group`` - 56 bytes on the early games (Sphinx v182),
+    60 from Spyro (v240) on.  The stride is picked by how many records name an entity."""
+    d = edb.data
+    a = el.address
+    if a + 0x50 > len(d) or struct.unpack_from(">I", d, a)[0] != 0x500:
+        return []
+    count = struct.unpack_from(">I", d, a + 0x48)[0]
+    rel = struct.unpack_from(">i", d, a + 0x4C)[0]
+    base = a + 0x4C + rel
+    if not (0 < count < 100000) or base < 0 or base + count * min(PLACEMENT_STRIDES) > len(d):
+        return []
+    best: list[Placement] = []
+    best_score = -1
+    for stride in PLACEMENT_STRIDES:
+        if base + count * stride > len(d):
+            continue
+        recs = _placement_records(d, base, count, stride)
+        score = sum(1 for p in recs if (p.object_ref >> 24) in _ENTITY_TAGS)
+        if score > best_score:
+            best, best_score = recs, score
+    return best
 
 
 def texture_rgba(edb: Edb, t: TextureInfo) -> np.ndarray | None:
