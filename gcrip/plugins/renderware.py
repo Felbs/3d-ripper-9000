@@ -20,13 +20,13 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from gcrip.formats import hip, one, rwgc
+from gcrip.formats import hip, konami_pac, one, rwgc
 from gcrip.formats import rwstream as rw
 from ripcore.scene import Joint, MaterialDef, Primitive, Scene
 
 NAME = "renderware"
 
-_TXD_HINTS = (".txd", ".rw3")
+_TXD_HINTS = (".txd", ".rw3", ".pac")
 
 
 def detect(path: str, head: bytes, size: int) -> bool:
@@ -87,7 +87,11 @@ class _TextureIndex:
     def _names(self, path: str) -> list[str]:
         if path not in self.names:
             try:
-                names = rwgc.texture_names(self.src.get(path))
+                blob = self.src.get(path)
+                if konami_pac.is_pack(blob[:16]):
+                    names = konami_pac.names(blob)
+                else:
+                    names = rwgc.texture_names(blob)
                 self.names[path] = [self._key(path, n) for n in names]
             except Exception:  # noqa: BLE001 - one bad dictionary must not stop the lookup
                 self.names[path] = []
@@ -97,9 +101,15 @@ class _TextureIndex:
         if path not in self.decoded:
             table: dict[str, np.ndarray] = {}
             try:
-                for t in rwgc.parse_txd(self.src.get(path)):
-                    if t.image is not None:
-                        table[self._key(path, t.name)] = t.image
+                blob = self.src.get(path)
+                if konami_pac.is_pack(blob[:16]):
+                    for kt in konami_pac.parse(blob):
+                        if kt.rgba is not None:
+                            table[self._key(path, kt.name)] = kt.rgba
+                else:
+                    for t in rwgc.parse_txd(blob):
+                        if t.image is not None:
+                            table[self._key(path, t.name)] = t.image
             except Exception:  # noqa: BLE001
                 pass
             self.decoded[path] = table

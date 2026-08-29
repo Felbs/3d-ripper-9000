@@ -14,7 +14,7 @@ flowchart LR
     WALK --> MAN["disc_manifest.json<br/>every file, format, hash"]
     MAN --> RIP["2  Rip loop<br/>gcrip.rip"]
     RIP -->|"BMD / BDL"| J3D["3  J3D parse<br/>gcrip.formats.j3d"]
-    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, eurocom, hsf, sa2b, sadx, ninja_gc, billy, nu2, ttdisp, unreal, openspace, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
+    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, eurocom, hsf, sa2b, sadx, ninja_gc, billy, nu2, ttdisp, unreal, openspace, afs, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
     RIP -->|"nothing claims it"| GX["3c  Structure scan (fallback)<br/>gcrip.gxscan: GX display lists,<br/>vertex + index arrays"]
     J3D --> ANIM["4  Clip matching<br/>rip._AnimIndex + j3d_anim"]
     ANIM --> GLTF["5  glTF export<br/>gcrip.export.gltf / ripcore.gltf"]
@@ -192,6 +192,10 @@ flowchart LR
         FPK["FPK + PRS<br/>plugins.fpk"] --> HSD["HAL HSD .dat<br/>plugins.hsd"]
         FPK --> RW
     end
+    subgraph KONAMI["Konami (TMNT 1-3)"]
+        AFS["AFS .DAT archives<br/>plugins.afs"] --> RW
+        AFS --> KPAC["texture packs 0x23<br/>formats.konami_pac"] --> RW
+    end
     subgraph EURO["Eurocom (EngineX)"]
         FL["Filelist.bin + .000<br/>plugins.eurocom (sibling hook)"] --> EDB["GEOM .edb v170-252<br/>plugins.eurocom"]
     end
@@ -366,6 +370,13 @@ arrays.  Materials point at TextureInfos whose order in the level's texture tabl
 image index inside the sibling Nintendo TPL (`<level>_lvl.tpl` / `_trans.tpl` for Rayman 3,
 `<level>.tpl` for Arena), aligned by image size to absorb the console downscales.  The
 layouts come from the raymap project (github.com/byvar/raymap), checked against the discs.
+
+Konami's Teenage Mutant Ninja Turtles trilogy turned out to be RenderWare underneath: the
+`TMNT.DAT` archives are Sega/CRI AFS containers (`plugins/afs.py` keeps the member names)
+holding little-endian RW 3.x clumps, world sectors and animations that the existing
+`renderware` plugin already decodes, plus Konami's own texture packs (`formats/konami_pac.py`:
+chunk 0x23 = a name table over standard `rwID_IMAGE` palettised images) which the plugin's
+texture index now reads next to real TXDs.
 
 The fallback is a map as much as a rip: its hits say where in an archive the models live
 and how the vertices are laid out, which is most of what a real plugin needs. Multi-platform

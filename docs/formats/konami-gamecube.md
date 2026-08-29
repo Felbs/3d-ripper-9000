@@ -1,11 +1,19 @@
-# Konami on GameCube - engine map (census 2026-08-29, nothing decoded)
+# Konami on GameCube - engine map (census 2026-08-29; TMNT 1-3 ripped)
 
 17 Konami discs without models; no shared engine:
-- Teenage Mutant Ninja Turtles 1-3 (Konami TYO): `TMNT.DAT` etc. are Sega-style AFS archives
-  (`AFS\0`, 731 members in TMNT 1) whose members start with small LE counts (`23 00 00 00`,
-  `10 00 00 00`, `0b 00 00 00`) plus a few PNG/BMP - Konami's own model/scene tables. TMNT:
-  Mutant Melee: `archive.dat` (219 MB, `1b 00 00 00 dc 16 00 00`), `.bkt`, `.mcp`.
-  (TMNT 2007 is Ubisoft Jade and already rips.)
+- Teenage Mutant Ninja Turtles 1-3 (Konami TYO) - **ripped 2026-08-29**: `TMNT.DAT` /
+  `TMNT_V0n.DAT` are Sega/CRI AFS archives (`"AFS\0" | u32 count | (offset, size) x count |
+  u32 name-table offset, size`; 48-byte name records) -> `plugins/afs.py`.  Members are
+  little-endian RenderWare 3.x streams (lib ids 0x1003ffff / 0x1005ffff): `.dff` clumps
+  (characters, props), `.pac` = either a world (chunk 0x0b) or a texture pack, `.anm` =
+  rwID_ANIMANIMATION (0x1b), `.txd` = Konami texture pack: chunk 0x23 with payload `u32 count`
+  then per texture `char name[16] | 56 bytes | rwID_IMAGE (0x18) chunk` (`Struct { width,
+  height, depth, stride }`, one byte per pixel, `2 ** depth` RGBA palette) ->
+  `formats/konami_pac.py`, read by `plugins/renderware.py`'s texture index (`.pac` counts as a
+  texture dictionary path).  Models decode through the existing RenderWare plugin (bg.dff
+  14,836 triangles / 14 materials).  Census: TMNT 1: 4 AFS archives -> 749 members (401 .txd, 179 .pac, 109 .dff), 466 texture packs; 187 RenderWare streams -> 177 scenes / 127k triangles (6 s); TMNT 2 / 3 use .lpac packs (open), Mutant Melee its own archive (open).
+  TMNT: Mutant Melee: `archive.dat` (219 MB, `1b 00 00 00 dc 16 00 00`), `.bkt`, `.mcp` - not
+  AFS, open.  (TMNT 2007 is Ubisoft Jade and already rips.)
 - Frogger Beyond: `.bin` x35 (238 MB), `.mcp` 66 MB, `.bkt`; Frogger's Adventures similar.
 - Yu-Gi-Oh! The Falsebound Kingdom: `.pac` x2 (221 MB), `.mrg` x62 (165 MB).
 - Disney Sports Soccer/Football/Basketball, ESPN MLS / Winter Sports (`.irx`, `.sxq`, `.bin`,
