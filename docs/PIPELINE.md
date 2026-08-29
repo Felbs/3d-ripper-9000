@@ -206,6 +206,7 @@ flowchart LR
         PRE["Neversoft PRE<br/>plugins.neversoft"]
         GCP["Blitz .gcp<br/>plugins.blitz"] --> GX["structure scan<br/>plugins.gx"]
         NU2["TT NU20 .gsc/.csc<br/>plugins.nu2"]
+        DBL["Avalanche .dbl/.dbu<br/>plugins.dbl"] --> GX
     end
     EAGL & EBO & SA2B & SADX & RW & NJ & MDL2 & MDL3 & HSD & EDB & HSF & P3D & DAS & BF & PRE & NU2 & GX --> SCENE["ripcore Scene → glTF"]
 ```

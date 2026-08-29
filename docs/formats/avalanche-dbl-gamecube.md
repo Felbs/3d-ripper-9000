@@ -38,6 +38,22 @@ at 0 (`0x30 | 0 | "GCN" | 0 | 0x100 | 0 | 3 | payload size | 0x82000e | .. | u16
 named node table (`cannon`, `cannon1`, `thrust1`, identity matrices) = model/bone database.
 Still undecoded.
 
+## Sub-database container + GX streams (2026-08-29 later)
+
+Every `.dbl` / `.dbu` / `.mdb` is a sequence of sub-databases: 0x60-byte header `u16 id | u16
+kind | u32 size | u16 count | "1000" | 0x30 zeros` (BE in standalone GameCube files, LE for
+DBLMerge members), kinds 0xe = GCN data (records + pixel/GX data), 0xb = 0x100-byte name
+blocks, 0xa = model/bone databases. `gcrip/plugins/dbl.py` splits them (Burial.dbu -> 128
+members >= 256 B). Mesh records (Chicken Little `dodgeball.DBL`, "pSphereShape1"): a 0xb0
+record with bbox floats, the name, and offsets into the sub-database (`0xf0` -> GX FIFO
+stream: CP VCD lo 0x1401 = direct matrix index + position/normal index8, VCD hi 0x2 = tex0
+index8, XF 0x1008, BP 0x61 loads, indexed-matrix loads 0x20/0x28, then `9b <count>` strips
+of 4-byte `mtx, pos, nrm, uv` u8 tuples; `0x968` -> vertex data region, `0xa7c` -> a second
+array, counts 0x65). The VAT (array formats / fractions) is set by the game at init, not in
+the file - f32 and s16 readings of the position region do not reconstruct the sphere, and
+gxscan finds nothing in the 25 largest Tak blocks. Next: recover the VAT from the DOL
+(GXSetVtxAttrFmt calls) or find the array-format words in the record.
+
 ## Open
 
 - record types for meshes / skeletons / materials (look at `chicken.dbl` inside Burial.dbu);
