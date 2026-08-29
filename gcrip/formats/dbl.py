@@ -4,8 +4,8 @@ Ransom) as a container: the files are sequences of sub-databases, each a 0x40-by
 GameCube ``.dbl`` / ``.mdb`` files, little-endian for the members merged into a ``.dbu`` by
 DBLMerge) followed by ``size`` bytes of records - texture tables with GX pixels, and mesh
 records that embed raw GX FIFO streams (CP / XF register loads + display lists) with their
-vertex arrays.  Splitting them out lets the structure scanner work on small blobs; the
-record layout itself is not decoded (see docs/formats/avalanche-dbl-gamecube.md).
+vertex arrays.  The record layouts (meshes, texture tables, material lists) are decoded by
+gcrip.formats.dbl_mesh; see docs/formats/avalanche-dbl-gamecube.md.
 """
 
 from __future__ import annotations

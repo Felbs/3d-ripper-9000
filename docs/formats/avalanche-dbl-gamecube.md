@@ -1,6 +1,6 @@
 # Avalanche Software DBL / DBU on GameCube (Tak 1/2/3, Chicken Little, DBZ Sagas, Rugrats Royal Ransom)
 
-Status 2026-08-29: container mapped, records NOT decoded (no plugin yet). Sample: Tak and the
+Status 2026-08-29 (later): CRACKED - `gcrip/formats/dbl_mesh.py` + `gcrip/plugins/dbl.py` rip meshes, textures and materials (see the last section); container notes below still hold. Sample: Tak and the
 Power of Juju `files/data_gcn/Burial.dbu` (10.8 MB), `files/data_gcn/fluff/fonttex.dbl`.
 
 Disc layout (Tak 1: 1171 files): `.bik` video 962 MB, `.dbu` level databases 197 MB (21),
@@ -38,23 +38,58 @@ at 0 (`0x30 | 0 | "GCN" | 0 | 0x100 | 0 | 3 | payload size | 0x82000e | .. | u16
 named node table (`cannon`, `cannon1`, `thrust1`, identity matrices) = model/bone database.
 Still undecoded.
 
-## Sub-database container + GX streams (2026-08-29 later)
+## Records decoded (2026-08-29, gcrip formats/dbl_mesh.py)
 
-Every `.dbl` / `.dbu` / `.mdb` is a sequence of sub-databases: 0x60-byte header `u16 id | u16
+Every `.dbl` / `.dbu` / `.mdb` is a chain of sub-databases with a 0x40 header `u16 id | u16
 kind | u32 size | u16 count | "1000" | 0x30 zeros` (BE in standalone GameCube files, LE for
-DBLMerge members), kinds 0xe = GCN data (records + pixel/GX data), 0xb = 0x100-byte name
-blocks, 0xa = model/bone databases. `gcrip/plugins/dbl.py` splits them (Burial.dbu -> 128
-members >= 256 B). Mesh records (Chicken Little `dodgeball.DBL`, "pSphereShape1"): a 0xb0
-record with bbox floats, the name, and offsets into the sub-database (`0xf0` -> GX FIFO
-stream: CP VCD lo 0x1401 = direct matrix index + position/normal index8, VCD hi 0x2 = tex0
-index8, XF 0x1008, BP 0x61 loads, indexed-matrix loads 0x20/0x28, then `9b <count>` strips
-of 4-byte `mtx, pos, nrm, uv` u8 tuples; `0x968` -> vertex data region, `0xa7c` -> a second
-array, counts 0x65). The VAT (array formats / fractions) is set by the game at init, not in
-the file - f32 and s16 readings of the position region do not reconstruct the sphere, and
-gxscan finds nothing in the 25 largest Tak blocks. Next: recover the VAT from the DOL
-(GXSetVtxAttrFmt calls) or find the array-format words in the record.
+DBLMerge members). Kind 0xe = GCN record, 0xb = 0x100-byte name block (starts a new model in
+a merged `.dbu`), 0xa = motion / bone database. The record TYPE is the second byte of the id
+(first byte in the LE headers): 0x82 texture table, 0x86 particle / font texture table, 0x67
+material list, 0x20-0x23 mesh, 0x01 skeleton (Rugrats), 0x98 model header.
+
+Mesh record (prefixed form, ids 0x22 / 0x23): `u32 0x10001 | u32 8 | u32 flags (0x13000160 /
+0x15000160) | f32 sphere[4] | f32 bbox[6] | char name[32] | u32 vertex count | u32 positions |
+u32 x6 | u32 rows | u32 dl count | u32 dl list | u32 x2 | u32 normal count | u32 normals | u32 uv
+count | u32 uvs | u32 x2 | u32 uvs` - every offset is relative to payload + 8 (the flags word).
+The older ids 0x20 / 0x21 (Tak 1 `blowgun`, `monkey`, `ShrineOrbsGreen`, all of Rugrats) lack
+the 8-byte prefix; offsets are then relative to payload + 0, so the parser just prepends it.
+Arrays are GX-native: positions f32 xyz (Rugrats: 16-byte stride), normals s8 / 64 (Rugrats
+f32), uvs f32 pairs indexed separately from the positions. The DL list runs from `dl list` to
+the first array (the `dl count` word is not the list length: `monkey` says 852 but holds
+115): entries `u32 total | u32 material (1-based in prefixed records, 0-based in the old ones)
+| u32 | u32 bone ids (one byte each, the skin matrix slots of that batch) | u32 | u32 size |
+u16 rows | u16 triangles | u16 0x64xx | u16` followed by `size` bytes of raw GX FIFO: CP loads
+`08 50 <VCD_LO>` / `08 60 <VCD_HI>` (0x1401 = matrix index u8 + pos / nrm index8, 0x1e01 =
+index16, VCD_HI 2 / 3 = tex0 index8 / 16), XF `10 ...`, BP `61 e2/e3 ...`, indexed matrix loads
+`20 / 28`, then primitives `0x98 | VAT` (strips; 0x90 / 0xa0 / 0x80 also handled) whose rows hold
+only the enabled index attributes in GX order (PNMTXIDX, POS, NRM, TEX0) - no VAT is needed
+because every attribute is indexed. The VCD persists across a record's DLs (later lists do not
+repeat the CP loads). Verified: `dodgeball.DBL` 240 rows / 214 triangles match the entry's
+counts; `pSphereShape1` positions all sit on a 0.1-radius sphere.
+
+Texture table: `u32 count | u32 x5 | char dir[32]` then 0x48-byte entries `u32 code | u32 x2 |
+u32 pixel offset | u16 w | u16 h | u32 x2 | u32 palette offset | u32 x2 | char name[32]` and
+the palette / pixel data (offsets relative to the payload). Pixel format by bytes per pixel:
+0.5 = CMPR (code 0x405) or CI4 (code 8, 16-entry RGB5A3 palette), 1 = CI8 (code 9, 256-entry
+RGB5A3 palette), 2 = RGB5A3, 4 = RGBA8 (code 0x41c). The 0x8000 code flag doubles the
+palette area (4 bytes per entry) but the first half is still the RGB5A3 palette (feather_ar,
+Bit08_* sheets). Material list (0x67): `u16 version 2-8 | u16 1 | u32 header size 0xc / 0x10 /
+0x14 | ...` then entries whose ASCII names are texture file names (Tak: `ygord_c.tga`) or Maya
+material names (Chicken Little: `file1`, `Map #1`); a DL's material index binds by name stem,
+else by index into the model's textures. Models in a `.dbu` are the runs between kind-0xb
+blocks: texture tables, material list, mesh (plus kind-0xa motions).
+
+Census (2026-08-29, plugins/dbl.py): Tak 1 (39 db files) 626 scenes / 1.11M triangles /
+3,089 textures, 1,904 of 2,523 materials bound; Tak 2 1,642 / 429k / 4,068, 1,427 of 1,447;
+Tak 3 1,117 / 335k / 2,308, 942 of 999; Chicken Little 1,047 / 278k / 4,695, 838 of 856; DBZ
+Sagas 939 / 230k / 5,733, 272 of 335; Rugrats 476 texture-only scenes (3,923 textures).
 
 ## Open
 
-- record types for meshes / skeletons / materials (look at `chicken.dbl` inside Burial.dbu);
-- texture record pixel formats; `.sdb` (skeleton?), `.mdb`, `.env`, `.dbv` (visibility?).
+- skeletons / skinning: the bone ids per DL are kept (`extras.bones`) but the bind poses live
+  in the kind-0xa motion databases (`.mdb`: named nodes + matrices) - not wired yet;
+- Rugrats: Royal Ransom (2002): mesh record ids 0x21 with the old header (flags top byte 0x0e),
+  positions f32 with a 16-byte stride, f32 normals, DLs that start straight with `98 00 04`
+  rows (no CP loads: the VCD is set by the game), plus a type-0x01 skeleton record (`spine1`,
+  `clavleft` ...);
+- `.sdb` / `.env` / `.dbv` members, particle sheets (0x86 tables decode but are not bound).

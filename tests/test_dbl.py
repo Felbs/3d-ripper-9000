@@ -1,4 +1,4 @@
-"""Avalanche DBL / DBU sub-database splitting."""
+"""Avalanche DBL / DBU sub-database splitting (formats.dbl; the plugin parses records)."""
 
 import struct
 
@@ -24,10 +24,11 @@ def test_dbl_blocks():
         (0xB, 0x40, False),
         (0xE, 0x300, True),
     ]
-    members = plug.expand(data)
+    members = dbl.expand(data)
     assert [n for n, _ in members] == [
         "000_kinde.dbl",
         "002_kinde.dbl",
     ]  # the 0x40 block is too small
     assert len(members[1][1]) == 0x40 + 0x300
-    assert plug.is_container("files/Burial.dbu", data[:64])
+    assert plug.detect("files/Burial.dbu", data[:64], len(data))
+    assert plug.extract(data, "files/Burial.dbu", None) == []
