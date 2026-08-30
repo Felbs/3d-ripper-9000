@@ -47,3 +47,11 @@ def test_a_broken_chain_yields_nothing():
     assert tr_pkg.chunks(chunk(b"xet1", b"A.TIF", b"12345")[:-2]) == []
     assert plugin.detect("x.pkg", b"", 0) is False
     assert plugin.extract(b"", "x.pkg", None) == []
+
+
+def test_detected_from_the_64_byte_sniff():
+    """The chunk header is 76 bytes but a container plugin only sees SNIFF_BYTES of it."""
+    from gcrip.classify import SNIFF_BYTES
+
+    assert plugin.is_container("GCB_11_CREDITS.PKG", build()[:SNIFF_BYTES])
+    assert not plugin.is_container("x.bin", b"Yoda" + bytes(SNIFF_BYTES))

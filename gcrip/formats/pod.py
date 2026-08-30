@@ -51,7 +51,14 @@ class Entry:
 
 
 def is_pod(head: bytes) -> bool:
-    return version(head) != 0
+    """True for a POD header.
+
+    Deliberately checks the magic alone: a container plugin is offered only the first
+    ``gcrip.classify.SNIFF_BYTES`` (64) bytes of a file, which is not enough to reach the file
+    count at 0x58 or the POD3 index offset at 0x108.  The directory is validated in full by
+    :func:`entries`, which is given the whole archive.
+    """
+    return len(head) >= 4 and head[:4] in MAGICS
 
 
 def version(head: bytes) -> int:

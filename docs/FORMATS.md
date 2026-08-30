@@ -9,6 +9,12 @@ implements it and the note under [`docs/formats/`](formats/) that documents the 
 
 Chart of how these plug into the pipeline: [PIPELINE.md](PIPELINE.md) section 7.
 
+> **Writing a container plugin:** `is_container(name, head)` is offered only the first
+> `gcrip.classify.SNIFF_BYTES` (64) bytes of a file, at both manifest and rip time.  Detect on
+> the magic and validate the directory in `expand`, which gets the whole file - a check that
+> reads a field beyond byte 64 silently never fires - see
+> [formats/gcrip-plugin-sniff-limit.md](formats/gcrip-plugin-sniff-limit.md).
+
 ## Nintendo first party and second party
 
 | Engine / format | Games | What we get | Modules | Notes |

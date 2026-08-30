@@ -85,3 +85,13 @@ def test_rejects_junk_and_bad_offsets():
     d = bytearray(build3())
     struct.pack_into("<I", d, 0x108, len(d) * 4)  # index past the end
     assert pod.entries(bytes(d)) == []
+
+
+def test_detected_from_the_64_byte_sniff():
+    """A container plugin only ever sees gcrip.classify.SNIFF_BYTES of a file."""
+    from gcrip.classify import SNIFF_BYTES
+
+    d = build3()
+    assert plugin.is_container("LANGUAGE.POD", d[:SNIFF_BYTES])
+    assert plugin.is_container("TRUCK.pod", build2()[:SNIFF_BYTES])
+    assert not plugin.is_container("x.bin", b"POD1" + bytes(SNIFF_BYTES))

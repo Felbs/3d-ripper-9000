@@ -59,7 +59,10 @@ class Chunk:
 
 
 def is_pkg(head: bytes) -> bool:
-    return len(head) >= HEADER and head[:4] == MAGIC
+    """True for a package header - the magic alone, because a container plugin is offered only
+    the first ``gcrip.classify.SNIFF_BYTES`` (64) bytes and the chunk header is 76.  The chain
+    itself is validated by :func:`chunks`, which is given the whole file."""
+    return len(head) >= 4 and head[:4] == MAGIC
 
 
 def chunks(data: bytes) -> list[Chunk]:
