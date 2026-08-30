@@ -247,10 +247,21 @@ Over the 572 bytes available that gives **57 records**, with per-column maxima
 `[13, 7, 7, 15, 0]` against block sizes `[60, 28, 28, 60, 84]`.  Column 0 lines up exactly:
 max 13 means 14 elements, and the 84-byte block is 14 x 6 bytes - **s16 position triples**.
 
-Two things still to settle before this ships:
+Settled since:
 
-* the strip count says 61 but only 57 records fit before the first block.  Either four vertices
-  live elsewhere or the count is not a plain vertex count;
-* which block each of the other four columns indexes.  Column 3 (max 15) wants 16 elements from
-  a 60-byte block, which is 3.75 bytes each - so one of those arrays is not a simple
-  fixed-stride array, or the block boundaries are not where the offsets suggest.
+* **stride 10 is certain** - stride 9 yields column maxima like 65,281 while stride 10 yields
+  13, 7, 7, 15, 0.  The fifth `u16` is always zero;
+* **the five offsets at +64 are relative to 0x54**, not to the section start.  With that base the
+  last offset lands exactly on the section end on every section tested, which is the check;
+* **the four arrays are, in order, s16 position triples, s8 normals, RGBA colours and s16 uv
+  pairs** - read straight off the content at those offsets on three different sections
+  (`00 14 ff b9 00 65` positions, `20 e7 3a` normals, `3e 3e 3e ff` colours, `02 f4 ff 07` uvs).
+
+Still wrong: the arrays come out **one element short** of what the index columns need - column 0
+reaches 13 against 10 positions, column 3 reaches 15 against 15 uvs, column 2 reaches 7 against
+7 colours.  Every column is over by exactly one, so the boundaries are not quite where the
+offsets imply; building the mesh anyway gives inconsistent coherence (span/edge 2.2, 80 and 412
+on three sections, where a real mesh is tens).
+
+Do not ship until that reconciles - a one-element error shifts every index and silently produces
+plausible-looking rubbish.
