@@ -142,3 +142,48 @@ name at +0x0c, and then **92-byte object records** each starting with a 32-byte 
 mesh names repeat - these are instances placed in the room, referring to meshes that live in
 the matching `.PKG`.  Decoding the `_smf` chunk is therefore the next step, and the `.BST`
 after it, to place the instances.
+
+## `_smf` static meshes - CRACKED (version 7 / Blowout)
+
+`gcrip/formats/tr_smf.py` + `gcrip/plugins/tr_smf.py`.  The chunk payload is little-endian
+bookkeeping (`u32 version`, `u32 material count`, then 360-byte material records from 0x24,
+each starting with the artist's `.tif` name) wrapped around big-endian GX data.
+
+**The geometry is a GX display list with the vertices written INLINE**, not pulled from indexed
+arrays - which is why scanning for the usual `0x98` triangle-strip opcode finds nothing.  Every
+list seen draws QUADS: opcode `0x84` = `0x80 | prim | vat 4`.  A list is
+`u8 opcode | u16 vertex count | count * 13 bytes`, and the 13-byte vertex is:
+
+| bytes | field | scale |
+|---|---|---|
+| 0-5 | position, 3 x big-endian s16 | `* 2^-8` |
+| 6-8 | normal, 3 x s8 | `/128` |
+| 9-12 | uv, 2 x big-endian s16 | `* 2^-8` |
+
+The `2^-8` scale is proven, not guessed: decoding `WEAP_MACHINEGUN.SMF` that way reproduces the
+bounding box stored beside the mesh to within 0.004 (pure quantisation), while `2^-7` and
+`2^-9` are out by 1.2 and 2.3.  `bullet.smf` comes back as
+(-0.031, 0, -0.031)..(0.031, 0.320, 0.004) against a stored
+(-0.03125, 0, -0.03125)..(0.03125, 0.3203, 0.0039).
+
+Lists are found by the eight-byte big-endian preamble `00000008 00000001` (version 7 puts
+`00000007` in front of that too), then zero padding, then the opcode.  Walking with a 13-byte
+vertex lands exactly on the next preamble: all 42 lists in the 25 meshes of
+`GCB_11_CREDITS.PKG` walk clean.
+
+### Two corrections the file pays for itself
+
+Quads are also how the engine writes single triangles - it repeats a vertex - and the quads
+are NOT consistently wound.  Raw, that gives 7% zero-area triangles and 10% inside out.  Both
+are fixed from data already in the file: drop the degenerate ones, and flip any triangle whose
+winding disagrees with its own stored normals.  Result on Blowout: 4,044 -> **3,761 triangles,
+0 degenerate, mean normal agreement 0.971, none inverted** (from 0.770 / 10% inverted).
+
+### Version 4 (BloodRayne) is NOT decoded
+
+Same `0x84` quad lists behind the same preamble, but a different vertex layout: fitting stride
+and normal offset against the stored normals matches only one small mesh (stride 16, normal at
+byte 8, |cos| 0.86) and fails on the larger ones, so it is skipped rather than exported wrong.
+Version 4 also pads with `F00DBAAD` and carries a `kfmp1` marker where version 7 keeps its
+material records; its `.tif` name sits elsewhere in the header.  Mapping that header is the
+next step for BloodRayne's 43 packages.

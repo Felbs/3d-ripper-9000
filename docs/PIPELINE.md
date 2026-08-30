@@ -14,7 +14,7 @@ flowchart LR
     WALK --> MAN["disc_manifest.json<br/>every file, format, hash"]
     MAN --> RIP["2  Rip loop<br/>gcrip.rip"]
     RIP -->|"BMD / BDL"| J3D["3  J3D parse<br/>gcrip.formats.j3d"]
-    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, eurocom, hsf, sa2b, sadx, ninja_gc, billy, nu2, ttdisp, hgo, unreal, openspace, afs, lpac, melee, dbl, blitz, u8, res, zip, pod, tr_pkg, tr_tex, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
+    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, eurocom, hsf, sa2b, sadx, ninja_gc, billy, nu2, ttdisp, hgo, unreal, openspace, afs, lpac, melee, dbl, blitz, u8, res, zip, pod, tr_pkg, tr_tex, tr_smf, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
     RIP -->|"nothing claims it"| GX["3c  Structure scan (fallback)<br/>gcrip.gxscan: GX display lists,<br/>vertex + index arrays"]
     J3D --> ANIM["4  Clip matching<br/>rip._AnimIndex + j3d_anim"]
     ANIM --> GLTF["5  glTF export<br/>gcrip.export.gltf / ripcore.gltf"]
@@ -217,10 +217,10 @@ flowchart LR
         TTPK["TT .fpk/.cpk packs<br/>plugins.ttdisp"] --> DISP["DISP programs .csc/.chg<br/>(LSW2, Narnia)<br/>formats.ttdisp"]
         UMD["Ubisoft .umd/.lin<br/>chunked zlib<br/>plugins.unreal"] --> UE2["UE2 packages .usx/.utx/.unr<br/>StaticMesh + Texture + level actors<br/>formats.unreal"]
         LVL["OpenSpace .lvl + .ptr<br/>(Rayman 3 / Arena)<br/>plugins.openspace"] --> CPA["super objects -> GeometricObjects<br/>+ TPL textures<br/>formats.openspace"]
-        POD["Terminal Reality POD2 / POD3<br/>index at 0x60 / at header[0x108]<br/>plugins.pod"] --> TRPKG["`.PKG` named chunks<br/>1tex / _smf / _dfm / _skl<br/>plugins.tr_pkg"] --> TRTEX["`.TEX` CMPR / C8+RGB5A3<br/>24-byte header in v2, 28 in v3<br/>plugins.tr_tex"] & GX
+        POD["Terminal Reality POD2 / POD3<br/>index at 0x60 / at header[0x108]<br/>plugins.pod"] --> TRPKG["`.PKG` named chunks<br/>1tex / _smf / _dfm / _skl<br/>plugins.tr_pkg"] --> TRSMF["`_smf` GX display lists<br/>inline 13-byte vertices, quads<br/>plugins.tr_smf"] & TRTEX["`.TEX` CMPR / C8+RGB5A3<br/>24-byte header in v2, 28 in v3<br/>plugins.tr_tex"] & GX
         DBL["Avalanche .dbl/.dbu/.mdb<br/>plugins.dbl"] --> DBLM["mesh records: GX arrays +<br/>FIFO display lists, texture tables<br/>formats.dbl_mesh"]
     end
-    EAGL & EBO & SA2B & SADX & BILLY & RW & NJ & MDL2 & MDL3 & HSD & EDB & HSF & P3D & DAS & BF & PRE & NU2 & HGO & DISP & UE2 & CPA & DBLM & TRTEX & GX --> SCENE["ripcore Scene → glTF"]
+    EAGL & EBO & SA2B & SADX & BILLY & RW & NJ & MDL2 & MDL3 & HSD & EDB & HSF & P3D & DAS & BF & PRE & NU2 & HGO & DISP & UE2 & CPA & DBLM & TRTEX & TRSMF & GX --> SCENE["ripcore Scene → glTF"]
 ```
 
 
