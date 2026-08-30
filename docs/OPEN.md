@@ -13,7 +13,7 @@ Companion to [FORMATS.md](FORMATS.md), which lists what already works.
 | `res` `rdms` meshes | 3 (Samurai Jack, Lemony Snicket, Digimon Rumble Arena 2) | **GX display list**, one `98` strip, vertices of five big-endian `u16` attribute indices at stride 10 (the 5th is always 0); stride 9 gives garbage so 10 is certain.  The five offsets at +64 are relative to **0x54**, and the last one lands exactly on the section end on every section.  The four arrays are, in order, **s16 position triples, s8 normals, RGBA colours, s16 uv pairs** - confirmed by content across three sections | the arrays are consistently **one element short** of what the index columns need (max 13 against 10 positions, max 15 against 15 uvs, max 7 against 7 colours), so the block boundaries are not exactly where the offsets imply.  Mesh coherence is inconsistent as a result (span/edge 2.2, 80, 412 on three sections).  Sibling `surf` textures already ship |
 | Blitz `common_*` formats 17 and 19 | up to 9 | descriptor chain and formats 15 (`RGBA8`) / 21 (`CMPR`) ship | what codes 17 and 19 encode - 10 and 1 of a 60-pack sample |
 | Terminal Reality `_dfm` | 3 (BloodRayne, Blowout, RoadKill) | 28 rigid parts, one bone index each; 46 geometry records of 36 bytes; 20-byte vertex by size arithmetic; `HVSI` skeleton reads with a correct anatomical parent tree | the vertex field layout.  Normal-agreement search is useless here - every high-scoring fit is planar-degenerate.  Needs an anchor that is not normals |
-| FSTA `GKA` / `GGG` | 2 (Billy & Mandy, Kids Next Door) | archive and textures ship; these open `ISVH` | not yet entropy-checked - may or may not be compressed like `GMS` |
+| FSTA `GKA` / `GGG` | 2 (Billy & Mandy, Kids Next Door) | **not compressed** - body entropy 5.28 (`GGG`) and 6.82 (`GKA`) against 7.73 for `GMS`.  Magic is `ISVH` (`HVSI` reversed) but the fields are big-endian: the `u32` at +12 is the exact file size on both | what they hold.  Neither shows f32 runs, so any geometry is quantised.  Note the models are in `GMS`, which is compressed - these may be animation or collision |
 
 ## Mapped but blocked on a codec
 
@@ -61,6 +61,9 @@ Worth saying plainly: there is no mesh layout to hunt in either until the codec 
    have; add a non-degeneracy guard when searching.
 4. **Matching magic is not matching layout.**  High Voltage's TPL carries Nintendo's exact
    magic and a different header.
-5. **Measure from the right offset.**  Blitz format 21 looked like an unknown codec at 0.39
+5. **A disc queued for a pass has no dump directory.**  Pass 7 deletes each game's folder before
+   re-ripping it, so `disc_manifest.json` vanishes mid-run and any tooling that reads offsets from
+   the dump breaks.  Read the ISO directly, or keep a local sample, for anything on the pass list.
+6. **Measure from the right offset.**  Blitz format 21 looked like an unknown codec at 0.39
    bytes per pixel purely because the pixel data was measured from 0x1000 instead of from each
    descriptor.
