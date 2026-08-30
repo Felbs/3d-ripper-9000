@@ -172,30 +172,36 @@ record list - and the meaning of the format codes.  Both are one focused session
 is the texture set for nine Blitz discs.  Nothing is shipped yet on purpose: a reader that
 assumes one texture per pack would mis-size four fifths of them.
 
-### Follow-up: the 0x820 record is a texture descriptor, but only format 15 decodes
+### CORRECTION: format 21 is CMPR, and the descriptors are chained
 
-Reading the seven big-endian u32 at 0x820 across three packs pins the record down:
+The "0.39 bytes per pixel, likely compressed" note that stood here was **wrong**, and wrong for
+one reason: it assumed pixel data starts at 0x1000.  It does not.  Each texture's data starts
+**160 bytes (0xa0) after its own descriptor**, and the descriptors are chained:
+
+    0x820  descriptor 0 (160 bytes)
+    0x8c0  pixel data 0
+           descriptor 1 (160 bytes)
+           pixel data 1
+           ...
+
+The 160 is not a guess either - it is the `00 00 00 a0` word visible at 0x870 in every pack, and
+the gap between the two descriptors in `common_BP Hair_Hat 01 Sector.gcp` is 8,352 bytes =
+**8,192 (CMPR for 128x128) + 160** exactly.
+
+Descriptor (seven big-endian u32):
 
     u32 width | u32 height | u32 format | u32 0x101 | u32 0 | u32 0xff000000 | u32 width*height
 
-The last field is the clincher - 0x400 = 1,024 for a 32x32 pack and 0x4000 = 16,384 for a
-128x128 one, exactly width * height in both.  This is a texture descriptor, not a guess.
+| format | encoding |
+|---|---|
+| 15 | GX `RGBA8` |
+| 21 | GX `CMPR` |
+| 17, 19 | not yet checked |
 
-**Format 15 is GX RGBA8** (the faces pack renders perfectly).  **Format 21 is not**, and it is
-not a simple image at all: for `common_BP Earrings 01 Sector.gcp` the payload is exactly
-4,096 bytes for 1,024 pixels - 4 bytes each - yet it decodes to noise as GX-tiled RGBA8, as
-untiled RGBA, as ARGB and as BGRA, and equally as RGB5A3, RGB565, C8 and CMPR.
+Decoded this way `common_BP Hair_Hat 01 Sector.gcp` gives two 128x128 textures, the first of
+which is blonde hair.  Nothing is compressed anywhere in these packs.
 
-Reading it as big-endian f32 gives coherent-looking coordinates (9.978, 1.134, 13.424 ...), but
-that reading did not survive a check: a nearest-neighbour coherence test could not separate it
-from random bytes, because both are dominated by duplicate points.  **It is recorded here as
-unconfirmed, not as a finding.**
+Lesson: the wrong data offset made a perfectly ordinary format look like an unknown codec.  The
+arithmetic that "proved" compression (0.39 bytes per pixel, below CMPR's 0.5) was really just
+measuring from the wrong place.
 
-The structural lead worth following is different: `common_BP Hair_Hat 01 Sector.gcp` contains a
-**second** `(128, 128, 21)` triple at 0x28c0, so the textures are chained, each with its own
-descriptor - which is exactly why the payload is not `width * height * 4` in four fifths of
-packs.  Walking that chain, and working out what format 21 encodes (6,336 bytes for a 128x128
-image is 0.39 bytes per pixel, below even CMPR's 0.5, so it is likely compressed), is where the
-next session should start.
-
-Format codes seen over a 60-pack sample: 21 (49), 17 (10), 19 (1), 15.
