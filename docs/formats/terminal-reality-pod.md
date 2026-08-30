@@ -101,3 +101,44 @@ Still open (100 BloodRayne textures, none on Blowout): code 1 (1 texture, 9.5 bp
 fixed; code 2 (64; 16.02-17.5 bpp) is 16 bpp plus a variable tail that decodes as neither
 `RGB5A3` nor `RGB565`; code 3 (10; exactly 32.0 bpp) is 32 bpp but not GX `RGBA8` - decoding it
 as one gives vertical stripes, so the tiling differs.
+
+## `.PKG` packages - CRACKED
+
+`gcrip/formats/tr_pkg.py` + `gcrip/plugins/tr_pkg.py`.  The POD holds the game's files; the
+`.PKG` inside holds its ASSETS, as a flat chain of named chunks with no directory:
+
+    char magic[4]  "adoY"   - "Yoda" stored back to front
+    char tag[4]             - also reversed: "xet1" is 1tex, "fms_" is _smf
+    u32  size               - payload only, header is 76 bytes
+    char name[64]           - NUL-padded: "WHITE.TIF", "SHELL_MG.SMF", "HERO.SKL"
+    u8   payload[size]
+
+The chain ends with a zero-length `oMoN` chunk - "NoMo", no more.  Every chunk carries its own
+length, so the walk either lands exactly on the terminator or the file is not a package: the
+format verifies itself.  It does verify - 18 of 18 sampled packages across the three discs
+walked clean to their final byte (Blowout `GCB_11_CREDITS.PKG` 189 chunks,
+BloodRayne `GC_BOILERROOM.PKG` 59, RoadKill `GC_UI.PKG` 40).
+
+| stored | reads | contents |
+|---|---|---|
+| `xet1` | 1tex | a texture in the `.TEX` format above - 3,199 of 3,262 sampled decode |
+| `fms_` | _smf | static mesh (389 sampled) |
+| `mfd_` | _dfm | deformable / skinned mesh (53) |
+| `lks_` | _skl | skeleton - the payload names bones, `Bip01 Pelvis` (59) |
+| `lpms` | smpl | audio sample, `GCA1` |
+| `fedv` | vdef | video (RoadKill) |
+| `oMoN` | NoMo | end of file, zero length |
+
+Chunk names are the artists' ORIGINAL file names, which is the key to binding: a level's
+`.BST` asks for `airlock_hull_001.tif` and the package carries exactly that name.
+
+## `.BST` level layout (probe, not yet decoded)
+
+`.BST` is the SET file - the level's layout, not its geometry.  Blowout's
+`11_CREDITS.BST` (156 KB) is: a small header (`u32 30`, then a float), a run of `0x01` bytes,
+a `u32` texture count (12) at 0x214, then **356-byte texture records** each holding a `.tif`
+name at +0x0c, and then **92-byte object records** each starting with a 32-byte name
+(`credits_shaft22`) followed by three `u32` and a transform.  770 strings in the file, and the
+mesh names repeat - these are instances placed in the room, referring to meshes that live in
+the matching `.PKG`.  Decoding the `_smf` chunk is therefore the next step, and the `.BST`
+after it, to place the instances.
