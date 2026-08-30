@@ -40,3 +40,18 @@ on demand and cached) after the TXD lookups fail, and `formats/tga.py` reads tru
 greyscale and colour-mapped TGAs, RLE or raw, either row order.  MLB SlugFest went from 0 to
 **100% of materials textured**, Outlaw Golf from 0 to **92%** (295 scenes / 349k triangles).
 The remaining SlugFest misses were `.tgx` files before that extension was added.
+
+## Heavy Iron RWTX naming (same night)
+
+The Incredibles / SpongeBob: The Movie discs ripped 2,498 and 2,206 models at 27% and 15%
+textured.  Their textures are all present: each `RWTX/<asset>.RW3` member of the level's
+`.HOP` holds one raster, but the raster's INTERNAL name is often the artist's leftover
+("temp", "greenrock"), while the model's material names the ASSET (`car_C_Damg_hs`).  The
+texture index keyed only on the internal name, so those materials never matched.
+
+`plugins/renderware.py` now also indexes a dictionary that holds exactly one raster under its
+own file stem (the existing `_key(path, "")` fallback, previously used only when the raster
+name was blank).  Measured on the Incredibles: `HS/hs01.HOP` 226 scenes went from ~0 to
+**237 of 239 materials bound (99%)** and `FT/ft02.HOP` to 92%.  The same applies to the other
+Heavy Iron discs (SpongeBob: Battle for Bikini Bottom / The Movie, Rise of the Underminer,
+Scooby-Doo).
