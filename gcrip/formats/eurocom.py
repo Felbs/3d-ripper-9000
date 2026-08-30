@@ -426,7 +426,14 @@ class Placement:
     group: int
 
 
-PLACEMENT_STRIDES = (56, 60)
+# Placement record shapes: (stride, position, rotation, scale, object reference) offsets.
+# The Sphinx-era games pack the fields tightly (56 bytes) and Spyro on adds four bytes; Buffy
+# (v170) keeps each vector padded to four floats.
+PLACEMENT_SHAPES = (
+    (56, 4, 20, 32, 48),
+    (60, 4, 20, 32, 48),
+    (80, 48, 16, 32, 68),
+)
 _ENTITY_TAGS = (0x02, 0x82)
 
 
@@ -445,27 +452,28 @@ def maps(edb: Edb) -> list[ArrayElement]:
     return out
 
 
-def _placement_records(d: bytes, base: int, count: int, stride: int) -> list[Placement]:
+def _placement_records(d: bytes, base: int, count: int, shape) -> list[Placement]:
+    stride, po, ro, so, refo = shape
     out = []
     for k in range(count):
         o = base + k * stride
-        if o + 56 > len(d):
+        if o + stride > len(d):
             break
-        h, px, py, pz, _flags, rx, ry, rz, sx, sy, sz, _eng, _mapon, obj, _ls, grp = (
-            struct.unpack_from(">I3fI3f3fHHIHh", d, o)
-        )
-        if not all(abs(v) < 1e6 for v in (px, py, pz, sx, sy, sz)):
+        pos = struct.unpack_from(">3f", d, o + po)
+        rot = struct.unpack_from(">3f", d, o + ro)
+        scale = struct.unpack_from(">3f", d, o + so)
+        ref = struct.unpack_from(">I", d, o + refo)[0]
+        if not all(abs(v) < 1e6 for v in pos + scale + rot):
             continue
-        out.append(Placement(h, (px, py, pz), (rx, ry, rz), (sx, sy, sz), obj, grp))
+        out.append(Placement(0, pos, rot, scale, ref, 0))
     return out
 
 
 def placements(edb: Edb, el: ArrayElement) -> list[Placement]:
     """Object placements of a map: ``u32 count | i32 rel pointer`` at +0x48 of the map header
-    (``u32 0x500`` magic), then records ``u32 hashcode | f32 position[3] | u32 flags | f32
-    rotation[3] | f32 scale[3] | u16 engine flags | u16 map | u32 object reference (an entity
-    hashcode) | u16 light set | i16 group`` - 56 bytes on the early games (Sphinx v182),
-    60 from Spyro (v240) on.  The stride is picked by how many records name an entity."""
+    (``u32 0x500`` magic) then fixed-size records holding a position, an euler rotation, a
+    scale and the hashcode of the entity to place.  Three record shapes are in use across the
+    library (see ``PLACEMENT_SHAPES``); the one whose references name real entities wins."""
     d = edb.data
     a = el.address
     if a + 0x50 > len(d) or struct.unpack_from(">I", d, a)[0] != 0x500:
@@ -473,14 +481,15 @@ def placements(edb: Edb, el: ArrayElement) -> list[Placement]:
     count = struct.unpack_from(">I", d, a + 0x48)[0]
     rel = struct.unpack_from(">i", d, a + 0x4C)[0]
     base = a + 0x4C + rel
-    if not (0 < count < 100000) or base < 0 or base + count * min(PLACEMENT_STRIDES) > len(d):
+    smallest = min(sh[0] for sh in PLACEMENT_SHAPES)
+    if not (0 < count < 100000) or base < 0 or base + count * smallest > len(d):
         return []
     best: list[Placement] = []
     best_score = -1
-    for stride in PLACEMENT_STRIDES:
-        if base + count * stride > len(d):
+    for shape in PLACEMENT_SHAPES:
+        if base + count * shape[0] > len(d):
             continue
-        recs = _placement_records(d, base, count, stride)
+        recs = _placement_records(d, base, count, shape)
         score = sum(1 for p in recs if (p.object_ref >> 24) in _ENTITY_TAGS)
         if score > best_score:
             best, best_score = recs, score
