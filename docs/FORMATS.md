@@ -32,7 +32,7 @@ Chart of how these plug into the pipeline: [PIPELINE.md](PIPELINE.md) section 7.
 | --- | --- | --- | --- | --- |
 | EA BIG / VIV / RefPack, Tiburon TERF, Black Box ZZDATA | ~70 EA discs | container | `gcrip/plugins/ea.py` | [formats/ea-eagl-gamecube.md](formats/ea-eagl-gamecube.md) |
 | EA Canada EAGL (`.ord` + `.orp` ELF) | FIFA 2002-2004, NBA Live 2003-04, NHL 2003-04, MVP, Def Jam, Fight Night, SSX | rigged, skinned models; textures from SHPG `.gsh` | `gcrip/plugins/eagl.py`, `gcrip/formats/eagl.py` | same note |
-| EA Sports EBO | NHL 2005/06, NBA Live 2005/06, FIFA 05, FIFA WC 2006, UEFA CL | models + rigs (NBA Short3 open) | `gcrip/plugins/ebo.py`, `gcrip/formats/ebo.py` | same note |
+| EA Sports EBO | NHL 2005/06, NBA Live 2005/06, FIFA 05, FIFA WC 2006, UEFA CL | models + rigs + textures (the sibling `.gsh` shapes: mixed-case `ShpG` tag and a one-image header variant; NBA Short3 open) | `gcrip/plugins/ebo.py`, `gcrip/formats/ebo.py` | same note |
 | Capcom RE4 DAS / DRS / UDAS + BIN | Resident Evil 4 | rooms, characters, textures | `gcrip/plugins/re4.py` | |
 | Ubisoft Jade `.bf` | BG&E, Prince of Persia x3 | levels, characters, textures | `gcrip/plugins/jade.py` | later Jade (King Kong) open |
 | Neversoft PRE | Tony Hawk's Underground | container + models | `gcrip/plugins/neversoft.py` | |
