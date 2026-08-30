@@ -84,17 +84,23 @@ class Layout:
     stride: int
     materials_at: int
     material_record: int
-    pos_scale: float
+    pos_scale: float  # 0 means "derive it per mesh from the stored bounding box"
     normal_16: bool  # normals are s16 (version 4) rather than s8 (version 7)
     normal_at: int
     uv_at: int
     uv_scale: float
+    indexed: bool = False  # version 6 keeps arrays + an index list, not a display list
 
 
 LAYOUTS = {
     4: Layout(16, 0x6C, 0, 1.0 / (1 << 15), True, 6, 12, 1.0 / 256.0),
+    6: Layout(13, 0x24, MATERIAL_RECORD, 0.0, False, 6, 9, 1.0 / 256.0, indexed=True),
     7: Layout(13, 0x24, MATERIAL_RECORD, 1.0 / (1 << 8), False, 6, 9, 1.0 / 256.0),
 }
+OBJECT_TAG = 2
+BBOX_BACK = 24  # the six f32 of the bounding box sit right before the object header
+INDEX_SEARCH = 276  # how far past the header the vertex array may start
+MIN_AGREEMENT = 0.7
 VERSIONS = tuple(sorted(LAYOUTS))
 NORMAL_SCALE_8 = 1.0 / 128.0
 NORMAL_SCALE_16 = 1.0 / 16384.0
@@ -193,7 +199,9 @@ def _orient(pos: np.ndarray, nrm: np.ndarray, tris: np.ndarray) -> np.ndarray:
 
 def _vertices(data: bytes, at: int, count: int, lay: Layout):
     raw = np.frombuffer(data[at : at + count * lay.stride], np.uint8).reshape(count, lay.stride)
-    pos = raw[:, 0:6].copy().view(">i2").reshape(count, 3).astype(np.float32) * lay.pos_scale
+    pos = raw[:, 0:6].copy().view(">i2").reshape(count, 3).astype(np.float32)
+    # a zero scale means the version picks one per mesh; the caller applies it
+    pos = pos * lay.pos_scale if lay.pos_scale else pos
     if lay.normal_16:
         nrm = raw[:, lay.normal_at : lay.normal_at + 6].copy().view(">i2")
         nrm = nrm.reshape(count, 3).astype(np.float32) * NORMAL_SCALE_16
@@ -222,6 +230,81 @@ def _list_at(data: bytes, start: int, lay: Layout) -> tuple[int, int, int, int] 
     return (op & 0xF8, count, p + 3, end) if end <= len(data) else None
 
 
+def _agreement(pos: np.ndarray, nrm: np.ndarray, tris: np.ndarray) -> float:
+    """How well the stored normals match the geometry - the test that validates a layout."""
+    p = pos[tris]
+    face = np.cross(p[:, 1] - p[:, 0], p[:, 2] - p[:, 0])
+    length = np.linalg.norm(face, axis=1)
+    stored = nrm[tris].mean(axis=1)
+    slen = np.linalg.norm(stored, axis=1)
+    ok = (length > 1e-9) & (slen > 1e-6)
+    if ok.sum() < 2:  # a two-triangle quad is a legitimate mesh
+        return 0.0
+    cos = (face[ok] / length[ok, None] * stored[ok] / slen[ok, None]).sum(axis=1)
+    return float(np.abs(cos).mean())
+
+
+def _exponent(raw: np.ndarray, data: bytes, header: int) -> int:
+    """Version 6 scales each mesh by its own power of two; the bounding box stored in front of
+    the object header says which.  Snapping to the nearest power of two reproduces all six
+    bounding-box components exactly."""
+    if header < BBOX_BACK:
+        return 13
+    lo = np.frombuffer(data[header - BBOX_BACK : header - 12], "<f4").astype(np.float64)
+    hi = np.frombuffer(data[header - 12 : header], "<f4").astype(np.float64)
+    span = hi - lo
+    if len(span) != 3 or not np.isfinite(span).all():
+        return 13
+    # a flat mesh - a ground plane, a decal - has no extent on one axis; ignore those
+    axes = span > 1e-5
+    if not axes.any():
+        return 13
+    ratio = ((raw.max(axis=0) - raw.min(axis=0))[axes] / span[axes]).mean()
+    if not np.isfinite(ratio) or ratio <= 0:
+        return 13
+    return int(np.clip(round(float(np.log2(ratio))), 0, 20))
+
+
+def _indexed(data: bytes, lay: Layout, material: str) -> list[Mesh]:
+    """Version 6: ``u32 2 | u32 size | u32 | u32 vertices | u32 triangles``, then the vertex
+    array and a big-endian ``u16`` index list.  Where the array starts varies, so every
+    candidate is scored by normal agreement and the best one wins - the same self-check the
+    rest of the format relies on."""
+    out: list[Mesh] = []
+    p = 0
+    while p + 20 <= len(data):
+        tag, _size, _x, nverts, ntris = struct.unpack_from("<5I", data, p)
+        span = nverts * lay.stride + ntris * 6
+        if tag != OBJECT_TAG or not (3 <= nverts < MAX_VERTS and 1 <= ntris < MAX_VERTS):
+            p += 2
+            continue
+        if span > len(data) - p:
+            p += 2
+            continue
+        best = None
+        stop = min(p + 20 + INDEX_SEARCH, len(data) - span + 1)
+        for vpos in range(p + 20, max(stop, p + 21), 2):
+            ipos = vpos + nverts * lay.stride
+            if ipos + ntris * 6 > len(data):
+                break
+            idx = np.frombuffer(data[ipos : ipos + ntris * 6], ">u2")
+            if idx.max() >= nverts:
+                continue
+            pos, nrm, uv = _vertices(data, vpos, nverts, lay)
+            tris = idx.reshape(-1, 3).astype(np.uint32)
+            got = _agreement(pos, nrm, tris)
+            if best is None or got > best[0]:
+                best = (got, vpos, pos, nrm, uv, tris)
+        if best and best[0] > MIN_AGREEMENT:
+            _got, vpos, pos, nrm, uv, tris = best  # pos is still raw s16 for this version
+            pos = pos / np.float32(1 << _exponent(pos, data, p))
+            out.append(Mesh(pos, nrm, uv, _orient(pos, nrm, tris).reshape(-1), material))
+            p = vpos + span
+            continue
+        p += 2
+    return out
+
+
 def parse(data: bytes) -> Smf | None:
     lay = layout(data[:8])
     if lay is None:
@@ -231,6 +314,9 @@ def parse(data: bytes) -> Smf | None:
     out = Smf(version=version, materials=names)
     # a mesh often repeats one texture record per object, so judge by distinct names
     material = names[0] if len(set(names)) == 1 else ""
+    if lay.indexed:
+        out.meshes.extend(_indexed(data, lay, material))
+        return out
     p = 0
     while True:
         q = data.find(SIGNATURE, p)

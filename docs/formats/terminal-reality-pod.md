@@ -204,28 +204,36 @@ Version 4 pads with `F00DBAAD` and carries a `kfmp1` marker where version 7 keep
 records.  Both versions now export: Blowout's credits package 25 meshes / 3,761 triangles,
 BloodRayne's boiler room 6 meshes / 367 triangles, all six textured.
 
-## `_smf` version 6 (RoadKill) - mapped, NOT decoded
+## `_smf` version 6 (RoadKill) - CRACKED
 
-RoadKill's mesh chunks carry the tag `fmsl` (kind `lsmf`) rather than `fms_`, but their names
-still end in `.SMF`, so the plugin's extension check fires and only the version stops them:
-they are **version 6**, and the layout table has 4 and 7.  There are 35-43 per level package
-across roughly 15 packages, so on the order of 500 meshes.
+RoadKill's meshes carry the tag `fmsl` (kind `lsmf`) rather than `fms_`, but their names still
+end `.SMF`, so only the version stopped them.  Version 6 is the **indexed** form of the same
+13-byte vertex versions 4 and 7 use - no display list at all:
 
-What is known:
+    <bounding box: 6 x f32>
+    u32 2 | u32 block size | u32 | u32 vertex count | u32 triangle count
+    ... vertex array, 13 bytes each (s16 position, s8 normal, s16 uv, all big-endian)
+    ... index list, 3 x big-endian u16 per triangle
 
-* header shape matches version 7 - `u32 version, u32 count, ...` with the texture name at
-  **0x24** (`JScattergn.tif`), so materials read the same way;
-* there are **no GX display lists**: scanning for a chained opcode + `u16 count` + fixed-stride
-  vertex run finds nothing at any stride from 12 to 36, and the `00000008 00000001` preamble
-  that anchors versions 4 and 7 does not appear at all;
-* the vertices are **f32 little-endian**, not the big-endian s16 of 4 and 7.  `EPLANE.SMF`
-  decodes cleanly by hand as four 12-byte vertices at +-0.5 with y ~ 1e-16 - a flat plane;
-* every mesh carries the strings `theLegacyCollisionPart` and a Maya node name
-  (`@polySurface12`), so at least part of each chunk is collision, not render geometry.
+Two traps.  The object header is **not 4-byte aligned** to the start of the chunk (the first
+one in `JSCATTERGN.SMF` sits at 0x2e6), so a scan stepping 4 walks straight past every mesh -
+step 2.  And the block size does not land on the index list: the array actually runs to the end
+of the chunk, four bytes past `header + 20 + size`.  Rather than trust either, the reader scans
+the ~276 bytes after the header for the vertex start and keeps whichever candidate makes the
+stored normals agree with the geometry - the same self-check the rest of the format uses.
 
-So version 6 is a different generation of the format - CPU-side float arrays rather than a
-display list - and needs its own reader.  It is correctly skipped today (the version check
-rejects it, nothing wrong is exported).
+### The position scale is per mesh
+
+Unlike version 7's fixed `2^-8`, version 6 picks a power of two per mesh to use the s16 range,
+and the bounding box stored immediately before the object header says which: the observed
+exponents are 8, 12, 13, 14 and 15.  Snapping `log2(raw span / bbox span)` to the nearest
+integer reproduces **all six bounding-box components of all 34 meshes with zero error**.  Take
+only the axes with real extent when doing it - a ground plane is flat on one axis and would
+otherwise divide by zero.
+
+Result on `GC_DM11.PKG`: **35 meshes, 3,122 triangles, mean normal agreement 0.977, 100% within
+0.7, none inverted**, 34 of 35 texture-bound.  35-43 meshes per package across ~15 packages, so
+roughly 500 on the disc.
 
 ## `_dfm` deformable meshes - mapped, NOT decoded
 

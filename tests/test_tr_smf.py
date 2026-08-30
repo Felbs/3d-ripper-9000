@@ -132,3 +132,59 @@ def test_plugin_binds_the_texture_and_reports_ambiguity():
     assert plugin.detect("X.SMF", build(QUAD)[:64], 4096) is True
     assert plugin.detect("X.TEX", build(QUAD)[:64], 4096) is False
     assert plugin.extract(b"short", "X.SMF", None) == []
+
+
+def build_v6(verts, tris, bbox, name: str = "jscattergn.tif", exponent: int = 13) -> bytes:
+    """Version 6: a bounding box, then u32 2 | size | u32 | verts | tris, the vertex array and
+    a big-endian u16 index list."""
+    lay = tr_smf.LAYOUTS[6]
+    head = bytearray(lay.materials_at + lay.material_record)
+    struct.pack_into("<2I", head, 0, 6, 1)
+    head[lay.materials_at : lay.materials_at + len(name)] = name.encode()
+    rows = b"".join(
+        struct.pack(">3h", *[int(round(c * (1 << exponent))) for c in p])
+        + bytes(np.array(n, np.int8).tobytes())
+        + struct.pack(">2h", *uv)
+        for p, n, uv in verts
+    )
+    idx = b"".join(struct.pack(">3H", *t) for t in tris)
+    body = struct.pack("<6f", *bbox[0], *bbox[1])
+    body += struct.pack("<5I", 2, len(rows) + len(idx), 0, len(verts), len(tris))
+    return bytes(head) + body + rows + idx
+
+
+V6_QUAD = [
+    ((-0.5, 0.0, 0.5), (0, 127, 0), (0, 0)),
+    ((0.5, 0.0, 0.5), (0, 127, 0), (256, 0)),
+    ((0.5, 0.0, -0.5), (0, 127, 0), (256, 256)),
+    ((-0.5, 0.0, -0.5), (0, 127, 0), (0, 256)),
+]
+
+
+def test_version_6_is_indexed():
+    data = build_v6(V6_QUAD, [(0, 1, 2), (0, 2, 3)], ((-0.5, 0.0, -0.5), (0.5, 0.0, 0.5)))
+    parsed = tr_smf.parse(data)
+    assert parsed.version == 6
+    assert tr_smf.LAYOUTS[6].indexed
+    assert len(parsed.meshes) == 1
+    mesh = parsed.meshes[0]
+    assert len(mesh.indices) == 6
+    # the per-mesh exponent comes from the stored bounding box, so the unit quad comes back 1x1
+    assert abs(float(mesh.positions[:, 0].max() - mesh.positions[:, 0].min()) - 1.0) < 1e-3
+    assert abs(float(mesh.positions[:, 2].max() - mesh.positions[:, 2].min()) - 1.0) < 1e-3
+
+
+def test_version_6_exponent_follows_the_bounding_box():
+    # the same geometry written at a different exponent must decode to the same size
+    small = tr_smf.parse(
+        build_v6(V6_QUAD, [(0, 1, 2), (0, 2, 3)], ((-0.5, 0.0, -0.5), (0.5, 0.0, 0.5)), exponent=8)
+    ).meshes[0]
+    big = tr_smf.parse(
+        build_v6(V6_QUAD, [(0, 1, 2), (0, 2, 3)], ((-0.5, 0.0, -0.5), (0.5, 0.0, 0.5)), exponent=14)
+    ).meshes[0]
+    assert abs(float(small.positions.max() - big.positions.max())) < 1e-3
+
+
+def test_version_6_rejects_out_of_range_indices():
+    data = build_v6(V6_QUAD, [(0, 1, 9)], ((-0.5, 0.0, -0.5), (0.5, 0.0, 0.5)))
+    assert tr_smf.parse(data).meshes == []
