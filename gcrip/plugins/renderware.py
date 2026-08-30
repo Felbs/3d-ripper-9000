@@ -20,13 +20,17 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from gcrip.formats import hip, konami_pac, one, rwgc
+from gcrip.formats import dds, hip, konami_pac, one, rwgc, tga
 from gcrip.formats import rwstream as rw
 from ripcore.scene import Joint, MaterialDef, Primitive, Scene
 
 NAME = "renderware"
 
 _TXD_HINTS = (".txd", ".rw3", ".pac")
+# Some RenderWare discs ship no dictionaries at all and keep the textures as loose images
+# next to the models (MLB SlugFest, Outlaw Golf): material name == image file stem.  SlugFest
+# writes palettised TGAs with a ``.tgx`` extension.
+_LOOSE_HINTS = (".dds", ".tga", ".tgx")
 
 
 def detect(path: str, head: bytes, size: int) -> bool:
@@ -71,6 +75,12 @@ class _TextureIndex:
         self.decoded: dict[str, dict[str, np.ndarray]] = {}
         self.order: list[str] = []
         self.global_index: dict[str, list[str]] | None = None
+        self.loose: dict[str, str] = {}
+        for p in src.by_path:
+            low = p.lower()
+            if low.endswith(_LOOSE_HINTS):
+                self.loose.setdefault(low.rsplit("/", 1)[-1].rsplit(".", 1)[0], p)
+        self.loose_cache: dict[str, np.ndarray | None] = {}
 
     @staticmethod
     def _key(path: str, name: str) -> str:
@@ -154,7 +164,28 @@ class _TextureIndex:
             img = self._decoded(p).get(key)
             if img is not None:
                 return img
-        return None
+        return self._loose(key)
+
+    def _loose(self, key: str) -> np.ndarray | None:
+        """A loose image file named after the texture (``.dds`` / ``.tga`` / ``.png``)."""
+        if key in self.loose_cache:
+            return self.loose_cache[key]
+        path = self.loose.get(key)
+        img = None
+        if path is not None:
+            try:
+                blob = self.src.get(path)
+                low = path.lower()
+                if low.endswith(".dds"):
+                    img = dds.decode(blob)
+                elif low.endswith((".tga", ".tgx")):  # .tgx is a TGA under another name
+                    img = tga.decode(blob)
+            except Exception:  # noqa: BLE001
+                img = None
+        if len(self.loose_cache) > 256:
+            self.loose_cache.clear()
+        self.loose_cache[key] = img
+        return img
 
 
 _index_cache: dict[tuple[int, int], _TextureIndex] = {}
