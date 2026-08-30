@@ -18,14 +18,16 @@ def detect(path: str, head: bytes, size: int) -> bool:
     return path.lower().endswith((".hgo", ".nus")) and size >= 0x40 and hgo.is_hgo(head)
 
 
-def _placed(m: hgo.Mesh, mat: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+def _placed(m: hgo.Mesh, mat: np.ndarray) -> tuple[np.ndarray, np.ndarray | None]:
     """Apply an INST 4x4 (row-vector convention) to a mesh's positions and normals."""
     r = mat[:3, :3]
-    pos = m.positions.astype(np.float64) @ r + mat[3, :3]
+    pos = (m.positions.astype(np.float64) @ r + mat[3, :3]).astype(np.float32)
+    if m.normals is None:
+        return pos, None
     nrm = m.normals.astype(np.float64) @ r
     ln = np.linalg.norm(nrm, axis=1, keepdims=True)
     nrm = np.divide(nrm, ln, out=np.zeros_like(nrm), where=ln > 0)
-    return pos.astype(np.float32), nrm.astype(np.float32)
+    return pos, nrm.astype(np.float32)
 
 
 def extract(data: bytes, path: str, src) -> list[Scene]:

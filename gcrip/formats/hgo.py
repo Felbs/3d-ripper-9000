@@ -10,8 +10,10 @@ flags | u32 x3 | f32 rgb | u32 x4 | f32 x2 | s32 texture | ...``.
 Meshes (inside HGO0 after the variable node records, or inside GST0 after ``u32 count``):
 ``u32 1 | u32 x4 | u32 blocks | u32 material | u32 vertex count | vertices | index groups |
 skin`` and further blocks of the same mesh as ``u32 0 | u32 0 | u32 material | count ...``.
-Vertices are ``f32 xyz | f32 normal | RGBA8 | [f32 uv]`` (28 or 36 bytes, big-endian), index
-groups ``u32 | u32 | u32 prim (5 list / 6 strip) | u32 count | u16 indices`` 4-aligned, and a
+Vertices are ``f32 xyz | [f32 normal] | RGBA8 | [f32 uv]`` (16 / 24 / 28 / 36 bytes,
+big-endian; the Nemo levels drop the normals), index
+groups ``u32 | u32 | u32 prim (5 list / 6 strip) | u32 count | u16 indices`` 4-aligned (the
+Finding Nemo levels use a raw GX display list instead), and a
 skinned mesh ends with ``u16 0x0101`` + per-vertex ``f32 w0 w1 w2 | u8 bone[4]``.  Vertices are
 in model space (bind pose); meshes are located by scanning for plausible vertex blocks so the
 node records need not be walked.  INST: ``u32 count`` + 80-byte records ``f32 4x4 (row vector
@@ -30,6 +32,7 @@ from gcrip.formats import gx_texture
 
 MAGIC_HGO = b"FOGH"
 MAGIC_GSC = b"0CSG"
+_CP_POS_BASE = bytes((0x08, 0xA0))  # CP load of the position array base
 
 
 @dataclass
@@ -52,7 +55,7 @@ class Material:
 class Mesh:
     material: int
     positions: np.ndarray
-    normals: np.ndarray
+    normals: np.ndarray | None
     uvs: np.ndarray | None
     colors: np.ndarray
     indices: np.ndarray
@@ -146,40 +149,144 @@ def _instances(d: bytes, s: int, e: int) -> list[np.ndarray]:
     return out
 
 
-STRIDES = (36, 28)
+# (stride, normals, uvs): position f32[3] | [normal f32[3]] | RGBA8 | [uv f32[2]]
+LAYOUTS = ((36, True, True), (28, True, False), (24, False, True), (16, False, False))
 
 
-def _fields(rec: np.ndarray, stride: int) -> tuple[np.ndarray, np.ndarray, np.ndarray | None]:
-    """(pos+normal f32 (n, 6), RGBA (n, 4), uv f32 (n, 2) or None) of raw vertex records."""
-    f = rec[:, :24].copy().view(">f4").reshape(len(rec), 6)
-    colors = rec[:, 24:28]
-    uv = rec[:, 28:36].copy().view(">f4").reshape(len(rec), 2) if stride == 36 else None
-    return f, colors, uv
+def _fields(rec: np.ndarray, layout) -> tuple:
+    """(positions, normals or None, colours, uvs or None) of raw vertex records."""
+    _stride_, has_nrm, has_uv = layout
+    n = len(rec)
+    pos = rec[:, :12].copy().view(">f4").reshape(n, 3)
+    p = 12
+    nrm = None
+    if has_nrm:
+        nrm = rec[:, p : p + 12].copy().view(">f4").reshape(n, 3)
+        p += 12
+    colors = rec[:, p : p + 4]
+    p += 4
+    uv = rec[:, p : p + 8].copy().view(">f4").reshape(n, 2) if has_uv else None
+    return pos, nrm, colors, uv
 
 
-def _stride(b: bytes, off: int, n: int) -> int:
-    """Vertex stride of a plausible block at ``off`` (``u32 count`` there) or 0."""
-    for stride in STRIDES:
+def _layout(b: bytes, off: int, n: int):
+    """Vertex layout of a plausible block at ``off`` (``u32 count`` there) or None.  Layouts
+    without normals need a valid index group behind the vertices to be believed."""
+    for layout in LAYOUTS:
+        stride = layout[0]
         if off + 4 + n * stride > len(b):
             continue
         rec = np.frombuffer(b, np.uint8, n * stride, off + 4).reshape(n, stride)
-        f, _colors, uv = _fields(rec, stride)
-        if not np.isfinite(f).all() or (np.abs(f[:, :3]) >= 10000).any():
+        pos, nrm, _colors, uv = _fields(rec, layout)
+        if not np.isfinite(pos).all() or (np.abs(pos) >= 10000).any():
             continue
-        ln = np.linalg.norm(f[:, 3:6], axis=1)
-        if np.abs(ln - 1.0).max() >= 0.05:
-            continue
+        if nrm is not None:
+            if not np.isfinite(nrm).all():
+                continue
+            ln = np.linalg.norm(nrm, axis=1)
+            if np.abs(ln - 1.0).max() >= 0.05:
+                continue
         if uv is not None and (not np.isfinite(uv).all() or (np.abs(uv) >= 512).any()):
             continue
-        return stride
-    return 0
+        if nrm is None and not _believable(b, off + 4 + n * stride, n):
+            continue
+        return layout
+    return None
 
 
-def _mesh(b: bytes, off: int, n: int, stride: int, nmat: int) -> tuple[Mesh | None, int]:
+def _believable(b: bytes, q: int, n: int) -> bool:
+    """A normal-less vertex block needs indices behind it: an index group or a GX list."""
+    if _has_group(b, q, n):
+        return True
+    tris, _end = _gx_lists(b, q, n)
+    return bool(tris)
+
+
+def _has_group(b: bytes, q: int, n: int) -> bool:
+    if q + 16 > len(b):
+        return False
+    a, bb, prim, ic = struct.unpack_from(">4I", b, q)
+    return (
+        a < 16 and bb < 64 and prim in (4, 5, 6) and 3 <= ic <= 200000 and q + 16 + ic * 2 <= len(b)
+    )
+
+
+def _gx_lists(b: bytes, start: int, nverts: int) -> tuple[list, int]:
+    """GX FIFO after a vertex block (Finding Nemo levels): a ``u32 size | u8`` prelude, then CP
+    array-base / stride loads (``08 a0+i <u32 base>`` / ``08 b0+i <u32 stride>``) name the
+    indexed attributes, then primitives (``0x98`` strip, ``0x90`` list, ``0xa0`` fan) carry one
+    index per attribute in GX order - u8 while the array fits in a byte, u16 above that.
+    Returns (triangle arrays over the position column, end offset)."""
+    n = len(b)
+    head = b.find(_CP_POS_BASE, start, min(start + 256, n))
+    if head < 0:
+        return [], start
+    best: tuple[list, int] = ([], start)
+    best_score = (0, 0)
+    for width in (1, 2):
+        tris, end = _gx_walk(b, head, nverts, width)
+        score = (sum(len(t) for t in tris), end - head)
+        if score > best_score:
+            best, best_score = (tris, end), score
+    return best
+
+
+def _gx_walk(b: bytes, head: int, nverts: int, width: int) -> tuple[list, int]:
+    n = len(b)
+    cols = 0
+    tris = []
+    i = head
+    while i < n:
+        op = b[i]
+        if op == 0:
+            i += 1
+        elif op == 0x08 and i + 6 <= n:
+            if 0xA0 <= b[i + 1] <= 0xA7:
+                cols += 1
+            i += 6
+        elif op == 0x10 and i + 5 <= n:
+            i += 5 + 4 * (struct.unpack_from(">H", b, i + 1)[0] + 1)
+        elif op in (0x61, 0x20, 0x28, 0x30, 0x38) and i + 5 <= n:
+            i += 5
+        elif op & 0xF8 in (0x80, 0x90, 0x98, 0xA0) and cols and i + 3 <= n:
+            count = struct.unpack_from(">H", b, i + 1)[0]
+            i += 3
+            row = cols * width
+            if count == 0 or i + count * row > n:
+                break
+            if width == 1:
+                idx = np.frombuffer(b, np.uint8, count * cols, i).reshape(count, cols)[:, 0]
+            else:
+                idx = np.frombuffer(b, ">u2", count * cols, i).reshape(count, cols)[:, 0]
+            idx = idx.astype(np.uint32)
+            i += count * row
+            if int(idx.max()) >= nverts:
+                continue  # a strip of a later block in the same mesh
+            prim = op & 0xF8
+            if prim == 0x98:
+                t = [
+                    (idx[k], idx[k + 1], idx[k + 2])
+                    if k % 2 == 0
+                    else (idx[k], idx[k + 2], idx[k + 1])
+                    for k in range(count - 2)
+                ]
+            elif prim == 0x90:
+                t = list(idx[: count // 3 * 3].reshape(-1, 3))
+            elif prim == 0xA0:
+                t = [(idx[0], idx[k], idx[k + 1]) for k in range(1, count - 1)]
+            else:
+                t = []
+            if t:
+                tris.append(np.array(t, np.uint32).reshape(-1, 3))
+        else:
+            break
+    return tris, i
+
+
+def _mesh(b: bytes, off: int, n: int, layout, nmat: int) -> tuple[Mesh | None, int]:
+    stride = layout[0]
     rec = np.frombuffer(b, np.uint8, n * stride, off + 4).reshape(n, stride)
-    f, colors, uv = _fields(rec, stride)
-    f = f.astype(np.float32)
-    colors = colors.copy()
+    pos, nrm, colors, uv = _fields(rec, layout)
     q = off + 4 + n * stride
     tris = []
     while q + 16 <= len(b):
@@ -200,6 +307,11 @@ def _mesh(b: bytes, off: int, n: int, stride: int, nmat: int) -> tuple[Mesh | No
                 tris.append(np.array(t, np.uint32))
         q += 16 + ic * 2
         q += (-q) % 4
+    if not tris:
+        gx, q2 = _gx_lists(b, q, n)
+        if gx:
+            tris = gx
+            q = q2
     mat = struct.unpack_from(">I", b, off - 4)[0] if off >= 4 else 0
     mesh = None
     if tris:
@@ -209,16 +321,16 @@ def _mesh(b: bytes, off: int, n: int, stride: int, nmat: int) -> tuple[Mesh | No
         if len(tri):
             mesh = Mesh(
                 mat if mat < nmat else 0,
-                f[:, :3].copy(),
-                f[:, 3:6].copy(),
+                pos.astype(np.float32),
+                nrm.astype(np.float32) if nrm is not None else None,
                 uv.astype(np.float32) if uv is not None else None,
-                colors,
+                colors.copy(),
                 tri.reshape(-1),
             )
     # skin: u16 0x0101 (after 4-alignment) then n x (f32 w0 w1 w2 | u8 bone[4])
     for pad in (0, 2):
         r = q + pad
-        if r + 2 + 16 * n <= len(b) and b[r : r + 2] == b"\x01\x01":
+        if r + 2 + 16 * n <= len(b) and b[r : r + 2] == b"":
             srec = np.frombuffer(b, np.uint8, 16 * n, r + 2).reshape(n, 16)
             w = srec[:, :12].copy().view(">f4").reshape(n, 3).astype(np.float32)
             if np.isfinite(w).all() and (w >= -0.01).all() and (w <= 1.01).all():
@@ -241,16 +353,16 @@ def scan_meshes(b: bytes, start: int, nmat: int) -> list[Mesh]:
     group = -1
     while p + 40 < len(b):
         n = struct.unpack_from(">I", b, p)[0]
-        stride = _stride(b, p, n) if 3 <= n <= 65535 else 0
-        if stride:
+        layout = _layout(b, p, n) if 3 <= n <= 65535 else None
+        if layout is not None:
             blocks = struct.unpack_from(">I", b, p - 8)[0] if p >= 8 else 0
             if blocks or group < 0:
                 group += 1
-            mesh, q = _mesh(b, p, n, stride, max(nmat, 1))
+            mesh, q = _mesh(b, p, n, layout, max(nmat, 1))
             if mesh is not None:
                 mesh.group = group
                 out.append(mesh)
-            p = max(q, p + 4 + n * stride)
+            p = max(q, p + 4 + n * layout[0])
         else:
             p += 1
     return out
