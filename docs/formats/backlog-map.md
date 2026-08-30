@@ -80,5 +80,7 @@ u32 | u32`, file data from 0x108, and near the end a name table whose entries sh
 (`WORLD\EN_TEST.TXT`, then `T.TXT`, `TXT`, `XT` - the shorter names point into the tail of
 the longer ones).  The entry table sits between the data and the names, but it is not simply
 `names_start - count * entry_size` for entry sizes 20 / 24 / 28 / 32, so the dictionary offset
-must come from a header field that has not been identified yet.  Blowout ships 7 PODs
+must come from a header field that has not been identified yet; the 20 bytes at 0x108 are
+not a per-file record chain either (the next 20 bytes land inside the text), so the dictionary
+is a separate table, not inline.  Blowout ships 7 PODs
 (GCBSET 52 MB, GCBSOUND 51, GCBPKG 46, GCBART 8, COMMON 7, GCBMODEL 3, LANGUAGE 18 KB).
