@@ -73,8 +73,10 @@ pixels. Eurocom format codes: 0 CMPR, 1 RGBA8, 3 RGB5A3, 4 I4, 5 I8, 7 IA4, 8 IA
 
 Header list 6 (`map_list`, the same 20-byte hash-array elements as the entity list) points at
 map headers: `u32 0x500 magic | i32 rel bsp tree | ... | u32 placement count (+0x48) | i32 rel
-placement pointer (+0x4c) | ... | f32 bounds box[6] (+0xa8 on v182)`.  Placements are 56-byte
-records (v182; eurochef documents a 60-byte variant for the later PC versions): `u32 hashcode
+placement pointer (+0x4c) | ... | f32 bounds box[6] (+0xa8 on v182)`.  Placements come in three shapes (`PLACEMENT_SHAPES`, picked per map by how many records name
+a real entity): 56 bytes on the Sphinx-era games, 60 from Spyro (v240) on, and 80 on Buffy
+(v170) where each vector is padded to four floats (`u32 x4 | f32 rot[3] | pad | f32 scale[3] |
+pad | f32 pos[3] | 1.0 | u32 | u32 entity reference | u32 x2`).  The tight shapes are: `u32 hashcode
 (0xffffffff when unnamed) | f32 position[3] | u32 flags | f32 rotation[3] (radians, X then Y
 then Z, row-vector matrices) | f32 scale[3] | u16 engine flags | u16 map | u32 object
 reference (an entity hashcode of this EDB) | u16 light set | i16 group`.
@@ -83,7 +85,7 @@ reference (an entity hashcode of this EDB) | u16 light set | i16 group`.
 mesh entity (`_rotation` + scale + translation applied to positions and normals); entities not
 named by a placement are still exported individually, so nothing is lost.  Verified on Sphinx
 `_lu_pala.edb` (405 placements, 99,814 triangles - the props sit in a coherent layout) and
-`f00_fron.edb` (78 placements, the front-end sky dome).  Census: Batman Begins: 75 maps, 8,884 placements (1 unresolved), 2,124,082 triangles, 276 EDBs / 11,693 scenes, 33 s; Buffy the Vampire Slayer - Chaos Bleeds: 16 maps, 741 placements (2233 unresolved), 70,200 triangles, 218 EDBs / 8,465 scenes, 9 s; Cubix Robots for Everyone - Showdown: no filelist; Ice Age 2 - The Meltdown: 29 maps, 1,069 placements (26 unresolved), 467,733 triangles, 222 EDBs / 2,066 scenes, 6 s; Robots: 13 maps, 525 placements (0 unresolved), 482,465 triangles, 172 EDBs / 4,619 scenes, 11 s; Sphinx and the Cursed Mummy: 49 maps, 3,555 placements (316 unresolved), 973,985 triangles, 417 EDBs / 8,831 scenes, 14 s; Spyro - A Hero's Tail: 61 maps, 7,441 placements (847 unresolved), 1,870,282 triangles, 323 EDBs / 4,587 scenes, 18 s.
+`f00_fron.edb` (78 placements, the front-end sky dome).  Census: Batman Begins: 75 maps, 8,884 placements (1 unresolved), 2,124,082 triangles, 276 EDBs / 11,693 scenes, 38 s; Buffy the Vampire Slayer - Chaos Bleeds: 27 maps, 2,989 placements (0 unresolved), 275,389 triangles, 218 EDBs / 8,333 scenes, 11 s; Cubix Robots for Everyone - Showdown: no filelist; Ice Age 2 - The Meltdown: 29 maps, 1,069 placements (26 unresolved), 467,733 triangles, 222 EDBs / 2,066 scenes, 9 s; Robots: 13 maps, 525 placements (0 unresolved), 482,465 triangles, 172 EDBs / 4,619 scenes, 13 s; Sphinx and the Cursed Mummy: 51 maps, 3,891 placements (1 unresolved), 1,069,600 triangles, 417 EDBs / 8,528 scenes, 17 s; Spyro - A Hero's Tail: 61 maps, 7,441 placements (847 unresolved), 1,870,282 triangles, 323 EDBs / 4,587 scenes, 20 s.
 
 Open: map zones (`EXGeoMapZone.entity_refptr`, the static world chunk of each zone - the
 zone table's offsets for v182 are not located, so terrain still comes out as an unplaced
