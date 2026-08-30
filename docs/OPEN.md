@@ -33,7 +33,7 @@ Worth saying plainly: there is no mesh layout to hunt in either until the codec 
 | Asobo `.dgc` (Ratatouille) | 1 | **Asobo Studio "Internal Cross Technology"**.  Container mapped: 24-byte big-endian directory at 0x120 (`type | uncompressed | stored | block size | hash`), payload back to back, and **raw when uncompressed == stored and block size is 0** - 16 of 55 records, 29% of the archive, needs no codec.  Uniform 150/160 KB chunks mean it is a **paged virtual file system**, so cracking the codec yields an address space, not files - the name-to-page directory is a second problem.  See [formats/asobo-ict-dgc.md](formats/asobo-ict-dgc.md) |
 | Bleach GC | 1 | `chr.afs` / `scenario.afs` / `com.afs` / `stg.afs`, members open `16 00 00 00`; untagged structured records |
 | Gotcha Force, Gundam vs Z, Auto Modellista, Capcom vs SNK 2 | 4 | data AFS identified per disc; inner formats untouched |
-| `.arc` (cluster 2) | 4 (Cabela's x3, Over the Hedge) | Cabela's inflates to FUN Labs' own formats (`FSBF`, `GCT `, `FMBF`, `FABF`); gxscan finds nothing in the big blocks.  **Mega Man X: Command Mission and Evolution Snowboarding are done** - the first wraps a stock TPL, the second is a `KCEO ARCDT` archive that expands to 2,323 named members (`CUBE` and `BPXB`, both still to decode).  The other discs carry no TPL and are separate formats |
+| `.arc` (cluster 2) | 4 (Cabela's x3, Over the Hedge) | **Cabela's**: a chain of raw zlib streams at 0x800-aligned offsets, ~2 MB each; `generic` already inflates the first.  Not shipped as a container - gxscan finds nothing in an inflated block and none of gcrip's magics appear, so it would cost ~600 MB of inflation per disc for no output.  **Over the Hedge**: `datasets.arc` (399 MB) is the only untouched data archive; `levels.arc` is entity script data.  Mega Man X Collection is a dead end (emulated 2D games) | see [formats/cluster2-arc.md](formats/cluster2-arc.md) |
 | `.jam` `JAM2` / `LJAM` | 2 (Charlie and the Chocolate Factory, Hunter: The Reckoning) | separate formats from `FSTA`; untouched |
 | `bin`/`dat` tail | many | cluster 10, never started |
 
@@ -46,6 +46,7 @@ Worth saying plainly: there is no mesh layout to hunt in either until the codec 
 | `.fsb` | FMOD sound banks - 5 discs |
 | most AFS archives | ADX audio and MPEG video.  R - Racing, Soul Calibur II, Viewtiful Joe 2 and Sonic Riders have nothing else in theirs |
 | `.mpq` (WWE x3) | video packs |
+| Mega Man X Collection | emulated 2D games - there is no 3D geometry on the disc |
 | TMNT world materials | genuinely untextured in the source data |
 
 ## Cross-cutting traps worth re-reading before writing any plugin
