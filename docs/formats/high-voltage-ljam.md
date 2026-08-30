@@ -44,7 +44,7 @@ Everything except `TPL` and `TGA` is **plain ASCII**, in a consistent brace-bloc
 
 | ext | opens with | what it is |
 |---|---|---|
-| `AGG` | `Mesh[1]\r\n{` | **geometry** - 2,114 files |
+| `AGG` | `Mesh[1]\r\n{` | **geometry - cracked, see below** - 2,114 files |
 | `AGT` | `Surface2D[1]` | 2D surfaces / texture bindings |
 | `AGS` | `Shader[3]` | shaders |
 | `AGM` / `AGD` | `MatAssignment[2]` / `MaterialDatabase[2]` | materials |
@@ -66,3 +66,45 @@ studio as Billy & Mandy and Codename: Kids Next Door, whose `FSTA` / `GMS` forma
 open ([jam-fsta-hvs.md](jam-fsta-hvs.md)).  Those two discs keep their models in a compressed
 `GMS`; if the compressed payload turns out to be the same brace-block text, the grammar written
 for `AGG` here reads them as well once the codec falls.
+
+## `AGG` meshes - CRACKED
+
+`gcrip/formats/agg.py` + `gcrip/plugins/agg.py`.  A brace grammar with counted headers:
+
+    Mesh "bak"
+    {
+        MatAssignment[1] { "sym3" }
+        VertexArray[1] { VertexArray {
+            VertexFormat { Pos3D BlendWeight 1 DiffuseColor TxtCoord 0 }
+            Vertex[371] { -0.064241 2.550890 0.529913 1.000000 0 0 0 255 ... } } }
+        IndexArray[1] { IndexArray { Index16Bit Index[1089] { 0 1 2 // 363 Faces ... } } }
+        MeshComponent[2] { MeshComponent {
+            MatAssignment 0 // "sym3"
+            VertexGroup 0 203 168
+            IndexedTriangleGroup 0 591 498 // 166 Faces } }
+    }
+
+`VertexFormat` declares the columns of every `Vertex` row, so the row width is **stated**:
+`Pos3D` 3 floats, `Normal` 3, `BlendWeight n` n, `DiffuseColor` 4 bytes, `TxtCoord n` n pairs.
+Across a 421-file sample those five tokens cover every format on the disc - the commonest are
+`Pos3D DiffuseColor TxtCoord 1` (183), `Pos3D Normal TxtCoord 1` (162) and
+`Pos3D BlendWeight 1 Normal TxtCoord 1` (97).  A token of unknown width is refused rather than
+skipped, because skipping one would shift every column after it with no visible sign.
+
+Three things cost time and are worth writing down:
+
+* **`Index16Bit` is a type line, not a block.**  The block after it is `Index[1089]`, and the
+  count is **indices**, not faces - the comment beside it says "363 Faces".  A reader that
+  looks for `Index16Bit {` finds nothing at all.
+* **`IndexedTriangleGroup start count` is also in indices**, while `VertexGroup start count`
+  beside it is in vertices.  The two ranges in one component are counted in different units.
+* **the mesh name is quoted too**, so taking material names from "the quoted strings above the
+  vertex array" returns the mesh's own name.  They come from the `MatAssignment[n]` block.
+
+**Result: 1,984 of 2,114 `AGG` parse - 7,760 parts, 781,658 triangles**, 0.20% degenerate,
+median span over median edge 6.1.  7,343 parts carry uvs and 5,287 carry normals.  The 130 that
+do not parse are collision maps: `Pos3D` alone with `MathTriangle` and `BspPlane` blocks and no
+index array.
+
+Material names survive on the primitives, but binding them to the `TPL` textures needs the
+sibling `AGM` / `AGD` material text, which is not read yet.
