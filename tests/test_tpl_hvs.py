@@ -61,3 +61,38 @@ def test_plugin_prefers_the_variant_then_falls_back():
     assert plugin.detect("x/ZOMBIEG1.TPL", d[:64], len(d))
     # something carrying the magic but neither layout yields nothing rather than noise
     assert plugin.extract(tpl.MAGIC + b"\xff" * 64, "x/junk.tpl", None) == []
+
+
+def build_stock(w=8, h=8, fmt=0x0E, base=0) -> bytes:
+    """A stock Nintendo TPL, optionally embedded at `base` inside a wrapper."""
+    from gcrip.formats import gx_texture as gx
+
+    header_len = 12
+    table = header_len
+    img = table + 8
+    data_off = img + 0x20
+    body = bytearray(data_off + gx.encoded_size(fmt, w, h))
+    body[0:4] = tpl.MAGIC
+    struct.pack_into(">2I", body, 4, 1, table)
+    struct.pack_into(">2I", body, table, img, 0)
+    struct.pack_into(">HHII", body, img, h, w, fmt, data_off)
+    return bytes(base) + bytes(body) if isinstance(base, int) and base else bytes(body)
+
+
+def test_an_embedded_tpl_is_found_and_offsets_resolve_against_it():
+    """Mega Man X: Command Mission wraps a TPL in a 32-byte header, so it sits at 0x20."""
+    inner = build_stock(w=16, h=16)
+    wrapped = bytes(0x20) + inner
+    assert plugin.detect("OG085.arc", wrapped[:64], len(wrapped))
+    scenes = plugin.extract(wrapped, "OG085.arc", None)
+    assert len(scenes) == 1
+    rgba = next(iter(scenes[0].textures.values()))
+    assert rgba.shape == (16, 16, 4)
+    # the same bytes at offset 0 must decode identically
+    flat = plugin.extract(inner, "OG085.arc", None)
+    assert np.array_equal(next(iter(flat[0].textures.values())), rgba)
+
+
+def test_a_tpl_past_the_sniff_window_is_not_claimed():
+    wrapped = bytes(4096) + build_stock()
+    assert not plugin.detect("x.arc", wrapped[:64], len(wrapped))

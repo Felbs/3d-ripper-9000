@@ -17,17 +17,27 @@ from ripcore.scene import Scene
 NAME = "tpl"
 
 
+# Mega Man X: Command Mission wraps a TPL in a 32-byte header, so the magic sits at 0x20 of
+# each .arc rather than at 0.  detect() is given SNIFF_BYTES (64), which reaches it.
+EMBED_SEARCH = 64
+
+
+def _base(data: bytes) -> int:
+    return data.find(tpl.MAGIC, 0, EMBED_SEARCH)
+
+
 def detect(path: str, head: bytes, size: int) -> bool:
-    return head[:4] == tpl.MAGIC
+    return _base(head) >= 0
 
 
 def extract(data: bytes, path: str, src) -> list[Scene]:
-    if data[:4] != tpl.MAGIC:
+    base = _base(data)
+    if base < 0:
         return []
     stem = posixpath.basename(path).rsplit(".", 1)[0] or "textures"
     scene = Scene(name=stem)
     # High Voltage's variant shares the magic but not the layout, so try it before giving up
-    hvs = tpl_hvs.images(data)
+    hvs = tpl_hvs.images(data[base:]) if base == 0 else []
     if hvs:
         for i, image in enumerate(hvs):
             try:
@@ -41,7 +51,7 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
             return [scene]
         return []
     try:
-        images = tpl.parse(data)
+        images = tpl.parse(data, base)
     except Exception:  # noqa: BLE001 - a malformed texture must not stop the rip
         return []
     for i, image in enumerate(images):

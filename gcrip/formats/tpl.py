@@ -22,17 +22,19 @@ MAGIC = b"\x00\x20\xaf\x30"
 def parse(data: bytes, base: int = 0) -> list[BtiTexture]:
     """Textures in a TPL whose header starts at `base`.
 
-    All the offsets inside a TPL are absolute, so a TPL packed inside a larger archive can only
-    be read against the whole archive - pass the archive as `data` and the header position as
-    `base`.  High Voltage's FSTA archives do exactly that: a 4 KB TPL member points its pixels
-    at offset 2,142,000 of the containing .jam.
+    A TPL's internal offsets are relative to its own header, so an embedded one is read by
+    passing the containing file as `data` and the header position as `base`; every offset is
+    then resolved against `base`.  Mega Man X: Command Mission wraps one in a 32-byte header,
+    putting the TPL at 0x20 of each `.arc`.  With ``base=0`` this is exactly the old behaviour.
     """
     if data[base : base + 4] != MAGIC:
         raise ValueError("not a TPL file")
     count, table_off = struct.unpack_from(">II", data, base + 4)
     out = []
     for i in range(count):
-        img_off, pal_off = struct.unpack_from(">II", data, table_off + i * 8)
+        img_off, pal_off = struct.unpack_from(">II", data, base + table_off + i * 8)
+        img_off += base
+        pal_off = pal_off + base if pal_off else 0
         height, width, fmt, data_off, wrap_s, wrap_t, min_f, mag_f = struct.unpack_from(
             ">HHIIIIII", data, img_off
         )
@@ -53,6 +55,7 @@ def parse(data: bytes, base: int = 0) -> list[BtiTexture]:
             pal_count, _unp, _pad, pal_fmt, pal_data_off = struct.unpack_from(
                 ">HBBII", data, pal_off
             )
+            pal_data_off += base
             palette = data[pal_data_off : pal_data_off + pal_count * 2]
         out.append(
             BtiTexture(
@@ -68,7 +71,7 @@ def parse(data: bytes, base: int = 0) -> list[BtiTexture]:
                 mip_count=mips,
                 min_filter=min_f,
                 mag_filter=mag_f,
-                data=data[data_off : data_off + total],
+                data=data[base + data_off : base + data_off + total],
             )
         )
     return out

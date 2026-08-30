@@ -45,3 +45,18 @@ window rather than anything sophisticated.
 Worth noting before anyone spends a session: because this is a paged file system, cracking the
 codec gives an address space, not files.  The asset directory that maps names to pages has still
 to be found on top of that.
+
+## The raw pages do hold geometry - but not GX geometry
+
+Checked rather than assumed, since 29% of the archive is readable without the codec.  One raw
+page (id 7) carries a **1,478-float big-endian run** - 492 triples, bbox
+(-7.94, 0, -9.82)..(0, 5.64, 2.96), span 16.07 with a median step of 0.679, so a span-to-step
+ratio of **23.6**.  That is a coherent point set, not noise: real vertex data.
+
+But `gcrip.plugins.gx`, the structure scanner, finds **zero** scenes in that page.  Asobo builds
+its own primitives rather than GX display lists, so exposing the raw pages as members would not
+produce models through the existing fallback - it would just add ~160 KB blobs to the dump.
+
+That settles the cost: Asobo needs its own mesh reader on top of the codec and the page
+directory.  Three separate problems, so it is not a one-session job whatever the raw slice
+suggests.

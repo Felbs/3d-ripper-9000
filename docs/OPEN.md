@@ -33,7 +33,7 @@ Worth saying plainly: there is no mesh layout to hunt in either until the codec 
 | Asobo `.dgc` (Ratatouille) | 1 | **Asobo Studio "Internal Cross Technology"**.  Container mapped: 24-byte big-endian directory at 0x120 (`type | uncompressed | stored | block size | hash`), payload back to back, and **raw when uncompressed == stored and block size is 0** - 16 of 55 records, 29% of the archive, needs no codec.  Uniform 150/160 KB chunks mean it is a **paged virtual file system**, so cracking the codec yields an address space, not files - the name-to-page directory is a second problem.  See [formats/asobo-ict-dgc.md](formats/asobo-ict-dgc.md) |
 | Bleach GC | 1 | `chr.afs` / `scenario.afs` / `com.afs` / `stg.afs`, members open `16 00 00 00`; untagged structured records |
 | Gotcha Force, Gundam vs Z, Auto Modellista, Capcom vs SNK 2 | 4 | data AFS identified per disc; inner formats untouched |
-| `.arc` single-zlib | 6 (Cabela's x3, Evolution Snowboarding, Mega Man X CM, Over the Hedge) | inflates to FUN Labs' own formats (`FSBF`, `GCT `, `FMBF`, `FABF`); gxscan finds nothing in the big blocks |
+| `.arc` (cluster 2) | 5 (Cabela's x3, Evolution Snowboarding, Over the Hedge) | Cabela's inflates to FUN Labs' own formats (`FSBF`, `GCT `, `FMBF`, `FABF`); gxscan finds nothing in the big blocks.  **Mega Man X: Command Mission is done** - its `.arc` wrap a stock TPL and now decode.  The other discs carry no TPL and are separate formats |
 | `.jam` `JAM2` / `LJAM` | 2 (Charlie and the Chocolate Factory, Hunter: The Reckoning) | separate formats from `FSTA`; untouched |
 | `bin`/`dat` tail | many | cluster 10, never started |
 
