@@ -103,3 +103,25 @@ Section tags: `rdms` (by far the most - 4,415 in six Lemony Snicket files), `sur
 image size, so `surf` (and `sdta`, same shape) are textures; `node` is 86% plausible floats
 (the scene graph), `gshd` 89% (material / shader constants), and `rdms` is the mesh side.
 Decoding `surf` (dimensions + GX format) is the next step and should be quick.
+
+### `res` section internals (probe)
+
+A `surf` section is not a bare texture: after `u32 0 | u32 id | u8 flags[4] | u16 width | u16
+height` comes a table of increasing u32 offsets whose deltas form a mip chain - 0x3ffc, 0xffc,
+0x3fc, 0xfc, 0x3c, 0x1c ... i.e. 16,380 / 4,092 / 1,020 / 252 / 60 bytes, four short of the
+exact 128x128, 64x64, 32x32 ... sizes for one byte per pixel.  The base level decodes to only
+75 distinct byte values with a mean of 6, so it is index data, and the 264-byte block the
+table points at first holds more offsets (`00 0b 0a 1c`, `00 0b 0a 58`, ...) rather than a
+palette - so `surf` nests another table and the palette lives elsewhere.  GX decodes (CMPR,
+I8, RGB5A3, CI8 with the 0x424 block as a palette) all produce noise, so neither the tiling
+nor the palette is settled yet.  `sdta` repeats the same header one byte over.
+
+### `.dgc` = Kalisto TotemTech (Jimmy Neutron, Spirits & Spells, SpongeBob: Revenge of the
+Flying Dutchman)
+
+The files open with a 0x4d-byte banner - `TotemTech Data v1.75 (c) 1999-2002 Kalisto
+Entertainment - All right reserved` - then zero padding to 0x102 and the payload.  Spirits &
+Spells ships 225 `.DGC` (241 MB) beside 291 MB of `.wav`; the small `RTC_*.DGC` files carry
+byte-sized data in repeating 16-byte records (`20 d3 ff ff ff ff 00 00`), which reads as
+audio / cutscene data rather than geometry - the level `.DGC` (5 MB) is where the models
+should be, and is the file to open next for this cluster.
