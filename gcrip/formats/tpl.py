@@ -19,10 +19,17 @@ from gcrip.formats.bti import BtiTexture
 MAGIC = b"\x00\x20\xaf\x30"
 
 
-def parse(data: bytes) -> list[BtiTexture]:
-    if data[:4] != MAGIC:
+def parse(data: bytes, base: int = 0) -> list[BtiTexture]:
+    """Textures in a TPL whose header starts at `base`.
+
+    All the offsets inside a TPL are absolute, so a TPL packed inside a larger archive can only
+    be read against the whole archive - pass the archive as `data` and the header position as
+    `base`.  High Voltage's FSTA archives do exactly that: a 4 KB TPL member points its pixels
+    at offset 2,142,000 of the containing .jam.
+    """
+    if data[base : base + 4] != MAGIC:
         raise ValueError("not a TPL file")
-    count, table_off = struct.unpack_from(">II", data, 4)
+    count, table_off = struct.unpack_from(">II", data, base + 4)
     out = []
     for i in range(count):
         img_off, pal_off = struct.unpack_from(">II", data, table_off + i * 8)

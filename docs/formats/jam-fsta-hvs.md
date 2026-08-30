@@ -29,13 +29,31 @@ offsets are **0x800-aligned**, which is the check that identifies the table: at 
 `Bbay4.JAM` six `MNG` entries parse cleanly and their members really do start where they say
 (`BBAY4.MNG` at 0x1000 is a `Load...` manifest, the other five are `Soun...`).
 
-**Still to do:** the entries are grouped per extension, and the 52 bytes between the extension
-table and the first group (0x1e8..0x21c) are the per-group index that has not been decoded, so
-only one group is reachable so far.  Finding it gives the whole archive.
+**SHIPPED** as `gcrip/formats/fsta.py` + `gcrip/plugins/fsta.py`.
 
-That is worth doing for one reason above all: **`TPL` is in the extension list** - Nintendo's
-texture format, which gcrip already decodes - so the two discs should give up their textures as
-soon as the archive walks.  `GMS`, `GON`, `GKA` and `MNG` are the candidates for geometry.
+The entry table is not uniform - the `MNG` group is 12 bytes per entry but other groups pack
+differently, and the per-group index has not been decoded - so rather than guess a stride the
+reader takes anything in the directory that satisfies all four constraints at once: both indexes
+in range, non-zero size, an offset past the directory that is **0x800-aligned**, and the member
+fitting in the file.  Members are keyed by offset so nothing is counted twice.
+
+A scan rather than a walk, but a strict one, and what it recovers is right: over 20 archives per
+disc, **477 members on Billy & Mandy and 21 on Kids Next Door**, whose first four bytes are real
+headers throughout - `RotT`, `ISVH`, `Node`, `Surf`, `Set`, `Stag` - and the TPL magic on
+every member the extension table calls `TPL`.
+
+### The TPL members are a High Voltage variant
+
+They are NOT stock Nintendo TPL and `gcrip.formats.tpl.parse` cannot read them.  The variant has
+an **extra `u32` at +8**, so the field the standard reader takes for the image-table offset is
+zero, and the one after it (0x14) is not a table either.  The image header itself is ordinary
+and sits at **0x18** of the member - `ZOMBIEG1` reads height 64, width 64, format 0x0e (`CMPR`),
+data offset 0x6c - and those offsets are relative to the member.
+
+Two false starts worth recording: the offsets are not absolute within the archive (an early
+read had a 4 KB member pointing at byte 2,142,000), and the magic alone is not enough to assume
+the layout.  Finishing this variant is what turns these two discs' textures on; `GMS`, `GON`,
+`GKA` and `MNG` remain the geometry candidates.
 
 ## `.dgc` is three engines, not one
 
