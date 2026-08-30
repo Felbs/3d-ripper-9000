@@ -39,21 +39,39 @@ fitting in the file.  Members are keyed by offset so nothing is counted twice.
 
 A scan rather than a walk, but a strict one, and what it recovers is right: over 20 archives per
 disc, **477 members on Billy & Mandy and 21 on Kids Next Door**, whose first four bytes are real
-headers throughout - `RotT`, `ISVH`, `Node`, `Surf`, `Set`, `Stag` - and the TPL magic on
+headers throughout - `RotT`, `ISVH`, `Node`, `Surf`, `Set
+`, `Stag` - and the TPL magic on
 every member the extension table calls `TPL`.
 
-### The TPL members are a High Voltage variant
+### The TPL members are a High Voltage variant - CRACKED
 
-They are NOT stock Nintendo TPL and `gcrip.formats.tpl.parse` cannot read them.  The variant has
-an **extra `u32` at +8**, so the field the standard reader takes for the image-table offset is
-zero, and the one after it (0x14) is not a table either.  The image header itself is ordinary
-and sits at **0x18** of the member - `ZOMBIEG1` reads height 64, width 64, format 0x0e (`CMPR`),
-data offset 0x6c - and those offsets are relative to the member.
+`gcrip/formats/tpl_hvs.py`, tried first by `gcrip/plugins/tpl.py`.
 
-Two false starts worth recording: the offsets are not absolute within the archive (an early
-read had a 4 KB member pointing at byte 2,142,000), and the magic alone is not enough to assume
-the layout.  Finishing this variant is what turns these two discs' textures on; `GMS`, `GON`,
-`GKA` and `MNG` remain the geometry candidates.
+They carry Nintendo's magic and nothing else about them is stock.  Stock TPL is
+`magic | u32 count | u32 table offset`, with the table holding a pair of POINTERS per image.
+The variant inserts an extra `u32` (always zero), so the table offset sits at **+12**, and the
+table holds the image headers **inline**:
+
+    +0   u32 magic 0x0020AF30
+    +4   u32 image count
+    +8   u32 0
+    +12  u32 table offset          (0x14 on every file seen)
+    ...  image headers, 0x2c apart:
+             u16 height | u16 width | u32 GX format | u32 data offset
+
+Offsets are relative to the start of the TPL.  The 0x2c stride is confirmed by the pixels
+rather than assumed: in `ZOMBIEG1` the headers sit at 0x14 and 0x40, and the first image
+(64x64 `CMPR`, 2,048 bytes) starts at 0x6c and ends exactly where the second's data begins at
+0x86c.  Over 41 members it reads 50 images with no failures, all `CMPR`.
+
+**Three false starts worth keeping.**  The offsets are not absolute within the archive - an
+early read had a 4 KB member pointing at byte 2,142,000 of the `.jam`.  The image header is at
+0x14, not 0x18; miscounting the dump by one row made the `u32` at +12 look like junk when it is
+the table pointer.  And matching magic never meant matching layout.
+
+End to end: **50 textures on Billy & Mandy and 4 on Kids Next Door** from the 20 smallest
+archives of each - a joystick UI icon and effect glows among them.  `GMS`, `GON`, `GKA` and
+`MNG` remain the geometry candidates.
 
 ## `.dgc` is three engines, not one
 
