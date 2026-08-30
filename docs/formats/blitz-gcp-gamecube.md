@@ -56,3 +56,36 @@ mesh in 16 s.  So Blitz builds its display lists at run time from its own vertex
 arrays, and the next step for this family is finding those arrays' headers inside a sector
 package (the token stream names the meshes - `m_srx_oct_blinkplat`, `c_srx_oct_blinkplat` -
 so a name-to-blob mapping exists somewhere in the member).
+
+## Where the geometry is NOT (2026-08-30 survey)
+
+Surveyed Bratz: Rock Angelz (1,680 loose `.gcp`) and Pac-Man World 3 (one 335 MB `AllPaks.gcp`,
+338 members).  The archive reader works on both shapes; what it hands back is the question.
+
+* **Level packs are pure object stream.**  `hub_s3_fetm.gcp` (827 KB) is one stamped package
+  (`18/08/2005 at 12:57:38 by rgrant`) whose entropy sits at 4.8 with ~30% printable bytes
+  right across the file - `hubsectors`, `sector`, `Hub World Sector`, `portal`.  No geometry.
+* **Pac-Man World 3's members are the same.**  `mountains_1_world.gcp` (40 KB, the smallest
+  member over 40 KB) is one stamped package with no float arrays either.
+* **`common_*` packs are a different shape again** - 1,121 of them on Rock Angelz.  They are
+  bare packs (data start 0x20, a count at 0x0c) with **no stamp at all**, so
+  `gcrip.plugins.blitz` currently returns nothing for them; they are not compressed (no zlib
+  anywhere), and the payload is sparse binary starting around 0x822.  `common_Default Faces
+  Sector.gcp` is 1 MB at entropy 4.43, which reads like GX texture data.
+
+## The reason a float scan finds nothing
+
+**The floats are tagged.**  The object stream stores each value behind a type byte
+(0x00 end, 0x01 u8, 0x03 u16, 0x05 u32, 0x06 f32 little-endian, 0x07 string), so a f32 in the
+stream is `06 xx xx xx xx` - five bytes, not four.  Scanning for contiguous IEEE floats is
+structurally blind to it and reports "no float arrays", which is exactly the wrong conclusion.
+
+Searching for runs of `06` + a plausible float instead finds a **408-float run** in
+`hub_s3_fetm.gcp` at 0x1a34a, values like (-161, -122, -161), (305, 0, 305), (0, -122, 0),
+(-414, 644, -414) - coordinates, though the repeated pattern reads more like corner pairs than
+a vertex array.  Pac-Man World 3's member tops out at a 10-float run.
+
+So the object stream is the target, and decoding it is a well-defined job: the tag set is
+already known, so a walker can turn a pack into a typed property tree, and the geometry (or the
+references to it) will be inside that tree rather than in any raw array.  That, plus finding
+out what the stampless `common_*` packs hold, is where the next session on Blitz should start.
