@@ -14,7 +14,7 @@ flowchart LR
     WALK --> MAN["disc_manifest.json<br/>every file, format, hash"]
     MAN --> RIP["2  Rip loop<br/>gcrip.rip"]
     RIP -->|"BMD / BDL"| J3D["3  J3D parse<br/>gcrip.formats.j3d"]
-    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, eurocom, hsf, sa2b, sadx, ninja_gc, billy, nu2, ttdisp, hgo, unreal, openspace, afs, lpac, melee, dbl, blitz, u8, res, zip, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
+    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, eurocom, hsf, sa2b, sadx, ninja_gc, billy, nu2, ttdisp, hgo, unreal, openspace, afs, lpac, melee, dbl, blitz, u8, res, zip, pod, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
     RIP -->|"nothing claims it"| GX["3c  Structure scan (fallback)<br/>gcrip.gxscan: GX display lists,<br/>vertex + index arrays"]
     J3D --> ANIM["4  Clip matching<br/>rip._AnimIndex + j3d_anim"]
     ANIM --> GLTF["5  glTF export<br/>gcrip.export.gltf / ripcore.gltf"]
@@ -207,7 +207,7 @@ flowchart LR
     subgraph RADICAL["Radical"]
         RCF["RCF (RADCORE / ATG)<br/>plugins.rcf"] --> P3D["Pure3D P3DZ / LZR<br/>plugins.p3d"]
     end
-    subgraph OTHER["Capcom / Ubisoft / Neversoft / Blitz"]
+    subgraph OTHER["Capcom / Ubisoft / Neversoft / Blitz / Terminal Reality"]
         DAS["RE4 DAS / DRS<br/>plugins.re4"]
         BF["Jade .bf<br/>plugins.jade"]
         PRE["Neversoft PRE<br/>plugins.neversoft"]
@@ -217,6 +217,7 @@ flowchart LR
         TTPK["TT .fpk/.cpk packs<br/>plugins.ttdisp"] --> DISP["DISP programs .csc/.chg<br/>(LSW2, Narnia)<br/>formats.ttdisp"]
         UMD["Ubisoft .umd/.lin<br/>chunked zlib<br/>plugins.unreal"] --> UE2["UE2 packages .usx/.utx/.unr<br/>StaticMesh + Texture + level actors<br/>formats.unreal"]
         LVL["OpenSpace .lvl + .ptr<br/>(Rayman 3 / Arena)<br/>plugins.openspace"] --> CPA["super objects -> GeometricObjects<br/>+ TPL textures<br/>formats.openspace"]
+        POD["Terminal Reality POD2 / POD3<br/>index at 0x60 / at header[0x108]<br/>plugins.pod"] --> GX
         DBL["Avalanche .dbl/.dbu/.mdb<br/>plugins.dbl"] --> DBLM["mesh records: GX arrays +<br/>FIFO display lists, texture tables<br/>formats.dbl_mesh"]
     end
     EAGL & EBO & SA2B & SADX & BILLY & RW & NJ & MDL2 & MDL3 & HSD & EDB & HSF & P3D & DAS & BF & PRE & NU2 & HGO & DISP & UE2 & CPA & DBLM & GX --> SCENE["ripcore Scene → glTF"]

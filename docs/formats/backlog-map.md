@@ -161,3 +161,28 @@ header, and it is close: a `u16` vertex count (1922 for the verified mesh) sits 
 before its array, and the array itself is immediately preceded by the text `GeomDesc` followed
 by `00 06 00 00 00 00 01 3a`.  Parsing that block - rather than scanning - is the next step,
 and it should give exact vertex and face counts per mesh.
+
+### `.pod` POD3 - CRACKED (BloodRayne, 4x4 Evo 2, Blowout, RoadKill)
+
+Solved: the index offset the earlier probe could not find is stored at header **0x108**, is
+unaligned, and points at the END of the file; `POD2` (4x4 Evo 2) instead keeps the index inline
+at 0x60.  Entries are 20 bytes in both versions.  Full write-up in
+[terminal-reality-pod.md](terminal-reality-pod.md); 38 archives, 19,678 members, offsets tile
+exactly (1241/1241 on `TRUCK.pod`).  The models (`.BST` / `.BQS`) and textures (`.TEX`) inside
+are the next step.
+
+### TotemTech `.dgc` - third pass, still heuristic
+
+Ruled out this pass: the file carries **no directory**.  Nothing anywhere in
+`LEVEL07a.DGC` stores the offset of the verified vertex array (searched big- and
+little-endian, absolute and relative to the banner and to the `GeomDesc` marker), so there is
+no table to parse.  The `GeomDesc` lead was also weaker than it looked: only **1 of the 26**
+markers is followed by binary, the other 25 are ordinary text property dumps
+(`GeomDesc  = "" 
+	Son  = ...`), so the markers do not enumerate meshes.  The one binary
+marker is followed by `00 06 00 00 00 00 01 3a` and then the floats, and 0x13a = 314 is not the
+mesh's vertex count (1922), so that word is not a count either.
+
+That leaves sequential parsing of the whole serialized stream from byte 0 as the only exact
+route - a much bigger job than scanning, and the reason the plugin is still held back rather
+than shipped with heuristic pairing.
