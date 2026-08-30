@@ -47,11 +47,32 @@ Two blocks 260 KB apart share a byte-identical 64-byte header apart from an id w
 file is 6 MB of 255.  Bounding boxes are sensible room and prop shapes
 (-45..44, -42..47, -134..138).
 
-## What is missing
+## The index list - FOUND, and it is a GX display list
 
-The **index list**.  The corner count says how many there should be, but the bytes between the
-normals and the next block do not read as `u8` or `u16` indices into the vertex array at any
-offset tried so far - the first candidates run to 255 and 65,531 against a 33-vertex array.
-Either the corners are drawn in order (a strip or fan, needing no index list) or the indices
-live in a separate section of the file.  That is the one thing between this and a shipped
-reader.
+It was never a bare index array, which is why searching for one failed: `w11` points at a
+**GX display list**.  `0x98` - the triangle-strip opcode - is what gives it away.
+
+    u8 opcode | u16 vertex count | count * 6 bytes
+
+and a display-list vertex is three big-endian `u16`: **position index, colour index, normal
+index**, with `0xffff` for an attribute the block does not use.  On one block
+`98 00 04 | 00 17 00 a2 00 a2 | ...` reads as a four-vertex strip whose first corner is vertex
+23 of 75 and corner 162 of 163 - both in range, which is the check that confirms it.
+
+Two things are found rather than assumed.  The list does **not** start at `w11`: a sub-header of
+varying length sits in front (40, 52 and 56 bytes on the three blocks measured), so the reader
+scans forward for the first opcode from which the whole list walks.  And the walk proves itself
+- on two of three blocks it consumes the bytes up to the next block exactly (22 strips / 137
+triangles, 260 strips / 618 triangles), and no position index ever exceeds the vertex count.
+
+Strips stitch their runs by repeating a vertex, so ~12% of the expanded triangles have zero
+area; those are dropped as an artefact of the encoding.
+
+## SHIPPED
+
+`gcrip/formats/mdgc.py` + `gcrip/plugins/mdgc.py`.  Whole disc: **14 of 255 `.dgc` yield
+geometry -> 947 meshes, 89,023 vertices, 130,937 triangles**, on a disc that reported zero.
+The other 241 files are scripts and other block types.
+
+Sanity check beyond the counts: the span-to-median-edge ratio is **10.8**, which is what a
+coherent mesh measures; noise measures in the thousands.
