@@ -144,3 +144,20 @@ layout is right.  `gcrip/formats/totem.py` implements the primitives with tests,
 NO plugin yet: scanning finds only 8 meshes / 679 triangles across four levels while the files
 carry ~36 `Geom` markers each, so mesh discovery is the missing piece - the `Geom` / `GeomDesc`
 text markers and the u32 index lists that precede each vertex array are the obvious next lead.
+
+#### TotemTech progress (second pass)
+
+Anchoring on the FACES works far better than anchoring on the vertices: a mesh shows up as a
+dense run of `00 00 00 03` count words (Spirits & Spells `LEVEL07a.DGC` has 38 such runs, and
+the file carries 26 `GeomDesc` text markers), and each run's vertex array is one of the float
+runs before it.  Pairing by "nearest array" recovers 24 of 38 runs; scoring the candidates by
+how tightly the referenced vertices hang together (bounding-box span over median edge length)
+removes the wild ones.  Yield over eight files per disc: Spirits & Spells 215 meshes / 10.7k
+triangles, Jimmy Neutron 418 / 21.5k, SpongeBob 453 / 48.5k.
+
+Still not shipped as a plugin: individual meshes render correctly (a lamppost is exact) but a
+merged level still looks wrong, because heuristic pairing mixes arrays.  The fix is the real
+header, and it is close: a `u16` vertex count (1922 for the verified mesh) sits 0x56e bytes
+before its array, and the array itself is immediately preceded by the text `GeomDesc` followed
+by `00 06 00 00 00 00 01 3a`.  Parsing that block - rather than scanning - is the next step,
+and it should give exact vertex and face counts per mesh.
