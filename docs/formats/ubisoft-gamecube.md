@@ -143,3 +143,13 @@ then find the StaticMesh objects (props start with the `Materials` array) in the
 earlier blocks and test whether they follow their package's export order for name binding.
 Chaos Theory `.lin`: chunks `u32 csize | zlib` (416 chunks -> one 13.6 MB segment), versions
 100/119 and 396/114, 172 headers - a different engine build, not yet examined further.
+
+### Splinter Cell 1 bundle geometry (probe 2026-08-29 night)
+
+The inflated SC1 segments DO contain Pandora-Tomorrow-style StaticMesh vertex arrays - 32-byte
+records `f32 position[3] | f32 normal[3] | f32 uv[2]` (big-endian) followed by a `u32 marker |
+u32 | u16 strip` index run - but only a handful: scanning all eight 4-byte alignments of
+`0_0_2.unr`'s 7 MB segment finds 20 runs totalling 2,836 vertices (largest 852).  A whole
+level pack cannot be that small, so the v100/119 GameCube build must keep most of its geometry
+in another (quantised or platform-specific) form; finding that layout - not the package
+tables - is what stands between this family and a rip.

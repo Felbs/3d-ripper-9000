@@ -87,6 +87,12 @@ named by a placement are still exported individually, so nothing is lost.  Verif
 `_lu_pala.edb` (405 placements, 99,814 triangles - the props sit in a coherent layout) and
 `f00_fron.edb` (78 placements, the front-end sky dome).  Census: Batman Begins: 75 maps, 8,884 placements (1 unresolved), 2,124,082 triangles, 276 EDBs / 11,693 scenes, 38 s; Buffy the Vampire Slayer - Chaos Bleeds: 27 maps, 2,989 placements (0 unresolved), 275,389 triangles, 218 EDBs / 8,333 scenes, 11 s; Cubix Robots for Everyone - Showdown: no filelist; Ice Age 2 - The Meltdown: 29 maps, 1,069 placements (26 unresolved), 467,733 triangles, 222 EDBs / 2,066 scenes, 9 s; Robots: 13 maps, 525 placements (0 unresolved), 482,465 triangles, 172 EDBs / 4,619 scenes, 13 s; Sphinx and the Cursed Mummy: 51 maps, 3,891 placements (1 unresolved), 1,069,600 triangles, 417 EDBs / 8,528 scenes, 17 s; Spyro - A Hero's Tail: 61 maps, 7,441 placements (847 unresolved), 1,870,282 triangles, 323 EDBs / 4,587 scenes, 20 s.
 
+The census above runs each EDB on its own; in a real rip the plugin also resolves references
+into other EDBs through the Filelist source (`_index` builds a hashcode -> path map once per
+disc, `_foreign` keeps four parsed EDBs).  With that path enabled Spyro goes from 7,441 to
+8,288 placements (847 foreign) and 1.87M to 2.17M triangles with nothing unresolved, and
+Batman resolves all 8,885.
+
 Open: map zones (`EXGeoMapZone.entity_refptr`, the static world chunk of each zone - the
 zone table's offsets for v182 are not located, so terrain still comes out as an unplaced
 entity at the origin), placement groups, lights / paths / portals.
