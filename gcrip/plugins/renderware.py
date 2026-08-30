@@ -10,7 +10,9 @@ Scene assembly: every frame becomes a joint (rest pose from the frame matrices);
 baked into world space and bound rigidly to their frame, skinned atomics carry the Skin PLG's
 bone weights (bone -> joint through the HAnim node ids).  A world is one static mesh under a
 single joint.  Textures are looked up by name in TXDs from the same archive, its HIP/HOP twin,
-the same directory, and finally any TXD on the disc (index built on first miss).
+the same directory, and finally any TXD on the disc (index built on first miss); a dictionary
+holding a single raster is also indexed under its own file name, because Heavy Iron's assets
+carry the artist's leftover raster name ("temp") while the material names the asset.
 """
 
 from __future__ import annotations
@@ -102,7 +104,11 @@ class _TextureIndex:
                     names = konami_pac.names(blob)
                 else:
                     names = rwgc.texture_names(blob)
-                self.names[path] = [self._key(path, n) for n in names]
+                keys = [self._key(path, n) for n in names]
+                stem = self._key(path, "")
+                if len(names) == 1 and stem not in keys:
+                    keys.append(stem)  # Heavy Iron assets: the raster is often called "temp"
+                self.names[path] = keys
             except Exception:  # noqa: BLE001 - one bad dictionary must not stop the lookup
                 self.names[path] = []
         return self.names[path]
@@ -117,9 +123,12 @@ class _TextureIndex:
                         if kt.rgba is not None:
                             table[self._key(path, kt.name)] = kt.rgba
                 else:
-                    for t in rwgc.parse_txd(blob):
+                    rasters = rwgc.parse_txd(blob)
+                    for t in rasters:
                         if t.image is not None:
                             table[self._key(path, t.name)] = t.image
+                    if len(rasters) == 1 and rasters[0].image is not None:
+                        table.setdefault(self._key(path, ""), rasters[0].image)
             except Exception:  # noqa: BLE001
                 pass
             self.decoded[path] = table
