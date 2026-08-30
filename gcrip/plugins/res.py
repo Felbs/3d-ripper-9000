@@ -8,8 +8,8 @@ from __future__ import annotations
 
 import posixpath
 
-from gcrip.formats import res, res_surf
-from ripcore.scene import Scene
+from gcrip.formats import res, res_rdms, res_surf
+from ripcore.scene import Primitive, Scene
 
 NAME = "res"
 
@@ -23,16 +23,33 @@ def expand(data: bytes) -> list[tuple[str, bytes]]:
 
 
 def detect(path: str, head: bytes, size: int) -> bool:
-    # a surf member handed back by expand(); the real check needs the whole section, which
+    # a member handed back by expand(); the real check needs the whole section, which
     # extract() gets, so this only screens on the name expand() gave it
-    return "_surf_" in posixpath.basename(path)
+    base = posixpath.basename(path)
+    return "_surf_" in base or "_rdms_" in base
 
 
 def extract(data: bytes, path: str, src) -> list[Scene]:
+    name = posixpath.basename(path).rsplit(".", 1)[0]
+    if "_rdms_" in name:
+        mesh = res_rdms.mesh(data)
+        if mesh is None:
+            return []
+        scene = Scene(name=name)
+        scene.primitives.append(
+            Primitive(
+                material=-1,
+                positions=mesh.positions,
+                indices=mesh.indices,
+                normals=mesh.normals,
+                uvs=mesh.uvs,
+            )
+        )
+        scene.extras = {"format": "res_rdms"}
+        return [scene]
     rgba = res_surf.decode(data)
     if rgba is None:
         return []
-    name = posixpath.basename(path).rsplit(".", 1)[0]
     scene = Scene(name=name)
     scene.textures[name] = rgba
     scene.extras = {"textures_only": True, "format": "res_surf"}
