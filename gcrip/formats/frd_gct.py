@@ -19,16 +19,29 @@ The format code is Free Radical's own, not a GX code, and it does not map one-to
 
 | code | what it is |
 |---|---|
-| 2, 13 | `CMPR` - two codes, one format |
+| 2, 3, 4, 10, 13 | `CMPR` |
+| 5, 7 | `I8` |
 | 6, 8 | `RGB5A3` |
-| 4, 5, 7, 10, 12 | 8 bits a pixel, **palette-indexed, and the palette is not in the file** |
-| 11 | 4 bits a pixel, likewise |
+| 0 | `RGBA8` |
+| 9, 11, 12 | not identified |
 
-The confirmed four are the bulk of them.  The palette-indexed codes are left alone rather than
-guessed at: at 8 bits a pixel with no palette the only GX candidates are `I8` and `IA4`, and
-both give vertical banding on a texture that should be a sniper scope, which is what an index
-stream looks like when it is drawn as intensity.  Whatever holds their palettes is somewhere
-else in the archive.
+**A file usually holds more than the top level**, so dividing its length by the pixel count and
+reading the answer as bits per pixel is what leads you astray.  Codes 4 and 10 carry exactly
+twice the `CMPR` data their dimensions need, which comes out as "8 bits a pixel" and points at
+`I8`, `IA4` or a palette that is not in the file - and `I8` duly draws a GameCube controller as
+vertical banding, which reads as an index stream shown as intensity.  Taking the first
+``encoded_size(fmt, w, h)`` bytes draws the controller.
+
+Where the mip count is set the whole chain is stored, and then the ratio does identify the
+format, because a full chain is four thirds of the top level:
+
+    bytes / pixels    0.67    1.33    2.00    5.33
+    top level         0.5     1.0     1.5     4.0
+    format            CMPR    I8      ?       RGBA8
+
+That is how `0` was settled as `RGBA8` (a sky gradient), `5` and `7` as `I8` (a marble panel
+and a lens flare) and `3` as `CMPR`.  Codes 9, 11 and 12 are left unidentified rather than
+guessed - together they are under 3% of the sample.
 """
 
 from __future__ import annotations
@@ -43,8 +56,20 @@ from gcrip.formats import gx_texture as gx
 HEADER = 32
 MAX_DIM = 4096
 MAX_LEVELS = 16
-CMPR, RGB5A3 = 0xE, 5
-FORMATS = {2: CMPR, 13: CMPR, 6: RGB5A3, 8: RGB5A3}
+CMPR, RGB5A3, I8, RGBA8 = 0xE, 5, 1, 6
+# Free Radical's own numbering: several codes share a format
+FORMATS = {
+    0: RGBA8,
+    2: CMPR,
+    3: CMPR,
+    4: CMPR,
+    5: I8,
+    6: RGB5A3,
+    7: I8,
+    8: RGB5A3,
+    10: CMPR,
+    13: CMPR,
+}
 
 
 @dataclass

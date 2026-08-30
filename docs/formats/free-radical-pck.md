@@ -89,19 +89,37 @@ The format code is Free Radical's own and does not map one-to-one onto GX:
 
 | code | what it is |
 |---|---|
-| 2, 13 | `CMPR` - two codes, one format |
+| 2, 3, 4, 10, 13 | `CMPR` |
+| 5, 7 | `I8` |
 | 6, 8 | `RGB5A3` |
-| 4, 5, 7, 10, 12 | 8 bits a pixel, palette-indexed |
-| 11 | 4 bits a pixel, palette-indexed |
+| 0 | `RGBA8` |
+| 9, 11, 12 | not identified - under 3% of the sample |
 
-**3,598 of 6,465 textures in the sample decode** - 54% on TimeSplitters 2, 57% on Future
-Perfect, 61% on Second Sight.
+**6,409 of 6,465 textures in the sample decode: 100% on TimeSplitters 2, 98% on Future
+Perfect, 99% on Second Sight.**
 
-The palette-indexed codes are refused rather than guessed at.  At 8 bits a pixel with no
-palette in the file the only GX candidates are `I8` and `IA4`, and both draw a sniper scope as
-vertical banding - which is what an index stream looks like when it is shown as intensity.
-Whatever holds their palettes is elsewhere in the archive, and finding it is worth roughly
-another 2,900 textures on these three discs.
+### How the codes were settled, and the wrong turn on the way
+
+The obvious move is to divide the file length by the pixel count and read the answer as bits
+per pixel.  It does not work, because **a file usually holds more than the top level**.  Codes
+4 and 10 carry exactly twice the `CMPR` data their size needs, which reads as "8 bits a pixel"
+and points at `I8`, `IA4`, or a palette that is not in the file - and `I8` duly draws a
+GameCube controller as vertical banding, which looks exactly like an index stream shown as
+intensity.  That is a convincing dead end; it cost a round of hunting for palettes that do not
+exist.  Taking the first `encoded_size(fmt, w, h)` bytes draws the controller.
+
+Where the mip count is set the whole chain is stored, and *then* the ratio identifies the
+format, because a full chain is four thirds of the top level:
+
+| bytes / pixels | top level | format |
+|---|---|---|
+| 0.67 | 0.5 | `CMPR` |
+| 1.33 | 1.0 | `I8` |
+| 5.33 | 4.0 | `RGBA8` |
+
+Each was then confirmed by looking: a sky gradient for `RGBA8`, a marble panel and a lens
+flare for `I8`, shotgun shells and a GameCube controller for `CMPR`, a mouse pointer and a
+rain streak for `RGB5A3`.
 
 ## Still open
 
