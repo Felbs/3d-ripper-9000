@@ -203,3 +203,50 @@ The rest fall in line (missile 0.86, `tatermasher` 1.18, against Blowout's 1.98 
 Version 4 pads with `F00DBAAD` and carries a `kfmp1` marker where version 7 keeps its material
 records.  Both versions now export: Blowout's credits package 25 meshes / 3,761 triangles,
 BloodRayne's boiler room 6 meshes / 367 triangles, all six textured.
+
+## `_smf` version 6 (RoadKill) - mapped, NOT decoded
+
+RoadKill's mesh chunks carry the tag `fmsl` (kind `lsmf`) rather than `fms_`, but their names
+still end in `.SMF`, so the plugin's extension check fires and only the version stops them:
+they are **version 6**, and the layout table has 4 and 7.  There are 35-43 per level package
+across roughly 15 packages, so on the order of 500 meshes.
+
+What is known:
+
+* header shape matches version 7 - `u32 version, u32 count, ...` with the texture name at
+  **0x24** (`JScattergn.tif`), so materials read the same way;
+* there are **no GX display lists**: scanning for a chained opcode + `u16 count` + fixed-stride
+  vertex run finds nothing at any stride from 12 to 36, and the `00000008 00000001` preamble
+  that anchors versions 4 and 7 does not appear at all;
+* the vertices are **f32 little-endian**, not the big-endian s16 of 4 and 7.  `EPLANE.SMF`
+  decodes cleanly by hand as four 12-byte vertices at +-0.5 with y ~ 1e-16 - a flat plane;
+* every mesh carries the strings `theLegacyCollisionPart` and a Maya node name
+  (`@polySurface12`), so at least part of each chunk is collision, not render geometry.
+
+So version 6 is a different generation of the format - CPU-side float arrays rather than a
+display list - and needs its own reader.  It is correctly skipped today (the version check
+rejects it, nothing wrong is exported).
+
+## `_dfm` deformable meshes - mapped, NOT decoded
+
+Blowout's `kane.dfm` (version 5, 72 KB) references `HERO.SKL` by name at offset 28, then:
+
+* **28 part records of 60 bytes** from offset 108: a 30-byte name (`rhand`, `rshin`, `lhand`,
+  `torsobottom`, `head`, `lforearm`, ...), a `u16` **bone index** (20, 5, 19 - all inside the
+  skeleton's 29 bones), a `u16`, and six f32 that are a bounding box.  One bone per part means
+  these are **rigidly segmented characters, not smooth skins** - each part just needs its
+  bone's transform;
+* then 360-byte material records like version 7's, two names each (`kane.TIF` plus
+  `kane_glossmap.TIF`);
+* then geometry that is again **f32**, with no display lists and no `00000008 00000001`
+  preamble.
+
+The matching `HERO.SKL` (version 2) is straightforward: `u32 version, u32 bone count`, then
+36-byte records of a name and a parent index at +32.  The 29 parents form a correct anatomical
+tree - Pelvis is -1, the thighs and spine parent to it, the calves to the thighs, the clavicles
+to Spine1 - so the hierarchy reads correctly already.  154 KB of what is presumably animation
+follows the bone table.
+
+Rigid parts plus a readable skeleton means a rigged character is reachable once the f32
+geometry block is understood; that block is shared with version 6 above, so cracking one
+should give both.
