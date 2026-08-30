@@ -61,9 +61,14 @@ Worth saying plainly: there is no mesh layout to hunt in either until the codec 
    have; add a non-degeneracy guard when searching.
 4. **Matching magic is not matching layout.**  High Voltage's TPL carries Nintendo's exact
    magic and a different header.
-5. **A disc queued for a pass has no dump directory.**  Pass 7 deletes each game's folder before
+5. **`gcrip dump` is one single-threaded process - use `--shard i/n`.**  A single worker used
+   **1% of a 64-core machine** with the disk at 0%; six shards over one `--out` took it to 20%.
+   The run is resumable (finished discs are skipped from `batch_results.jsonl`), so switching a
+   running pass to shards costs nothing.  Do not go wide enough to thrash the single spindle that
+   holds both the ISOs and the dump.
+6. **A disc queued for a pass has no dump directory.**  Pass 7 deletes each game's folder before
    re-ripping it, so `disc_manifest.json` vanishes mid-run and any tooling that reads offsets from
    the dump breaks.  Read the ISO directly, or keep a local sample, for anything on the pass list.
-6. **Measure from the right offset.**  Blitz format 21 looked like an unknown codec at 0.39
+7. **Measure from the right offset.**  Blitz format 21 looked like an unknown codec at 0.39
    bytes per pixel purely because the pixel data was measured from 0x1000 instead of from each
    descriptor.
