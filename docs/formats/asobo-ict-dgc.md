@@ -10,18 +10,24 @@ banner:
 
 After the banner and zero padding, a directory of **24-byte big-endian records at 0x120**:
 
-    u32 type          2..63 seen; 4 is the commonest (15 of 43)
+    u32 id            4 is commonest (15 of 55) but values run to 1150 - an id or hash,
+                      not a small enum
     u32 uncompressed size
     u32 stored size
-    u32 block size    0x800 when packed, **0 when stored raw**
+    u32 block size    0x800 on 38 records, 0 on the 16 raw ones, 0x7000 on the last one
     u8  hash[8]
 
-The records run to 0x528 on `SW.DGC` (43 of them) and the payload follows immediately, each
-chunk stored back to back in table order.
+**55 records** on `SW.DGC`, table 0x120..0x648, payload following immediately with the chunks
+back to back in table order.  Stored total 8,706,406 against a 8,710,144-byte file, leaving a
+2,130-byte trailer.
 
 **When `uncompressed == stored` the block size is 0 and the chunk is raw.**  That is a clean,
-self-checking rule, and it covers a useful slice: **11 of 43 records, 1,751,040 of 6,830,080
-bytes - 26% of the archive is readable with no codec at all.**
+self-checking rule, and it covers **16 of 55 records - 2,539,520 of 8,708,096 bytes, 29% of the
+archive - readable with no codec at all.**
+
+*(An earlier pass of this note said 43 records and 26%.  That walk stopped early because it
+rejected any id above 64 and any block size other than 0x800/0; both assumptions were wrong -
+ids go to 1150 and the final record uses a 0x7000 block.  Numbers here are the corrected ones.)*
 
 Chunk sizes are uniform - 153,600 or 163,840 bytes - which says this is a **paged virtual file
 system**, not a directory of individual assets.  A chunk is a page of a larger address space, so
