@@ -188,33 +188,39 @@ That leaves sequential parsing of the whole serialized stream from byte 0 as the
 route - a much bigger job than scanning, and the reason the plugin is still held back rather
 than shipped with heuristic pairing.
 
-### `res` `surf` textures - partly solved (2026-08-30)
+### `res` `surf` textures - CRACKED (2026-08-30)
 
-Progress on Samurai Jack (290 `.res`), which reports zero models and zero textures.
+`gcrip/formats/res_surf.py`, wired into `gcrip/plugins/res.py`.  Layout:
 
-**Established and verified:**
+    +0   u32 0
+    +4   u32 id
+    +8   u8  format      2 = GX C4 (4 bpp), 3 = GX C8 (8 bpp)
+    +11  u8  mip levels
+    +12  u16 width       big-endian
+    +14  u16 height      big-endian
+    +32  palette, RGB565, two bytes an entry
+    ...  mip chain, level 0 first
 
-* the `surf` header carries **width and height as big-endian `u16` at +12**.  On
-  `cave_armor.res` that reads 256x64, and 256 * 64 = 16,384 is exactly the payload left after a
-  128-byte header (section size 16,512) - so the dimensions are certain, not inferred;
-* the pixels are **CI8 indices in GX 8x4 tiling**: 35 distinct byte values, maximum 37, one
-  value covering 12,407 of 16,384 pixels.  Not `I8` - a greyscale read is meaningless at that
-  distribution;
-* the palette sits at **offset 32** and is **`RGB565`, not `RGB5A3`**.  This is the part that
-  needed an eye: both decode to a coherent image of three armour plates, but `RGB5A3` renders
-  them nearly black while `RGB565` gives the red and gold that a Samurai Jack cave-armour
-  texture should be.
+Nothing states the palette length; it is what remains once the mip chain is subtracted:
+`palette = size - 32 - chain(w, h, format, levels)`.
 
-**Not solved:** the general size rule.  Over 345 `surf` sections the extra bytes beyond
-`width * height` range from -5,312 to +3,104, so most sections are not a single 8-bit level -
-mip chains and 4-bit levels are both in play.  Testing "32 + palette + mip chain" with the
-palette count taken from the `u16` at +28 fits only **44 of 345** (34 as 8bpp single-level, 10
-as 4bpp).  So either the palette count lives elsewhere or the level layout varies.
+**Two things had to be right before that arithmetic worked, and both were wrong at first:**
 
-Dimensions across those sections: 128x128 (143), 64x64 (108), 128x64 (28), 512x128 (19),
-32x32 (12), 8x8 (10), 64x128 (8), 256x64 (4).
+1. the **levels byte at +11**.  Sections with 8 levels are the majority; treating everything as
+   a single level left 300+ of 552 sections unexplained, which is what made the earlier attempt
+   look hopeless (44 of 345 fitting);
+2. **GX tile padding**.  A mip level is not `w * h * bpp / 8` - it is padded to whole tiles, so
+   a 1x1 level still costs 32 bytes.  Without that the leftover "palette" came out at 139, 341,
+   203 bytes - odd numbers, impossible for two-byte entries.  With it they collapse onto 32, 64,
+   96, 128, 192, 256: **387 of 552 sections land exactly on a standard palette size** and only
+   20 fail to resolve.
 
-Nothing is shipped: a reader that assumes one 8-bit level would mis-size seven eighths of them.
-The next step is the field that gives the palette entry count and the mip level count - the
-words at +16, +20, +24 and +28 (8, 108, 8, 0x00280100 on the verified section) are where it has
-to be.
+The palette is **RGB565, not RGB5A3** - both decode `cave_armor.res` to the same three armour
+plates, but RGB5A3 renders them nearly black where RGB565 gives red and gold.
+
+Result: **532 of 553 surf sections decode** on Samurai Jack (37 flat masks), sizes 128x128
+(204), 64x64 (168), 128x64 (65), 512x128 (21), 256x64 (16), 32x32 (15).  End to end through the
+container chain: Samurai Jack 120 textures, Lemony Snicket 59, Digimon Rumble Arena 2 2, from
+the 60 smallest `.res` on each - all three discs previously reported zero.
+
+`rdms` (the mesh side, 4,415 in six Lemony Snicket files) is still undecoded.
