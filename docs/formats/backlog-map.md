@@ -125,3 +125,22 @@ Spells ships 225 `.DGC` (241 MB) beside 291 MB of `.wav`; the small `RTC_*.DGC` 
 byte-sized data in repeating 16-byte records (`20 d3 ff ff ff ff 00 00`), which reads as
 audio / cutscene data rather than geometry - the level `.DGC` (5 MB) is where the models
 should be, and is the file to open next for this cluster.
+
+### TotemTech `.dgc` geometry (Kalisto) - partly cracked
+
+The payload is NOT compressed (entropy 4.97; none of gcrip's decoders bite, and none should).
+It is structured binary mixed with text property dumps, and the geometry sits in the open:
+
+* vertices - a big-endian `f32 xyz` array (Spirits & Spells `LEVEL07a.DGC` has a 1,922-vertex
+  run at 0x103A5C);
+* faces - records of `u32 3 | u16 a | u16 b | u16 c` followed by a short, VARIABLE trailer
+  (`00 00 00 01 02 00` in the cases seen), so the next record is found by scanning forward for
+  the `3` count word;
+* a mesh keeps its normals and uv arrays between the positions and the faces, so the faces
+  have to be searched for in a window rather than expected immediately after the vertices.
+
+Reading a run and its faces produces a correct model (a lamppost renders cleanly), so the
+layout is right.  `gcrip/formats/totem.py` implements the primitives with tests, but there is
+NO plugin yet: scanning finds only 8 meshes / 679 triangles across four levels while the files
+carry ~36 `Geom` markers each, so mesh discovery is the missing piece - the `Geom` / `GeomDesc`
+text markers and the u32 index lists that precede each vertex array are the obvious next lead.
