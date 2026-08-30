@@ -211,7 +211,7 @@ flowchart LR
         DAS["RE4 DAS / DRS<br/>plugins.re4"]
         BF["Jade .bf<br/>plugins.jade"]
         PRE["Neversoft PRE<br/>plugins.neversoft"]
-        GCP["Blitz .gcp archives<br/>named per-level members<br/>plugins.blitz"] --> GX["structure scan<br/>plugins.gx"]
+        GCP["Blitz .gcp archives<br/>named per-level members<br/>plugins.blitz"] --> BOBJ["tagged object stream<br/>scene graph + navmesh<br/>formats.blitz_obj"] & GX["structure scan<br/>plugins.gx"]
         NU2["TT NU20 .gsc/.csc (LSW1)<br/>plugins.nu2"]
         HGO["TT .hgo/.nus (Crash WoC, Nemo)<br/>reversed tags<br/>plugins.hgo"]
         TTPK["TT .fpk/.cpk packs<br/>plugins.ttdisp"] --> DISP["DISP programs .csc/.chg<br/>(LSW2, Narnia)<br/>formats.ttdisp"]

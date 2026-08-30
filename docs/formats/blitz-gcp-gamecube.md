@@ -89,3 +89,42 @@ So the object stream is the target, and decoding it is a well-defined job: the t
 already known, so a walker can turn a pack into a typed property tree, and the geometry (or the
 references to it) will be inside that tree rather than in any raw array.  That, plus finding
 out what the stampless `common_*` packs hold, is where the next session on Blitz should start.
+
+## The object stream - CRACKED (`gcrip/formats/blitz_obj.py`)
+
+After the stamp, the rest of a pack is one flat stream of tagged values:
+
+| tag | payload |
+|---|---|
+| 0x00 | u8 - **not a terminator**, it carries a byte |
+| 0x01 | u8 |
+| 0x03 | u16 |
+| 0x04 | u32 |
+| 0x05 | u32 |
+| 0x06 | f32, little-endian |
+| 0x07 | NUL-terminated string |
+
+**The whole thing turned on 0x00.**  Reading it as a nil marker stops the walk after 163 of
+200,327 values - 0.1% into the package - which is exactly why earlier surveys concluded the
+packs held nothing.  Giving it its one byte walks **99.7%** of Bratz: Rock Angelz's
+`hub_s3_fetm.gcp` and **99.2%** of Pac-Man World 3's `mountains_1_world.gcp`, the rest being
+trailing padding.  There is no length field: landing on the end of the package IS the proof
+that the grammar is right.
+
+It also explains the blank float scans - an f32 is five bytes here (`06` then the value), so no
+two floats are ever adjacent in the file.
+
+## What the level packs actually are
+
+Scene graphs, not geometry.  One level pack yields 3,037 distinct strings: entity classes
+(`CFWorldNodeParticleSystem`, `<noentclass>`), portal and sector names, and **asset references
+by name** (`0_lightbeams_pinz01`, `sound_fstep_skates`).  The only float arrays are navigation
+meshes - the longest run, 408 floats, follows the string `Transworld Navigation Mesh Edge`, and
+Pac-Man World 3's member has no runs at all.
+
+So the models are referenced from here but stored elsewhere, and the obvious candidate is the
+**1,121 stampless `common_*` packs** on Rock Angelz (bare packs, data start 0x20, count at 0x0c,
+uncompressed, sparse binary from ~0x822; `common_Default Faces Sector.gcp` is 1 MB at entropy
+4.43, which reads like GX texture data).  `gcrip.plugins.blitz` still returns nothing for those,
+and cracking them is the next step for this cluster - the scene graph now gives the asset names
+to match against.
