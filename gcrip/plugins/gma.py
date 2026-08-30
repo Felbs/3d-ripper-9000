@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from gcrip.formats import avlz, gma, gma_tpl, tpl
+from gcrip.formats import avlz, gma, gma_tpl, tpl, u8
 from ripcore.scene import Joint, MaterialDef, Primitive, Scene
 
 NAME = "gma"
@@ -31,6 +31,8 @@ def is_container(name: str, head: bytes) -> bool:
 
 def expand(data: bytes) -> list[tuple[str, bytes]]:
     out = avlz.decompress(data)
+    if u8.is_u8(out[:0x20]):  # vehicle_parts/parts_all.arc.lz and friends
+        return u8.expand(out)
     if gma.looks_like(out):
         inner = "model.gma"
     elif gma_tpl.looks_like(out) or out[:4] == tpl.MAGIC:
