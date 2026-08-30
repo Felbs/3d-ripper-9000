@@ -76,7 +76,15 @@ def entries(data: bytes) -> list[Entry]:
 
 
 def is_pack(head: bytes) -> bool:
-    return _header(head, 0) is not None
+    """True for a DDS header, from as little as eight bytes.
+
+    A container/detect plugin is offered only ``gcrip.classify.SNIFF_BYTES`` (64) bytes, and the
+    fourcc sits at 84 - past the end of that - so this checks the magic and ``dwSize == 124`` in
+    either byte order and leaves the rest to :func:`entries`, which gets the whole file.
+    """
+    if len(head) < 8 or head[:4] != MAGIC:
+        return False
+    return DDSD_SIZE in struct.unpack(">I", head[4:8]) + struct.unpack("<I", head[4:8])
 
 
 GX_CMPR = 0xE

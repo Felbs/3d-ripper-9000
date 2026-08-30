@@ -72,3 +72,18 @@ def test_an_unsupported_fourcc_is_refused():
     d = dds_file(8, 8, fourcc=b"DXT5")
     with pytest.raises(ValueError):
         dds_pack.decode(d, dds_pack.entries(d)[0])
+
+
+def test_detected_from_the_64_byte_sniff():
+    """detect() only ever sees SNIFF_BYTES, and the fourcc sits at 84 - past the end of it."""
+    from gcrip.classify import SNIFF_BYTES
+    from gcrip.plugins import dds_pack as plugin
+
+    d = dds_file(256, 128)
+    assert SNIFF_BYTES < 84
+    assert dds_pack.is_pack(d[:SNIFF_BYTES])
+    assert plugin.detect("data.afs/m.bin", d[:SNIFF_BYTES], len(d))
+    # the full parse still validates everything the short header could not
+    assert [(e.width, e.height) for e in dds_pack.entries(d)] == [(256, 128)]
+    assert not dds_pack.is_pack(b"DDS " + b"\x00\x00\x00\x7b")  # dwSize is not 124
+    assert not dds_pack.is_pack(b"DDS ")

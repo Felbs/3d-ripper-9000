@@ -95,3 +95,28 @@ Both halves of Home Run King now read.  Still open in this cluster: binding the 
 to the `XMDL` models (the `TXNM` section names them), and the other data archives - Bleach GC's
 `chr.afs` / `scenario.afs` members opening `16 00 00 00`, Gotcha Force's `afs_data.afs`, Gundam
 vs Z Gundam's, Auto Modellista's `afs01_gu.afs` and Capcom vs SNK 2's `afs02` / `afs03`.
+
+## The reason every AFS disc read as empty
+
+`gcrip/plugins/afs.py` had `is_container` and `expand` but **no `detect` / `extract` pair**, and
+`gcrip.plugins.all_plugins()` only registers a module that has both.  The AFS container was
+therefore never in `container_plugins()` at all: **no AFS archive on any of the 31 discs had
+ever been expanded**, silently, with no error anywhere.
+
+That is why the whole cluster reported zero.  Adding the no-op pair registers it; the same gap
+was found in `gcrip/plugins/lpac.py` (TMNT 2's LPAC packs) and fixed with it.
+
+A regression test now walks every plugin module and asserts that anything carrying
+`is_container` + `expand` is actually registered, so the class of bug cannot come back.
+
+End to end afterwards on Home Run King's `data.afs`, sampling one member in 25: **132 scenes,
+1,725 triangles, 505 textures**.
+
+### Related: `dds_pack` needed 128 bytes to detect
+
+Caught in the same pass.  `dds_pack.is_pack` validated the whole 128-byte DDS header, but
+`detect` is handed only `SNIFF_BYTES` (64), and the fourcc it wanted sits at offset 84.  It
+returned False for every real file, so Home Run King's ~25,000 textures would have produced
+nothing.  It now checks the magic and `dwSize == 124` in either byte order - eight bytes - and
+leaves the rest to `entries()`, which gets the whole file.  This is the third time this
+64-byte limit has bitten; every new plugin gets a test at that exact width now.

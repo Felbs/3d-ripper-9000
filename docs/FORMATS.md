@@ -14,6 +14,10 @@ Chart of how these plug into the pipeline: [PIPELINE.md](PIPELINE.md) section 7.
 > the magic and validate the directory in `expand`, which gets the whole file - a check that
 > reads a field beyond byte 64 silently never fires - see
 > [formats/gcrip-plugin-sniff-limit.md](formats/gcrip-plugin-sniff-limit.md).
+> A container also needs a no-op `detect`/`extract` pair: `all_plugins()` only registers a
+> module that has both, so `is_container`/`expand` alone means the plugin is **never registered**
+> and the archive is never expanded.  That is what kept every AFS disc at zero.
+
 
 ## Nintendo first party and second party
 

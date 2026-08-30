@@ -45,3 +45,14 @@ def expand(data: bytes) -> list[tuple[str, bytes]]:
             seen[name] = 0
         out.append((name, data[off : off + size]))
     return out
+
+
+# gcrip.plugins.all_plugins() only registers a module that has BOTH detect and extract, so a
+# container needs this pair even though it produces no Scenes of its own.  Without it the
+# plugin is skipped silently and the archive is never expanded.
+def detect(path: str, head: bytes, size: int) -> bool:
+    return False
+
+
+def extract(data: bytes, path: str, src):
+    return []

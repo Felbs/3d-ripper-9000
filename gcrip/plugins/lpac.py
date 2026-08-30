@@ -67,3 +67,13 @@ def _rw_header(data: bytes, o: int) -> bool:
     return (
         0 < t < 0x100 and 0 < size <= len(data) and (new_style or 0x1800_0000 <= lib < 0x1C10_0000)
     )
+
+
+# see the note in gcrip/plugins/afs.py: a container is only registered when it also carries a
+# detect/extract pair
+def detect(path: str, head: bytes, size: int) -> bool:
+    return False
+
+
+def extract(data: bytes, path: str, src):
+    return []
