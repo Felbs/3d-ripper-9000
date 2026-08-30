@@ -266,3 +266,27 @@ Lesson worth keeping: **normal agreement validates a layout you already believe,
 search for one on its own** - a planar mis-read beats the real answer.  Version 6 was safe from
 this because its scale was cross-checked against the stored bounding boxes, an independent test
 that reproduced all six components of all 34 meshes exactly.
+
+### Second attempt: the bounding boxes do not rescue it either
+
+The part records each carry their own bounding box, so there is an anchor that planarity cannot
+fake - the ratio of decoded span to box span has to be the SAME on all three axes for a correct
+layout.  Two forms of that test were run and both come back empty:
+
+* per block, against each of the 28 part boxes, over strides 16-32, both byte orders and every
+  even position offset - **no candidate** gets the three axis ratios within 2% of each other;
+* globally, the union of all 46 decoded blocks against the union of the 28 part boxes
+  (model span 1.801 x 2.408 x 1.130, which is a sensible character height next to Blowout's
+  1.99-unit machine gun) - **no candidate** within 5%.
+
+Blocks outnumber parts 46 to 28, so a block is a fragment of a part and a per-block span is
+expected to be smaller than its part's box; that is why the global union test was tried too.
+Both failing together suggests the vertices are in **bone-local space** rather than model
+space, which would break any comparison against a model-space box, and/or that the 20-byte
+vertex is packed rather than a plain array of s16 or f32 fields.  Direct inspection supports
+the second reading: the blocks have a clear 20-byte cadence with a byte that is always zero at
++4 and a recurring `04 00` at +3, but the leading twelve bytes are not plausible f32 in either
+byte order (`3700b404` is 7.6e-6 big-endian, denormal little-endian).
+
+Two sessions have gone into `_dfm` without a decode.  It is parked here with everything known
+written down; the remaining cluster work (Blitz `.gcp`, AFS inner formats) is better value.
