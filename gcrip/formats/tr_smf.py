@@ -231,7 +231,16 @@ def _list_at(data: bytes, start: int, lay: Layout) -> tuple[int, int, int, int] 
 
 
 def _agreement(pos: np.ndarray, nrm: np.ndarray, tris: np.ndarray) -> float:
-    """How well the stored normals match the geometry - the test that validates a layout."""
+    """How well the stored normals match the geometry - the test that validates a layout.
+
+    Only trustworthy when the points are not close to planar.  If a mis-read layout produces a
+    nearly flat point set - say one of the three columns is really a byte field spanning 0-255
+    while the others span a full s16 - then every face normal points the same way and almost any
+    candidate scores above 0.98.  When using this to *search* for a layout rather than to check
+    a known one, reject candidates whose smallest axis extent is a tiny fraction of the largest.
+    That is what separates the real version 6 layout from the false ones, and what showed the
+    ``_dfm`` fits to be worthless.
+    """
     p = pos[tris]
     face = np.cross(p[:, 1] - p[:, 0], p[:, 2] - p[:, 0])
     length = np.linalg.norm(face, axis=1)

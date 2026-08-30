@@ -235,26 +235,34 @@ Result on `GC_DM11.PKG`: **35 meshes, 3,122 triangles, mean normal agreement 0.9
 0.7, none inverted**, 34 of 35 texture-bound.  35-43 meshes per package across ~15 packages, so
 roughly 500 on the disc.
 
-## `_dfm` deformable meshes - mapped, NOT decoded
+## `_dfm` deformable meshes - structure mapped, vertex layout still unknown
 
-Blowout's `kane.dfm` (version 5, 72 KB) references `HERO.SKL` by name at offset 28, then:
+Blowout's `kane.dfm` (version 5, 72 KB) names `HERO.SKL` at offset 28, then:
 
-* **28 part records of 60 bytes** from offset 108: a 30-byte name (`rhand`, `rshin`, `lhand`,
+* **28 part records of 60 bytes** from offset 108: a 30-byte name (`rhand`, `rshin`,
   `torsobottom`, `head`, `lforearm`, ...), a `u16` **bone index** (20, 5, 19 - all inside the
   skeleton's 29 bones), a `u16`, and six f32 that are a bounding box.  One bone per part means
-  these are **rigidly segmented characters, not smooth skins** - each part just needs its
-  bone's transform;
-* then 360-byte material records like version 7's, two names each (`kane.TIF` plus
-  `kane_glossmap.TIF`);
-* then geometry that is again **f32**, with no display lists and no `00000008 00000001`
-  preamble.
+  these are **rigidly segmented characters, not smooth skins**;
+* 360-byte material records like version 7's, two names each (`kane.TIF`, `kane_glossmap.TIF`);
+* **46 geometry records of 36 bytes** at 0xee4:
+  `u32 2 | u32 size | u32 4 | u32 vertices | u32 triangles | u32 29 | u32 2 | u32 index | -1`.
+  The `29` is the skeleton's bone count and the eighth field counts 1, 2, 3, ... The blocks
+  follow the table in order and their sizes sum to 67,104, landing on the end of the file from
+  0x155c - so the geometry is laid out exactly as the table says.
 
-The matching `HERO.SKL` (version 2) is straightforward: `u32 version, u32 bone count`, then
-36-byte records of a name and a parent index at +32.  The 29 parents form a correct anatomical
-tree - Pelvis is -1, the thighs and spine parent to it, the calves to the thighs, the clavicles
-to Spine1 - so the hierarchy reads correctly already.  154 KB of what is presumably animation
-follows the bone table.
+Size arithmetic points at a **20-byte vertex**: `size - vertices * 20 - triangles * 6` leaves
+14 to 32 bytes of alignment padding on every record, whereas 16, 24 and 32 do not come close.
+The index list is big-endian `u16`, as in version 6.
 
-Rigid parts plus a readable skeleton means a rigged character is reachable once the f32
-geometry block is understood; that block is shared with version 6 above, so cracking one
-should give both.
+**The vertex layout itself is still unknown, and the obvious searches are worthless here.**
+Fitting stride, position offset and normal offset by normal agreement returns fits at 0.989 and
+even 0.999 - all of them false.  Every one has an axis balance of 0.0039, i.e. one "position"
+column spans 0-255 while the others span a full s16, so the point set is nearly planar, every
+face normal points the same way, and the metric saturates.  With a non-degeneracy guard
+(smallest axis extent at least 5% of the largest) the best s16 fit falls to 0.577, and no f32
+layout fits at any stride from 24 to 40 in either byte order.
+
+Lesson worth keeping: **normal agreement validates a layout you already believe, but it cannot
+search for one on its own** - a planar mis-read beats the real answer.  Version 6 was safe from
+this because its scale was cross-checked against the stored bounding boxes, an independent test
+that reproduced all six components of all 34 meshes exactly.
