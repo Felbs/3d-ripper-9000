@@ -70,9 +70,41 @@ Sampling 50 archives a disc across the size range:
 The members are `gct` (12,974 in the sample), `gcr` (2,467), `war` animation, `dsp` audio and
 `bs` scripts.
 
+## `gct` textures - partly cracked
+
+`gcrip/formats/frd_gct.py` + `gcrip/plugins/frd_gct.py`.  Big-endian, 32 bytes:
+
+    +0   u32 width
+    +4   u32 height
+    +8   u32 width again
+    +12  u32 height again
+    +16  u16 mip levels | u16 format
+    +20  12 bytes
+
+The doubled width and height are the check that the header is being read at all, and **the mip
+count is the high half of the word at +16** - read as one `u32` a three-level format 5 comes out
+as "format 196,613", which is what one file in the sample looked like.
+
+The format code is Free Radical's own and does not map one-to-one onto GX:
+
+| code | what it is |
+|---|---|
+| 2, 13 | `CMPR` - two codes, one format |
+| 6, 8 | `RGB5A3` |
+| 4, 5, 7, 10, 12 | 8 bits a pixel, palette-indexed |
+| 11 | 4 bits a pixel, palette-indexed |
+
+**3,598 of 6,465 textures in the sample decode** - 54% on TimeSplitters 2, 57% on Future
+Perfect, 61% on Second Sight.
+
+The palette-indexed codes are refused rather than guessed at.  At 8 bits a pixel with no
+palette in the file the only GX candidates are `I8` and `IA4`, and both draw a sniper scope as
+vertical banding - which is what an index stream looks like when it is shown as intensity.
+Whatever holds their palettes is elsewhere in the archive, and finding it is worth roughly
+another 2,900 textures on these three discs.
+
 ## Still open
 
-The members' own formats.  `gct` here is **not** Darkened Skye's `0xDEAD` texture - these start
-`00 00 00 40` / `00 00 00 20` / `00 00 00 80` - and `gcr` is the geometry.  Both are now
+`gcr` is the geometry and is untouched.  Both it and the palette-indexed `gct` are now
 reachable by the rest of the pipeline under their real names, which is what the container was
 in the way of.
