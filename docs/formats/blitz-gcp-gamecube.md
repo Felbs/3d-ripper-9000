@@ -128,3 +128,46 @@ uncompressed, sparse binary from ~0x822; `common_Default Faces Sector.gcp` is 1 
 4.43, which reads like GX texture data).  `gcrip.plugins.blitz` still returns nothing for those,
 and cracking them is the next step for this cluster - the scene graph now gives the asset names
 to match against.
+
+## The stampless `common_*` packs are TEXTURE packs (2026-08-30)
+
+1,121 of them on Bratz: Rock Angelz, and `gcrip.plugins.blitz` returns nothing for any of them
+because they carry no package stamp.  They are GX textures.
+
+How it was pinned down, since two format guesses were wrong first:
+
+* CMPR renders as vertical stripes - wrong;
+* the bytes are 2-byte values repeated exactly 16 times, alternating every 32 bytes on a
+  64-byte period.  **844 distinct u16 values and 88.5% of the data in runs of exactly 16** is
+  not an image in any 16-bit format - but 16 AR pairs followed by 16 GB pairs is precisely a GX
+  **RGBA8** 4x4 tile, which is 64 bytes.  Decoding `common_Default Faces Sector.gcp` that way
+  gives Bratz doll faces - eyebrows, eyes, lips, two skin tones.
+
+### Header
+
+    0x000  u32 hash
+    0x004  u32 data start (0x20)
+    0x008  u32 0
+    0x00c  u32 count (5, 6, 7 seen)
+    ...
+    0x820  u32 width
+    0x824  u32 height
+    0x828  u32 format code      0x0f, 0x11, 0x13, 0x15 seen (Blitz's own, not GX)
+    0x1000 pixel data
+
+Verified on three packs: `common_BP Earrings 01 Sector.gcp` is 32x32 with a payload of exactly
+4,096 bytes = one 32x32 RGBA8 image; `common_Default Faces Sector.gcp` is 256x256 with
+1,048,576 bytes = exactly four of them.
+
+### What is still missing
+
+The header at 0x820 describes only the FIRST texture.  Over a 60-pack sample the payload is an
+exact multiple of `width * height * 4` in just **11** cases; the rest hold several textures of
+differing sizes (`common_BP Hair_Hat 01 Sector.gcp` says 128x128 but carries 67,584 bytes).
+Dimensions seen: 64x64 (27), 128x128 (15), 32x32 (9), 64x128 (5), 16x16, 16x32, 256x64.
+Format codes: 21 (49 of 60), 17 (10), 19 (1), 15.
+
+So the remaining work is the per-texture table - almost certainly the `count` at 0x00c with a
+record list - and the meaning of the format codes.  Both are one focused session, and the payoff
+is the texture set for nine Blitz discs.  Nothing is shipped yet on purpose: a reader that
+assumes one texture per pack would mis-size four fifths of them.
