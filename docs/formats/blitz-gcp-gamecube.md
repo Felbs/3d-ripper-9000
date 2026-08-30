@@ -205,3 +205,26 @@ Lesson: the wrong data offset made a perfectly ordinary format look like an unkn
 arithmetic that "proved" compression (0.39 bytes per pixel, below CMPR's 0.5) was really just
 measuring from the wrong place.
 
+## SHIPPED: `gcrip/formats/blitz_tex.py` + `gcrip/plugins/blitz_tex.py`
+
+Walks the descriptor chain and decodes every texture.  The `width * height` field in each
+descriptor is what makes the walk safe - a descriptor either satisfies it or the chain has
+ended - so no length or count is needed anywhere.
+
+Measured over a 120-pack sample of Bratz: Rock Angelz: **81 texture packs, 98 textures**, only
+one of them flat/suspect.  Formats 21 (95) and 15 (3).  Sizes 64x64 (36), 32x32 (17), 128x128
+(17), 16x16 (12), 64x128 (6), 256x256 (4), 512x256 (2), 16x32 (2) - a 512x256 one decodes to a
+complete furnished room.
+
+Confirmed on two discs, both of which previously reported **zero** textures and zero models:
+
+* Bratz: Rock Angelz - 18 packs / 21 textures in a 25-pack sample;
+* Fairly OddParents: Shadow Showdown - 5 packs / 59 textures in a 25-pack sample.
+
+Not on the others: Bad Boys: Miami Takedown keeps its `.gcp` under `Flare/`, `Text/` and
+`Speech/` and has none of these descriptors (a later engine generation), while Pac-Man World 3
+and Bratz: Forever Diamondz keep almost everything inside one `AllPaks.gcp`, so their packs
+reach this plugin through the container chain rather than as top-level files.
+
+Formats 17 and 19 are still undecoded; the walk stops at one rather than guessing a size it
+cannot verify.
