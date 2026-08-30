@@ -14,7 +14,7 @@ flowchart LR
     WALK --> MAN["disc_manifest.json<br/>every file, format, hash"]
     MAN --> RIP["2  Rip loop<br/>gcrip.rip"]
     RIP -->|"BMD / BDL"| J3D["3  J3D parse<br/>gcrip.formats.j3d"]
-    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, eurocom, hsf, sa2b, sadx, ninja_gc, billy, nu2, ttdisp, unreal, openspace, afs, lpac, melee, dbl, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
+    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, eurocom, hsf, sa2b, sadx, ninja_gc, billy, nu2, ttdisp, hgo, unreal, openspace, afs, lpac, melee, dbl, blitz, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
     RIP -->|"nothing claims it"| GX["3c  Structure scan (fallback)<br/>gcrip.gxscan: GX display lists,<br/>vertex + index arrays"]
     J3D --> ANIM["4  Clip matching<br/>rip._AnimIndex + j3d_anim"]
     ANIM --> GLTF["5  glTF export<br/>gcrip.export.gltf / ripcore.gltf"]
@@ -211,7 +211,7 @@ flowchart LR
         DAS["RE4 DAS / DRS<br/>plugins.re4"]
         BF["Jade .bf<br/>plugins.jade"]
         PRE["Neversoft PRE<br/>plugins.neversoft"]
-        GCP["Blitz .gcp<br/>plugins.blitz"] --> GX["structure scan<br/>plugins.gx"]
+        GCP["Blitz .gcp archives<br/>named per-level members<br/>plugins.blitz"] --> GX["structure scan<br/>plugins.gx"]
         NU2["TT NU20 .gsc/.csc (LSW1)<br/>plugins.nu2"]
         HGO["TT .hgo/.nus (Crash WoC, Nemo)<br/>reversed tags<br/>plugins.hgo"]
         TTPK["TT .fpk/.cpk packs<br/>plugins.ttdisp"] --> DISP["DISP programs .csc/.chg<br/>(LSW2, Narnia)<br/>formats.ttdisp"]
@@ -283,7 +283,8 @@ archives (directory at 0x80, 20-byte entries) and MDL3 pairs (`formats/mdl3.py`,
 positions and a textures × subobjects grid of offsets into the `.mdg` - and each `.mdg`
 block is a GX display list with 9-byte vertices (position index, inline s8 normal, colour
 and UV indices) over f32 positions that carry two bone indices and a weight when the model
-is rigged. Blitz Games' `.gcp` packs (`plugins/blitz.py`) are only split into their packages so
+is rigged. Blitz Games' `.gcp` archives (`plugins/blitz.py`, `formats/blitz_gcp.py`) are split into their
+named per-level members and those into packages, so
 the fallback scanner can read them.
 
 Eighting's `.fpk` packs (`plugins/fpk.py`: Naruto Clash of Ninja / Gekitou Ninja Taisen,
