@@ -171,3 +171,31 @@ So the remaining work is the per-texture table - almost certainly the `count` at
 record list - and the meaning of the format codes.  Both are one focused session, and the payoff
 is the texture set for nine Blitz discs.  Nothing is shipped yet on purpose: a reader that
 assumes one texture per pack would mis-size four fifths of them.
+
+### Follow-up: the 0x820 record is a texture descriptor, but only format 15 decodes
+
+Reading the seven big-endian u32 at 0x820 across three packs pins the record down:
+
+    u32 width | u32 height | u32 format | u32 0x101 | u32 0 | u32 0xff000000 | u32 width*height
+
+The last field is the clincher - 0x400 = 1,024 for a 32x32 pack and 0x4000 = 16,384 for a
+128x128 one, exactly width * height in both.  This is a texture descriptor, not a guess.
+
+**Format 15 is GX RGBA8** (the faces pack renders perfectly).  **Format 21 is not**, and it is
+not a simple image at all: for `common_BP Earrings 01 Sector.gcp` the payload is exactly
+4,096 bytes for 1,024 pixels - 4 bytes each - yet it decodes to noise as GX-tiled RGBA8, as
+untiled RGBA, as ARGB and as BGRA, and equally as RGB5A3, RGB565, C8 and CMPR.
+
+Reading it as big-endian f32 gives coherent-looking coordinates (9.978, 1.134, 13.424 ...), but
+that reading did not survive a check: a nearest-neighbour coherence test could not separate it
+from random bytes, because both are dominated by duplicate points.  **It is recorded here as
+unconfirmed, not as a finding.**
+
+The structural lead worth following is different: `common_BP Hair_Hat 01 Sector.gcp` contains a
+**second** `(128, 128, 21)` triple at 0x28c0, so the textures are chained, each with its own
+descriptor - which is exactly why the payload is not `width * height * 4` in four fifths of
+packs.  Walking that chain, and working out what format 21 encodes (6,336 bytes for a 128x128
+image is 0.39 bytes per pixel, below even CMPR's 0.5, so it is likely compressed), is where the
+next session should start.
+
+Format codes seen over a 60-pack sample: 21 (49), 17 (10), 19 (1), 15.
