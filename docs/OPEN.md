@@ -10,7 +10,7 @@ Companion to [FORMATS.md](FORMATS.md), which lists what already works.
 
 | format | discs | state | what is blocking |
 |---|---|---|---|
-| `res` `rdms` meshes | 3 (Samurai Jack, Lemony Snicket, Digimon Rumble Arena 2) | five-entry offset table at +64 mapped; attribute arrays identified (one is plainly RGBA); 6 x `u16` attribute indices per vertex | which of the five blocks is positions, and the index stride.  Sibling `surf` textures already ship |
+| `res` `rdms` meshes | 3 (Samurai Jack, Lemony Snicket, Digimon Rumble Arena 2) | **it is a GX display list** - `98` strip opcode at the offset in w3, vertices of five big-endian `u16` attribute indices (10 bytes); column 0 indexes the 84-byte block as s16 position triples (14 x 6) | the strip count says 61 but only 57 records fit before the first block, and column 3 wants 16 elements from a 60-byte block.  Sibling `surf` textures already ship |
 | Blitz `common_*` formats 17 and 19 | up to 9 | descriptor chain and formats 15 (`RGBA8`) / 21 (`CMPR`) ship | what codes 17 and 19 encode - 10 and 1 of a 60-pack sample |
 | Terminal Reality `_dfm` | 3 (BloodRayne, Blowout, RoadKill) | 28 rigid parts, one bone index each; 46 geometry records of 36 bytes; 20-byte vertex by size arithmetic; `HVSI` skeleton reads with a correct anatomical parent tree | the vertex field layout.  Normal-agreement search is useless here - every high-scoring fit is planar-degenerate.  Needs an anchor that is not normals |
 | FSTA `GKA` / `GGG` | 2 (Billy & Mandy, Kids Next Door) | archive and textures ship; these open `ISVH` | not yet entropy-checked - may or may not be compressed like `GMS` |

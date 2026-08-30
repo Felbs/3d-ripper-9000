@@ -224,3 +224,33 @@ container chain: Samurai Jack 120 textures, Lemony Snicket 59, Digimon Rumble Ar
 the 60 smallest `.res` on each - all three discs previously reported zero.
 
 `rdms` (the mesh side, 4,415 in six Lemony Snicket files) is still undecoded.
+
+### `res` `rdms` meshes - it is a GX display list (2026-08-30)
+
+Header (big-endian `u32`), on Samurai Jack / Lemony Snicket:
+
+    w1  block count (5)
+    w3  offset of the display list (0x54)
+    w4  vertex count (40, 688 on a bigger section)
+    w7..w13   floats - a bounding box and a transform row
+    +64 five block offsets; the last block runs to the end of the section
+
+The region at `w3` opens `02 01 01 00 ...` then **`98 00 3d`** - the GX triangle-strip opcode
+with a 61-vertex count.  So `rdms` is a display list, not a bare index array.
+
+**Vertices are 10 bytes: five big-endian `u16` attribute indices.**  Confirmed two ways - the
+recurring `00 07 00 07` pair sits at a constant offset within a 10-byte grid, and the first
+records read (0,0,0,0,0), (1,0,0,1,0), (2,0,0,2,0), (3,0,0,3,0), which is what the start of a
+strip over a fresh array looks like.
+
+Over the 572 bytes available that gives **57 records**, with per-column maxima
+`[13, 7, 7, 15, 0]` against block sizes `[60, 28, 28, 60, 84]`.  Column 0 lines up exactly:
+max 13 means 14 elements, and the 84-byte block is 14 x 6 bytes - **s16 position triples**.
+
+Two things still to settle before this ships:
+
+* the strip count says 61 but only 57 records fit before the first block.  Either four vertices
+  live elsewhere or the count is not a plain vertex count;
+* which block each of the other four columns indexes.  Column 3 (max 15) wants 16 elements from
+  a 60-byte block, which is 3.75 bytes each - so one of those arrays is not a simple
+  fixed-stride array, or the block boundaries are not where the offsets suggest.
