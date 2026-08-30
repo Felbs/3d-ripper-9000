@@ -36,13 +36,17 @@ class ShapeImage:
 
 
 def is_shape(head: bytes) -> bool:
-    return len(head) >= 16 and head[:3] == b"SHP" and head[3:4] in b"ISXGPM"
+    """``SHPI`` / ``SHPS`` / ``SHPX`` / ``SHPG`` / ``SHPP`` / ``SHPM``; the NHL and NBA Live
+    discs write the tag in mixed case (``ShpG``)."""
+    return len(head) >= 16 and head[:3].upper() == b"SHP" and head[3:4].upper() in b"ISXGPM"
 
 
 def shape_names(data: bytes) -> list[str]:
     """Entry names of a shape file from its header only (no image decoding)."""
     if len(data) < 16 or data[:3].upper() != b"SHP":
         return []
+    if _is_nhl_variant(data):
+        return [data[0x18:0x28].split(b"\x00")[0].decode("latin-1", "replace") or "image"]
     e = _endian(data)
     count = struct.unpack_from(e + "I", data, 8)[0]
     if count > 0x4000 or 16 + count * 8 > len(data):
@@ -207,11 +211,42 @@ def _decode_image(code: int, w: int, h: int, body: bytes, palette, gc: bool, war
     return None
 
 
+def _is_nhl_variant(data: bytes) -> bool:
+    """NHL / NBA Live GameCube shapes: one image described by the header itself
+    (``u32 data offset | u32 data size`` at 0x10) instead of a name / offset table."""
+    if len(data) < 0x60 or data[:3].upper() != b"SHP":
+        return False
+    off, size = struct.unpack_from(">2I", data, 0x10)
+    return off == 0x40 and size > 0x30 and off + size == len(data)
+
+
+def _nhl_image(data: bytes) -> ShapeImage:
+    """``u8 code | ... | u32 width (+0x18) | u32 height (+0x1c) | ... | pixels (+0x30)``;
+    the GX format follows from the bytes per pixel (0.5 CMPR, 1 I8, 2 RGB5A3, 4 RGBA8)."""
+    off = struct.unpack_from(">I", data, 0x10)[0]
+    name = data[0x18:0x28].split(b"\x00")[0].decode("latin-1", "replace") or "image"
+    w, h = struct.unpack_from(">2I", data, off + 0x18)
+    img = ShapeImage(name, w, h, data[off], None)
+    body = data[off + 0x30 :]
+    if not (0 < w <= 4096 and 0 < h <= 4096) or not body:
+        img.warnings.append("implausible image size")
+        return img
+    per = len(body) / (w * h)
+    fmt = 14 if per < 1 else (1 if per < 2 else (5 if per < 4 else 6))
+    try:
+        img.rgba = gx_texture.decode(fmt, w, h, body)
+    except ValueError as ex:
+        img.warnings.append(f"{name}: {ex}")
+    return img
+
+
 def parse(data: bytes) -> list[ShapeImage]:
     if not is_shape(data):
         raise ValueError("not an EA shape file")
+    if _is_nhl_variant(data):
+        return [_nhl_image(data)]
     e = _endian(data)
-    gc = data[3:4] == b"G"
+    gc = data[3:4].upper() == b"G"
     count = struct.unpack_from(e + "I", data, 8)[0]
     out = []
     for i in range(count):
