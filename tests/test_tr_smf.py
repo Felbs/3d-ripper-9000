@@ -1,4 +1,4 @@
-"""Terminal Reality _smf static meshes (Blowout)."""
+"""Terminal Reality _smf static meshes (Blowout version 7, BloodRayne version 4)."""
 
 import struct
 
@@ -17,10 +17,10 @@ def vertex(pos, normal, uv) -> bytes:
 
 
 def build(verts, materials=("wall.tif",), version: int = 7) -> bytes:
-    head = bytearray(tr_smf.MATERIALS_AT + len(materials) * tr_smf.MATERIAL_RECORD)
+    head = bytearray(tr_smf.LAYOUTS[7].materials_at + len(materials) * tr_smf.MATERIAL_RECORD)
     struct.pack_into("<2I", head, 0, version, len(materials))
     for i, name in enumerate(materials):
-        at = tr_smf.MATERIALS_AT + i * tr_smf.MATERIAL_RECORD
+        at = tr_smf.LAYOUTS[7].materials_at + i * tr_smf.MATERIAL_RECORD
         head[at : at + len(name)] = name.encode()
     body = tr_smf.SIGNATURE + b"\x00\x00" + bytes([0x84]) + struct.pack(">H", len(verts))
     return bytes(head) + body + b"".join(vertex(*v) for v in verts)
@@ -64,8 +64,46 @@ def test_degenerate_triangles_are_dropped():
     assert len(mesh.indices) == 3
 
 
+def build_v4(verts, name: str = "BULLET.tif") -> bytes:
+    lay = tr_smf.LAYOUTS[4]
+    head = bytearray(lay.materials_at + tr_smf.NAME_MAX)
+    struct.pack_into("<2I", head, 0, 4, 3)
+    head[lay.materials_at : lay.materials_at + len(name)] = name.encode()
+    body = tr_smf.SIGNATURE + bytes([0x84]) + struct.pack(">H", len(verts))
+    rows = b"".join(
+        struct.pack(">3h", *p) + struct.pack(">3h", *n) + struct.pack(">2H", *uv)
+        for p, n, uv in verts
+    )
+    return bytes(head) + body + rows
+
+
+def test_version_4_uses_a_wider_vertex():
+    # 32768 is 1.0 at 2^-15, and 16384 is 1.0 for a Q1.14 normal
+    quad = [
+        ((0, 0, 0), (0, 0, 16384), (0, 0)),
+        ((32768 - 1, 0, 0), (0, 0, 16384), (256, 0)),
+        ((32768 - 1, 32768 - 1, 0), (0, 0, 16384), (256, 256)),
+        ((0, 32768 - 1, 0), (0, 0, 16384), (0, 256)),
+    ]
+    parsed = tr_smf.parse(build_v4(quad))
+    assert parsed.version == 4
+    assert parsed.materials == ["BULLET.tif"]
+    mesh = parsed.meshes[0]
+    assert len(mesh.indices) == 6
+    assert abs(mesh.positions.max() - 1.0) < 1e-3
+    assert abs(mesh.normals[0][2] - 1.0) < 1e-3  # Q1.14, not /128
+    assert abs(mesh.uvs.max() - 1.0) < 1e-3
+
+
+def test_layouts_differ_by_version():
+    assert tr_smf.LAYOUTS[7].stride == 13
+    assert tr_smf.LAYOUTS[4].stride == 16
+    assert tr_smf.LAYOUTS[4].normal_16 and not tr_smf.LAYOUTS[7].normal_16
+
+
 def test_rejects_other_versions_and_junk():
-    assert not tr_smf.is_smf(struct.pack("<2I", 4, 3) + bytes(64))  # BloodRayne's version 4
+    assert not tr_smf.is_smf(struct.pack("<2I", 5, 3) + bytes(64))  # no version 5 seen
+    assert not tr_smf.is_smf(struct.pack("<2I", 7, 0) + bytes(64))  # zero materials
     assert not tr_smf.is_smf(b"short")
     assert tr_smf.parse(b"short") is None
     assert tr_smf.materials(b"short") == []
@@ -73,7 +111,7 @@ def test_rejects_other_versions_and_junk():
 
 def test_a_preamble_in_padding_is_not_a_mesh():
     # version 4 pads with F00DBAAD, which contains the preamble; only a real opcode counts
-    junk = build(QUAD)[: tr_smf.MATERIALS_AT + tr_smf.MATERIAL_RECORD]
+    junk = build(QUAD)[: tr_smf.LAYOUTS[7].materials_at + tr_smf.MATERIAL_RECORD]
     junk += tr_smf.SIGNATURE + bytes([0x00, 0x00, 0x04, 0x00])
     assert tr_smf.parse(junk).meshes == []
 

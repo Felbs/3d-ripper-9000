@@ -179,11 +179,27 @@ are fixed from data already in the file: drop the degenerate ones, and flip any 
 winding disagrees with its own stored normals.  Result on Blowout: 4,044 -> **3,761 triangles,
 0 degenerate, mean normal agreement 0.971, none inverted** (from 0.770 / 10% inverted).
 
-### Version 4 (BloodRayne) is NOT decoded
+### Version 4 (BloodRayne) - ALSO CRACKED
 
-Same `0x84` quad lists behind the same preamble, but a different vertex layout: fitting stride
-and normal offset against the stored normals matches only one small mesh (stride 16, normal at
-byte 8, |cos| 0.86) and fails on the larger ones, so it is skipped rather than exported wrong.
-Version 4 also pads with `F00DBAAD` and carries a `kfmp1` marker where version 7 keeps its
-material records; its `.tif` name sits elsewhere in the header.  Mapping that header is the
-next step for BloodRayne's 43 packages.
+Same `0x84` quad lists behind the same preamble, but a wider vertex - 16 bytes, all
+big-endian - and a single texture name at 0x6c instead of 360-byte records:
+
+| bytes | field | scale |
+|---|---|---|
+| 0-5 | position, 3 x s16 | `* 2^-15` |
+| 6-11 | normal, 3 x s16 | `/ 16384` (Q1.14) |
+| 12-15 | uv, 2 x u16 | `/ 256` |
+
+Found by profiling the eight 16-bit columns of the vertex: three of them run to exactly
++/-16384, which is Q1.14, and they come out unit length (0.949 mean) - that is the normal.
+With positions in columns 0-2 the normals agree with the geometry at **0.974 mean cosine,
+99.7% within 0.7, none inverted**.
+
+**The position scale had no anchor inside the file** - version 4 stores no bounding box.  It
+has one outside: both games ship a `bullet.smf`, and BloodRayne's spans 10,496 units, which at
+`2^-15` is 0.3203 - the exact length Blowout's stored bounding box gives for its own bullet.
+The rest fall in line (missile 0.86, `tatermasher` 1.18, against Blowout's 1.98 machine gun).
+
+Version 4 pads with `F00DBAAD` and carries a `kfmp1` marker where version 7 keeps its material
+records.  Both versions now export: Blowout's credits package 25 meshes / 3,761 triangles,
+BloodRayne's boiler room 6 meshes / 367 triangles, all six textured.

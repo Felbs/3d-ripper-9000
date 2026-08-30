@@ -43,11 +43,25 @@ Both are corrected from data already in the file: a triangle is dropped if it is
 flipped if it disagrees with its own stored normals.  After that, 98% of Blowout's triangles
 agree with their normals and none are inverted.
 
-**Only version 7 (Blowout) is decoded.**  Version 4 (BloodRayne) writes the same ``0x84`` quad
-lists behind the same preamble, but its vertex layout is different: fitting stride and normal
-offset against the stored normals matches on one small mesh (stride 16, normal at byte 8) and
-fails on the larger ones, so it is left alone rather than exported wrong.  Version 4 also pads
-with ``F00DBAAD`` and carries a ``kfmp1`` marker where version 7 keeps its material records.
+Version 4 (BloodRayne) writes the same ``0x84`` quad lists behind the same preamble, but with a
+wider vertex - 16 bytes, all big-endian - and it stores its one texture name at 0x6c instead of
+in 360-byte records:
+
+======  =========================  ==================================================
+bytes   field                      scale
+======  =========================  ==================================================
+0-5     position, 3 x s16          ``* 2^-15``
+6-11    normal, 3 x s16            ``/ 16384`` (Q1.14 - the values run to exactly
+                                   +/-16384 and come out unit length, 0.949 mean)
+12-15   uv, 2 x u16                ``/ 256``
+======  =========================  ==================================================
+
+Version 4 stores NO bounding box, so its position scale has no anchor inside the file.  It has
+one outside: both games ship a ``bullet.smf``, and BloodRayne's spans 10,496 units, which at
+``2^-15`` is 0.3203 - the exact length Blowout's stored bounding box gives for its own bullet.
+The other meshes fall in line (the missile 0.86, ``tatermasher`` 1.18 against Blowout's 1.98
+machine gun).  Version 4 also pads with ``F00DBAAD`` and carries a ``kfmp1`` marker where
+version 7 keeps its material records.
 """
 
 from __future__ import annotations
@@ -58,15 +72,32 @@ from dataclasses import dataclass, field
 import numpy as np
 
 SIGNATURE = b"\x00\x00\x00\x08\x00\x00\x00\x01"
-MATERIALS_AT = 0x24
 MATERIAL_RECORD = 360
 NAME_MAX = 64
-VERSIONS = (7,)  # version 4 (BloodRayne) uses a different vertex layout - see the note below
-STRIDES = (13,)
-POS_SCALE = 1.0 / (1 << 8)
-UV_SCALE = 1.0 / (1 << 8)
-NORMAL_SCALE = 1.0 / 128.0
 MAX_VERTS = 1 << 16
+
+
+@dataclass(frozen=True)
+class Layout:
+    """Where a version keeps its texture names, and how it writes a vertex."""
+
+    stride: int
+    materials_at: int
+    material_record: int
+    pos_scale: float
+    normal_16: bool  # normals are s16 (version 4) rather than s8 (version 7)
+    normal_at: int
+    uv_at: int
+    uv_scale: float
+
+
+LAYOUTS = {
+    4: Layout(16, 0x6C, 0, 1.0 / (1 << 15), True, 6, 12, 1.0 / 256.0),
+    7: Layout(13, 0x24, MATERIAL_RECORD, 1.0 / (1 << 8), False, 6, 9, 1.0 / 256.0),
+}
+VERSIONS = tuple(sorted(LAYOUTS))
+NORMAL_SCALE_8 = 1.0 / 128.0
+NORMAL_SCALE_16 = 1.0 / 16384.0
 
 
 @dataclass
@@ -85,20 +116,28 @@ class Smf:
     meshes: list[Mesh] = field(default_factory=list)
 
 
-def is_smf(head: bytes) -> bool:
-    if len(head) < MATERIALS_AT:
-        return False
+def layout(head: bytes) -> Layout | None:
+    if len(head) < 8:
+        return None
     version, materials = struct.unpack_from("<2I", head, 0)
-    return version in VERSIONS and 0 < materials < 4096
+    if version not in LAYOUTS or not 0 < materials < 4096:
+        return None
+    return LAYOUTS[version]
+
+
+def is_smf(head: bytes) -> bool:
+    return layout(head) is not None
 
 
 def materials(data: bytes) -> list[str]:
-    if not is_smf(data[:MATERIALS_AT]):
+    lay = layout(data[:8])
+    if lay is None:
         return []
-    count = struct.unpack_from("<I", data, 4)[0]
+    # version 4 keeps a single name; version 7 repeats a record per object
+    count = struct.unpack_from("<I", data, 4)[0] if lay.material_record else 1
     out = []
     for i in range(count):
-        p = MATERIALS_AT + i * MATERIAL_RECORD
+        p = lay.materials_at + i * lay.material_record
         if p + NAME_MAX > len(data):
             break
         name = data[p : p + NAME_MAX].split(b"\0")[0].decode("latin-1", "replace")
@@ -152,15 +191,21 @@ def _orient(pos: np.ndarray, nrm: np.ndarray, tris: np.ndarray) -> np.ndarray:
     return tris
 
 
-def _vertices(data: bytes, at: int, count: int, stride: int):
-    raw = np.frombuffer(data[at : at + count * stride], np.uint8).reshape(count, stride)
-    pos = raw[:, 0:6].copy().view(">i2").reshape(count, 3).astype(np.float32) * POS_SCALE
-    nrm = raw[:, 6:9].astype(np.int8).astype(np.float32) * NORMAL_SCALE
-    uv = raw[:, 9:13].copy().view(">i2").reshape(count, 2).astype(np.float32) * UV_SCALE
+def _vertices(data: bytes, at: int, count: int, lay: Layout):
+    raw = np.frombuffer(data[at : at + count * lay.stride], np.uint8).reshape(count, lay.stride)
+    pos = raw[:, 0:6].copy().view(">i2").reshape(count, 3).astype(np.float32) * lay.pos_scale
+    if lay.normal_16:
+        nrm = raw[:, lay.normal_at : lay.normal_at + 6].copy().view(">i2")
+        nrm = nrm.reshape(count, 3).astype(np.float32) * NORMAL_SCALE_16
+    else:
+        nrm = raw[:, lay.normal_at : lay.normal_at + 3].astype(np.int8).astype(np.float32)
+        nrm = nrm * NORMAL_SCALE_8
+    uv = raw[:, lay.uv_at : lay.uv_at + 4].copy().view(">i2")
+    uv = uv.reshape(count, 2).astype(np.float32) * lay.uv_scale
     return pos, nrm, uv
 
 
-def _list_at(data: bytes, start: int) -> tuple[int, int, int, int] | None:
+def _list_at(data: bytes, start: int, lay: Layout) -> tuple[int, int, int, int] | None:
     """(prim, count, body, end) for the display list beginning at `start`, if it walks."""
     p = start
     while p < len(data) and data[p] == 0:
@@ -173,15 +218,13 @@ def _list_at(data: bytes, start: int) -> tuple[int, int, int, int] | None:
     count = struct.unpack_from(">H", data, p + 1)[0]
     if not 0 < count <= MAX_VERTS:
         return None
-    for stride in STRIDES:
-        end = p + 3 + count * stride
-        if end <= len(data):
-            return op & 0xF8, count, p + 3, end
-    return None
+    end = p + 3 + count * lay.stride
+    return (op & 0xF8, count, p + 3, end) if end <= len(data) else None
 
 
 def parse(data: bytes) -> Smf | None:
-    if not is_smf(data[:MATERIALS_AT]):
+    lay = layout(data[:8])
+    if lay is None:
         return None
     version = struct.unpack_from("<I", data, 0)[0]
     names = materials(data)
@@ -194,14 +237,14 @@ def parse(data: bytes) -> Smf | None:
         if q < 0:
             break
         p = q + len(SIGNATURE)
-        found = _list_at(data, p)
+        found = _list_at(data, p, lay)
         if not found:
             continue
         prim, count, body, end = found
         tris = _triangles(prim, count)
         if not len(tris):
             continue
-        pos, nrm, uv = _vertices(data, body, count, STRIDES[0])
+        pos, nrm, uv = _vertices(data, body, count, lay)
         tris = _orient(pos, nrm, tris)
         if not len(tris):
             continue
