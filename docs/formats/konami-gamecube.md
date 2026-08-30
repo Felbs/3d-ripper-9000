@@ -47,3 +47,11 @@
   `.rom`), Evolution Skateboarding/Snowboarding (`.bin`, `.fbd`, `.rel`), Winning Eleven 6,
   Captain Tsubasa, WTA Tour Tennis: each its own container.
 Priority: low per title; TMNT 1-3 (3 discs, one engine) would be the first to reverse.
+
+  World sector textures (checked 2026-08-29 evening, still open): the `.pac` world materials
+  really do carry `isTextured = 0` - the RW material struct is `u32 flags | RGBA | u32
+  0x0f5f62ec (the same constant in every material, so not a texture id) | u32 textured 0 |
+  f32 ambient / specular / diffuse`, and the material list has no texture chunks and no
+  extension data.  The sectors are drawn with vertex colours plus a texture the game binds
+  from elsewhere (a per-sector table in the level's other members), so binding them needs
+  that table, not a change to the RenderWare reader.

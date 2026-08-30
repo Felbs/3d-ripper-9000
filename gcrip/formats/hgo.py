@@ -233,16 +233,19 @@ def _gx_lists(b: bytes, start: int, nverts: int) -> tuple[list, int]:
 
 def _gx_walk(b: bytes, head: int, nverts: int, width: int) -> tuple[list, int]:
     n = len(b)
-    cols = 0
+    attrs: set[int] = set()
     tris = []
     i = head
     while i < n:
+        cols = len(attrs)
         op = b[i]
         if op == 0:
             i += 1
         elif op == 0x08 and i + 6 <= n:
-            if 0xA0 <= b[i + 1] <= 0xA7:
-                cols += 1
+            reg = b[i + 1]
+            if 0xA0 <= reg <= 0xA7:
+                # a base already bound starts a new binding group rather than widening the row
+                attrs = {reg} if reg in attrs else attrs | {reg}
             i += 6
         elif op == 0x10 and i + 5 <= n:
             i += 5 + 4 * (struct.unpack_from(">H", b, i + 1)[0] + 1)
