@@ -70,16 +70,25 @@ def _texlist(head: bytes) -> tuple[int, int]:
 
 
 def is_lnd(head: bytes, size: int | None = None) -> bool:
-    if len(head) < 0x60 or head[0x14:0x18] != b"0100":
+    """Recognise a terrain file.
+
+    Must work from ``gcrip.classify.SNIFF_BYTES`` (64) bytes, which is all a plugin's
+    ``detect`` is ever given - the texlist pointer pair usually sits past that.  The version
+    stamp at 0x14 and the total length stored at 0 (which has to equal the file size exactly)
+    are already decisive; the texlist is checked as well whenever the caller passes enough.
+    """
+    if len(head) < 0x28 or head[0x14:0x18] != b"0100":
         return False
     total, table = struct.unpack_from(">2I", head, 0)
     if size is not None and total != size:
         return False
+    if not 0x60 < table <= total:
+        return False
     pair, _ = _texlist(head)
     if pair + 8 > len(head):
-        return False
+        return True
     tex_ptr, tex_count = struct.unpack_from(">2I", head, pair)
-    return 0x60 < table <= total and BASE + tex_ptr == pair + 8 and 0 < tex_count < 4096
+    return BASE + tex_ptr == pair + 8 and 0 < tex_count < 4096
 
 
 def _texnames(d: bytes) -> list[str]:

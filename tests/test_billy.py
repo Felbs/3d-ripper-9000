@@ -200,3 +200,20 @@ def test_billy_lnd():
     assert plug.detect("k_green1.prd/stg_green.lnd", data[:0x60], len(data))
     scenes = plug.extract(data, "k_green1.prd/stg_green.lnd", None)
     assert scenes[0].triangles == 2 and scenes[0].materials[0].name == "mat000"
+
+
+def test_lnd_detected_from_the_64_byte_sniff():
+    """detect() is only ever given gcrip.classify.SNIFF_BYTES, which is short of the texlist.
+
+    The rest of this module hands is_lnd 0x60 bytes, which is more than the ripper ever has:
+    Billy Hatcher's 79 terrain files went undetected because of the difference.
+    """
+    from gcrip.classify import SNIFF_BYTES
+
+    data = make_lnd()
+    assert SNIFF_BYTES < 0x60  # the whole point
+    assert billy_lnd.is_lnd(data[:SNIFF_BYTES], len(data))
+    assert plug.detect("k_green1.prd/stg_green.lnd", data[:SNIFF_BYTES], len(data))
+    # the length word still has to match the file exactly
+    assert not billy_lnd.is_lnd(data[:SNIFF_BYTES], len(data) + 1)
+    assert not billy_lnd.is_lnd(b"\0" * SNIFF_BYTES, SNIFF_BYTES)

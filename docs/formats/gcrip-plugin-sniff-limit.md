@@ -43,3 +43,24 @@ An audit of every container plugin for `len(head) >= N` with N > 64 found only o
 The end-to-end check worth repeating after any container work is to walk the real chain with
 64-byte sniffs at every level - POD -> PKG -> members.  For the two sample packages that gives
 232 scenes, 4,128 triangles and 201 textures; before the fix it gave zero.
+
+## The audit found a third victim: Billy Hatcher terrain
+
+Auditing all 50 `detect()` plugins the same way turned up one more, and this one was NOT from
+that night's work - it had been dormant:
+
+`gcrip/formats/billy_lnd.py`'s `is_lnd` opened with `len(head) < 0x60`, i.e. it wanted 96
+bytes, because the texlist pointer pair it validates usually sits past byte 64.  Billy Hatcher
+and the Giant Egg ships **79 `.lnd` terrain files** and not one was ever detected.  The disc
+reports 896 models and **0 textures**.
+
+The unit test hid it perfectly: `tests/test_billy.py` fed `data[:0x60]` - more than the ripper
+ever has.  A test is only as good as the width of the slice it passes.
+
+`is_lnd` now validates what a 64-byte head actually contains - the `0100` version stamp at 0x14
+and the total length at 0 that must equal the file size exactly, which together are decisive -
+and still checks the texlist whenever the caller passes enough bytes.  Verified on
+`k_battle_blue.prd/stg_blue_battle.lnd`: **1,726 triangles, 23 textures, 34 primitives**, from a
+file that previously produced nothing.
+
+`bml` was the only other plugin reading past byte 64, and it already falls back safely.
