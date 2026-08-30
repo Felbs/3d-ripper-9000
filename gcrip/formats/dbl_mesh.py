@@ -12,7 +12,8 @@ u32 uvs | u32 x2 | u32 uvs``; offsets are relative to payload + 8 (i.e. to the f
 Arrays are GX-native: positions f32 xyz (s16 in a few records), normals s8 (/64), uvs f32.
 The DL list runs from ``dl list`` to the first array: entries ``u32 total | u32 material | u32 |
 u32 bone ids (bytes) | u32 | u32 size | u16 rows | u16 triangles | u16 | u16`` each followed by
-``size`` bytes of raw GX FIFO: CP loads (0x08 reg u32 - 0x50 VCD_LO / 0x60 VCD_HI), XF and BP
+``size`` bytes of raw GX FIFO: CP loads (0x08 reg u32 - 0x50 VCD_LO / 0x60 VCD_HI; the
+2002 records of Rugrats: Royal Ransom omit them and the descriptor is inferred), XF and BP
 setup, indexed matrix loads and primitives (0x80-0xb8 | VAT slot) whose rows hold the enabled
 index attributes (u8 / u16) in GX order (PNMTXIDX, TEXnMTXIDX, POS, NRM, COL0, COL1, TEX0-7).
 
@@ -102,14 +103,23 @@ def is_mesh(pay: bytes) -> bool:
 
 
 def _array(pay: bytes, off: int, count: int, next_off: int, comps: int) -> np.ndarray | None:
+    """``count`` vectors at ``off``.  The element size follows from the room up to the next
+    array: f32 tightly packed (12 bytes for a position), f32 with padding (Rugrats keeps a
+    trailing word: 16), or the s16 / s8 forms."""
     start = off + BASE
     if count <= 0 or start >= len(pay):
         return None
     room = (next_off + BASE if next_off > off else len(pay)) - start
     per = room / count
     if per >= 4 * comps:
-        n = min(count, (len(pay) - start) // (4 * comps))
-        return np.frombuffer(pay, ">f4", n * comps, start).reshape(n, comps).astype(np.float32)
+        stride = 4 * comps
+        if next_off > off:
+            fitted = int(per) // 4 * 4
+            if 4 * comps <= fitted <= 4 * comps + 16:
+                stride = fitted
+        n = min(count, (len(pay) - start) // stride)
+        rec = np.frombuffer(pay, np.uint8, n * stride, start).reshape(n, stride)
+        return rec[:, : 4 * comps].copy().view(">f4").reshape(n, comps).astype(np.float32)
     if per >= 2 * comps:
         n = min(count, (len(pay) - start) // (2 * comps))
         return np.frombuffer(pay, ">i2", n * comps, start).reshape(n, comps).astype(np.float32)
@@ -142,6 +152,79 @@ def _vcd_layout(lo: int, hi: int) -> list[tuple[str, int]] | None:
     return cols
 
 
+def _vcd(pnmtx: bool, mode: int, color: bool, uv: bool) -> tuple[int, int]:
+    """(VCD_LO, VCD_HI) for indexed position / normal / colour / uv (mode 2 = u8, 3 = u16)."""
+    lo = 1 if pnmtx else 0
+    lo |= mode << 9  # position
+    lo |= mode << 11  # normal
+    if color:
+        lo |= mode << 13
+    return lo, (mode if uv else 0)
+
+
+# Records whose display lists carry no CP loads (Rugrats: Royal Ransom) set the vertex
+# descriptor once at load time; these are the layouts worth trying, best score wins.
+_IMPLIED_VCDS = (
+    _vcd(True, 3, True, True),
+    _vcd(True, 3, False, True),
+    _vcd(True, 2, True, True),
+    _vcd(True, 2, False, True),
+    _vcd(False, 3, True, True),
+    _vcd(False, 2, True, True),
+)
+
+
+def _infer_vcd(pay: bytes, spans: list[tuple[int, int]], limits: tuple[int, int, int]) -> list[int]:
+    """Pick the implied vertex descriptor whose indices stay inside the record's arrays: each
+    display list is scored on its own, a list that does not fit simply scores nothing."""
+    best = [0, 0]
+    best_score = 0
+    npos, nnrm, nuv = limits
+    for lo, hi in _IMPLIED_VCDS:
+        cols = _vcd_layout(lo, hi)
+        if cols is None:
+            continue
+        stride = sum(w for _, w in cols)
+        score = 0
+        for start, end in spans:
+            i = start
+            good = 0
+            while i + 3 <= end:
+                op = pay[i]
+                if op == 0:
+                    i += 1
+                    continue
+                if op & 0xF8 not in (0x80, 0x90, 0x98, 0xA0, 0xA8, 0xB0, 0xB8):
+                    good = 0
+                    break
+                n = struct.unpack_from(">H", pay, i + 1)[0]
+                i += 3
+                if n == 0 or i + n * stride > end:
+                    good = 0
+                    break
+                rows = np.frombuffer(pay, np.uint8, n * stride, i).reshape(n, stride)
+                i += n * stride
+                c = 0
+                fits = True
+                for name, wd in cols:
+                    v = rows[:, c].astype(np.int64)
+                    if wd == 2:
+                        v = (v << 8) | rows[:, c + 1]
+                    limit = {"pos": npos, "nrm": nnrm, "tex0": nuv}.get(name)
+                    if limit and int(v.max()) >= limit:
+                        fits = False
+                        break
+                    c += wd
+                if not fits:
+                    good = 0
+                    break
+                good += max(n - 2, 0)
+            score += good
+        if score > best_score:
+            best, best_score = [lo, hi], score
+    return best
+
+
 def parse(pay: bytes) -> Record | None:
     pay = normalize(pay)
     if not is_mesh(pay):
@@ -163,9 +246,25 @@ def parse(pay: bytes) -> Record | None:
     if uv is not None and np.abs(uv).max() > 256:
         uv = uv / 256.0
     arrays = min(x + BASE for x in (po, no, uo) if x)
+    spans: list[tuple[int, int]] = []
+    p = dlt + BASE
+    while p + 32 <= arrays and p + 32 <= len(pay):
+        size = struct.unpack_from(">I", pay, p + 20)[0]
+        start = p + 32
+        end = min(start + size, arrays, len(pay))
+        if size == 0 or end <= start:
+            break
+        spans.append((start, end))
+        p = end
+    vcd = [0, 0]  # VCD_LO / VCD_HI persist across a record's display lists
+    if spans and pay[spans[0][0]] != 0x08:
+        vcd = _infer_vcd(
+            pay,
+            spans,
+            (len(pos), len(nrm) if nrm is not None else 0, len(uv) if uv is not None else 0),
+        )
     p = dlt + BASE
     k = 0
-    vcd = [0, 0]  # VCD_LO / VCD_HI persist across a record's display lists
     while p + 32 <= arrays and p + 32 <= len(pay):
         _total, material, _z, bones, _run, size, rows, ntris = struct.unpack_from(">5IIHH", pay, p)
         dl_start = p + 32
