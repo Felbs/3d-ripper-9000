@@ -88,8 +88,13 @@ Sagas 939 / 230k / 5,733, 272 of 335; Rugrats 476 texture-only scenes (3,923 tex
 
 - skeletons / skinning: the bone ids per DL are kept (`extras.bones`) but the bind poses live
   in the kind-0xa motion databases (`.mdb`: named nodes + matrices) - not wired yet;
-- Rugrats: Royal Ransom (2002): mesh record ids 0x21 with the old header (flags top byte 0x0e),
-  positions f32 with a 16-byte stride, f32 normals, DLs that start straight with `98 00 04`
-  rows (no CP loads: the VCD is set by the game), plus a type-0x01 skeleton record (`spine1`,
-  `clavleft` ...);
+- Rugrats: Royal Ransom (2002) - RIPPING since 2026-08-29 evening: mesh record ids 0x21 with
+  the old header (flags top byte 0x0e), positions f32 at a 16-byte stride (xyz + a padding
+  word - `_array` now derives the stride from the room up to the next array), f32 normals,
+  and display lists that start straight with `98 00 04` (no CP loads: the game sets the vertex
+  descriptor at load time, so `_infer_vcd` tries the plausible descriptors and keeps the one
+  whose indices stay inside the record's arrays - here `u8 matrix index + u16 pos / nrm /
+  colour / uv`, 9 bytes per row).  Census: 126 databases -> 224 scenes with geometry (476
+  scenes total), 264,318 triangles, 3,888 textures, 544 of 587 materials bound; Angelica rips
+  complete and textured.  Still open: the type-0x01 skeleton records (`spine1`, `clavleft`);
 - `.sdb` / `.env` / `.dbv` members, particle sheets (0x86 tables decode but are not bound).

@@ -130,3 +130,15 @@ bbox, `u32 0xcdcdcdcd` marker).
 - OBJ0 mesh record layout (vertex stride/format flags, index buffer, material index) -
   reverse from the PC LSW1 NU2 documentation (fandom wiki is unreachable from here);
 - whether the later games (LSW2, Bionicle Heroes = "NU2 v2"?) share the layout.
+
+### Finding Nemo levels (2026-08-29 evening)
+
+The Nemo `.nus` GST0 meshes drop the normals: vertices are `f32 xyz | RGBA8 | f32 uv` (24
+bytes) or `f32 xyz | RGBA8` (16), and instead of the `u32 | u32 | u32 prim | u32 count | u16
+indices` groups they end with a raw GX display list: a `u32 size | u8` prelude, CP array-base
+and stride loads (`08 a0/a2/a4 <u32 base>`, `08 b0/b2/b4 <u32 24>`) that name the indexed
+attributes, then primitives (`98` strip) whose rows carry one index per attribute - u8 while
+the array fits in a byte, u16 above 255 vertices.  `formats/hgo.py` tries both widths and
+keeps the parse that consumes more of the list.  luxo_04.nus went from nothing to 5,248
+triangles, jelly.nus to 2,154 on a 3 MB slice.  Open: strips that index across the blocks of
+one mesh are still skipped (the CP array bases would give the offset).
