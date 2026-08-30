@@ -178,7 +178,8 @@ Ruled out this pass: the file carries **no directory**.  Nothing anywhere in
 little-endian, absolute and relative to the banner and to the `GeomDesc` marker), so there is
 no table to parse.  The `GeomDesc` lead was also weaker than it looked: only **1 of the 26**
 markers is followed by binary, the other 25 are ordinary text property dumps
-(`GeomDesc  = "" 
+(`GeomDesc  = "" 
+
 	Son  = ...`), so the markers do not enumerate meshes.  The one binary
 marker is followed by `00 06 00 00 00 00 01 3a` and then the floats, and 0x13a = 314 is not the
 mesh's vertex count (1922), so that word is not a count either.
@@ -186,3 +187,34 @@ mesh's vertex count (1922), so that word is not a count either.
 That leaves sequential parsing of the whole serialized stream from byte 0 as the only exact
 route - a much bigger job than scanning, and the reason the plugin is still held back rather
 than shipped with heuristic pairing.
+
+### `res` `surf` textures - partly solved (2026-08-30)
+
+Progress on Samurai Jack (290 `.res`), which reports zero models and zero textures.
+
+**Established and verified:**
+
+* the `surf` header carries **width and height as big-endian `u16` at +12**.  On
+  `cave_armor.res` that reads 256x64, and 256 * 64 = 16,384 is exactly the payload left after a
+  128-byte header (section size 16,512) - so the dimensions are certain, not inferred;
+* the pixels are **CI8 indices in GX 8x4 tiling**: 35 distinct byte values, maximum 37, one
+  value covering 12,407 of 16,384 pixels.  Not `I8` - a greyscale read is meaningless at that
+  distribution;
+* the palette sits at **offset 32** and is **`RGB565`, not `RGB5A3`**.  This is the part that
+  needed an eye: both decode to a coherent image of three armour plates, but `RGB5A3` renders
+  them nearly black while `RGB565` gives the red and gold that a Samurai Jack cave-armour
+  texture should be.
+
+**Not solved:** the general size rule.  Over 345 `surf` sections the extra bytes beyond
+`width * height` range from -5,312 to +3,104, so most sections are not a single 8-bit level -
+mip chains and 4-bit levels are both in play.  Testing "32 + palette + mip chain" with the
+palette count taken from the `u16` at +28 fits only **44 of 345** (34 as 8bpp single-level, 10
+as 4bpp).  So either the palette count lives elsewhere or the level layout varies.
+
+Dimensions across those sections: 128x128 (143), 64x64 (108), 128x64 (28), 512x128 (19),
+32x32 (12), 8x8 (10), 64x128 (8), 256x64 (4).
+
+Nothing is shipped: a reader that assumes one 8-bit level would mis-size seven eighths of them.
+The next step is the field that gives the palette entry count and the mip level count - the
+words at +16, +20, +24 and +28 (8, 108, 8, 0x00280100 on the verified section) are where it has
+to be.
