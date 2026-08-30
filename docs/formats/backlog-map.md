@@ -84,3 +84,22 @@ must come from a header field that has not been identified yet; the 20 bytes at 
 not a per-file record chain either (the next 20 bytes land inside the text), so the dictionary
 is a separate table, not inline.  Blowout ships 7 PODs
 (GCBSET 52 MB, GCBSOUND 51, GCBPKG 46, GCBART 8, COMMON 7, GCBMODEL 3, LANGUAGE 18 KB).
+
+### `res` resource files - CRACKED (Digimon Rumble Arena 2, Lemony Snicket, Samurai Jack)
+
+`gcrip/formats/res.py` + `plugins/res.py`.  Big-endian header apart from the version word:
+`char "res
+" | u16 version (7, little-endian) | u16 | u32 data offset (0x1000) | u32 data
+size | u32 | u32 | u32 | u32 directory offset | u32 directory size | u32 tag count` and then
+one 8-byte record per tag kind.  The directory sits at the END of the file: `u32 entry count`
+followed by 20-byte entries `u32 id | char tag[4] | u32 offset (relative to the data area) |
+u32 size | u32 flags`.
+
+Counts over the three discs: Digimon 2,940 `.res`, Lemony Snicket 574, Samurai Jack 290.
+Section tags: `rdms` (by far the most - 4,415 in six Lemony Snicket files), `surf`, `gshd`,
+`tern`, `sdta`, `node`, `ndbg`, `levl`, plus `wave` / `musc` / `mdat` audio and `strg` /
+`indx` text.  On Samurai Jack's `game_outro.res` a `surf` section starts
+`00 00 00 00 | 00 22 1b ac | 03 21 01 08 | 00 80 00 80` - the `0080 0080` pair is a 128x128
+image size, so `surf` (and `sdta`, same shape) are textures; `node` is 86% plausible floats
+(the scene graph), `gshd` 89% (material / shader constants), and `rdms` is the mesh side.
+Decoding `surf` (dimensions + GX format) is the next step and should be quick.
