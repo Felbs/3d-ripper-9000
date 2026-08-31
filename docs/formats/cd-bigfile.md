@@ -37,8 +37,22 @@ read exactly and none was refused** - 227 MB of payload.
 
 A member that comes out the wrong size returns `None` rather than being passed on short.
 
-## What is inside - the next step
+## What is inside - surveyed, and not GX
 
-The payloads carry their own magics, already counted over that sample: `00 00 00 0e` on 175,
-`!WAR` on 33, and a family opening `00 00 7c xx` / `00 00 7d xx` on most of the rest.  Those
-are the next question; the archive itself is open.
+Sampling 91 members across the archive gives three families:
+
+* **`00 00 7c xx` / `00 00 7d xx`** - 48 of the 91, the bulk.  A `u32` that always sits near
+  32,000 (`0x7d0a`, `0x7ce4`, `0x7d00`), then `0xffffffff`, then a size-like word, a small
+  count, and **`f32` fields** - 16.0 and 1.0 on one, 29.0 and 1.0 on another, 1380.0 and 1.0 on
+  a third.  Floats and a count make this the geometry candidate.
+* **`00 00 00 0e`** - 26 of the 91.  Opens `14, 119, 14660, 0, 21504, 0` and then runs
+  sub-records separated by `0xffffffff`, so it is itself a container.
+* **`!WAR`** (3) and a `00 00 6d xx` family (several small ones).
+
+**The geometry is not GX display lists.**  `gxscan` over those 91 members finds 3 meshes and
+206 triangles in total, all of them in the `00 00 00 0e` family - nothing at all in the
+`7c/7d` bulk.  So Tomb Raider: Legend needs its own mesh reader, and the `7c/7d` family with
+its float fields is where to start.
+
+The archive itself is open, which is the part that was blocking: 1.29 GB and 4,314 members are
+now reachable where before none of it was.
