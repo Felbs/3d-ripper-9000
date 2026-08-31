@@ -96,6 +96,7 @@ files, and several of the files are not geometry at all.  The scanner is not the
 | most AFS archives | ADX audio and MPEG video.  R - Racing, Soul Calibur II, Viewtiful Joe 2 and Sonic Riders have nothing else in theirs |
 | `.mpq` (WWE x3) | video packs |
 | Mega Man X Collection | emulated 2D games - there is no 3D geometry on the disc |
+| Alien Hominid | the 45 `.pak` are ZIPs gcrip already opens, and their **1,948 members are 1,896 `RSND` sound records, 33 `SWF6` Flash movies, 11 `PIXL` textures, 7 `GLYP` font atlases and one `PDAG`**.  It is a Flash game: the artwork is vector data inside the SWFs, not textures.  The 11 `PIXL` do decode - 128x128 `CMPR`, pixels at +96, and the word at +48 is the data end so the size identifies the format exactly - but eleven font-ish textures is not worth a plugin |
 | TMNT world materials | genuinely untextured in the source data |
 
 ## Cross-cutting traps worth re-reading before writing any plugin
