@@ -129,6 +129,15 @@ printable bytes.  So `len = (a>>4)*2+3` and `off = b+1` are right for the `0x87`
 wrong for the tokens above them: the range has sub-forms rather than one shape with a variable
 literal count.
 
+A constraint search also came up empty and is worth recording, because it rules out a whole
+family rather than one guess.  Branching only on **distinct `(t, a, b)` triples** - so cog1's
+four identical `87 40 0b` units cost one choice, not four - with the literal count free over
+0-3, the length free over 3-48, and the offset drawn from every value derivable from `a` and
+`b` (`b`, `b+1`, `a`, `a+1`, and the two-byte combinations either way round), pruned on
+printable output and the exact 386-byte target, finds **no consistent decoding in seven
+minutes**.  So the offset is not any simple function of the two operand bytes, which is the
+assumption every attempt so far has shared.
+
 Two other angles came up empty and are recorded so they are not repeated: a search for members
 whose first high token leaves a short enough tail to solve exactly finds **none** of 18,730
 (the first high token is always far from the end), and the free-length DFS over the whole
