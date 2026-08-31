@@ -10,6 +10,7 @@ from gcrip.formats import tim2
 from ripcore.scene import Scene
 
 NAME = "tim2"
+INSIDE_AFS = ".afs/"
 
 
 def detect(path: str, head: bytes, size: int) -> bool:
@@ -30,10 +31,20 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
 
 
 def is_container(name: str, head: bytes) -> bool:
-    """Claims a blob that opens with an ascending offset table.  It cannot check the magic
-    those offsets point at - the first offset is often exactly 64, so the magic sits one byte
-    past the 64-byte sniff - so ``expand`` yields nothing unless they really are TIM2."""
-    return tim2.looks_like_table(head)
+    """Claims an AFS member that opens with an ascending offset table.
+
+    It cannot check the magic those offsets point at: the first offset is very often exactly
+    64, so on the 64 bytes ``classify`` sniffs the magic sits one byte out of reach, and
+    ``expand`` has to do the real check.  That makes the shape test alone far too eager - on
+    Auto Modellista it claims 50 members to find 7 real tables - so the claim is confined to
+    where this structure has actually been seen, inside an AFS archive.  Requiring the
+    ``0xffffffff`` terminator was tried instead and is wrong twice over: one real table of 16
+    offsets does not carry one, and one member that does carry one holds no TIM2.
+
+    A TIM2 lying loose anywhere else is still picked up by :func:`detect`, which can see the
+    magic at offset zero.
+    """
+    return INSIDE_AFS in name.lower() and tim2.looks_like_table(head)
 
 
 def expand(data: bytes) -> list[tuple[str, bytes]]:

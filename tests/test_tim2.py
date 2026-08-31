@@ -99,3 +99,24 @@ def test_the_plugin_yields_a_textures_only_scene():
     assert plugin.detect("x.tm2", blob[:64], len(blob))
     (scene,) = plugin.extract(blob, "afs02/car.tm2", None)
     assert scene.extras["textures_only"] and set(scene.textures) == {"car", "car_1"}
+
+
+def test_the_table_container_is_confined_to_afs_members():
+    """The shape test alone claims 50 members on Auto Modellista to find 7 real tables, and
+    the magic that would settle it sits past the 64-byte sniff - so the claim is confined to
+    where the structure has actually been seen."""
+    import struct as _s
+
+    head = _s.pack("<4I", 64, 0x10540, 0x20A40, 0xFFFFFFFF).ljust(64, b"\0")
+    assert tim2.looks_like_table(head)
+    assert plugin.is_container("afs02.afs/7", head)
+    assert not plugin.is_container("common_thing.gcp", head)
+
+
+def test_a_terminator_is_not_required():
+    """One real table of 16 offsets carries none, so requiring it would lose a disc's
+    textures."""
+    import struct as _s
+
+    head = _s.pack("<16I", *(64 + 4096 * i for i in range(16)))
+    assert len(tim2._offsets(head)) == 16

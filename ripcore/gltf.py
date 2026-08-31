@@ -151,6 +151,13 @@ def export(scene: Scene, out_base: Path, *, thumbnail: bool = True) -> ExportSta
     images, samplers, textures = [], [], []
     tex_slot: dict[str, int] = {}
     used = {m.texture for m in scene.materials if m.texture}
+    # A textures-only scene carries images and no materials at all, and every texture
+    # would otherwise be dropped here without a warning - which is how thirteen plugins
+    # came to decode textures correctly and write none of them.  When nothing references
+    # a texture, every texture is written; a scene that does reference some keeps the
+    # narrower set.
+    if not used:
+        used = set(scene.textures)
     for name in sorted(used):
         img = scene.textures.get(name)
         if img is None:
