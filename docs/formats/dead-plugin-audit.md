@@ -72,6 +72,24 @@ That is the same shape as TMNT: Mutant Melee, and it is worth naming as a catego
 is to run the plugin against the disc by hand - if it works today, the dump is old; if it does
 not, the plugin is broken.
 
+## How common is a stale dump?
+
+Sweeping every disc with a large top-level archive: of 228 checked, **80 have the archive
+expanded in the manifest and 27 are claimed by a plugin with no nested entries at all**.  Most
+of the 27 are explained without any bug:
+
+* **audio, by name** - `SH_VOICE_E.afs`, `PRS_VOICE_E.afs`, `V_CHAO_E.AFS`, `oga_bgm.afs`,
+  `event_adx.afs`, `soundgc.big`, `sound.zip`, `music.rcf`, `Sounds.adb`, `sndgc.bin`;
+* **false claims that expand to nothing** - `skye_pak` on Shrek Smash N Crash's 377 MB
+  `Packfile.dat`, `shoc` on Freekstyle's `freekDat.ngc`, `zip` on NFL Blitz's `stadium.zip`,
+  `cd_bigfile` on Beyblade's `add00dat.bin`.  Harmless, and now recorded so the next audit does
+  not chase them.
+
+What is left is small and real: **Haunted Mansion** (2,945 valid TPL), **TMNT: Mutant Melee**
+(8,367 members), **Jimmy Neutron: Jet Fusion** (12,646), **Smashing Drive** (2,655 TIM), and
+**Chibi-Robo** whose `qp.bin` gives 1,153 members but only 5 TPL and 1,132 the classifier
+cannot name - not worth a disc rip on its own.
+
 ## Run this after any rip
 
 A disc that produces 0 where a decoder measured thousands is a dead plugin, not a hard format.
