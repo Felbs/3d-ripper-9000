@@ -145,13 +145,21 @@ which is what a real rule does and a lucky one does not:
 | `frontend_new.lvl` | 5.8% | 12.4% |
 | `triggers.txt` | 2.5% | 3.6% |
 
-(percentage of the declared output produced before the decode fails; every byte produced is
-printable in all of these).  The best length seen for that sub-form is `(t & 0x1f) * 2 + 3`
-with the offset still `b + 1`; `(b >> 2) + 3` is close behind and reaches 92.2% on cog1.
+**Read that table carefully: it is the share of declared output the walk *produced* before
+failing, not the share that is correct.**  Every byte produced is printable, but the output is
+visibly wrong long before the end - cog1's tail comes out
+`)CRLF TAB attrib)CRLF TAB attrib)CRLF TAB attrib`, a fragment replayed over and over, which
+is what a match does when its length overruns the cycle it is copying.  The verified-correct
+prefix is still the ~130 characters the low form alone produces.
 
-**It is still not exact anywhere**, so either the length formula is approximate or there is a
-third sub-form behind it.  cog1 now fails only near the end, on a match whose length overruns
-by 27 bytes, which is where the next attempt should look.
+So what `a == 0` buys is a walk that stays in step much further, not a decode.  That is real
+evidence the sub-form exists - a wrong rule desynchronises immediately and hits a non-text
+byte, and this one does not - but it is not 95% of a working decoder.
+
+The best length seen for the sub-form is `(t & 0x1f) * 2 + 3` with the offset still `b + 1`;
+`(b >> 2) + 3` is close behind.  Both are clearly too long: the two `a == 0` tokens before
+cog1's failure take lengths 55 and 39, and those are what produce the repeated `attrib`.  The
+sub-form's length is the thing to pin next, and it wants to be far shorter.
 
 A constraint search also came up empty and is worth recording, because it rules out a whole
 family rather than one guess.  Branching only on **distinct `(t, a, b)` triples** - so cog1's
