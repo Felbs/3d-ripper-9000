@@ -41,6 +41,43 @@ Worth saying plainly: there is no mesh layout to hunt in either until the codec 
 | Hunter `AGM` / `AGD` materials | 1 | `AGG` meshes ship (781,658 triangles) and carry their material **names**, and the `LJAM` archives hold 3,865 `TPL` beside them, but the text that maps one to the other (`MatAssignment` / `MaterialDatabase`, 3,465 files) is not read, so the meshes come out untextured | see [formats/high-voltage-ljam.md](formats/high-voltage-ljam.md) |
 | `bin`/`dat` tail | many | cluster 10, never started |
 
+## The state of the tail (measured 2026-08-30)
+
+223 discs still produce neither a model nor a texture.  For each one, the **largest non-media
+file** was read and offered to every registered plugin.  What claims it:
+
+| claimed by | discs |
+|---|---|
+| `generic` only (the fallback container) | 112 |
+| `generic` and `gx` (the display-list scanner) | 59 |
+| nothing at all | 16 |
+| `afs` | 7 |
+| `ea` (BIG / VIV) | 6 |
+| `vc_dat` | 5 |
+| `frd_pak` | 3 |
+| `blitz` | 3 |
+| `skye_pak`, `u8`, `feporr` | 1 each |
+| media only (no non-media file over 256 KB) | 2 |
+
+**There is no large shared cluster left.**  171 of the 223 fall to a fallback, which means a
+bespoke per-game format with no plugin - so from here each crack is worth roughly one disc,
+not five.  The multi-disc work that remains is where a container already opens but its members
+are unread: `afs` (7 discs) and EA `BIG` (6, though on five of those the biggest archive is
+audio - only Harry Potter: Prisoner of Azkaban has game data, 2,151 `.pkg` / `.pkga` members).
+
+The 59 that `gx` claims are the interesting number: the scanner runs on them and still finds
+nothing, so **improving the scanner is the only change that would move dozens of discs at
+once**.  Every other lead is single-disc.
+
+Two things this measurement corrected on the spot, both worth remembering:
+
+* an earlier census sampled three files a disc and grouped all their magics together, which
+  produced an apparent 31-disc cluster of files "starting with a year string".  Reading only
+  the largest file a disc dissolved it - the years came from third-ranked files of unrelated
+  types.  **Group by disc, not by sample.**
+* `BIGF` looked like six discs of unopened EA archives.  `ea` already claims all six; they are
+  dead on their *members*, not their container, and on five of them those members are audio.
+
 ## Dead ends - confirmed, do not re-probe
 
 | thing | why |
