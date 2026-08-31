@@ -302,6 +302,11 @@ class ManifestBuilder:
             except Exception as e:  # noqa: BLE001
                 self.manifest.errors.append(f"{path}: {mod.__name__} expand failed: {e}")
                 continue
+            # A plugin that claims an archive and then yields nothing must not shadow the next
+            # one that would: `feporr` claims every `pack`-magic .pak and returns no members for
+            # THQ's, which cost Avatar all nine of its archives (699 MB) to `thq_pack`.
+            if not entries:
+                continue
             if not is_fallback(mod):
                 roots.add(path)
             self.manifest.dirs.append(path)

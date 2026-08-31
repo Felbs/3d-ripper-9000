@@ -146,7 +146,10 @@ class _Source:
                     else:
                         entries = mod.expand(payload)
                     members = {f"{container}/{inner}": blob for inner, blob in entries}
-                    break
+                    # a plugin that claims and yields nothing must not shadow the next one
+                    # that would - see the note in manifest._walk_plugin_container
+                    if members:
+                        break
             except Exception:  # noqa: BLE001
                 continue
         while len(cache) > 48:
