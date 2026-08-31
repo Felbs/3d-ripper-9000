@@ -92,32 +92,37 @@ and it is where the next attempt should start.  Note the offset cannot come from
 after the token: `0x40 + 1` is 65 and the output is only 52 bytes long at that point, so the
 `0b` (which is 12, the offset in use) is the more likely offset byte and `0x40` something else.
 
-The high form takes **two operand bytes**, which the repeating unit already implies - `87 40
-0b XX` is four bytes and `XX` is the literal, leaving two. Searching over that shape produces
-**real text** for the first time:
+The high form takes **two operand bytes** - the repeating unit `87 40 0b XX` is four bytes and
+`XX` is the literal, leaving two - and with
 
-    lit = (t >> 4) & 3, len = a + 3, off = b
-      triggers.txt -> "triggers CRLF { CRLF TAB trigger CRLF TAB { CRLF TAB TAB
-                       name(ProximityIn) CRLF TAB TAB setting(1, number, range"
+    lit = (t >> 2) & 3       len = (a >> 4) * 2 + 3       off = b + 1
 
-    lit = (t >> 2) & 3, len = a + 3, off = b + 1
-      frontend_new.lvl -> "level CRLF { CRLF TAB name({}) CRLF TAB acount(3) CRLF TAB
-                           pcount(0) CRLF TAB scount(0)"  (99% printable)
+`frontend_cog1.lvl` produces its full 386 bytes and the first 130 characters are **exactly
+right**::
 
-Neither is right yet, and **the way they fail says where to look**: both repeat a fragment -
-`scount(0)` three times over, `setting(1, number, range` twice - which is what a match does
-when its length runs past the cycle it is copying. With `a` = 0x40 the length `a + 3` is 67,
-and copying 67 bytes from eleven back replays an eleven-byte cycle six times, which is exactly
-what comes out. So **the length is not the whole of `a`**; the unit has to emit eleven bytes,
-not sixty-seven.
+    level CRLF { CRLF TAB name({cactus}) CRLF TAB acount(4) CRLF TAB pcount(0) CRLF TAB
+    scount(0) CRLF TAB tcount(0) CRLF TAB bcount(0) CRLF TAB ocount(0) CRLF TAB
+    attribute({ObjectType}, Const, Number, 0.000000
 
-The arithmetic the answer has to satisfy is fixed: at output byte 52 the unit `87 40 0b 73`
-must emit `s` and then `count(0) CRLF TAB` - eleven bytes copied from eleven back, since the
-previous `count(0) CRLF TAB` begins at index 42. `0x0b` is 11 exactly, so the second operand is
-almost certainly the offset with no bias, and the first operand or the token carries a length
-that must come out as 11 rather than 67.
+with the `s`, `t`, `b`, `o` series coming out in order and no repeated fragment.  For the
+`0x87` unit the arithmetic checks exactly: `a = 0x40` gives length 11, `b + 1` gives offset 12,
+and copying 11 bytes from 12 back at output 53 lands on index 41, the `c` of the previous
+`count(0) CRLF TAB`.
 
-A sweep of the high form on its own - literal count from `b & 3`, `(b >> 2) & 3`, `(b >> 5) & 3`
-or fixed, length from six different fields, offset from one or two following bytes or from the
-token's low bits, seven layouts, three minimum lengths - decodes **none** of four known-length
-members.  So it is not a simple re-cut of the low form.
+**What is still wrong is the literal count, and only for the tokens above `0x87`.**  The decode
+derails at `0x8b`, where `(t >> 2) & 3` claims two literals and takes `e0 4d` - and `0xe0` is a
+literal-run token, not text.  The same thing happens at `0x89` (takes `88 40`), `0x9c` (takes
+`e1 53 75`) and `0xaf` (takes `ae 8d 00`).  Every one of those wants **zero** literals while
+`0x87` wants one:
+
+    token   (t>>2)&3   literals it actually needs
+    0x87       1            1
+    0x89       2            0
+    0x8b       2            0
+    0x9c       3            0
+    0xaf       3            0
+
+So the literal count is not a fixed bit-field of the token.  Either it comes from somewhere
+else, or `0x87` is not a high token at all and its `s`/`t`/`b`/`o` letters arrive by a reading
+of `87 40 0b XX` that this one does not have yet.  That single question is what is left.
+
