@@ -39,9 +39,17 @@ come out named, not numbered.  The extension split settles what the `kind` word 
 22 `.BIN` and 3 `.CDF`.
 
 **Offsets are relative to the end of the name list, rounded up to 32.**  Measured from the
-table's end instead, entry 0 lands in the middle of the names.  From the right base every
-member begins with the same twelve bytes - `00 01 00 03 02 00 07 01 80 1b 40 00` - which is
-what confirms it.
+table's end instead, entry 0 lands in the middle of the names.  Two things confirm the base:
+the spans tile the file to the byte, and the uncompressed members then read as clean chunk
+files - `BUILD00.DAT` opens with sixteen zero bytes, `RTXT`, two `u32` sizes, a second `RTXT`
+and the name `hair0000`.
+
+An earlier draft of this note claimed the base was confirmed by every member starting with the
+same twelve bytes, `00 01 00 03 02 00 07 01 80 1b 40 00`.  That was an artifact of a base
+thirty-two bytes too high: at the wrong offset several members happened to land on the same
+recurring pattern in the packed stream.  It is worth recording because it is exactly the kind
+of evidence that feels conclusive - a constant byte string across unrelated members - and was
+not.
 
 ## The container ships
 
@@ -70,9 +78,17 @@ obvious families reads it:
   `lzr` all fail;
 * a sweep of **plain LZSS** - literal-flag bit either polarity, flag bits taken from either
   end, match words big- or little-endian, offset in either half, 11/12/13 offset bits, match
-  length +2 or +3 - reaches the exact output length on **none** of 37 members, at any header
-  skip from 0 to 19 bytes;
+  length +1, +2 or +3, and a literal header of 0, 8, 12, 16, 20 or 32 bytes counted into the
+  output - reaches the exact output length on **none** of 47 members;
 * LZ4's token format fails at the first token.
+
+What the members do show, from a pair that differ in only seven bytes (`AH999.IFF` and
+`ANIMS.IFF`, both 112 bytes in and 144 out): a 16-byte header whose first two bytes vary and
+whose remainder is zero, then a stream carrying **byte-aligned literal text** - `street`,
+`ADDING`, `.bin` - interleaved with short groups of the shape `NN 00 MM` (`01 00 03`,
+`02 00 07`, `05 00 20`).  Byte-aligned literals rule out a bit-packed flag stream; the
+expansion ratio rules out pure run-length coding, since a 112-byte member grows by 29% and a
+13,136-byte one by 154%.
 
 The size column makes this cheap to test: every entry states both the stored span and the
 length the member should reach, so a candidate decoder is right or it is not - there is no
@@ -84,5 +100,8 @@ judgement involved.  That is the thing to keep using.
   the members are large rather than numerous.
 * The uncompressed members (`.DAT`, `.BIN`, `.CDF`, 52 of them) can be extracted **now** -
   they need no codec, and `TEAMS.BIN` / `PLAYERS.BIN` are likely to be readable tables.
-* `.IFF` is Visual Concepts' own, not the Amiga chunk format: there is no `FORM` magic and no
-  4CC anywhere in a member.
+* `.IFF` **is** chunked, with 4CC tags - `RTXT`, `BSUA`, and others - though there is no
+  `FORM` header.  An uncompressed member shows the shape plainly: sixteen zeros, `RTXT`, two
+  `u32` sizes, twelve zeros, a second `RTXT`, two more sizes, then a NUL-padded asset name.
+  An earlier draft of this note said there were no 4CCs anywhere; that was read off the first
+  twelve bytes alone and is wrong.
