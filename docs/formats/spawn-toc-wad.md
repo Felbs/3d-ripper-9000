@@ -82,3 +82,27 @@ member's tail: those textures carry 560 trailing bytes, a 256-entry `RGB5A3` pal
 same 48-byte footer every member has.
 
 **All 6,099 decode** - `CMPR` 5,913, `C8` 185, `RGBA8` 1.
+
+## What the other member types are
+
+Sampled from Spawn's `global.wad`:
+
+* **`PHM` is the model.**  `SPAWN.PHM` is 90 KB opening `u32 0 | u32 1 | u32 64` and then a
+  block of `f32` that reads as a 4x3 matrix per bone.  Crucially it **names its textures
+  inline** - `SPAWNTPAGE02`, `SPAWNTPAGE01`, `SPAWNTEYE` at about +242, which are exactly the
+  `TIM` members decoded above.  So whenever the geometry falls, the models come out textured
+  rather than bare; the binding is already in the file.
+* **`PHA` is animation.**  `SPAWNANM.PHA` is 2.7 MB and its name table reads `GRAPPLE`,
+  `GRAPPLE_WALL`, `DIE_B`, `JUMP_`.
+* **`SPR`** is a sprite: an offset table then names like `PARSHELLCS01`.
+
+### What is known about `PHM` geometry
+
+* `gxscan` finds **no display lists** in it, so the primitives are not stored as GX.
+* There is **no run of 60 or more plausible `f32`** anywhere in the file beyond the matrix
+  block, so the vertices are quantised rather than float.
+* The longest run of `u16` under 2048 is 3,712 values at offset 22,964, and they cluster
+  tightly (`04ff 04fd 04fe 0502 0500 ...`) - which reads as fixed-point coordinates around a
+  centre rather than as an index list, since indices would start low and spread.
+
+That is where the next session should start on these two discs.
