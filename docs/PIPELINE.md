@@ -212,6 +212,7 @@ flowchart LR
         DAS["RE4 DAS / DRS<br/>plugins.re4"]
         BF["Jade .bf<br/>plugins.jade"]
         PRE["Neversoft PRE<br/>plugins.neversoft"]
+        BIG["Crystal Dynamics bigfile.dat<br/>hash table + sector offsets<br/>plugins.cd_bigfile"] -.->|payloads open| GX
         TIM2["Sony TIM2 in AFS<br/>offset table -> pictures<br/>plugins.tim2"]
         SHOC["EA SHOC .hog<br/>SHDR + Zdat/SDAT/Rdat<br/>plugins.shoc"] --> TXG["TXG texture groups<br/>TXHE headers + TXDA pixels<br/>plugins.ea_txg"] -.->|OBG terrain open| GX
         BAD["Climax .bad whole-game<br/>ring-buffer LZSS<br/>plugins.climax_bad"] -.->|inner container open| GX
