@@ -75,3 +75,46 @@ def test_tim_plugin_returns_a_textures_only_scene():
     assert not tim_plugin.detect("GLOBALSFX.SFX", blob[:64], len(blob))
     (scene,) = tim_plugin.extract(blob, "global.wad/SPAWNTEYE.TIM", None)
     assert scene.extras["textures_only"] and set(scene.textures) == {"SPAWNTEYE"}
+
+
+def inline(entries=(("LEV03A_01", "TIM", None), ("LEV03A_02", "TIM", None))):
+    """The Scorpion King variant: wrapped records back to back, no central table."""
+    body = b""
+    for name, kind, blob in entries:
+        payload = blob if blob is not None else tim()
+        body += name.encode().ljust(toc_wad.NAME, b"\0")
+        body += kind.encode().ljust(toc_wad.TYPE, b"\0")
+        body += struct.pack(">2I", len(payload), 0)
+        body += payload
+    return body
+
+
+def test_the_inline_variant_advances_by_wrapper_plus_size():
+    """Treating the size as the whole record's length stops the walk after one member."""
+    got = toc_wad.members(inline())
+    assert [m.name for m in got] == ["LEV03A_01", "LEV03A_02"]
+    assert got[0].offset == toc_wad.WRAPPER
+    assert got[1].offset == toc_wad.WRAPPER * 2 + got[0].size
+
+
+def test_a_single_inline_record_is_not_enough_to_claim():
+    """One plausible record is noise; the variant has no magic, so it needs corroboration."""
+    assert toc_wad.members(inline(entries=(("LEV03A_01", "TIM", None),))) == []
+
+
+def test_a_palette_indexed_tim_reads_its_palette_from_the_tail():
+    """Spawn is all CMPR, so this path only appears on The Scorpion King - 185 C8 textures."""
+    width = height = 8
+    size = gx.encoded_size(9, width, height)
+    head = struct.pack(">I4HI", 1, 9, width, height, 0x20, size)
+    palette = b"".join(struct.pack(">H", 0x8000 | i) for i in range(256))
+    blob = head + bytes(size) + palette + bytes(48)
+    assert toc_tim.header(blob) is not None
+    assert toc_tim.decode(blob) is not None
+
+
+def test_a_palette_indexed_tim_without_its_palette_declines_rather_than_raises():
+    width = height = 8
+    size = gx.encoded_size(9, width, height)
+    blob = struct.pack(">I4HI", 1, 9, width, height, 0x20, size) + bytes(size)
+    assert toc_tim.decode(blob) is None

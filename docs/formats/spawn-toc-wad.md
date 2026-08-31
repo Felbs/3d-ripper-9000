@@ -1,9 +1,10 @@
-# `TOC` `.wad` archives and `TIM` textures - Spawn: Armageddon
+# `TOC` `.wad` archives and `TIM` textures - Spawn: Armageddon, The Scorpion King
 
-The disc reported zero models and zero textures.  It is 201 `.wad` files, 435 MB, and the
-dead-ends list said they were audio.
+Two discs, 401 `.wad` files, 747 MB, both reporting zero models and zero textures - and the
+dead-ends list said these were audio.
 
-**They are not.**  5,919 of the 12,034 members are textures; 142 are sound.
+**They are not.**  Of the 20,917 members across the two, **12,018 are textures** and 286 are
+sound.
 
 ## Why the dead-end note was wrong
 
@@ -54,11 +55,30 @@ encoded_size(format, width, height)`** has to hold.  That is the check rather th
 looks right": a texture that merely decodes into something plausible would still pass the eye,
 and this does not.
 
-**All 5,919 decode - 100%, every one `CMPR`.**
+**All 5,919 of Spawn's decode - 100%, every one `CMPR`.**
 
-## The Scorpion King
+## The Scorpion King - the same records without the table
 
-Its 200 `.wad` are a different layout: no `TOC`, and only the first 32 bytes parse as an entry.
-144 of them are named sound banks (`<name>SFX`), and the other 56 are something else, including
-`bonus*.wad` whose first record names a `TIM`.  Left alone rather than forced through this
-reader; the leading-sixteen-zeros check in `is_toc_wad` is what keeps them out.
+Its 200 `.wad` carry the identical member types but no central table.  Each record is a 28-byte
+wrapper - `char name[16] | char type[4] | u32 size | u32` - and **the next record follows at
+`offset + 28 + size`**: the size counts only what comes after the wrapper.  Reading it as the
+whole record's length stops the walk after exactly one member on every file, which looks like a
+one-member archive rather than a mistake.
+
+    200 of 200 walk -> 8,883 records, 299 of 312 MB
+    TIM 6,099 | PHM 1,221 | PHA 754 | PAT 267 | SOB 189 | SFX 144 | GAM 140 | SPR 49
+
+The walk stops a little short of each file's end rather than exactly on it, so the tail is
+padding or something unindexed - reported rather than claimed as exact.
+
+Because the variant has no magic at all, a single plausible record is not enough to claim a
+file; the reader requires at least two.
+
+### The palette path only exists on this disc
+
+All 5,919 of Spawn's textures are `CMPR`.  The Scorpion King has 185 `C8`, and a decoder
+written against Spawn alone raises `C8 needs a palette` on every one.  The palette is in the
+member's tail: those textures carry 560 trailing bytes, a 256-entry `RGB5A3` palette plus the
+same 48-byte footer every member has.
+
+**All 6,099 decode** - `CMPR` 5,913, `C8` 185, `RGBA8` 1.

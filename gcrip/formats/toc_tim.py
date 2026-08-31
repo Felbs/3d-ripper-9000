@@ -16,8 +16,12 @@ mapping table is needed, and ``pixel bytes == encoded_size(format, width, height
 - it does on every one of the 82 textures in `global.wad`, which is what confirms the header is
 being read right rather than merely producing a picture.
 
-A member is a little larger than its pixels (32,864 bytes for 32,768 of `CMPR`); the tail is
-left alone, since the size field says exactly where the image ends.
+A member is a little larger than its pixels - every one carries a 48-byte footer, and the
+mipped ones carry their smaller levels too.  **A palette-indexed texture keeps its palette in
+that tail**: The Scorpion King's 185 `C8` textures each have 560 trailing bytes, which is a
+256-entry `RGB5A3` palette plus the same 48-byte footer.  Spawn has none of these - all 5,919
+of its textures are `CMPR` - so the palette path only shows up on the second disc, and a
+decoder written against the first alone raises `C8 needs a palette` on 185 files.
 """
 
 from __future__ import annotations
@@ -32,6 +36,8 @@ from gcrip.formats import gx_texture as gx
 HEADER = 16
 MAX_DIM = 4096
 MAX_LEVELS = 16
+RGB5A3 = 2
+PALETTE_ENTRIES = {8: 16, 9: 256, 10: 16384}  # C4, C8, C14X2
 
 
 @dataclass
@@ -65,4 +71,17 @@ def decode(data: bytes) -> np.ndarray | None:
     tex = header(data)
     if tex is None or HEADER + tex.size > len(data):
         return None
-    return gx.decode(tex.format, tex.width, tex.height, data[HEADER : HEADER + tex.size])
+    palette = None
+    entries = PALETTE_ENTRIES.get(tex.format)
+    if entries is not None:
+        at = HEADER + tex.size
+        raw = data[at : at + entries * 2]
+        if len(raw) < entries * 2:
+            return None
+        palette = gx.decode_palette(RGB5A3, raw, entries)
+    try:
+        return gx.decode(
+            tex.format, tex.width, tex.height, data[HEADER : HEADER + tex.size], palette
+        )
+    except Exception:  # noqa: BLE001 - a broken member must not stop the walk
+        return None

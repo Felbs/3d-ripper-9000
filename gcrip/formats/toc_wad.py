@@ -24,8 +24,14 @@ and `MCPA`, which read like chunk tags and are simply the first four letters of 
 `GMLEVEL...`, `RVAREA04SFX` and so on.  **A four-byte sample turns an embedded filename into a
 fake magic.**
 
-The Scorpion King's archives are a different layout - no `TOC`, and only the first 32 bytes
-parse as an entry - so they are left alone here rather than forced through this reader.
+The Scorpion King's 200 archives are the **same records without the central table**: each one
+begins with a 28-byte wrapper - `char name[16] | char type[4] | u32 size | u32` - and the next
+record follows at ``offset + 28 + size``.  Reading the size as the whole record's length stops
+the walk after one member every time; the size counts only what comes after the wrapper.
+
+All 200 walk that way, giving 8,883 records - 6,099 of them `TIM` - and 299 of the disc's
+312 MB.  The walk stops a little short of every file's end rather than exactly on it, so the
+tail is padding or something unindexed; the coverage is reported rather than assumed exact.
 """
 
 from __future__ import annotations
@@ -40,6 +46,8 @@ ENTRY = 32
 NAME = 16
 TYPE = 4
 MAX_ENTRIES = 262144
+WRAPPER = 28  # the inline variant: name[16] | type[4] | u32 size | u32
+MIN_INLINE = 2
 
 
 @dataclass
@@ -57,9 +65,33 @@ def is_toc_wad(head: bytes) -> bool:
     return 0 < count <= MAX_ENTRIES and table == count * ENTRY
 
 
+def _inline(data: bytes) -> list[Member]:
+    """The Scorpion King variant: wrapped records back to back, no central table."""
+    out: list[Member] = []
+    p = 0
+    while p + WRAPPER <= len(data) and len(out) < MAX_ENTRIES:
+        raw = data[p : p + NAME].split(b"\0")[0]
+        kind = data[p + NAME : p + NAME + TYPE].split(b"\0")[0]
+        size = struct.unpack_from(">I", data, p + NAME + TYPE)[0]
+        if not raw or not all(32 <= c < 127 for c in raw):
+            break
+        if not size or p + WRAPPER + size > len(data):
+            break
+        out.append(
+            Member(
+                raw.decode("latin-1"),
+                kind.decode("latin-1", "replace"),
+                p + WRAPPER,
+                size,
+            )
+        )
+        p += WRAPPER + size
+    return out if len(out) >= MIN_INLINE else []
+
+
 def members(data: bytes) -> list[Member]:
     if not is_toc_wad(data[:HEADER]):
-        return []
+        return _inline(data)
     table, count = struct.unpack_from(">2I", data, 20)
     if HEADER + table > len(data):
         return []
