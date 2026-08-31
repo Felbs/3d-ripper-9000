@@ -33,7 +33,26 @@ Magic `a4 0d 6d 71`, and the header carries the toolchain in plain text:
 
 on **City Racer** (52 `.dat`), **Speed Challenge: Jacques Villeneuve Racing** (33) and
 **Taxi 3** (10) - track files of 5 to 6 MB each.  Three discs sharing an engine, a version
-word and a named toolchain is the most tractable thing in the tail.
+word and a named toolchain.
+
+### What is inside
+
+It is a **property-driven scene graph**, not a plain archive.  Entities appear as an **8-byte
+type id followed by a NUL-terminated name**, and the same id turns up earlier on its own - a
+type table first, then the instances that use it.  City Racer's are `GhostPoint` and
+`StartPoint00`; Taxi 3 exposes the property names too, which is what gives the format away:
+
+    AnimatedObject_SoundSource   WaveName   MinDistance   MaxDistance   Volume
+    UseDoppler   StartMode   Random_WaitingTime   Random_Value   Draw_Sphere   AOcean
+
+Taxi 3 alone shows 125 distinct names in its first 400 KB against City Racer's 19, so the
+naming is a build option rather than a format difference.
+
+**The geometry is not reachable yet.**  Entropy by sixths runs 7.23, 1.59, 7.45, 6.81, 6.19,
+7.25 on City Racer and 7.05 to 7.43 on Taxi 3 - dense or packed throughout - and `gxscan`
+finds nothing at all in City Racer and two meshes in Taxi 3.  So this is container **and**
+payload, the same two-stage shape as TotemTech, and it is left here with the entity grammar
+written down.
 
 ## The biggest single unclaimed file
 
