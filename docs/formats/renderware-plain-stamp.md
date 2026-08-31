@@ -31,3 +31,24 @@ not sampled, so the true reach is larger.
 
 The refusal is now three classes instead of two, and a nonsense library id is still refused -
 pinned by a test in both directions.
+
+## The rest of the "other" stamps are not RenderWare
+
+The same sample left 33 files in no class at all.  They are not more of the same:
+
+* **Call of Duty: Finest Hour's `GodData.dff`** - type `0x0719`, library id `0`, chunk size 34
+  in a 5 MB file.  Treyarch's own format wearing a `.dff` name; nothing to accept here.
+* the remainder read as `0x01000000`, `0x04000000` and similar - byte-swapped values rather
+  than plausible little-endian chunk types, so either big-endian streams or not RenderWare.
+  Left alone rather than guessed at.
+
+## Re-checking cluster 1 with the fixed sniff
+
+`.rws` was closed earlier as RenderWare **audio**, and that conclusion was reached with the
+sniff in its broken state - so it was worth re-testing rather than trusting.  It holds.
+Sampling Asterix & Obelix XXL (631 files), Piglet's Big Game (620), Burnout 2 (150),
+Madagascar (31) and Frogger: Ancient Shadow (19), every chunk type is **`0x080d` (109) or
+`0x0809` (30)** - both in RenderWare's audio range.  No `CLUMP`, no `WORLD`, no `TEXDICT`
+anywhere in the sample.
+
+A conclusion drawn with a broken tool deserves re-testing; this one survived it.

@@ -96,7 +96,7 @@ files, and several of the files are not geometry at all.  The scanner is not the
 
 | thing | why |
 |---|---|
-| `.rws` | RenderWare **audio**, chunk 0x080d.  Not geometry |
+| `.rws` | RenderWare **audio**, chunk 0x080d.  Not geometry.  **Re-checked 2026-08-31** after the version-stamp bug was found in the same sniff that had classified it: sampling five discs, every chunk is 0x080d or 0x0809, both audio - no CLUMP, WORLD or TEXDICT.  The conclusion survived the tool being fixed |
 | `.fsb` | FMOD sound banks - 5 discs |
 | most AFS archives | ADX audio and MPEG video.  R - Racing, Soul Calibur II, Viewtiful Joe 2 and Sonic Riders have nothing else in theirs |
 | `.mpq` (WWE x3) | video packs |
