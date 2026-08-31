@@ -120,3 +120,46 @@ returned False for every real file, so Home Run King's ~25,000 textures would ha
 nothing.  It now checks the magic and `dwSize == 124` in either byte order - eight bytes - and
 leaves the rest to `entries()`, which gets the whole file.  This is the third time this
 64-byte limit has bitten; every new plugin gets a test at that exact width now.
+
+## Survey, 2026-08-30
+
+Every `.afs` on every disc still producing nothing was opened by reading its index and the
+first eight bytes of up to forty members - a few kilobytes a disc, using the `disc_offset`
+already stored in each dump's `disc_manifest.json` rather than re-reading the archives.
+
+**Most AFS is audio, and that is now settled rather than assumed.**  The members open
+`80 00 .. 03 12 04 ..`, which is CRI `ADX` - copyright offset, encoding type 3, block size 18,
+four bits a sample - or `00 00 01 ba`, an MPEG program stream.  On One Piece: Grand Adventure,
+One Piece Grand Battle 3, Sonic Riders and the Bleach and Digimon audio archives, that is all
+there is.  Do not re-check the big ones.
+
+The archives that hold something else:
+
+| disc | archive | members | first bytes |
+|---|---|---|---|
+| Bleach GC | `chr.afs` | 298 | `16 00 00 00`, and 3 `gcaxDTPK` sound banks |
+| Bleach GC | `scenario.afs` | 1,553 | `16 00 00 00` |
+| Bleach GC | `com.afs` | 332 | `16 00 00 00` |
+| Bleach GC | `stg.afs` | 55 | `16 00 00 00`, `29 00 00 00` |
+| Digimon World 4 | `area.afs` | 1,382 | `bc 12 00 00 a9 00 00 00` |
+| Auto Modellista | `afs01_gu.afs` | 722 | `00 00 c0 00 00 00 00 4d` |
+| Capcom vs SNK 2 | `afs02.afs` | 518 | `TIM2`, `43 00 00 80` |
+| Capcom vs SNK 2 | `afs03.afs` | 268 | `00 00 00 10` |
+
+### Bleach, mapped furthest
+
+Every member of the four Bleach archives opens the same way:
+
+    +0   u32 22            little-endian
+    +4   u32 size          the member length minus 12
+    +8   u32 0x1c02002d    a tag that recurs at fixed offsets
+    ...
+    +76  char name[]       "ich_1_cut2"
+
+The tag `2d 00 02 1c` appears fifteen times, at **the same offsets in every member** - 8, 20,
+36, 48, 66216, 99640 and so on - whether the member is 133,352 bytes or 141,928.  So the first
+100 KB is a fixed layout and only the tail varies, which suggests fixed-size texture or
+animation banks rather than a chunked file.
+
+`gxscan` finds no display lists in any member, so whatever geometry is there is not stored as
+GX primitives - the same result as Free Radical's `gcr`.
