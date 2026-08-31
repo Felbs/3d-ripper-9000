@@ -32,3 +32,21 @@ return value would have shown four perfect textures.
 
 **The lesson generalises past this bug: a decoder returning the right object is not evidence
 that anything reached the disk.**  Check the output files.
+
+## What it cost, measured
+
+Counting exports in every `rip_results.json` under the dump that have **no triangles, no
+texture files and no error** - the signature of a scene that decoded and wrote nothing - and
+keeping only the file extensions that map to one of the thirteen plugins (`tr_tex` takes both
+`.tex` and `.tif`, `blitz_tex` `.gcp`, plus `.tpl`, `.gvm`, `.dds`):
+
+**35,890 texture exports across 45 discs.**  The largest are BloodRayne 10,567, RoadKill 4,508,
+Blowout 4,141, Codename: Kids Next Door 3,052, Billy & Mandy 2,739, MLB Slugfest 2003 2,134,
+the two Bratz discs 2,384 between them, and the Sonic and Phantasy Star discs through `.gvm`.
+
+The filter matters, and a looser one was wrong.  A first pass counted every empty export and
+reached 157,082 over 168 discs - but `.gsh` shows 27,566 empty against **202,793 that did write
+textures**, so those empties have some other cause entirely, and `.bmd`, `.dff` and `.cmdl` are
+model formats whose zero-triangle exports are a different phenomenon.  Super Mario Sunshine
+looked like the second-worst disc in the library on that count and drops out completely on this
+one: its 8,072 empties are `.bmd`.
