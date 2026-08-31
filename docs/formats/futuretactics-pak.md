@@ -65,3 +65,33 @@ only evidence, and an extension is not a format.
 
 The lesson is narrow and was already on the cross-cutting list in a different form: a plausible
 header read out of a member you have not confirmed is uncompressed tells you nothing.
+
+## The member codec, and a test vector for it
+
+A compressed member is `u32 unpacked size` and then the packed stream - there is no second
+header word (an earlier reading called `e8 3c 21 2d` "a constant", but those are simply the
+first four bytes of the stream, and they differ per member).
+
+The best-conditioned sample on the disc is an XML, because **the plaintext is known**:
+
+    member    FRONTEND/COPY (2) OF PILLAGE.XML
+    stored    21,292 bytes
+    unpacked  287,274 bytes
+    first 64  2a620400 e8 3c212d2d2050696c6c6167652066726f6e7420656e64202d2d3e0d0a0d0a3c47616d6546
+              010b450928099240002a0c2e880022e144656275672073
+
+    output must begin:  "<!-- Pillage front end -->
+
+<GameF"   (36 bytes)
+
+So the stream opens with one control byte `e8` and then **36 bytes of literal text with no
+control byte interrupting them** - which is what rules out the whole per-item-bitmask family: a
+flag byte covers eight items, so a 36-byte literal run would need four more control bytes
+inside it, and there are none.  A sweep over that family (both bit polarities, both bit orders,
+both endiannesses, 10-13 offset bits, 4-6 length bits, length +1/+2/+3) reproduces at best the
+first **3** of the 36 bytes.
+
+Two more anchors in the same member: the literal run resumes at offset 57 with `Debug st`, and
+again at 74 with `DEBUG_set_platform>PS`, separated by 16 and 4 bytes of control data
+respectively.  Any candidate decoder can be checked against those three positions before
+bothering with the full 287,274 bytes.
