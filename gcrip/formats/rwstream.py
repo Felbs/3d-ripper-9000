@@ -95,7 +95,11 @@ def looks_like_stream(
     # new-style stamps carry 0xffff build bits; RW 3.2-3.7 builds without them (Bloody
     # Roar: 0x1c02002d) still decode through rw_version
     old_style = 0x1800_0000 <= lib < 0x1C10_0000
-    if not old_style and (lib & 0xFFFF != 0xFFFF or lib >> 16 > 0x3FFF):
+    # older still: the library id is a bare version number, 0x0310 or 0x0304 rather than a
+    # packed build stamp.  NFL Blitz 20-03 ships 977 of its 1,334 `.dff` that way and every
+    # one of them parses - they were refused here, not by the reader.
+    plain = 0x0200 <= lib <= 0x03FF
+    if not old_style and not plain and (lib & 0xFFFF != 0xFFFF or lib >> 16 > 0x3FFF):
         return False
     return 12 + sz <= size and sz >= 4
 

@@ -341,3 +341,35 @@ def test_world_plain_sector():
     np.testing.assert_allclose(p.positions, [[0, 0, 0], [1, 0, 0], [0, 0, 1]])
     np.testing.assert_allclose(p.colors[0], [1, 0, 0, 1])
     assert sc.materials[0].name == "ground"
+
+
+def test_a_bare_version_stamp_is_accepted():
+    """Older RenderWare writes the library id as a plain version number - 0x0310, 0x0304 -
+    rather than a packed build stamp with 0xffff build bits.  NFL Blitz 20-03 ships 977 of its
+    1,334 `.dff` that way, and every one parses; they were refused by the sniff, not by the
+    reader, and fell through to the structure scanner instead."""
+    import struct
+
+    from gcrip.formats import rwstream as rw
+
+    for lib in (0x0310, 0x0304):
+        head = struct.pack("<3I", rw.CLUMP, 64, lib)
+        assert rw.looks_like_stream(head, 12 + 64)
+
+
+def test_a_packed_stamp_is_still_accepted():
+    import struct
+
+    from gcrip.formats import rwstream as rw
+
+    head = struct.pack("<3I", rw.CLUMP, 64, 0x0800FFFF)
+    assert rw.looks_like_stream(head, 12 + 64)
+
+
+def test_a_nonsense_library_id_is_still_refused():
+    import struct
+
+    from gcrip.formats import rwstream as rw
+
+    head = struct.pack("<3I", rw.CLUMP, 64, 0x12345678)
+    assert not rw.looks_like_stream(head, 12 + 64)
