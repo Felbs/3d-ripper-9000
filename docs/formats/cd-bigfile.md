@@ -49,6 +49,21 @@ Sampling 91 members across the archive gives three families:
   sub-records separated by `0xffffffff`, so it is itself a container.
 * **`!WAR`** (3) and a `00 00 6d xx` family (several small ones).
 
+### The `00 00 00 0e` sections are themselves a container
+
+    +0   u32 0x0000000e
+    +4   u32 record count
+    +8   u32, u32, u32, u32          the rest of a 24-byte header
+    +24  record[count], 20 bytes each, every one beginning 0xffffffff
+
+Verified on **60 of 60** such members: the count at +4 is exactly the number of 20-byte
+records that follow, and all of them begin with the sentinel.  On the first section sampled
+the count is 119 and the sentinels sit at 24, 44, 64, 84 ... - 118 gaps of exactly 20 - after
+which the stride breaks and the payload begins.
+
+The record's remaining four words look like a size and some flags (306,048 then 187,604,
+87,408, 43,720, 43,720 - descending), which is the next thing to pin down.
+
 **The geometry is not GX display lists.**  `gxscan` over those 91 members finds 3 meshes and
 206 triangles in total, all of them in the `00 00 00 0e` family - nothing at all in the
 `7c/7d` bulk.  So Tomb Raider: Legend needs its own mesh reader, and the `7c/7d` family with
