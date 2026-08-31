@@ -135,8 +135,14 @@ four identical `87 40 0b` units cost one choice, not four - with the literal cou
 0-3, the length free over 3-48, and the offset drawn from every value derivable from `a` and
 `b` (`b`, `b+1`, `a`, `a+1`, and the two-byte combinations either way round), pruned on
 printable output and the exact 386-byte target, finds **no consistent decoding in seven
-minutes**.  So the offset is not any simple function of the two operand bytes, which is the
-assumption every attempt so far has shared.
+minutes** - and a second run widening the lengths to every `a`-derived value up to 400, which
+the first capped at 48 and so never tried, finds none either.
+
+**Both searches time out rather than exhaust their space, so this is evidence and not proof.**
+What it says is that the offset being a simple function of the two operand bytes - the
+assumption every attempt tonight has shared, including the one that got the first 130
+characters right - now looks unlikely enough to try elsewhere first: a running or previous
+match offset, or a value carried in bits of the token that nothing else uses.
 
 Two other angles came up empty and are recorded so they are not repeated: a search for members
 whose first high token leaves a short enough tail to solve exactly finds **none** of 18,730
