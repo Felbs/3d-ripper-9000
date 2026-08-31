@@ -122,6 +122,18 @@ literal-run token, not text.  The same thing happens at `0x89` (takes `88 40`), 
     0x9c       3            0
     0xaf       3            0
 
+**And the literal count is not the only thing wrong above `0x87`.**  With `len` and `off` held
+at the formulas above and the literal count left completely free - brute-forcing all four
+values at each of cog1's eight high tokens, 65,536 assignments - **none** produces 386
+printable bytes.  So `len = (a>>4)*2+3` and `off = b+1` are right for the `0x87` units and
+wrong for the tokens above them: the range has sub-forms rather than one shape with a variable
+literal count.
+
+Two other angles came up empty and are recorded so they are not repeated: a search for members
+whose first high token leaves a short enough tail to solve exactly finds **none** of 18,730
+(the first high token is always far from the end), and the free-length DFS over the whole
+stream does not terminate in any reasonable time.
+
 So the literal count is not a fixed bit-field of the token.  Either it comes from somewhere
 else, or `0x87` is not a high token at all and its `s`/`t`/`b`/`o` letters arrive by a reading
 of `87 40 0b XX` that this one does not have yet.  That single question is what is left.
