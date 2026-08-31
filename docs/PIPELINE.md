@@ -212,6 +212,7 @@ flowchart LR
         DAS["RE4 DAS / DRS<br/>plugins.re4"]
         BF["Jade .bf<br/>plugins.jade"]
         PRE["Neversoft PRE<br/>plugins.neversoft"]
+        HOG["Warthog WART3.00 .hog<br/>records at +24, dir+file names<br/>formats.wart_hog"] -.->|member codec open| HOGX["29,021 .bmsh / 36,156 .btga"]
         GCP["Blitz .gcp archives<br/>named per-level members<br/>plugins.blitz"] --> BOBJ["tagged object stream<br/>scene graph + navmesh<br/>formats.blitz_obj"] & BTEX["chained texture descriptors<br/>RGBA8 / CMPR<br/>plugins.blitz_tex"] & GX["structure scan<br/>plugins.gx"]
         NU2["TT NU20 .gsc/.csc (LSW1)<br/>plugins.nu2"]
         HGO["TT .hgo/.nus (Crash WoC, Nemo)<br/>reversed tags<br/>plugins.hgo"]
