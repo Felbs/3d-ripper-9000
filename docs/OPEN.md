@@ -42,40 +42,44 @@ Worth saying plainly: there is no mesh layout to hunt in either until the codec 
 
 ## The state of the tail (measured 2026-08-30)
 
-223 discs still produce neither a model nor a texture.  For each one, the **largest non-media
-file** was read and offered to every registered plugin.  What claims it:
+223 discs still produce neither a model nor a texture.  For each one, the largest file that
+gcrip's own classifier calls `unknown`, `archive`, `texture` or `model` was read and offered to
+every registered plugin.  What claims it:
 
 | claimed by | discs |
 |---|---|
-| `generic` only (the fallback container) | 112 |
-| `generic` and `gx` (the display-list scanner) | 59 |
-| nothing at all | 16 |
+| `generic` only (the fallback container) | 116 |
+| nothing at all | 39 |
+| `generic` and `gx` (the display-list scanner) | 35 |
 | `afs` | 7 |
-| `ea` (BIG / VIV) | 6 |
 | `vc_dat` | 5 |
-| `frd_pak` | 3 |
-| `blitz` | 3 |
-| `skye_pak`, `u8`, `feporr` | 1 each |
-| media only (no non-media file over 256 KB) | 2 |
+| `ea` (BIG / VIV) | 4 |
+| `blitz`, `frd_pak` | 3 each |
+| `fpk` | 2 |
+| `u8`, `feporr` | 1 each |
+| no such file over 256 KB | 2 |
 
-**There is no large shared cluster left.**  171 of the 223 fall to a fallback, which means a
-bespoke per-game format with no plugin - so from here each crack is worth roughly one disc,
-not five.  The multi-disc work that remains is where a container already opens but its members
-are unread: `afs` (7 discs) and EA `BIG` (6, though on five of those the biggest archive is
-audio - only Harry Potter: Prisoner of Azkaban has game data, 2,151 `.pkg` / `.pkga` members).
+**There is no large shared cluster left.**  151 of 223 fall to a fallback or to nothing, which
+means a bespoke per-game format - so from here each crack is worth roughly one disc, not five.
+The multi-disc work that remains is where a container already opens but its members are unread:
+`afs` (7 discs, and [afs-inner-formats.md](formats/afs-inner-formats.md) says which archives are
+worth opening) and EA `BIG` (4, mostly audio inside).
 
-The 59 that `gx` claims are the interesting number: the scanner runs on them and still finds
-nothing, so **improving the scanner is the only change that would move dozens of discs at
-once**.  Every other lead is single-disc.
+### Two things this measurement got wrong first time, and how
 
-Two things this measurement corrected on the spot, both worth remembering:
+**A first pass filtered "media" by file extension and picked audio on many discs.**  It chose
+`voice.all`, `voices.all`, `Prologue.vid`, `music.zsd`, `mkg_bondgirls.vp6` and four `.hps`
+files as discs' "biggest non-media file".  Filtering on the `kind` field gcrip's own classifier
+already wrote into every `disc_manifest.json` is both more honest and less work; it moved the
+`generic`+`gx` bucket from 59 discs to 35.  **Do not hand-roll a media extension list when the
+manifest has already classified every file.**
 
-* an earlier census sampled three files a disc and grouped all their magics together, which
-  produced an apparent 31-disc cluster of files "starting with a year string".  Reading only
-  the largest file a disc dissolved it - the years came from third-ranked files of unrelated
-  types.  **Group by disc, not by sample.**
-* `BIGF` looked like six discs of unopened EA archives.  `ea` already claims all six; they are
-  dead on their *members*, not their container, and on five of them those members are audio.
+**The first pass concluded that improving `gxscan` was "the only change that would move dozens
+of discs at once".  That is wrong.**  Instrumenting the scanner on six of those discs showed it
+finds only 8 to 24 candidate display lists per 2 MB and that **`best_mesh` returns None on every
+single one** - 119 of 119.  Nothing is being rejected by the acceptance thresholds, so tuning
+them would change nothing: there are no GX display lists with findable vertex arrays in these
+files, and several of the files are not geometry at all.  The scanner is not the lever.
 
 ## Dead ends - confirmed, do not re-probe
 
