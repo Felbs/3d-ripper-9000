@@ -228,3 +228,38 @@ reach this plugin through the container chain rather than as top-level files.
 
 Formats 17 and 19 are still undecoded; the walk stops at one rather than guessing a size it
 cannot verify.
+
+## Texture formats 17 and 19
+
+**Format 17 is 16 bits per pixel**, proved by where its data ends rather than by decoding it.
+At exactly `160 + width * height * 2` the bytes turn into plausible big-endian f32 - the first
+sample gives -7.96, 111.09, -3.49 - and across 40 textures the fraction of sane f32 in the 32
+bytes at each candidate boundary is **0.09 at 4 bpp and 0.06 at 8 bpp against 0.61 at 16 bpp**.
+(The 32 bpp boundary scores higher still, at 0.81, because by then the walk is well inside the
+float data that follows; what matters is the first boundary at which floats begin.)  So the
+walk now steps over a format 17 instead of stopping, and one undecodable entry no longer hides
+whatever follows it in the chain.
+
+**Which 16-bit encoding it is remains open, and the three GX candidates are ruled out.**  The
+test that settles it is smoothness - the mean absolute difference between neighbouring pixels -
+and it identifies both known formats with an order of magnitude to spare:
+
+| format | correct code | its smoothness | best wrong code |
+|---|---|---|---|
+| 15 | `RGBA8` | **0.87** | 22.1 |
+| 21 | `CMPR` | **2.66** | 59.7 |
+
+Nothing does that for format 17.  Its best 16-bit candidate is `IA8` at 29, with `RGB565` at 44
+and `RGB5A3` at 47 - no order-of-magnitude drop anywhere - so it is a 16-bit layout that is not
+one of the three.  `I8` scores better still (18) but is excluded outright by the size.
+
+Two tests were tried and **discarded because they fail their own controls**, which is worth
+recording so they are not tried again:
+
+* **Tile-seam continuity** (difference across tile edges over difference inside tiles): on
+  format 21, whose answer is known to be `CMPR`, `CMPR` does not even reach the top four.
+* **Channel correlation**: every greyscale-derived code scores a perfect 1.000 by construction,
+  so it ranks `I8` and `IA8` above the truth on both controls.
+
+Format 19 is only ever 16x16 on this disc and several candidates decode it to a constant image,
+which no test can separate.

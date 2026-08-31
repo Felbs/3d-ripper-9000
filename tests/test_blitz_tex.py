@@ -86,3 +86,29 @@ def test_plugin_makes_a_textures_only_scene():
     one = plugin.extract(build((32, 32, 21)), "x/common_Thing.gcp", None)[0]
     assert list(one.textures) == ["common_Thing"]
     assert plugin.extract(pack_header(), "x/common_Thing.gcp", None) == []
+
+
+def test_an_undecodable_format_is_stepped_over_not_stopped_at():
+    """Format 17's encoding is unknown but its size is not - 16 bits per pixel - so it must
+    not hide the textures behind it in the chain."""
+    import struct
+
+    from gcrip.formats import blitz_tex
+    from gcrip.formats import gx_texture as gx
+
+    def descriptor(w, h, fmt):
+        return struct.pack(">7I", w, h, fmt, 0x101, 0, 0xFF000000, w * h).ljust(
+            blitz_tex.DESCRIPTOR, b"\0"
+        )
+
+    body = bytes(blitz_tex.FIRST)
+    body += descriptor(16, 16, 17) + bytes(16 * 16 * blitz_tex.BYTES_PER_PIXEL[17])
+    body += descriptor(8, 8, 21) + bytes(gx.encoded_size(0xE, 8, 8))
+    got = blitz_tex.textures(body)
+    assert [(t.width, t.format) for t in got] == [(8, 21)]
+
+
+def test_the_unknown_format_size_is_sixteen_bits_a_pixel():
+    from gcrip.formats import blitz_tex
+
+    assert blitz_tex.BYTES_PER_PIXEL == {17: 2}
