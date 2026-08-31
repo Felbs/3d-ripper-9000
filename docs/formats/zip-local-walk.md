@@ -34,3 +34,19 @@ nothing rather than garbage.
 
 **16,090 members over the two discs, about 2,780 of them RenderWare `.dff`** - a format gcrip
 already reads.  Both discs were producing nothing at all.
+
+## How far this reaches: two discs, and no further
+
+Testing every top-level `.zip` / `.pak` in the library that actually begins `PK 03 04` - 458
+files, on 70 discs - the local walk beats `zipfile` on **exactly the fourteen archives of the
+two Blitz discs** and on nothing else.  Every other ZIP in the library reads normally through
+the central directory.
+
+So this is a two-disc fix, not a library-wide one, and the fallback will stay dormant
+everywhere else.  Worth stating plainly, because "walk the local headers" sounds like it ought
+to rescue more than it does.
+
+One small honest gap: Blitz 20-02's `stadium.zip` lists 1,766 entries and the walk returns
+1,764.  The two missing are entries whose payload does not match the CRC in their own local
+header, and they are dropped rather than passed on - which is the behaviour the CRC check
+exists for.
