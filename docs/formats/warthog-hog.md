@@ -129,6 +129,30 @@ printable bytes.  So `len = (a>>4)*2+3` and `off = b+1` are right for the `0x87`
 wrong for the tokens above them: the range has sub-forms rather than one shape with a variable
 literal count.
 
+### `a == 0` marks a second sub-form, and it carries no literals
+
+The two forced data points are `0x87`, whose `s` must be a literal, and `0x8b`, whose next
+byte is `0xe0` and so must be a token.  No bit-field of the token separates them - but their
+**first operand does**: `0x87` has `a = 0x40`, `0x8b` has `a = 0x00`.
+
+Treating `a == 0` as a sub-form that takes **no literals** improves every test vector at once,
+which is what a real rule does and a lucky one does not:
+
+| member | baseline | with `a == 0` handled |
+|---|---|---|
+| `frontend_cog1.lvl` | 38.1% | **95.6%** |
+| `frontend_scroll.lvl` | 42.5% | 58.1% |
+| `frontend_new.lvl` | 5.8% | 12.4% |
+| `triggers.txt` | 2.5% | 3.6% |
+
+(percentage of the declared output produced before the decode fails; every byte produced is
+printable in all of these).  The best length seen for that sub-form is `(t & 0x1f) * 2 + 3`
+with the offset still `b + 1`; `(b >> 2) + 3` is close behind and reaches 92.2% on cog1.
+
+**It is still not exact anywhere**, so either the length formula is approximate or there is a
+third sub-form behind it.  cog1 now fails only near the end, on a match whose length overruns
+by 27 bytes, which is where the next attempt should look.
+
 A constraint search also came up empty and is worth recording, because it rules out a whole
 family rather than one guess.  Branching only on **distinct `(t, a, b)` triples** - so cog1's
 four identical `87 40 0b` units cost one choice, not four - with the literal count free over
