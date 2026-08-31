@@ -8,48 +8,63 @@ zero textures because nothing opens that file.
 Found by a magic census over the `.dat` and `.bin` files of every disc still producing nothing:
 it is by some distance the largest single cluster left.
 
-## What is mapped
+## Layout
 
 Big-endian.
 
     +0   char magic[4]   "DAT\1" (NBA 2K3, NFL 2K3) or "DAT\0" (NBA 2K2, NCAA Football 2K3)
-    +4   u32 entry count            66,995 on NBA 2K3, 69,366 on NFL 2K3
-    +8   u32 16
-    +12  u32 entry count + 29
-    +28  u32 25
-    +32  the entry table, 24 bytes an entry
+    +4   u32, u32 16, u32
+    +32  u32 entry count            1,968 on NBA 2K3
+    +36  the entry table, 24 bytes an entry:
+             u32 a counter that falls by about 15 an entry
+             u32 name hash
+             u32 kind - 0x01000000 on every `.IFF` member, 0 on the rest
+             u32 0
+             u32 offset
+             u32 size
+    ...  the **name list**: `count` NUL-terminated names, "PB00.IFF" to "TEAMS.BIN"
+    ...  the members, from the next 32-byte boundary after the name list
 
-An entry is six big-endian `u32`::
+**The table starts at 36, not 32.**  Read from 32 the columns look plausible - a size, a
+counter, a hash, a flag, a zero, an offset - and the offsets even increase for a while.  What
+gives it away is that each entry's "size" turns out to equal the *previous* entry's span: on
+the uncompressed members `size == next offset - offset` only once the whole record is rotated
+by one field, and then it holds on 38 of the 51 of them.  The word at 32 that looked like the
+first entry's size is the entry count.
 
-    +0   uncompressed size          1,968 then 32,928, 33,344, 30,816, 32,640 ...
-    +4   a counter that falls by 15 an entry   47,245, 47,223, 47,208, 47,193 ...
-    +8   name hash                  no names are stored anywhere
-    +12  0x01000000 when compressed, 0 on the first entry
-    +16  0
-    +20  offset, cumulative         0, 13,328, 26,464, 38,688, 52,224 ...
+**The names are there.**  The data region opens with a plain NUL-terminated list of exactly
+`count` names - 1,968 of them on NBA 2K3, "PB00.IFF" first and "TEAMS.BIN" last - so members
+come out named, not numbered.  The extension split settles what the `kind` word means:
+**1,916 names end in `.IFF` and exactly 1,916 entries carry `0x01000000`**, against 27 `.DAT`,
+22 `.BIN` and 3 `.CDF`.
 
-The offset column is the useful one: its differences are the **stored** sizes - 13,328, 13,136,
-12,224, 13,536 - against uncompressed sizes around 32,000, so the members are packed at roughly
-2.5:1.
+**Offsets are relative to the end of the name list, rounded up to 32.**  Measured from the
+table's end instead, entry 0 lands in the middle of the names.  From the right base every
+member begins with the same twelve bytes - `00 01 00 03 02 00 07 01 80 1b 40 00` - which is
+what confirms it.
 
 ## What is blocking it
 
-**The codec.**  The payload is high-entropy from the first byte and none of the decoders gcrip
-already has touches it - zlib in all three window modes, gzip, `refpack`, `prs`, `yaz0`,
-`yay0`, `lzo`, `avlz` and `lzr` all fail on the first three members from either candidate data
-base.  It is a private LZ, in the same position as [`.hog`](backlog-map.md) and High Voltage's
-`GMS`.
+The `.IFF` payload.  It is dense and bit-packed rather than byte-oriented, and none of the
+obvious families reads it:
 
-The data base itself is not confirmed either: `32 + count * 24` and `32 + (count + 29) * 24`
-are both plausible and both give high-entropy members, which is exactly what a compressed
-archive looks like whichever base is right, so the base cannot be settled until something
-decompresses.
+* zlib in all three window modes, gzip, `refpack`, `prs`, `yaz0`, `yay0`, `lzo`, `avlz` and
+  `lzr` all fail;
+* a sweep of **plain LZSS** - literal-flag bit either polarity, flag bits taken from either
+  end, match words big- or little-endian, offset in either half, 11/12/13 offset bits, match
+  length +2 or +3 - reaches the exact output length on **none** of 37 members, at any header
+  skip from 0 to 19 bytes;
+* LZ4's token format fails at the first token.
+
+The size column makes this cheap to test: every entry states both the stored span and the
+length the member should reach, so a candidate decoder is right or it is not - there is no
+judgement involved.  That is the thing to keep using.
 
 ## Worth knowing before starting
 
-* There are **no names** - only hashes - so even with the codec, members come out numbered.
-  Sorting them by content (a `TPL`-alike magic, a mesh header) will matter more than usual.
-* 66,995 entries in one file means a decoder has to be fast; a per-member Python loop over
-  827 MB is not going to be usable in the rip pass.
-* The first entry has the compression flag clear, so it is the natural test case for the codec:
-  1,968 bytes that should be readable as they are, once the data base is known.
+* 1,968 entries in an 827 MB file, so a decoder has to be fast enough for the rip pass, but
+  the members are large rather than numerous.
+* The uncompressed members (`.DAT`, `.BIN`, `.CDF`, 52 of them) can be extracted **now** -
+  they need no codec, and `TEAMS.BIN` / `PLAYERS.BIN` are likely to be readable tables.
+* `.IFF` is Visual Concepts' own, not the Amiga chunk format: there is no `FORM` magic and no
+  4CC anywhere in a member.
