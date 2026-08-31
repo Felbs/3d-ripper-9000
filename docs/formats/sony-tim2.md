@@ -62,3 +62,16 @@ that no documented format explains; guessing at those would produce plausible no
 
 TIM2 is Sony's, not Capcom's, so this decoder should pay off on any other PS2 port in the
 library that kept its textures unconverted.
+
+## Pre-flight before wave 3
+
+Re-ripping a disc is expensive, so the fix was checked end to end first, driving it exactly the
+way the pipeline does - `is_container` called with the member's **basename**, then `expand`,
+`extract`, and a real glTF export to a temporary directory:
+
+    auto modellista        50 members claimed   23 textures   23 PNGs written
+    Capcom vs SNK 2 EO     53 members claimed    2 textures    2 PNGs written
+
+Auto Modellista produced **one** texture in wave 2 and produces 23 now.  Capcom vs SNK 2 has
+only two TIM2 on the disc, so its re-rip is cheap and small - worth saying, so nobody expects
+more from it later.
