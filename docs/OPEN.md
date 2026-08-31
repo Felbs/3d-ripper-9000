@@ -18,6 +18,7 @@ Companion to [FORMATS.md](FORMATS.md), which lists what already works.
 
 | format | discs | state |
 |---|---|---|
+| Visual Concepts `DAT` | **5** (NBA 2K2, NBA 2K3, NFL 2K3, NCAA Basketball 2K3, NCAA Football 2K3) | **the largest cluster left**: each disc is nine files, one of which is a 0.8-1.3 GB `game.dat` holding the whole game - 5.5 GB across the five.  Header and table read: `DAT` or `DAT\0`, an entry count, then 24-byte entries of `uncompressed size | a counter falling by 15 | name hash | 0x01000000 when compressed | 0 | cumulative offset`, whose offset differences are the stored sizes (about 2.5:1).  **No names, only hashes.**  Blocked on a private LZ: zlib, gzip, refpack, prs, yaz0, yay0, lzo, avlz and lzr all fail | see [formats/visual-concepts-dat.md](formats/visual-concepts-dat.md) |
 | `.hog` WART3.00 | 7 (Harry Potter x2, Looney Tunes, Animaniacs, Tiger Woods x3) | directory walks by tiling; every member compressed with a private LZ.  Four standard LZSS variants fail within a few bytes |
 | High Voltage `GMS` | 3 (Billy & Mandy, Kids Next Door, Charlie and the Chocolate Factory) | header readable, size field exact; **payload entropy 7.73 behind a 2.39 header** - compressed, and not zlib / Yaz0 / Yay0.  Charlie's `JAM2` archives add **1,097 more `GMS`, 1,115 `GKA` and 1,204 `GGG`**, a third independent corpus to work the codec against |
 
