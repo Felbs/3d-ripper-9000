@@ -44,33 +44,55 @@ The cluster was listed as seven discs.  It is three.  The four Tiger Woods discs
 followed by `00 00 00 18` and share nothing else with these.  **An extension is not a format**;
 this cluster was sized by one.
 
-## The codec - open
+## The codec - the literal form and the low match form are solved
 
-Every member is compressed (the only 607 exceptions are empty `.mrk`), and the codec is
-private.  What is established, so the next attempt does not start over:
+Two of the three token ranges are cracked and verified against real text rather than against a
+length count.
 
-* A member begins with `u32 packed size - 4`, then the stream.  That holds on 160 of 177.
-* **A token byte `0xE0 | n` is a literal run of `(n + 1) * 4` bytes.**  Four independent
-  anchors agree: `e1` gives exactly `model` CRLF `{`, `e3` gives `level` CRLF `{` CRLF TAB
-  `name(`, `e5` gives that plus `{cactus}`, and `e6` gives `ObjectType}, Const, Number, `.
-  The run is always a multiple of four bytes.
-* Tokens under `0xE0` are matches, and they are **not a fixed width**.  Since the literal runs
-  are known exactly, a walk with a fixed match width must land on the last byte of the stream:
-  over 3,732 member streams, two bytes lands on 541, three bytes on 493, and the best split
-  model on 613 - all near chance.  The overshoot histogram is a long flat tail, not a
-  concentration at one to three bytes, so this is not a padded stream either.  **Match tokens
-  carry length extensions or are otherwise variable-width.**
-* A parameter sweep over 2-byte matches - offset `((b & mask) << 8) | next`, length
-  `((b >> shift) & mask) + min`, every shift 0-7, five length masks, seven offset masks, and
-  offsets and lengths additionally scaled by 2 and 4 in case the codec is word-oriented, since
-  literal runs come in multiples of four - decodes **none** of six known-length members to
-  their exact size.
+* A member begins with `u32 packed size - 4`, then the stream (160 of 177 checked).
+* **`0xE0 | n` is a literal run of `(n + 1) * 4` bytes.**  Four independent anchors agree:
+  `e1` gives exactly `model` CRLF `{`, `e3` gives `level` CRLF `{` CRLF TAB `name(`, `e5` that
+  plus `{cactus}`, `e6` `ObjectType}, Const, Number, `.
+* **A token below `0x80` is a match carrying its own literals**::
 
-Length-extension grammars are **also ruled out**.  Re-running the sweep with LZ4/LZO-style
-extension bytes - on the literal nibble when it saturates, on the length field when it
-saturates, and with 16-bit offsets - decodes none of five known-length members to their exact
-size.  What remains untried is a match encoding whose *offset* is variable-width, or a
-second token plane; both would explain a variable match width that no length rule fits.  `frontend_cog1.lvl` and `frontend_cog2.lvl` on Animaniacs are the test vector:
-199 packed bytes each to 386 out, **differing in exactly one byte** (`67 31` against `67 32`,
-the `g1`/`g2` of their own names), so any correct decoder must produce two texts differing in
-one character.
+      literals = b & 3            emitted BEFORE the match
+      length   = (b >> 2) + 3
+      offset   = next byte + 1    counted back from the end of the output
+
+  The stream order is token, offset byte, then the literal bytes - but the literals come out
+  *first*, and the match copies after them.
+
+`frontend_cog1.lvl` decodes cleanly under this all the way to the first token that is not below
+`0x80`, and every step is checkable against the text:
+
+    e5  24 literals            level CRLF { CRLF TAB name({cactus}
+    01  lit ')' len 3 off 17   -> CRLF TAB
+    e1  8 literals             acount(4
+    04  lit -  len 4 off 12    -> ) CRLF TAB
+    0d  lit 'p' len 6 off 12   -> count(
+    05  lit '0' len 4 off 12   -> ) CRLF TAB
+    87  ...                    stops here, at output byte 52
+
+giving `level CRLF { CRLF TAB name({cactus}) CRLF TAB acount(4) CRLF TAB pcount(0) CRLF TAB` -
+correct text, matched brackets, real CRLF.
+
+On its own the solved half decodes **44 of 4,663 members outright** - the small ones that never reach a high token - so the value here is the verified grammar, not the yield.
+
+### What is left: the tokens from `0x80` to `0xDF`
+
+Only that one range.  The next bytes are `87 40 0b 73 87 40 0b 74 87 40 0b 62 87 40 0b 6f`,
+which is a **four-byte unit repeating with only its last byte changing** - `s`, `t`, `b`, `o` -
+and the text it has to produce is known exactly from the pattern already decoded:
+`scount(0) CRLF TAB`, `tcount(0) CRLF TAB`, and so on.  So the unit emits one literal letter
+and then copies `count(` and `) CRLF TAB` from twelve back, the same offset the low form has
+been using.
+
+That is a very tight constraint - a known input of four bytes and a known output of twelve -
+and it is where the next attempt should start.  Note the offset cannot come from the byte
+after the token: `0x40 + 1` is 65 and the output is only 52 bytes long at that point, so the
+`0b` (which is 12, the offset in use) is the more likely offset byte and `0x40` something else.
+
+A sweep of the high form on its own - literal count from `b & 3`, `(b >> 2) & 3`, `(b >> 5) & 3`
+or fixed, length from six different fields, offset from one or two following bytes or from the
+token's low bits, seven layouts, three minimum lengths - decodes **none** of four known-length
+members.  So it is not a simple re-cut of the low form.

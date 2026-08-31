@@ -90,3 +90,36 @@ def test_sizes_are_reported_packed_and_unpacked():
     otherwise would hand the pipeline garbage."""
     got = wart_hog.members(build())
     assert all(m.unpacked == m.packed * 4 for m in got)
+
+
+def build_stream(want, tokens):
+    return b"".join(tokens), want
+
+
+def test_a_literal_run_token_is_four_bytes_a_step():
+    got = wart_hog.decompress(bytes([0xE1]) + b"model\r\n{", 8)
+    assert got == b"model\r\n{"
+
+
+def test_a_low_token_emits_its_literals_before_the_match():
+    """The stream order is token, offset byte, literals - but the literals come out first and
+    the match copies after them.  Reading it the other way turns `{cactus})` CRLF TAB into
+    `{cactus}` CRLF TAB `)`."""
+    head = bytes([0xE5]) + b"level\r\n{\r\n\tname({cactus}"
+    # token 0x01: one literal ')', length 3, offset 0x10 + 1 = 17 -> CR LF TAB
+    got = wart_hog.decompress(head + bytes([0x01, 0x10]) + b")", 28)
+    assert got == b"level\r\n{\r\n\tname({cactus})\r\n\t"
+
+
+def test_the_length_and_offset_biases_are_three_and_one():
+    got = wart_hog.decompress(bytes([0xE0]) + b"abcd" + bytes([0x04, 0x03]), 8)
+    assert got == b"abcdabcd"  # length (4>>2)+3 = 4, offset 3+1 = 4
+
+
+def test_an_unsolved_high_token_declines_rather_than_half_decoding():
+    """0x80-0xDF is still open, and a caller must never be handed a partial member."""
+    assert wart_hog.decompress(bytes([0xE0]) + b"abcd" + bytes([0x87, 0x40]), 16) is None
+
+
+def test_a_member_that_does_not_reach_its_declared_size_is_refused():
+    assert wart_hog.decompress(bytes([0xE0]) + b"abcd", 99) is None

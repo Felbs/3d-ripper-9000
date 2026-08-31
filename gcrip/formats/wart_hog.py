@@ -47,6 +47,11 @@ MAGIC = b"WART3.00"
 HEADER = 24
 ENTRY = 24
 MAX_COUNT = 1 << 20
+LITERAL_RUN = 0xE0
+HIGH_FORM = 0x80
+LIT_MASK = 3
+LEN_BIAS = 3
+OFF_BIAS = 1
 
 
 @dataclass
@@ -100,3 +105,50 @@ def members(data: bytes) -> list[Member]:
             continue
         out.append(Member((folder or "") + name, offset, packed, unpacked, digest))
     return out
+
+
+def decompress(data: bytes, want: int) -> bytes | None:
+    """The member codec, as far as it is solved.  ``None`` when a token in the unsolved
+    ``0x80``-``0xDF`` range is reached, so a caller never sees a half-decoded member.
+
+    Two of the three ranges are known and verified against real text, not against a length::
+
+        b >= 0xE0            a literal run of ((b & 0x0f) + 1) * 4 bytes
+        b <  0x80            a match carrying its own literals:
+                                 literals = b & 3     emitted BEFORE the match
+                                 length   = (b >> 2) + 3
+                                 offset   = next byte + 1
+        0x80 <= b < 0xE0     unsolved - see docs/formats/warthog-hog.md
+
+    The stream order is token, offset byte, literal bytes; the literals come out first and the
+    match copies after them.  Under this, Animaniacs' ``frontend_cog1.lvl`` decodes to
+    ``level CRLF { CRLF TAB name({cactus}) CRLF TAB acount(4) CRLF TAB pcount(0) CRLF TAB``
+    before reaching the first high token.
+    """
+    out = bytearray()
+    i, n = 0, len(data)
+    while i < n and len(out) < want:
+        token = data[i]
+        i += 1
+        if token >= LITERAL_RUN:
+            run = ((token & 0x0F) + 1) * 4
+            if i + run > n:
+                return None
+            out += data[i : i + run]
+            i += run
+            continue
+        if token >= HIGH_FORM:
+            return None
+        literals = token & LIT_MASK
+        length = (token >> 2) + LEN_BIAS
+        if i + 1 + literals > n:
+            return None
+        offset = data[i] + OFF_BIAS
+        i += 1
+        out += data[i : i + literals]
+        i += literals
+        if not 0 < offset <= len(out):
+            return None
+        for _ in range(length):
+            out.append(out[-offset])
+    return bytes(out) if len(out) == want else None
