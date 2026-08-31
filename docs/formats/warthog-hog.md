@@ -66,10 +66,11 @@ private.  What is established, so the next attempt does not start over:
   literal runs come in multiples of four - decodes **none** of six known-length members to
   their exact size.
 
-The cheapest next test is a grammar with length-extension bytes, LZ4/LZO style, where a
-maximal length nibble means "read another byte".  That is the one shape consistent with both
-the byte-aligned literal runs and the variable match width, and it is what the sweeps above
-did not cover.  `frontend_cog1.lvl` and `frontend_cog2.lvl` on Animaniacs are the test vector:
+Length-extension grammars are **also ruled out**.  Re-running the sweep with LZ4/LZO-style
+extension bytes - on the literal nibble when it saturates, on the length field when it
+saturates, and with 16-bit offsets - decodes none of five known-length members to their exact
+size.  What remains untried is a match encoding whose *offset* is variable-width, or a
+second token plane; both would explain a variable match width that no length rule fits.  `frontend_cog1.lvl` and `frontend_cog2.lvl` on Animaniacs are the test vector:
 199 packed bytes each to 386 out, **differing in exactly one byte** (`67 31` against `67 32`,
 the `g1`/`g2` of their own names), so any correct decoder must produce two texts differing in
 one character.
