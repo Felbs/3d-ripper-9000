@@ -174,6 +174,26 @@ The best length seen for the sub-form is `(t & 0x1f) * 2 + 3` with the offset st
 cog1's failure take lengths 55 and 39, and those are what produce the repeated `attrib`.  The
 sub-form's length is the thing to pin next, and it wants to be far shorter.
 
+### An exhaustive negative - the first one here
+
+Every other search on this codec has ended on a deadline, so finding nothing meant little.
+This one **finished**.  Holding fixed everything that is verified - the literal runs, the low
+form, and for `a != 0` the rule `lit = (t>>2)&3`, `len = (a>>4)*2+3`, `off = b+1` that produces
+correct text for the `0x87` units - and leaving the `a == 0` sub-form's **length completely
+free** over 1-120 (consistent per `(t, b)`, offset `b + 1`), there is **no assignment at all**
+that decodes `frontend_cog1.lvl` to 386 printable bytes.  The search space was exhausted, not
+abandoned.
+
+So one of the "verified" pieces is not general.  The candidates, in the order worth testing:
+
+1. the `a != 0` **length** `(a >> 4) * 2 + 3` - it is fitted to a single observation, `a = 0x40`
+   giving 11, and every high token in cog1 shares that `a`;
+2. the `a != 0` **literal count** `(t >> 2) & 3`;
+3. the `a == 0` **offset** `b + 1`.
+
+The low form and the literal runs are not among them: those are confirmed against real text
+character by character.
+
 A constraint search also came up empty and is worth recording, because it rules out a whole
 family rather than one guess.  Branching only on **distinct `(t, a, b)` triples** - so cog1's
 four identical `87 40 0b` units cost one choice, not four - with the literal count free over
