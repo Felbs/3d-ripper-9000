@@ -31,20 +31,24 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
 
 
 def is_container(name: str, head: bytes) -> bool:
-    """Claims an AFS member that opens with an ascending offset table.
+    """Claims a blob that opens with an ascending offset table.
 
     It cannot check the magic those offsets point at: the first offset is very often exactly
     64, so on the 64 bytes ``classify`` sniffs the magic sits one byte out of reach, and
-    ``expand`` has to do the real check.  That makes the shape test alone far too eager - on
-    Auto Modellista it claims 50 members to find 7 real tables - so the claim is confined to
-    where this structure has actually been seen, inside an AFS archive.  Requiring the
-    ``0xffffffff`` terminator was tried instead and is wrong twice over: one real table of 16
-    offsets does not carry one, and one member that does carry one holds no TIM2.
+    :func:`expand` has to do the real check - it keeps only slices that land on ``TIM2``.
 
-    A TIM2 lying loose anywhere else is still picked up by :func:`detect`, which can see the
-    magic at offset zero.
+    That makes the shape test eager - on Auto Modellista it claims 50 members to find 7 real
+    tables - and an earlier version confined it to names containing ``.afs/`` to compensate.
+    **That was wrong and silently claimed nothing**: the pipeline passes the member's
+    *basename* here (`rip.py` does ``container.rsplit("/", 1)[-1]``), so the path never
+    appears and the test never fired.  It cost Auto Modellista 22 of its 23 textures - only
+    the one member that carries the magic at offset zero, and so goes through :func:`detect`,
+    came out.
+
+    Claiming widely is cheap here because the payload is already in memory by the time this
+    runs: a wrong claim costs one failed table parse, not a read.
     """
-    return INSIDE_AFS in name.lower() and tim2.looks_like_table(head)
+    return tim2.looks_like_table(head)
 
 
 def expand(data: bytes) -> list[tuple[str, bytes]]:

@@ -101,16 +101,17 @@ def test_the_plugin_yields_a_textures_only_scene():
     assert scene.extras["textures_only"] and set(scene.textures) == {"car", "car_1"}
 
 
-def test_the_table_container_is_confined_to_afs_members():
-    """The shape test alone claims 50 members on Auto Modellista to find 7 real tables, and
-    the magic that would settle it sits past the 64-byte sniff - so the claim is confined to
-    where the structure has actually been seen."""
+def test_the_table_container_claims_on_shape_not_on_the_path():
+    """It once required ".afs/" in the name.  The pipeline passes the member's basename here -
+    rip.py does container.rsplit("/", 1)[-1] - so that never matched and the container never
+    fired, costing Auto Modellista 22 of its 23 textures.  Claiming on shape is cheap: the
+    payload is already in memory, so a wrong claim costs one failed table parse."""
     import struct as _s
 
     head = _s.pack("<4I", 64, 0x10540, 0x20A40, 0xFFFFFFFF).ljust(64, b"\0")
-    assert tim2.looks_like_table(head)
+    assert plugin.is_container("member0262.bin", head)
     assert plugin.is_container("afs02.afs/7", head)
-    assert not plugin.is_container("common_thing.gcp", head)
+    assert not plugin.is_container("member0262.bin", b"\0" * 64)
 
 
 def test_a_terminator_is_not_required():

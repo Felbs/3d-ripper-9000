@@ -40,6 +40,16 @@ so on the 64 bytes `classify` sniffs, the magic it points at is one byte out of 
 detector that insisted on seeing it claims nothing.  Detection therefore tests the table's
 *shape* and `expand` does the real check, keeping only slices that land on the magic.
 
+**Scoping that test by name was wrong, and silently claimed nothing.**  The shape test is eager
+- on Auto Modellista it claims 50 members to find 7 real tables - so an earlier version
+required `.afs/` in the name to compensate.  The pipeline passes the member's **basename**
+here (`rip.py` does `container.rsplit("/", 1)[-1]`), so the path never appears and the test
+never fired once.  It cost Auto Modellista **22 of its 23 textures**: only the single member
+carrying the magic at offset zero came through, via `detect`.
+
+Claiming widely is cheap in this position anyway - the payload is already in memory by the
+time `is_container` runs, so a wrong claim costs one failed table parse and not a read.
+
 The same 64-byte horizon bites in a second way: the walk's bound `value < len(data)` is correct
 on a whole blob and wrong on a sniff, where every entry after the first points past the end.
 It is now passed in only when the whole blob is in hand.
