@@ -52,3 +52,11 @@ Madagascar (31) and Frogger: Ancient Shadow (19), every chunk type is **`0x080d`
 anywhere in the sample.
 
 A conclusion drawn with a broken tool deserves re-testing; this one survived it.
+
+## Regression check on the widening
+
+Widening a sniff can take files from other plugins, so it was checked rather than assumed.
+Sampling 46 discs and 40 files each, comparing the old condition against the new one: **no
+file is newly accepted at top level, and none is taken from another specific plugin.**  The
+plain-stamp `.dff` all live inside archives, so the change only reaches files that arrive as
+container members - which is exactly where it was meant to act.
