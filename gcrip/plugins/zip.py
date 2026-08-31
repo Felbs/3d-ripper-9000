@@ -8,6 +8,8 @@ from __future__ import annotations
 import io
 import zipfile
 
+from gcrip.formats import zip_local
+
 NAME = "zip"
 
 MAGIC = b"PK\x03\x04"
@@ -22,7 +24,7 @@ def expand(data: bytes) -> list[tuple[str, bytes]]:
     try:
         zf = zipfile.ZipFile(io.BytesIO(data))
     except (zipfile.BadZipFile, OSError, EOFError):
-        return []
+        return zip_local.members(data)
     out: list[tuple[str, bytes]] = []
     with zf:
         for info in zf.infolist():
@@ -33,7 +35,10 @@ def expand(data: bytes) -> list[tuple[str, bytes]]:
             except Exception:  # noqa: BLE001 - one bad member must not lose the rest
                 continue
             out.append((info.filename.replace("\\", "/"), blob))
-    return out
+    # NFL Blitz's archives list every entry in the central directory and read none of them:
+    # the offsets there do not point at local headers.  Walking the local records recovers
+    # all of them - see gcrip.formats.zip_local.
+    return out or zip_local.members(data)
 
 
 def detect(path: str, head: bytes, size: int) -> bool:
