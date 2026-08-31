@@ -11,7 +11,7 @@ out as pairs::
       SHDR   u32 version | char type[4] | u32 index | u32 unpacked size
       Zdat   a zlib stream
 
-so a member is an ``SHDR`` naming it and the ``Zdat`` that follows.  Members are typed rather
+so a member is an ``SHDR`` naming it and the data chunks that follow.  Members are typed rather
 than named - ``sfx``, ``ter``, ``tgd``, ``Cact``, ``txf``, ``SONO``, ``CAMC``.
 
 **The stream runs to the end of its SHOC wrapper, not to the end of the Zdat chunk.**  Zdat's
@@ -34,6 +34,8 @@ SHOC = b"SHOC"
 SHDR = b"SHDR"
 ZDAT = b"Zdat"
 DATA = (ZDAT, b"SDAT", b"Rdat")
+FILL = b"FILL"
+TAGS = {SHOC, SHDR, ZDAT, b"SDAT", b"Rdat", FILL, MAGIC, b"SYNC", b"PADD"}
 ZLIB_CMF = b"x"
 RAW_PREFIX = 40
 MAX_CHUNKS = 1 << 18
@@ -55,6 +57,13 @@ def _chunks(data: bytes) -> list[tuple[bytes, int, int]]:
     at = 0
     while at + HEADER <= len(data) and len(out) < MAX_CHUNKS:
         tag = data[at : at + 4]
+        # `FILL` is usually an ordinary sized chunk, but it is also used as a bare four-byte
+        # pad - and there it is followed straight by another tag rather than by a size.  Read
+        # that one as a sized chunk and its "size" is the next tag's letters, which ends the
+        # walk mid-archive: it stopped 958,460 bytes into a 3.5 MB file on Tiger Woods 2005.
+        if tag == FILL and data[at + 4 : at + 8] in TAGS:
+            at += 4
+            continue
         if not all(32 <= c < 127 for c in tag):
             break
         span = max(struct.unpack_from(">I", data, at + 4)[0], HEADER)

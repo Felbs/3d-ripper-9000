@@ -91,3 +91,22 @@ def test_repeated_kind_and_index_do_not_collide():
         + wrap(chunk(shoc.ZDAT, zlib.compress(b"two!")))
     )
     assert [n for n, _ in plugin.expand(data)] == ["sfx_1", "sfx_1.1"]
+
+
+def test_a_bare_fill_pad_does_not_end_the_walk():
+    """FILL is usually a sized chunk, but it is also used as a bare four-byte pad, and there
+    the next four bytes are another tag rather than a size.  Reading that as a sized chunk
+    takes the next tag's letters as its length and ends the walk mid-archive - it stopped
+    958,460 bytes into a 3.5 MB file on Tiger Woods 2005, and fixing it took that disc from
+    60 members to 953."""
+    body = build() + b"FILL" + shdr(b"sfx ", 2, 4) + wrap(chunk(shoc.ZDAT, zlib.compress(b"ping")))
+    got = shoc.members(body)
+    assert [(m.kind, m.data) for m in got] == [("ter", b"terrain bytes" * 4), ("sfx", b"ping")]
+
+
+def test_a_sized_fill_chunk_is_still_skipped_by_its_size():
+    """Treating every FILL as four bytes breaks the other reading - it took Tiger Woods 06
+    from 11 of 12 archives landing exactly to none."""
+    pad = chunk(b"FILL", bytes(24))
+    body = build() + pad + shdr(b"sfx ", 2, 4) + wrap(chunk(shoc.ZDAT, zlib.compress(b"ping")))
+    assert [m.kind for m in shoc.members(body)] == ["ter", "sfx"]
