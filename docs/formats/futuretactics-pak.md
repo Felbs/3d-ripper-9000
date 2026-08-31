@@ -80,16 +80,33 @@ The best-conditioned sample on the disc is an XML, because **the plaintext is kn
     first 64  2a620400 e8 3c212d2d2050696c6c6167652066726f6e7420656e64202d2d3e0d0a0d0a3c47616d6546
               010b450928099240002a0c2e880022e144656275672073
 
-    output must begin:  "<!-- Pillage front end -->
-
+    output must begin:  "<!-- Pillage front end -->
+
+
+
 <GameF"   (36 bytes)
 
-So the stream opens with one control byte `e8` and then **36 bytes of literal text with no
-control byte interrupting them** - which is what rules out the whole per-item-bitmask family: a
-flag byte covers eight items, so a 36-byte literal run would need four more control bytes
-inside it, and there are none.  A sweep over that family (both bit polarities, both bit orders,
-both endiannesses, 10-13 offset bits, 4-6 length bits, length +1/+2/+3) reproduces at best the
-first **3** of the 36 bytes.
+So the stream opens with a byte `e8` and then **36 bytes of literal text with no control byte
+interrupting them** - which is what rules out the whole per-item-bitmask family: a flag byte
+covers eight items, so a 36-byte literal run would need four more control bytes inside it, and
+there are none.  A sweep over that family (both bit polarities, both bit orders, both
+endiannesses, 10-13 offset bits, 4-6 length bits, length +1/+2/+3) reproduces at best the first
+**3** of the 36 bytes.
+
+**That byte is a parameter, not a control byte or a literal count.**  Across 28 packed members
+of three kinds it only ever takes the values **0xE2 to 0xE8** - a five-bit prefix of `11100`
+with a low nibble of 2 to 8.  Two observations pin down what it is not:
+
+* all ten packed `.XML` share the byte `0xE8` *and* an identical 36-byte literal run, so it
+  cannot be a per-member control mask;
+* the `.CUT` members all begin with the same two literal bytes `AJ` but carry `0xE4`, `0xE5`,
+  `0xE6` **and** `0xE7` - the byte varies while the literals it supposedly counts do not, so it
+  is not a literal-run length either.
+
+The low nibble tracks how compressible the member is (8 for XML, 2 for the binary `.DAT`),
+which is what a window-size or bit-width parameter looks like.  So the layout is
+``u32 unpacked size | u8 method/parameter | packed data from offset 5``, and the flag bits are
+somewhere other than inline with the literals.
 
 Two more anchors in the same member: the literal run resumes at offset 57 with `Debug st`, and
 again at 74 with `DEBUG_set_platform>PS`, separated by 16 and 4 bytes of control data
