@@ -74,6 +74,22 @@ padding or something unindexed - reported rather than claimed as exact.
 Because the variant has no magic at all, a single plausible record is not enough to claim a
 file; the reader requires at least two.
 
+### The variant was invisible to the pipeline for a while
+
+`members()` and `expand()` handled the inline records and had tests.  The **plugin** did not:
+its `is_container` asked only `is_toc_wad`, which wants Spawn's `TOC` magic at +16, so every
+one of The Scorpion King's 200 archives was refused and its **6,099 textures never reached a
+scene**.  The disc rebuilt with zero textures and nothing failed - the reader was simply never
+called.
+
+The variant has no magic, so it is now recognised from the shape of its first record inside
+the 64 bytes `classify` sniffs - a NUL-padded printable name, one of the nine known type tags,
+and a plausible size (`looks_inline`).  `members()` still requires two chaining records, so a
+loose claim costs an in-memory parse and nothing else.
+
+Measured after the fix, on 25 of the 200 archives: **25 claimed, 1,088 members, 992 `TIM`
+decoded**, where before it was nothing at all.
+
 ### The palette path only exists on this disc
 
 All 5,919 of Spawn's textures are `CMPR`.  The Scorpion King has 185 `C8`, and a decoder

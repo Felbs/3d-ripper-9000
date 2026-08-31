@@ -9,7 +9,8 @@ NAME = "toc_wad"
 
 
 def is_container(name: str, head: bytes) -> bool:
-    return toc_wad.is_toc_wad(head)
+    # both variants: Spawn's TOC magic, and The Scorpion King's magic-less inline records
+    return toc_wad.is_toc_wad(head) or toc_wad.looks_inline(head)
 
 
 def expand(data: bytes) -> list[tuple[str, bytes]]:

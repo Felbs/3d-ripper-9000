@@ -47,6 +47,8 @@ NAME = 16
 TYPE = 4
 MAX_ENTRIES = 262144
 WRAPPER = 28  # the inline variant: name[16] | type[4] | u32 size | u32
+KINDS = {b"TIM", b"SFX", b"PHM", b"PAT", b"PHA", b"SPR", b"GAM", b"GRP", b"SOB"}
+MAX_MEMBER = 1 << 27
 MIN_INLINE = 2
 
 
@@ -63,6 +65,31 @@ def is_toc_wad(head: bytes) -> bool:
         return False
     table, count = struct.unpack_from(">2I", head, 20)
     return 0 < count <= MAX_ENTRIES and table == count * ENTRY
+
+
+def looks_inline(head: bytes) -> bool:
+    """The Scorpion King variant has **no magic at all**, so it has to be recognised from the
+    shape of its first record inside the 64 bytes ``classify`` sniffs: a NUL-padded name, one
+    of the known type tags, and a plausible size.
+
+    Without this the variant is invisible to the pipeline.  :func:`members` was written and
+    tested for it, and :func:`expand` calls it - but the plugin only ever asked
+    :func:`is_toc_wad`, which wants Spawn's magic, so the disc's 6,099 textures never reached
+    a scene.  ``members`` still requires two chaining records, so a loose claim here costs an
+    in-memory parse and nothing else.
+    """
+    if len(head) < WRAPPER:
+        return False
+    name = head[:NAME]
+    if not (32 < name[0] < 127):
+        return False
+    body = name.rstrip(b"\0")
+    if not body or not all(32 <= c < 127 for c in body):
+        return False
+    if head[NAME : NAME + TYPE].rstrip(b"\0") not in KINDS:
+        return False
+    size = struct.unpack_from(">I", head, NAME + TYPE)[0]
+    return 0 < size < MAX_MEMBER
 
 
 def _inline(data: bytes) -> list[Member]:

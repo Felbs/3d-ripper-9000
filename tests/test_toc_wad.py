@@ -118,3 +118,26 @@ def test_a_palette_indexed_tim_without_its_palette_declines_rather_than_raises()
     size = gx.encoded_size(9, width, height)
     blob = struct.pack(">I4HI", 1, 9, width, height, 0x20, size) + bytes(size)
     assert toc_tim.decode(blob) is None
+
+
+def test_the_inline_variant_is_recognised_without_any_magic():
+    """The Scorpion King's .wad have no magic at all.  The plugin only asked is_toc_wad, which
+    wants Spawn's TOC, so the whole variant was invisible to the pipeline and the disc's 6,099
+    textures never reached a scene - even though members() and expand() handled it and were
+    tested."""
+    head = inline()[:64]
+    assert not toc_wad.is_toc_wad(head)
+    assert toc_wad.looks_inline(head)
+    assert plugin.is_container("LEV03A.wad", head)
+
+
+def test_a_blob_whose_type_tag_is_unknown_is_not_claimed_inline():
+    data = bytearray(inline())
+    data[toc_wad.NAME : toc_wad.NAME + toc_wad.TYPE] = b"ZZZZ"
+    assert not toc_wad.looks_inline(bytes(data)[:64])
+
+
+def test_an_unprintable_name_is_not_claimed_inline():
+    data = bytearray(inline())
+    data[0] = 1
+    assert not toc_wad.looks_inline(bytes(data)[:64])
