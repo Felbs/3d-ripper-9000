@@ -101,4 +101,5 @@ def decode(data: bytes) -> np.ndarray | None:
     if entries:
         decoded = gx.decode_palette(RGB565, data[PALETTE_AT:pixels_at], entries)
         palette[: min(entries, 256)] = decoded[: min(entries, 256)]
-    return gx.decode(info.format, info.width, info.height, data[pixels_at : pixels_at + need], palette)
+    pixels = data[pixels_at : pixels_at + need]
+    return gx.decode(info.format, info.width, info.height, pixels, palette)

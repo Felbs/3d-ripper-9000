@@ -47,7 +47,11 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
                 continue
             scene.textures[stem if len(hvs) == 1 else f"{stem}_{i:03d}"] = rgba
         if scene.textures:
-            scene.extras = {"textures_only": True, "format": "tpl_hvs", "count": len(scene.textures)}
+            scene.extras = {
+                "textures_only": True,
+                "format": "tpl_hvs",
+                "count": len(scene.textures),
+            }
             return [scene]
         return []
     try:

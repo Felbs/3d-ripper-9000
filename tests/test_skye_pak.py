@@ -15,7 +15,7 @@ def build(names=("COIN.SKX", "DRAAK.SKX"), pad: int = 20) -> bytes:
     body = bytearray()
     data_at = skye_pak.NAMES_AT + len(table) + pad + len(names) * skye_pak.ENTRY
     off = 0
-    for i, n in enumerate(names):
+    for n in names:
         payload = b"\x00XKS" + n.encode()
         rec = bytearray(skye_pak.ENTRY)
         struct.pack_into("<5I", rec, 0, table.index(n.encode()), 0, 0, data_at + off, len(payload))

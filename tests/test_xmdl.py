@@ -33,9 +33,15 @@ def build(nverts: int = 4, tris=((0, 1, 2), (0, 2, 3)), pad: int = 0) -> bytes:
     body += b"INDX" + idx + bytes(pad)
     # GRPV offsets are relative to the model start + 12, and the body starts at 16
     struct.pack_into(
-        ">6I", body, grpv_at + 12,
-        nverts, 0, vtx_at + xmdl.HEADER - xmdl.SECTION_BASE, 0,
-        idx_at + xmdl.HEADER - xmdl.SECTION_BASE, len(idx),
+        ">6I",
+        body,
+        grpv_at + 12,
+        nverts,
+        0,
+        vtx_at + xmdl.HEADER - xmdl.SECTION_BASE,
+        0,
+        idx_at + xmdl.HEADER - xmdl.SECTION_BASE,
+        len(idx),
     )
     struct.pack_into(">I", body, grpv_at + 4, 0x0E)
     head = bytearray(xmdl.HEADER)

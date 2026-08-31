@@ -43,6 +43,24 @@ table's end instead, entry 0 lands in the middle of the names.  From the right b
 member begins with the same twelve bytes - `00 01 00 03 02 00 07 01 80 1b 40 00` - which is
 what confirms it.
 
+## The container ships
+
+`gcrip/formats/vc_dat.py` + `gcrip/plugins/vc_dat.py`.  **All five discs tile exactly** - the
+member spans account for every byte of `game.dat` on each one, which is the check:
+
+| disc | bytes | members | emitted |
+|---|---|---|---|
+| NBA 2K3 | 827,434,216 | 1,968 | 1,966 (334 MB) |
+| NBA 2K2 | 1,055,456,496 | 1,970 | 1,967 (563 MB) |
+| NFL 2K3 | 1,346,729,624 | 2,051 | 2,049 (791 MB) |
+| NCAA College Basketball 2K3 | 1,310,804,865 | 2,179 | 2,173 (380 MB) |
+| NCAA College Football 2K3 | 1,247,317,608 | 1,212 | 1,210 (760 MB) |
+
+**9,380 members, all named.**  `LINES.BIN` (336 MB of commentary) and `PLAYERS.BIN` (140 MB)
+are 477 of NBA 2K3's 827 MB between them and hold neither geometry nor textures, so members
+over 32 MB are skipped rather than carried - holding those two would add half a gigabyte to
+every worker.
+
 ## What is blocking it
 
 The `.IFF` payload.  It is dense and bit-packed rather than byte-oriented, and none of the

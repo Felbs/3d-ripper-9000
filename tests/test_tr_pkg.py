@@ -7,9 +7,8 @@ from gcrip.plugins import tr_pkg as plugin
 
 
 def chunk(tag: bytes, name: bytes, payload: bytes) -> bytes:
-    return (
-        tr_pkg.MAGIC + tag + struct.pack("<I", len(payload)) + name.ljust(tr_pkg.NAME, b"\0") + payload
-    )
+    head = tr_pkg.MAGIC + tag + struct.pack("<I", len(payload))
+    return head + name.ljust(tr_pkg.NAME, b"\0") + payload
 
 
 def build(extra: bytes = b"") -> bytes:

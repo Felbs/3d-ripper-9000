@@ -77,4 +77,5 @@ def is_hvs(data: bytes) -> bool:
 
 def decode(data: bytes, image: Image) -> np.ndarray:
     need = gx.encoded_size(image.format, image.width, image.height)
-    return gx.decode(image.format, image.width, image.height, data[image.offset : image.offset + need])
+    pixels = data[image.offset : image.offset + need]
+    return gx.decode(image.format, image.width, image.height, pixels)

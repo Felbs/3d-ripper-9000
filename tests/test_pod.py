@@ -52,7 +52,10 @@ def test_pod3_entries_tile():
     d = build3()
     assert pod.version(d[: pod.POD3_HEADER]) == 3
     es = pod.entries(d)
-    assert [(e.name, e.size) for e in es] == [("WORLD/EN/01_AIRLOCK.TXT", 12), ("MODELS/01_AIRLOCK.BST", 4)]
+    assert [(e.name, e.size) for e in es] == [
+        ("WORLD/EN/01_AIRLOCK.TXT", 12),
+        ("MODELS/01_AIRLOCK.BST", 4),
+    ]
     assert es[0].offset == pod.POD3_HEADER
     assert es[0].offset + es[0].size == es[1].offset  # contiguous
     assert es[0].timestamp == 0x3F8B1041

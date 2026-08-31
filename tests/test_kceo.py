@@ -17,7 +17,7 @@ def build(members=(("FL_STG21_00.BPX", 2, 0x400), ("FL_STG21_01.BPX", 3, 0x200))
         p = table + i * kceo.ENTRY
         head[p : p + len(name)] = name.encode()
         struct.pack_into(">4I", head, p + kceo.NAME, 0, sector, size, 0)
-    for name, sector, size in members:
+    for name, sector, _size in members:
         at = sector * kceo.SECTOR
         if at + len(name) <= len(head):
             head[at : at + len(name)] = name.encode()

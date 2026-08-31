@@ -92,4 +92,5 @@ def textures(data: bytes) -> list[Texture]:
 
 
 def decode(data: bytes, tex: Texture) -> np.ndarray:
-    return gx.decode(GX_FOR[tex.format], tex.width, tex.height, data[tex.offset : tex.offset + tex.size])
+    pixels = data[tex.offset : tex.offset + tex.size]
+    return gx.decode(GX_FOR[tex.format], tex.width, tex.height, pixels)

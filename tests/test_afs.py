@@ -1,5 +1,3 @@
-
-
 def test_afs_is_actually_registered_as_a_container():
     """all_plugins() only keeps a module that has BOTH detect and extract.
 

@@ -16,7 +16,8 @@ def build(images=((64, 64, 0x0E), (64, 64, 0x0E)), spare: int = 0) -> bytes:
     body = b""
     for i, (h, w, fmt) in enumerate(images):
         offset = len(head) + len(body)
-        struct.pack_into(">HHII", head, tpl_hvs.TABLE_AT + 4 + i * tpl_hvs.STRIDE, h, w, fmt, offset)
+        at = tpl_hvs.TABLE_AT + 4 + i * tpl_hvs.STRIDE
+        struct.pack_into(">HHII", head, at, h, w, fmt, offset)
         body += bytes(gx.encoded_size(fmt, w, h))
     return bytes(head) + body
 

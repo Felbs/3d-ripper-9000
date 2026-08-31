@@ -32,7 +32,8 @@ reproduces the bounding box stored beside the mesh to within 0.004 (quantisation
 A list is found by the eight-byte big-endian preamble ``00000008 00000001`` that sits in front
 of every one of them (version 7 puts ``00000007`` in front of that as well), followed by zero
 padding and then the opcode.  The preamble also turns up inside the ``F00DBAAD`` fill that
-version 4 pads with, so a candidate only counts once the opcode and vertex count check out.  Walking with
+version 4 pads with, so a candidate only counts once the opcode and vertex count check out.
+Walking with
 a 13-byte vertex lands exactly on the next preamble, which is what confirms the stride: over
 Blowout's ``GCB_11_CREDITS.PKG`` all 42 lists in 25 meshes walk clean, for 8,088 vertices and
 4,044 triangles.

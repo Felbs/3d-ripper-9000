@@ -19,9 +19,9 @@ def build(strip=(0, 1, 2, 3), subheader: int = 40, prim: int = 0x98) -> bytes:
     colours = bytes(n * 4)
     head = bytearray(mdgc.HEADER)
     struct.pack_into(">I", head, 4, mdgc.TAG)
-    struct.pack_into(">I", head, 6 * 4, n)                 # w6 vertex count
-    struct.pack_into(">I", head, 5 * 4, len(strip))        # w5 corner count
-    struct.pack_into(">I", head, 13 * 4, len(positions))   # w13 colours
+    struct.pack_into(">I", head, 6 * 4, n)  # w6 vertex count
+    struct.pack_into(">I", head, 5 * 4, len(strip))  # w5 corner count
+    struct.pack_into(">I", head, 13 * 4, len(positions))  # w13 colours
     struct.pack_into(">I", head, 11 * 4, len(positions) + len(colours))  # w11 display list
     return MAGIC_HEAD + bytes(head) + positions + colours + dl
 
