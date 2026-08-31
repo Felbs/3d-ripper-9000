@@ -92,6 +92,31 @@ and it is where the next attempt should start.  Note the offset cannot come from
 after the token: `0x40 + 1` is 65 and the output is only 52 bytes long at that point, so the
 `0b` (which is 12, the offset in use) is the more likely offset byte and `0x40` something else.
 
+The high form takes **two operand bytes**, which the repeating unit already implies - `87 40
+0b XX` is four bytes and `XX` is the literal, leaving two. Searching over that shape produces
+**real text** for the first time:
+
+    lit = (t >> 4) & 3, len = a + 3, off = b
+      triggers.txt -> "triggers CRLF { CRLF TAB trigger CRLF TAB { CRLF TAB TAB
+                       name(ProximityIn) CRLF TAB TAB setting(1, number, range"
+
+    lit = (t >> 2) & 3, len = a + 3, off = b + 1
+      frontend_new.lvl -> "level CRLF { CRLF TAB name({}) CRLF TAB acount(3) CRLF TAB
+                           pcount(0) CRLF TAB scount(0)"  (99% printable)
+
+Neither is right yet, and **the way they fail says where to look**: both repeat a fragment -
+`scount(0)` three times over, `setting(1, number, range` twice - which is what a match does
+when its length runs past the cycle it is copying. With `a` = 0x40 the length `a + 3` is 67,
+and copying 67 bytes from eleven back replays an eleven-byte cycle six times, which is exactly
+what comes out. So **the length is not the whole of `a`**; the unit has to emit eleven bytes,
+not sixty-seven.
+
+The arithmetic the answer has to satisfy is fixed: at output byte 52 the unit `87 40 0b 73`
+must emit `s` and then `count(0) CRLF TAB` - eleven bytes copied from eleven back, since the
+previous `count(0) CRLF TAB` begins at index 42. `0x0b` is 11 exactly, so the second operand is
+almost certainly the offset with no bias, and the first operand or the token carries a length
+that must come out as 11 rather than 67.
+
 A sweep of the high form on its own - literal count from `b & 3`, `(b >> 2) & 3`, `(b >> 5) & 3`
 or fixed, length from six different fields, offset from one or two following bytes or from the
 token's low bits, seven layouts, three minimum lengths - decodes **none** of four known-length
