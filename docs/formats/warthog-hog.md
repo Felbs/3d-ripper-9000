@@ -129,6 +129,19 @@ printable bytes.  So `len = (a>>4)*2+3` and `off = b+1` are right for the `0x87`
 wrong for the tokens above them: the range has sub-forms rather than one shape with a variable
 literal count.
 
+### The sharpest test available: three files one byte apart
+
+`frontend_cog1.lvl`, `cog2` and `cog3` are 199 packed bytes each and differ **at exactly one
+stream byte, offset 142** (`31` / `32` / `33` - the `1`/`2`/`3` of their own names).  So any
+correct decoder must produce three 386-byte outputs that differ **in exactly one character**.
+
+That is far stronger than "the output is printable", which is what every sweep here has been
+scored on and which a badly wrong decode can still satisfy by replaying fragments.  **Use this
+first.**  A sweep of 105 candidate length rules for the `a == 0` sub-form - every
+`((t >> s) & m) * u + k` and `((b >> s) & m) + k` over the plausible shifts, masks and biases -
+produces **no rule that even decodes all three cogs to 386 bytes**, let alone to outputs one
+character apart.
+
 ### `a == 0` marks a second sub-form, and it carries no literals
 
 The two forced data points are `0x87`, whose `s` must be a literal, and `0x8b`, whose next
