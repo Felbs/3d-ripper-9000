@@ -60,3 +60,22 @@ Sampling 46 discs and 40 files each, comparing the old condition against the new
 file is newly accepted at top level, and none is taken from another specific plugin.**  The
 plain-stamp `.dff` all live inside archives, so the change only reaches files that arrive as
 container members - which is exactly where it was meant to act.
+
+## The widening was too loose, and re-checking cluster 2 caught it
+
+Re-testing Cabela's `.arc` with the fixed sniff - a cluster-2 conclusion that had been reached
+with the broken one - turned up six "RenderWare" chunks inside its inflated blocks, `WORLD` and
+`TEXDICT`, which looked like a find.  They are not.  Every one raises `world without struct`
+when extracted, and their sizes give them away: 27, 47, 75 and 127 bytes sitting inside a
+1.5 MB block, with ids `0x2bb`, `0x27d`, `0x2ff` - values that land in the plain range purely
+by chance.
+
+**A bare version number is only two bytes of signal**, so on its own it matches noise.  A real
+top-level stream very nearly fills its file - Blitz's clumps are 836 bytes of 848 - so the
+plain-stamp branch now requires `12 + size >= file // 2` as well.
+
+That keeps **all 2,783** Blitz `.dff` and rejects every one of the Cabela's hits.  Cluster 2's
+conclusion stands: Cabela's `.arc` holds no RenderWare.
+
+The lesson cuts both ways.  Re-checking a conclusion made with a broken tool was right, and it
+found something - but what it found was a fault in the fix, not a new format.

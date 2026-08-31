@@ -98,7 +98,11 @@ def looks_like_stream(
     # older still: the library id is a bare version number, 0x0310 or 0x0304 rather than a
     # packed build stamp.  NFL Blitz 20-03 ships 977 of its 1,334 `.dff` that way and every
     # one of them parses - they were refused here, not by the reader.
-    plain = 0x0200 <= lib <= 0x03FF
+    # A bare version number is only two bytes of signal, so on its own it matches random
+    # data: scanning Cabela's inflated blocks turned up "WORLD" chunks of 27 and 47 bytes with
+    # ids 0x2bb and 0x27d that are nothing of the kind.  A real top-level stream very nearly
+    # fills its file - Blitz's clumps are 836 of 848 bytes - so a plain stamp has to as well.
+    plain = 0x0200 <= lib <= 0x03FF and 12 + sz >= size // 2
     if not old_style and not plain and (lib & 0xFFFF != 0xFFFF or lib >> 16 > 0x3FFF):
         return False
     return 12 + sz <= size and sz >= 4

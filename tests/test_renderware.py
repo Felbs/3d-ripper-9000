@@ -373,3 +373,17 @@ def test_a_nonsense_library_id_is_still_refused():
 
     head = struct.pack("<3I", rw.CLUMP, 64, 0x12345678)
     assert not rw.looks_like_stream(head, 12 + 64)
+
+
+def test_a_bare_stamp_must_nearly_fill_its_file():
+    """Two bytes of version is not much signal on its own.  Scanning Cabela's inflated blocks
+    turned up "WORLD" chunks of 27 and 47 bytes with ids 0x2bb and 0x27d - coincidence, and
+    every one raised `world without struct` when extracted.  A real top-level stream nearly
+    fills its file: Blitz's clumps are 836 bytes of 848."""
+    import struct
+
+    from gcrip.formats import rwstream as rw
+
+    head = struct.pack("<3I", rw.WORLD, 27, 0x02BB)
+    assert not rw.looks_like_stream(head, 1_547_736)
+    assert rw.looks_like_stream(struct.pack("<3I", rw.CLUMP, 824, 0x0310), 848)
