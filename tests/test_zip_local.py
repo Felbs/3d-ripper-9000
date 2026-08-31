@@ -2,7 +2,6 @@
 
 import io
 import zipfile
-import zlib
 
 from gcrip.formats import zip_local
 from gcrip.plugins import zip as plugin
