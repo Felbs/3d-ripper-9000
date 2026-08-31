@@ -48,6 +48,30 @@ correctly.  Whether its payload is stored or begins further in is unanswered.
 Beyblade's `add00dat.bin`.  Both `expand` to nothing, so they are harmless - a wrong claim
 costs one in-memory parse - but they are noise in this audit and should be read as such.
 
+## Following the audit's other leads
+
+Calling each claiming plugin's `expand` directly on the disc separates a dead plugin from an
+archive that is genuinely empty:
+
+| disc | archive | expands to | verdict |
+|---|---|---|---|
+| Disney's The Haunted Mansion | `mansion.jam` 409 MB | **16,252 members, 2,945 `.tpl`** | stale dump |
+| Jimmy Neutron: Jet Fusion | `Data_GC.rkv` 494 MB | 12,646 members | worth a re-rip |
+| Harry Potter: POA | `PACKAGES.BIG` 583 MB | 2,151 `.pkg` / `.pkga` | expanded, inner open |
+| Gundam vs Z Gundam | `afs_data.afs` 365 MB | 2,572 `.bin` | expanded, inner open |
+| Cubix Showdown | `music.gcp` 177 MB | 44 `.str` / `.wav` | audio, correctly nothing |
+| Blood Omen 2 | `gamecube.rkv` 442 MB | **0** | false claim |
+
+**Haunted Mansion is the clearest case.**  Only `jam2` claims `mansion.jam`, and it yields
+16,252 members of which **2,945 are `.tpl` - all 60 sampled parse as real TPL**.  The disc's
+manifest holds 2,590 entries and not one `.tpl`, and the disc rebuilt with zero models and
+zero textures.  The plugin is right, the dump predates it.
+
+That is the same shape as TMNT: Mutant Melee, and it is worth naming as a category of its own:
+**a stale dump looks exactly like a dead plugin from the outside.**  The way to tell them apart
+is to run the plugin against the disc by hand - if it works today, the dump is old; if it does
+not, the plugin is broken.
+
 ## Run this after any rip
 
 A disc that produces 0 where a decoder measured thousands is a dead plugin, not a hard format.
