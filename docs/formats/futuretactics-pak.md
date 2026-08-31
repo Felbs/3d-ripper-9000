@@ -25,7 +25,7 @@ has to hold - 305,652 on this archive, exactly.  That is a stronger claim than a
 and it costs nothing.  It is worth preferring this kind of check over "the file is called
 `files.pak`" whenever the header offers one.
 
-## Bit 31 of the size is a flag
+## Bit 31 of the size means the member is compressed
 
 3,055 of the 5,458 entries have it set.  Read as a plain size those members land two gigabytes
 past the end of a 143 MB file, which looks like a **broken table** rather than a flag - a first
@@ -36,18 +36,32 @@ without anything looking wrong.  What gave it away is that the bad sizes were al
 Masked to its low 31 bits, every one of the 5,458 entries lands inside the file, the members
 tile with gaps of nought to three bytes, and none overlaps.
 
-## What is inside
+## What is inside, and what actually reads
 
-| kind | count | gcrip reads it |
+**5,451 members, 150.6 of 150.9 MB.**  The flag decides what happens to each: an unflagged
+member is stored as it is, a flagged one is compressed and comes out packed.
+
+| kind | count | claimed by, walked through the real chain |
 |---|---|---|
-| `.DFF` | 1,207 | RenderWare models |
-| `.DDS` | 1,052 | yes |
-| `.AN2` | 818 | no |
-| `.ANM` | 797 | no |
-| `.BMP` | 708 | yes |
-| `.PNG` | 637 | yes, since this session |
-| `.DAT` / `.CUT` | 159 | no |
+| `.DFF` | 1,207 | **nothing** - all sampled are compressed |
+| `.DDS` | 1,052 | `dds_pack`, 12 of 12 sampled -> textures |
+| `.AN2` | 818 | nothing |
+| `.ANM` | 797 | nothing |
+| `.BMP` | 708 | `bmp`, 12 of 12 -> textures |
+| `.PNG` | 637 | `png`, 12 of 12 -> textures |
+| `.DAT` / `.CUT` / `.XML` / `.FNT` | ~180 | nothing |
 
-**5,451 members, 150.6 of 150.9 MB**, and four of the seven kinds already have readers - the
-`.DFF` are RenderWare geometry, which is what makes this disc worth opening rather than just
-another texture haul.
+### A claim this note made and had to withdraw
+
+The first version of this note said the archive holds "1,207 RenderWare `.DFF` models" and that
+four of the seven kinds already had readers.  Walking the chain instead of assuming showed the
+`.DFF` are claimed by **nothing** - and inspecting one explained why: its header read
+`type 0x0655, size 4322, version 0x0005fc00`, which is not a RenderWare chunk at all.
+
+That was compressed data.  **Every one of the 223 `.DFF` sampled has bit 31 set**, so the bytes
+being read as a chunk header were the packed body plus its 8-byte preamble.  Whether they are
+RenderWare underneath is unknown and stays unknown until the codec falls; the extension is the
+only evidence, and an extension is not a format.
+
+The lesson is narrow and was already on the cross-cutting list in a different form: a plausible
+header read out of a member you have not confirmed is uncompressed tells you nothing.

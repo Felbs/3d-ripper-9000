@@ -16,14 +16,20 @@ Having no magic, it is recognised by arithmetic that fits in the 64 bytes a plug
 ``u32 at 52 == 4 + count * 56`` has to hold, and on this archive it does exactly (305,652).
 That is a far stronger check than a name test, and it costs nothing.
 
-**Bit 31 of the size is a flag.**  3,055 of the 5,458 entries have it set, and reading the word
-as a plain size puts those members two gigabytes past the end of a 143 MB file - which looks
-like a broken table rather than a flag, and cost a first pass 56% of the archive.  Masked to
-its low 31 bits every entry lands inside the file, the members tile with gaps of nought to
-three bytes, and none overlaps.
+**Bit 31 of the size means the member is compressed.**  3,055 of the 5,458 entries have it
+set, and reading the word as a plain size puts those members two gigabytes past the end of a
+143 MB file - which looks like a broken table rather than a flag, and cost a first pass 56% of
+the archive.  Masked to its low 31 bits every entry lands inside the file, the members tile
+with gaps of nought to three bytes, and none overlaps.
 
-What comes out is worth the trouble: 1,207 RenderWare `.DFF` models, 1,052 `.DDS`, 818 `.AN2`,
-797 `.ANM`, 708 `.BMP`, 637 `.PNG`, and gcrip already reads four of those.
+A compressed member opens with ``u32 unpacked size`` and a second word, then the packed body.
+The codec is private: zlib in three window modes, gzip, `refpack`, `prs`, `yaz0`, `yay0`,
+`lzo`, `avlz`, `lzr` and `jade_lzo` all fail, at skips of 8, 12 and 16 bytes.  So this reader
+hands compressed members out **as stored**, and they are unreadable until the codec falls.
+
+The uncompressed members are what the archive delivers today, and they were checked through
+the real plugin chain rather than assumed: twelve of twelve `.BMP`, twelve of twelve `.DDS` and
+twelve of twelve `.PNG` sampled came back as textures.
 """
 
 from __future__ import annotations
