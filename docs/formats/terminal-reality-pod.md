@@ -290,3 +290,32 @@ byte order (`3700b404` is 7.6e-6 big-endian, denormal little-endian).
 
 Two sessions have gone into `_dfm` without a decode.  It is parked here with everything known
 written down; the remaining cluster work (Blitz `.gcp`, AFS inner formats) is better value.
+
+### The bone-local hypothesis is still untested, and here is what it would need
+
+The note above proposes bone-local vertices as the reason both box tests fail, but that was
+never actually *tested* - only offered as an explanation.  Testing it needs bind transforms to
+push the vertices into model space, and `HERO.SKL` does not obviously carry them: the 29 bone
+records are **not fixed-layout**.  Names sit on a 36-byte cadence, but the numeric fields do
+not line up beneath them - bone 0 has a float in its third word, bone 1 in its second, bone 2
+in its first - so a fixed name field is the wrong reading and the record is something else.
+Anyone resuming this should settle the bone record before attempting the transform.
+
+## `.SKL` is a skeleton **and an animation bank** (2026-09-01)
+
+The note above records only that the payload "names bones".  It carries far more::
+
+    +0     u32  version, 2
+    +4     u32  bone count, 29
+    +8     the bone records, on a 36-byte cadence (layout unsettled, see above)
+    +1052  u32  animation count, 32
+    +1056  the clip names, a 30-byte stride: STAND_DEFAULT, STAND_CHECK_HEADSET,
+           STAND_AMBIENT_1..9, GETUP_FRONT, GETUP_BACK, ACTIVATE_LEFT, ACTIVATE_RIGHT,
+           HURT_FRONT, HURT_BACK, STRAFE_LEFT, STRAFE_RIGHT, ...
+    +2016  the animation payload, 152,960 bytes - 4,780 a clip on average
+
+The payload opens `u32 34` then the clip's own lowercase name (`standdefault`), so each clip
+repeats its name in a second form.  **`HERO.SKL` is 99% animation by weight** - 152,960 of its
+154,976 bytes - which is worth knowing before anyone spends another session treating it as a
+skeleton file.  It also means Blowout's character animation is locatable even while `_dfm`
+geometry is not.
