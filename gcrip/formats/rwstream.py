@@ -521,11 +521,26 @@ def parse_clump(data: bytes) -> Clump:
                     except (RwError, ValueError, struct.error) as e:
                         clump.warnings.append(f"geometry {len(clump.geometries)}: {e}")
                         clump.geometries.append(Geometry(0, 0, 0, [], c.version))
+        elif k.type == GEOMETRY:
+            # Piglet's BIG GAME writes CLUMP -> STRUCT, FRAMELIST, GEOMETRY with **no**
+            # GEOMETRYLIST wrapper: of 400 of its clumps, 0 have a GEOMLIST child and 59 have a
+            # GEOMETRY one.  Reading only the wrapped form saw nothing in any of them.
+            try:
+                clump.geometries.append(_parse_geometry(data, k))
+            except (RwError, ValueError, struct.error) as e:
+                clump.warnings.append(f"geometry {len(clump.geometries)}: {e}")
+                clump.geometries.append(Geometry(0, 0, 0, [], c.version))
         elif k.type == ATOMIC:
             st = child(data, k, STRUCT)
             if st is not None and st.size >= 8:
                 fi, gi = struct.unpack_from("<2I", data, st.off)
                 clump.atomics.append(Atomic(fi, gi))
+    if clump.geometries and not clump.atomics:
+        # those same clumps declare numAtomics = 0, so nothing binds the geometry to a frame.
+        # Draw each at the root rather than dropping it; this can only fire where the clump
+        # would otherwise yield no primitives at all.
+        clump.warnings.append("clump has geometry but no atomics: drawn at the root frame")
+        clump.atomics = [Atomic(0, i) for i in range(len(clump.geometries))]
     return clump
 
 

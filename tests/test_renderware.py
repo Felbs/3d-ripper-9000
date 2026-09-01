@@ -387,3 +387,51 @@ def test_a_bare_stamp_must_nearly_fill_its_file():
     head = struct.pack("<3I", rw.WORLD, 27, 0x02BB)
     assert not rw.looks_like_stream(head, 1_547_736)
     assert rw.looks_like_stream(struct.pack("<3I", rw.CLUMP, 824, 0x0310), 848)
+
+
+def _rw(kind, payload, lib=0x1003FFFF):
+    import struct as _s
+    return _s.pack("<3I", kind, len(payload), lib) + payload
+
+
+def test_geometry_directly_under_a_clump_is_read():
+    """Piglet's BIG GAME writes CLUMP -> STRUCT, FRAMELIST, GEOMETRY with no GEOMETRYLIST
+    wrapper: of 400 of its clumps, 0 have a GEOMLIST child and 59 have a GEOMETRY one, so
+    reading only the wrapped form saw nothing in any of them.
+    """
+    import struct as _s
+
+    from gcrip.formats import rwstream as rw
+
+    geom_struct = _s.pack("<4I", 0, 0, 0, 0)  # flags, triangles, vertices, morph targets
+    geometry = _rw(rw.GEOMETRY, _rw(rw.STRUCT, geom_struct))
+    clump = _rw(rw.CLUMP, _rw(rw.STRUCT, _s.pack("<3I", 0, 0, 0)) + geometry)
+    parsed = rw.parse_clump(clump)
+    assert len(parsed.geometries) == 1
+
+
+def test_geometry_without_atomics_is_drawn_at_the_root():
+    """Those same clumps declare numAtomics = 0, so nothing binds the geometry to a frame and
+    it would be dropped.  The fallback can only fire where there would be no primitives."""
+    import struct as _s
+
+    from gcrip.formats import rwstream as rw
+
+    geometry = _rw(rw.GEOMETRY, _rw(rw.STRUCT, _s.pack("<4I", 0, 0, 0, 0)))
+    clump = _rw(rw.CLUMP, _rw(rw.STRUCT, _s.pack("<3I", 0, 0, 0)) + geometry)
+    parsed = rw.parse_clump(clump)
+    assert [(a.frame, a.geometry) for a in parsed.atomics] == [(0, 0)]
+    assert any("no atomics" in w for w in parsed.warnings)
+
+
+def test_a_clump_with_real_atomics_is_left_alone():
+    """The fallback must not invent atomics for a clump that already has them."""
+    import struct as _s
+
+    from gcrip.formats import rwstream as rw
+
+    geometry = _rw(rw.GEOMETRY, _rw(rw.STRUCT, _s.pack("<4I", 0, 0, 0, 0)))
+    atomic = _rw(rw.ATOMIC, _rw(rw.STRUCT, _s.pack("<4I", 3, 0, 0, 0)))
+    clump = _rw(rw.CLUMP, _rw(rw.STRUCT, _s.pack("<3I", 1, 0, 0)) + geometry + atomic)
+    parsed = rw.parse_clump(clump)
+    assert [(a.frame, a.geometry) for a in parsed.atomics] == [(3, 0)]
