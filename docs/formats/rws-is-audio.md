@@ -105,3 +105,32 @@ Kart Racer (16) and Charlie's Angels (13) share a **different** one with each ot
 
 That is four more discs at zero, on one shared format, and a clean handle to start from.  It is
 not this reader's.
+
+
+## Asterix's `.KGC` - reconnaissance, not cracked (2026-09-01)
+
+108 files: 146 bytes of level metadata at the small end, three of 15-16 MB at the large.  Entropy
+5.88 to 7.15, so parts are compressed.  Header, little-endian::
+
+    +0   u32  varies per level - 0x86d8, 0x84a2, 0x76c1
+    +4   u32  0x0002e50a / 0x0002e50b - near constant, a version
+    +8   u32  0x00000500
+    +12  u32  0
+    +16  packed words that repeat: 0x00010001, 0x01000100, 0x00010000, 0x01000001
+
+They carry the asset names in the clear, with LOD suffixes, so the naming survives whatever
+packs them: `spec1_obelix`, `spec1_pirnl_sabre_lod0`, `it_baril_rayons_b01_p0`,
+`he_pier_templ_d01_p0`, `100_specmap6`, `sfx_cascade06a`, `ico_jauge02`.
+
+**Two cheap tests, both negative, both worth not repeating:**
+
+* the trick that cracked Madagascar finds nothing here - scanning for `CLUMP` / `WORLD` /
+  `TEXDICT` / `GEOMETRY` / `ATOMIC` headers with any plausible library stamp gives **zero hits**
+  across three 256 KB samples, so this engine does not embed RenderWare streams whole;
+* there is **no offset table** in the first 8 KB.  The longest ascending in-range run is twelve
+  small integers (95, 107, 108, 110, ...), which are indices, not offsets, and the header words
+  are repeating packed patterns rather than a directory.
+
+So `.KGC` is a serialised structure to be walked from byte 0, not an archive with a table -
+the same shape of problem as TotemTech's `.dgc`.  That is a session of its own, and the two
+negatives above are the ones not to spend it on.

@@ -103,7 +103,7 @@ other side, their `.rws` being `sound/` and `music/`.
 second rip time on those discs was the signal** - there was nothing for a model plugin to walk.
 
 The geometry is in a different container on each disc, from four studios that merely licensed
-RenderWare: Asterix 108 `.KGC` (~16 MB each), Madagascar 16 `.gcn`, Piglet one 232 MB
+RenderWare: Asterix 108 `.KGC` (~16 MB each; **recon done** - no RenderWare chunks and no offset table, so it is a serialised structure to walk from byte 0), Madagascar 16 `.gcn` (**cracked**), Piglet one 232 MB
 `PIGGCN.pkd`, Frogger one 198 MB `gamedata.bin`.
 
 **Madagascar's `.gcn` is now CRACKED** (`plugins/tfb_gcn.py`, 114,936 triangles from `title.gcn`).  It was where to start: entropy 1.61, two RenderWare-stamped chunks then a
