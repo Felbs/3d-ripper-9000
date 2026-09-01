@@ -187,3 +187,46 @@ Two details to add to what is already recorded above:
 * Bleach's `.rg1` carry a recurring word `37 00 02 1c` at +8, +20, +36 and +48 - not a fixed
   stride, so it reads as a separator or type tag between variable-length records rather than a
   field of one. The `16 00 00 00` opening and the names at +76 were already known.
+
+### Bleach: the recurring word is a typed record header (2026-09-01)
+
+It is not one word, it is a **header**::
+
+    u16 type      0x2d and 0x00 inside a chr member; 0x37 in the .rg1
+    u16 0x1c02    the magic
+    u32 field
+    u32 field
+
+That reading is what makes the rest fall out.  The wrapper is `u32 22`, `u32 size` where size is
+the member length minus 12, exact on both samples.
+
+**The large records carry a real length** and chain on `at + 12 + size`, where `size` is the
+`u32` at +8, exactly::
+
+    66216  type 0x15  size 33412  ->  99640     (observed)
+    99640  type 0x15  size 33412  -> 133064     (observed)
+    66228  type 0x01  size 33388  ->  99628     (observed, then a 12-byte record to 99640)
+
+**But a flat walk from +8 fails on the first record**, so this is a nested tree and not a chunk
+list: the records at 8, 20 and 36 are 12, 16 and 12 bytes, and `(type 1, 4)` at +8 does not
+mean a four-byte payload - the next header is twelve bytes later, not sixteen.  Whoever picks
+this up needs the per-type header shape before the walk generalises.
+
+A **type 0** record at 19132 introduces about 47 KB of byte data with smooth runs
+(`07 07 07 06 06 07 07 07 51 51 47 47 ...`).
+
+### The texture lead, and why it is not shipped
+
+Read as GX `I8`, that region scores 11.7 at 256x128 and 13.2 at 256x176 against a shuffled copy
+of its own pixels, where noise scores about 1 and real textures 3-70; width 256 wins at every
+height tried, which is the signature of a correct row stride.
+
+**It is still only a lead.**  The region is 47,080 bytes and factors into no clean texture -
+256x176 is not a power of two and leaves 2,024 bytes over - so there is no size identity to
+confirm any of it, and the Blitz note's lesson applies directly: a smoothness score validates a
+layout you already believe and cannot search for one.  Shipping a reader on this evidence would
+be guessing.  What it needs is the per-type header shape, which would give the payload's
+declared length and turn the guess into an arithmetic check.
+
+The linear (untiled) width sweep is **not** evidence either way: its scores fall monotonically
+from width 8, which is an artifact of narrow images having fewer rows, not a peak.
