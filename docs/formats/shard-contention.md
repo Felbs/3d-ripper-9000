@@ -24,3 +24,16 @@ NBA Live 06 was written off as unfinishable at "50 files an hour, 1,100 hours re
 rate was contention, not the disc.  It was stopped on that basis - the right call for other
 reasons, since it is genuinely the largest disc in the set at 63,302 plugin-format files, but
 the number quoted for it was wrong.
+
+## What wave 2 left behind
+
+Wave 2 finished at 20:27 with **552 games ripped, 361,446 models, 68,660 clips** - and 633 of
+638 rows.  Five discs came out with no row at all and are queued as wave 4:
+
+* **Tiger Woods PGA Tour 06** - its `OBG` terrain and `TXG` textures were cracked *after* it
+  was dropped from the ledger, so wave 4 is the first run that can see either;
+* **NBA Live 06** - stopped by hand at 11% while ten shards were thrashing the drive;
+* **PSO Card Battle**, **SpongeBob: Battle for Bikini Bottom**, **Ultimate Muscle** - queued
+  behind NBA Live 06 on the same shard and never reached.
+
+They need no `--drop`: with no row in `batch_results.jsonl` the dump will not skip them.
