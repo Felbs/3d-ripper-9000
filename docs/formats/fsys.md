@@ -99,7 +99,36 @@ rather than spaces.
 the reader now decompresses **804 members on Colosseum and 1,132 on XD**.  Read by
 `gcrip/formats/fsys.py` + `gcrip/plugins/fsys.py`.
 
+## The image members - Colosseum
+
+`gcrip/formats/fsys_tex.py` + `gcrip/plugins/fsys_tex.py`.  A decompressed member is an image
+when it opens:
+
+    +0    u16 width
+    +2    u16 height
+    +4    u8  bits per pixel   0x20 = 32 (GX RGBA8), 0x10 = 16 (RGB5A3)
+    +5    u8                   0x01 on every image seen
+    +128  GX pixels
+
+**Bits per pixel names the format, not a GX code** - the field holds 32 and 16 where GX would
+say 6 and 5 - and `+4` is a **single byte**.  Read as a `u16` it comes out 8,193, matches no
+depth, and every image is silently skipped; that cost a pass returning zero textures, and there
+is a test on the exact value.
+
+`128 + encoded_size(format, width, height) == the member` is the check.
+
+**1,332 textures from Colosseum's fourteen largest archives**, a median **4.5x** smoother than
+a shuffled copy of their own pixels: 64x64 (822), 42x84 `poke_face` portraits (370), 200x150
+(88), 84x84 (48).
+
+That is also the proof the `LZSS` codec above is right.  "It decoded to the declared length"
+never could have been - eighty wrong parameter sets managed that - but a wrong decompression
+cannot yield 1,332 coherent pictures.
+
 ## Still open
 
-The member formats themselves - no existing plugin claims a decompressed member yet.  The u16
-pairs at the head of many of them look like dimensions, so textures are the place to start.
+**XD's members are wrapped differently.**  They open with their own length as a big-endian
+`u32` (`00 01 1a 17` on a 72,215-byte member) followed by two more sizes and a count, so its
+images sit one layer further in.  None of Colosseum's 1,332 pattern matches there yet.
+
+Colosseum's other members - 1,456 in the same sample - are not images and are left alone.
