@@ -50,6 +50,37 @@ Worth saying plainly: there is no mesh layout to hunt in either until the codec 
 | Hunter `AGM` / `AGD` materials | 1 | `AGG` meshes ship (781,658 triangles) and carry their material **names**, and the `LJAM` archives hold 3,865 `TPL` beside them, but the text that maps one to the other (`MatAssignment` / `MaterialDatabase`, 3,465 files) is not read, so the meshes come out untextured | see [formats/high-voltage-ljam.md](formats/high-voltage-ljam.md) |
 | `bin`/`dat` tail | many | **surveyed** - and it is inner-format-bound, not container-bound.  431 of 629 dumped discs produce no triangle-bearing model, and of 158 large bin/dat files on them (audio and video excluded by the manifest's own `kind`) 114 are claimed by no specific container - but the magics **do not cluster**, so there is no single format here to attack.  Closed as audio: `SCHl` (EA, 516 MB over Knockout Kings 2003 and Quidditch World Cup) and `FJF\0` (Sonic Mega Collection's ADX).  **New 3-disc cluster**: magic `a4 0d 6d 71`, header naming its toolchain `Created/Modified using Kashmir` plus an author string, on City Racer (52 `.dat`), Speed Challenge: Jacques Villeneuve (33) and Taxi 3 (10).  It is a **property-driven scene graph**: entities are an 8-byte type id then a NUL-terminated name, with the id appearing earlier on its own (a type table, then instances) - `GhostPoint`, `StartPoint00`, and on Taxi 3 the property names as well (`AnimatedObject_SoundSource`, `WaveName`, `MinDistance`, `UseDoppler`, `Draw_Sphere`).  Geometry is not reachable yet: entropy by sixths 7.23/1.59/7.45/6.81/6.19/7.25 and `gxscan` finds nothing on City Racer, two meshes on Taxi 3 - container and payload both.  **Tomb Raider: Legend's `bigfile.dat` is now open** - it was a sorted hash table after all, with 16-byte records behind it (see [formats/cd-bigfile.md](formats/cd-bigfile.md)); 617 of 617 sampled members read exactly, and its payloads are surveyed: a `00 00 7c/7d xx` family is 48 of 91 sampled members and carries `f32` fields (16.0, 29.0, 1380.0) beside a count - the geometry candidate; `00 00 00 0e` is 26 and is **itself a container, now mapped**: a 24-byte header whose second word is the record count, then that many 20-byte records each beginning `0xffffffff` - verified on 60 of 60 such members; `!WAR` and a `00 00 6d xx` family make up the rest.  **Not GX**: `gxscan` finds 3 meshes and 206 triangles over all 91, so it needs its own mesh reader | see [formats/bin-dat-tail.md](formats/bin-dat-tail.md) |
 
+## What the 191 empty discs actually hold (measured 2026-09-01)
+
+Re-measured after this session's fixes took the library to 700,199 models.  For every disc that
+still produces nothing, the largest file that is **not** audio, video or code:
+
+| ext | discs | MB across their biggest files |
+|---|---|---|
+| `bin` | 18 | 2,842 |
+| `dat` | 14 | 7,600 |
+| `wad` | 6 | 1,598 |
+| `afs` | 6 | 1,890 |
+| `ngc` | 6 | 130 |
+| `arc` | 5 | 1,398 |
+| `blt` | 4 | 474 |
+| `gcp` | 4 | 1,104 |
+| `fpk` | 4 | 7 |
+| `pac`, `big`, `spd`, `sr`, `mst`, `zip`, `viv` | 3 each | |
+
+**Only 2 of the 191 are genuinely dry** - Space Raiders and Tower of Druaga, both arcade ports
+with no non-media file over 1 MB.  The other 189 all have something substantial to attack, so
+the tail is not padded with hopeless discs.
+
+But it does not cluster: the biggest single group is 18 discs, and after `bin`/`dat` the
+distribution is a long tail of threes and fours.  That is the same conclusion the 2026-08-30
+survey reached from the other direction, now confirmed on the post-fix library - **there is no
+one format left that unlocks a large number of discs**, and the remaining work is per-engine.
+
+A caution for whoever repeats this: `h4m` and `bik` are video and `sab` is audio, but the
+manifest's own `kind` does not mark them, so a census that trusts `kind` alone reports 13 discs
+whose "biggest file" is an FMV.  The table above filters by extension as well.
+
 ## The state of the tail (measured 2026-08-30)
 
 223 discs still produce neither a model nor a texture.  For each one, the largest file that
