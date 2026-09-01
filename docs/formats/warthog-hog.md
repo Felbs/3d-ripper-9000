@@ -77,12 +77,36 @@ was on the Pokemon LZSS.  Three things did:
 3. **Thousands of members with declared sizes.** Once the container framing was right, a real
    archive is a 96-way oracle, and it is what turned up the two masks the text could not see.
 
-## Where the value is
+## The members: `.btga` textures ship
 
 The members are a resource format sharing an 8-byte header (`u32 id`, `u32 kind`), kind 3 =
-`.btga`, 10 = `.bmsh`, 1 = `.bskl`, 2 = `.banr`.  **29,047 `.btga` textures and 19,156 `.bmsh`
-meshes** are now decompressed and named but not yet parsed - that is the next step, and it is
-ordinary format work rather than another codec.
+`.btga`, 10 = `.bmsh`, 1 = `.bskl`, 2 = `.banr`.
+
+**`.btga` is solved** (`gcrip/plugins/wart_btga.py`) - 26 of 26 on Animaniacs' `frontend.hog`.
+A 96-byte header, then one GX mip chain and no palette::
+
+    +25  u8   mipmapped flag        +60  u32  width
+    +27  u8   format code           +64  u32  height
+    +4   u32  kind, 3 = texture     +68  u32  levels
+                                    +88  u32  payload bytes, repeated at +92
+
+The size identity is self-proving: the declared payload has to equal both `len(data) - 96` and
+the mip chain summed over the declared levels.  That is also what gives the bits per texel -
+`0x01` is four and `0x81` is eight - and it excludes `C4`/`C8` outright, since a paletted
+format would need room for a palette and there is none.
+
+`0x01` is **CMPR**: smoothness against a shuffled copy of each image's own pixels scores 1.6 to
+24.5 over the 21 samples, where `I4` scores 0.99 to 2.3 and sits on the noise floor.
+
+`0x81` is **IA4**, and smoothness cannot say so - `I8` and `IA4` share the 8x4 tile and land
+within 0.05 of each other on every sample.  Splitting the byte does say so: under `I8` the low
+nibble is the least-significant bits of one ramp and should be near noise, under `IA4` it is
+alpha and should be as structured as the intensity.  It scores 1.71 to 4.17 against 1.62 to
+4.01 for the high nibble.  The samples that carry that argument are the ones using the full
+byte range - `ahud04` at 137 distinct values and `animaniacs_text` at 256 - because on an image
+that is mostly `0x00` and `0xff` both readings look structured no matter which is right.
+
+**19,156 `.bmsh` meshes** are still unparsed - ordinary format work, no codec left.
 
 ---
 
