@@ -91,6 +91,25 @@ single one** - 119 of 119.  Nothing is being rejected by the acceptance threshol
 them would change nothing: there are no GX display lists with findable vertex arrays in these
 files, and several of the files are not geometry at all.  The scanner is not the lever.
 
+## Cluster 1's `.rws` are audio - the premise was wrong (2026-09-01)
+
+`.rws` was the top of the backlog's ROI list across six discs.  On Asterix & Obelix XXL (631
+files), Madagascar (31) and Piglet's BIG GAME (620) every one is **streamed audio**: a single
+`0x080D` chunk wrapping a `0x080E` table and a `0x080F` block of 40,960 bytes - 20 disc sectors
+- of DSP-ADPCM at entropy 7.04-7.19.  Frogger: Ancient Shadow and Burnout 2 confirm it from the
+other side, their `.rws` being `sound/` and `music/`.
+
+`renderware.py` declines them correctly; widening its sniff would decode sound.  **The 4-to-13
+second rip time on those discs was the signal** - there was nothing for a model plugin to walk.
+
+The geometry is in a different container on each disc, from four studios that merely licensed
+RenderWare: Asterix 108 `.KGC` (~16 MB each), Madagascar 16 `.gcn`, Piglet one 232 MB
+`PIGGCN.pkd`, Frogger one 198 MB `gamedata.bin`.
+
+**Madagascar's `.gcn` is where to start**: entropy 1.61, two RenderWare-stamped chunks then a
+node tree that names its own types in ASCII - `rwID_TEXDICTIONARY`, `TD_LEVEL FOLDER` - and
+carries the original build paths.  See [formats/rws-is-audio.md](formats/rws-is-audio.md).
+
 ## Dead ends - confirmed, do not re-probe
 
 | thing | why |
