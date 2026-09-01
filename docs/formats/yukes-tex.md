@@ -16,7 +16,7 @@ Read by `gcrip/formats/yukes_tex.py` + `gcrip/plugins/yukes_tex.py`.
 ## How it was found
 
 By censusing the 151 discs that produce **textures but no meshes** and grouping them by the
-magic of their largest non-audio file. That put the three WWE discs together on `MPQ\0`, which
+magic of their largest non-audio file. That put three of the four WWE discs together on `MPQ\0`, which
 sent the first look at their `.mpq` archives - and those turned out to be mostly THP video and
 YDSP audio. The extension census of the discs themselves is what pointed at `.tex`.
 
@@ -69,9 +69,9 @@ Measured on the first 40 `.tex` of each disc:
 | WWE Day of Reckoning | 40 of 5,338 | 40 | 153 | 153 | 153 |
 | WWE Day of Reckoning 2 | 40 of 520 | 40 | 181 | 181 | 181 |
 | WrestleMania XIX | 40 of 1,783 | 40 | 1,265 | 1,265 | 1,265 |
-| WrestleMania X8 | 20 of 1,011 | 20 | - | - | - |
+| WrestleMania X8 | 20 of 1,011 | 20 | not counted | - | - |
 
-**1,599 textures from 120 of the 7,641 files**, every member a TPL and every one decoding.
+**1,599 textures from 120 of the 8,652 files**, every member a TPL and every one decoding.
 
 ## Registering it
 
