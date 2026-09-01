@@ -55,7 +55,13 @@ def _shape_index(src, path: str) -> dict[str, str]:
 
 
 def extract(data: bytes, path: str, src) -> list[Scene]:
-    orp = _sibling(src, path, posixpath.basename(path)[:-4] + ".orp")
+    stem = posixpath.basename(path)[:-4]
+    # .orp on the FIFA titles, .orl on MVP Baseball, NHL, FIFA Street, Def Jam and Fight Night;
+    # a disc carries one or the other, never both
+    orp = next(
+        (blob for ext in (".orp", ".orl", ".ORP", ".ORL") if (blob := _sibling(src, path, stem + ext))),
+        None,
+    )
     obj = eagl.parse(eagl.join(data, orp))
     lookup = _shape_index(src, path)
     decoded: dict[str, np.ndarray | None] = {}

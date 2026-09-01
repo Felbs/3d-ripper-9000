@@ -95,15 +95,45 @@ def is_ord(head: bytes) -> bool:
     )
 
 
-def join(ord_data: bytes, orp_data: bytes | None) -> bytes:
-    """Reassemble the ELF from its two members (the .orp starts with the .ord size)."""
-    if orp_data is None or len(orp_data) < 4:
+def _table_fits(data: bytes) -> bool:
+    """Whether the ELF's own section table lands inside ``data``.
+
+    This is the arithmetic that says a join is right: ``e_shoff + e_shnum * e_shentsize`` has to
+    be within the joined bytes, and on a correct pair it equals their combined length exactly.
+    """
+    if len(data) < 0x34 or data[:4] != ELF_MAGIC:
+        return False
+    e_shoff = struct.unpack_from("<I", data, 0x20)[0]
+    e_shentsize, e_shnum = struct.unpack_from("<HH", data, 0x2E)
+    return e_shoff + e_shnum * e_shentsize <= len(data)
+
+
+def join(ord_data: bytes, tail: bytes | None) -> bytes:
+    """Reassemble the ELF from its two members.
+
+    The tail comes in **two forms**, and which one a disc uses decides whether its models are
+    readable at all:
+
+    * ``.orp`` - a ``u32`` holding the ``.ord`` size, then the rest of the ELF.
+    * ``.orl`` - **the same remainder with no size prefix**, used by MVP Baseball 2004/2005,
+      NHL 2003/2004, FIFA Street 1/2, Def Jam Fight For NY and Fight Night Round 2.  Reading
+      only ``.orp`` left every one of those discs raising "section table outside the file" on
+      every model - 9,732 of them, and several of the discs reported zero triangles.
+
+    The prefix is detected rather than assumed: a leading word equal to the ``.ord`` length is
+    one, anything else is not.  Either way the result is accepted only if the ELF's section
+    table then fits, so a wrong pairing fails here instead of parsing to nothing.
+    """
+    if tail is None or len(tail) < 4:
         return ord_data
-    declared = struct.unpack_from(">I", orp_data, 0)[0]
-    declared_le = struct.unpack_from("<I", orp_data, 0)[0]  # some titles store it LE
-    if len(ord_data) not in (declared, declared_le):
-        raise EaglError(f".orp declares {declared:#x} bytes, .ord is {len(ord_data):#x}")
-    return ord_data + orp_data[4:]
+    declared = struct.unpack_from(">I", tail, 0)[0]
+    declared_le = struct.unpack_from("<I", tail, 0)[0]  # some titles store it LE
+    joined = ord_data + (tail[4:] if len(ord_data) in (declared, declared_le) else tail)
+    if not _table_fits(joined):
+        raise EaglError(
+            f"tail of {len(tail):#x} bytes does not complete a {len(ord_data):#x}-byte .ord"
+        )
+    return joined
 
 
 class _Elf:

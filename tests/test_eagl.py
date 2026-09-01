@@ -2,6 +2,7 @@
 
 import struct
 
+import pytest
 import numpy as np
 
 from gcrip.formats import eagl
@@ -185,3 +186,32 @@ def test_plugin_detect_and_extract_without_textures():
     assert len(s.primitives) == 1 and len(s.joints) == 2 and s.materials[0].texture is None
     assert s.joints[1].parent == 0 and s.primitives[0].joints is not None
     assert s.extras["format"] == "eagl"
+
+
+def test_the_tail_may_come_without_a_size_prefix():
+    """`.orp` carries a u32 with the .ord size; `.orl` is the same remainder with no prefix.
+
+    Nine discs use `.orl` - MVP Baseball 2004/2005, NHL 2003/2004, FIFA Street 1/2, Def Jam
+    Fight For NY, Fight Night Round 2 and G3VE69 - and reading only `.orp` raised "section table
+    outside the file" on **every one of their 9,732 .ord**.  The two forms must decode alike.
+    """
+    ord_, orp, _ = build_object()
+    orl = orp[4:]  # the same bytes without the size word
+    assert eagl.join(ord_, orp) == eagl.join(ord_, orl)
+    assert eagl.parse(eagl.join(ord_, orl)).bones == ["Hips", "Spine"]
+
+
+def test_the_join_is_checked_by_the_elf_s_own_arithmetic():
+    """What proves a pairing is right: the section table has to land inside the joined bytes.
+
+    On the real NHL 2003 pair it ends at exactly len(.ord) + len(.orl).  A tail that does not
+    complete the object is rejected here rather than parsing to an empty object.
+    """
+    ord_, orp, _ = build_object()
+    with pytest.raises(eagl.EaglError):
+        eagl.join(ord_, b"\0" * 12)
+
+
+def test_a_missing_tail_is_still_tolerated():
+    ord_, _, _ = build_object()
+    assert eagl.join(ord_, None) == ord_

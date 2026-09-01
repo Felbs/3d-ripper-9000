@@ -225,3 +225,44 @@ A correction to the header note above while I was in there: the palette block's 
 
 Only 11 is mapped.  7 stays undefined and still raises, so the map does not become a licence to
 guess at the next unknown code.
+
+
+## The `.ord` tail comes in two forms, and nine discs use the other one (2026-09-01)
+
+`gcrip` read only `.orp` - a `u32` holding the `.ord` size, then the rest of the ELF.  Nine
+discs pair their `.ord` with **`.orl` instead: the same remainder with no size prefix**, and on
+every one of them each `.ord` raised *section table outside the file (missing .orp?)*.
+
+**9,732 models across nine discs**, and the manifests make the split unmistakable:
+
+| `.ord` | `.orp` | `.orl` | failed | triangles | disc |
+|---|---|---|---|---|---|
+| 3,496 | 0 | 3,496 | 3,496 | 0 | MVP Baseball 2005 |
+| 2,310 | 0 | 2,310 | 0 | 0 | G3VE69 |
+| 1,919 | 0 | 1,919 | 1,919 | 0 | MVP Baseball 2004 |
+| 1,511 | 0 | 1,511 | 1,521 | 0 | NHL 2004 |
+| 1,485 | 0 | 1,485 | 1,483 | 165 | NHL 2003 |
+| 971 | 0 | 971 | 971 | 1,872 | FIFA Street 2 |
+| 521 | 0 | 521 | 521 | 1,272 | FIFA Street |
+| 306 | 0 | 306 | 350 | 0 | Def Jam Fight For NY |
+| 247 | 0 | 247 | 247 | 0 | Fight Night Round 2 |
+
+against FIFA 07, FIFA 06, FIFA Soccer 2004/2005, UEFA and 2006 FIFA World Cup, which all carry
+`.orp` 1:1 with `.ord`, fail nothing and produce over two million triangles each.  **A disc
+carries one form or the other, never both.**
+
+### What proves the join rather than assuming it
+
+The ELF's own arithmetic.  `e_shoff + e_shnum * e_shentsize` is where the section table ends,
+and on NHL 2003's `pane_lowerleft` pair that is **21,664 - exactly `len(.ord) + len(.orl)`**.
+So the tail is appended whole, and `join` now detects the prefix instead of assuming it (a
+leading word equal to the `.ord` length is one, anything else is not) and then **accepts the
+result only if the table fits**.  A wrong pairing fails there rather than parsing to an empty
+object, which is the failure mode worth guarding: `ord + orl[4:]` also "parses", into nothing.
+
+### What this does and does not buy
+
+NHL 2003 goes from 1,483 failures to **0 across 1,310 `.ord`** - but those objects hold no
+models and no bones, so that disc gains clean records rather than geometry.  Whether models
+appear is per-disc and the re-rip will show it; the fix removes the error, and only the discs
+whose `.ord` actually carry `__Model` sections will gain triangles.
