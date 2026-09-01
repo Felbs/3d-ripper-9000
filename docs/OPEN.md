@@ -103,6 +103,31 @@ files, and several of the files are not geometry at all.  The scanner is not the
 | Alien Hominid | the 45 `.pak` are ZIPs gcrip already opens, and their **1,948 members are 1,896 `RSND` sound records, 33 `SWF6` Flash movies, 11 `PIXL` textures, 7 `GLYP` font atlases and one `PDAG`**.  It is a Flash game: the artwork is vector data inside the SWFs, not textures.  The 11 `PIXL` do decode - 128x128 `CMPR`, pixels at +96, and the word at +48 is the data end so the size identifies the format exactly - but eleven font-ish textures is not worth a plugin |
 | TMNT world materials | genuinely untextured in the source data |
 
+## The export contract, and the census that found it broken (2026-09-01)
+
+`Primitive.material` is an **index into `scene.materials`**, and `Primitive.indices` is **flat**,
+three entries a triangle.  Neither is visible from a format reader, so a parser can be right in
+every detail and the plugin still export nothing.  Three plugins had it wrong at once:
+
+| plugin | discs | meshes lost | mistake |
+|---|---|---|---|
+| `res` | 3 (Digimon Rumble Arena 2, Lemony Snicket, Samurai Jack) | **62,640** | `material=-1` with `scene.materials` left empty |
+| `wart_bmsh` | 2 (Animaniacs, Looney Tunes) | 13,967 | material passed as a name; `(M,3)` indices |
+| `ea_obg` | 1 (Tiger Woods 06) | 665 | material passed as a name |
+
+The `res` one is worth understanding rather than just fixing.  `export()` tolerates a `-1`
+material; the **separate `thumbnail()` pass** indexes `material_colors` by it, and `[][-1]`
+raises for the whole model.  Two attempts to reproduce it called `export(thumbnail=False)` and
+passed cleanly.  And because `thumbnail()` returns early on a model with no triangles, it hit
+**only the meshes that had geometry** - exactly the ones worth having.
+
+**The technique that found all three**: `batch_results.jsonl` records a `fail_examples` list per
+disc, and grouping the first example of every disc by plugin and exception sorts 103,130
+recorded failures into a dozen kinds in one pass.  Worth re-running after any batch.
+
+`ripcore.gltf.thumbnail` now falls back to grey for a material it cannot resolve, because a
+thumbnail is a convenience and must not be able to fail an export.
+
 ## Cross-cutting traps worth re-reading before writing any plugin
 
 1. **`detect` and `is_container` get 64 bytes.**  `gcrip.classify.SNIFF_BYTES`.  A check that
