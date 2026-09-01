@@ -137,16 +137,40 @@ produce powers of two 270 times.
 **This is where the missing texture dimensions live**, which is what `rletextu` needs - no
 member of that archive states its own size.
 
-### What the pixels are not
+### The flag byte identifies the depth, and the pixels still resist
 
-The sizes point straight at GX `CMPR` and it does not hold up.  `LFXTstrings_theory_stereo` is
-64x64 with 2,050 bytes available where `CMPR` needs exactly 2,048, and the second entry has
-2,112 against the same 2,048 - so the arithmetic fits twice over.  But decoding it as `CMPR`
-from the byte after the header gives an image only **1.2x and 1.6x smoother than a shuffled
-copy of its own bytes**, where every texture actually cracked in this project scores 3x to 69x.
-That is not a picture.  Either the payload starts a few bytes later than the header implies, or
-it is compressed - the sibling category being called `RleTextures` suggests this engine does
-compress its textures, and `Textures` may simply be the compressed variant of the same thing.
+Walking the whole dataset tree gives **5,092 entries** across every section - Animations 2,708,
+Textures 752, Shaders 738, RleTextures 371, Models 343, Characters 96, ParticleTypes 64,
+QuickDatas 6 - so the container reading is not in doubt.
+
+The two bytes before the dimensions are a format flag, and bits-per-pixel separates them
+cleanly (payload bytes * 8 / (width * height)):
+
+| flag | n | bpp min / median / max | reads as |
+|---|---|---|---|
+| `81 04` | 455 | 4.000 / 4.016 / 4.250 | 4 bpp, no palette |
+| `89 04` | 109 | 4.002 / 4.516 / 6.062 | 4 bpp plus a small palette |
+| `8a 08` | 188 | 8.125 / 10.004 / 136.250 | 8 bpp plus a 512-byte palette |
+
+`81 04` sitting on 4.000 to 4.016 across 455 entries says the payload is **raw and fixed-size**,
+not compressed - a compressor does not land on exactly four bits per pixel 455 times.
+
+**And yet it does not decode as an image in any of the obvious readings.**  Scored as the
+median ratio of a shuffled copy's roughness to the decode's - every texture genuinely cracked
+in this project scores 3x to 69x:
+
+    8a 08  GX I8 tiles      2.91x        89 04  C4, palette last     1.78x
+    8a 08  C8, palette last 1.49x        89 04  C4, palette first    1.39x
+    8a 08  C8, palette first 1.35x       81 04  GX CMPR              1.09x
+    81 04  GX I4 tiles      0.98x        81 04  linear 4 bpp         1.20x
+    8a 08  linear 8 bpp     1.73x
+
+Nothing clears 3x, and the largest group is indistinguishable from noise either tiled or
+linear.  So the depth is known, the dimensions are known, and the pixel order is not.
+
+**Worth trying next:** these are multiplatform titles of the PS2 era, and the sibling category
+is called `RleTextures`, so either a PS2-style swizzle or a per-block encoding is more likely
+than any plain GX layout.  The list above is what has already been eliminated.
 
 ## Still open
 
