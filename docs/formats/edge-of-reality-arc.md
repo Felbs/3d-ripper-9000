@@ -168,9 +168,13 @@ in this project scores 3x to 69x:
 Nothing clears 3x, and the largest group is indistinguishable from noise either tiled or
 linear.  So the depth is known, the dimensions are known, and the pixel order is not.
 
-**Worth trying next:** these are multiplatform titles of the PS2 era, and the sibling category
-is called `RleTextures`, so either a PS2-style swizzle or a per-block encoding is more likely
-than any plain GX layout.  The list above is what has already been eliminated.
+**PS2 swizzle was the obvious next guess and it is wrong.**  These are PS2-era multiplatform
+titles, so the standard `PSMT8` unswizzle was the first thing to try on the 8 bpp group: it
+scores **1.32x**, *worse* than reading the same bytes linearly (1.73x).  Ruled out.
+
+That leaves a per-block encoding as the likeliest answer - the sibling category being called
+`RleTextures` says this engine does encode its textures.  Nine readings are now eliminated;
+the next attempt should start from the payload's own structure rather than from a layout guess.
 
 ## Still open
 
