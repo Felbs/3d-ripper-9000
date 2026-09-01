@@ -106,7 +106,42 @@ alpha and should be as structured as the intensity.  It scores 1.71 to 4.17 agai
 byte range - `ahud04` at 137 distinct values and `animaniacs_text` at 256 - because on an image
 that is mostly `0x00` and `0xff` both readings look structured no matter which is right.
 
-**19,156 `.bmsh` meshes** are still unparsed - ordinary format work, no codec left.
+## `.bmsh` meshes ship too
+
+**13 of 13** members that carry a section table, on the cached `frontend.hog` sample - 1,926
+triangles against the generic display-list scanner's 504 from 4 files.
+
+A `.bmsh` is the resource header then a **chain of section tables**, one table a sub-mesh:
+`u32 count`, `u32 total`, then `count` section sizes, the sections back to back.  Two identities
+do all the work of locating them - `sum(size) == total`, and the chain ends **exactly** at the
+member's end - so nothing has to trust an offset, and a wrong start runs off the end rather
+than quietly succeeding.
+
+Section 0 is GX register state and runtime pointers; one section is a display list, found by
+content because its index is not constant; the rest are vertex arrays.  The index stride is
+derived, not assumed: `u8` on small meshes, big-endian `u16` on larger ones, and a column is
+matched to an array by requiring `(max + 1) * element` to equal the section size to within its
+four-byte padding.  Elements seen are **12** (positions, `f32` x3), **3** (normals, `s8` x3) and
+**4** (texcoords, `s16` x2 over 16384).  **Column order is not array order** - on the smaller
+meshes column 1 indexes the last array - so the mapping is solved rather than assumed, and a
+column matching nothing is the **matrix index** the multi-matrix meshes carry, with values
+running to about 250 that index no array at all.
+
+### The check, and what it caught
+
+The header carries a bounding volume - half-extent, centre, radius - and the decoded geometry
+has to reproduce it.  It does on 13 of 13, and in every case **exactly one** candidate offset
+matches, to better than 1% of the extent.  That is what confirms the stride and the column
+mapping together; a triangle count would show none of it.
+
+It also caught my own error.  Reading the block at a fixed +72 made two meshes look misplaced
+by 740 units - but their two sub-meshes agreed with *each other*, which is what said the
+geometry was right and the offset was wrong.  Those two use a variant header with the block at
++92, so it is now located by signature: a bounding sphere's radius lies between the largest
+half-extent and the box diagonal.
+
+Still open: the **skinned character meshes** carry no section table at all - a different
+layout, and none of the above applies to them.
 
 ---
 
