@@ -86,6 +86,7 @@ def _dxt_colors(c0: np.ndarray, c1: np.ndarray, has_alpha_mode: bool) -> np.ndar
 
 
 def decode_dxt(data: bytes, width: int, height: int, dxt3: bool = False) -> np.ndarray:
+    _check_size(width, height)
     bw, bh = (width + 3) // 4, (height + 3) // 4
     bs = 16 if dxt3 else 8
     need = bw * bh * bs
@@ -150,6 +151,23 @@ def _argb4444(v: np.ndarray) -> np.ndarray:
     g = ((v >> 4) & 0xF) * 17
     b = (v & 0xF) * 17
     return np.stack([r, g, b, a], -1).astype(np.uint8)
+
+
+# A shape header read in the wrong place gives a nonsense size, and every decoder below
+# multiplies it out before touching the body: NBA Live 06's stdMenu.gsh asks for
+# 4,294,836,225 pixels - 0xffff0001 taken as a count - which is a 128 GiB allocation.  It does
+# not fail fast either, because `_pad` and `decode_dxt` first build the buffer they were told
+# to, so the process grows by hundreds of MB a second until it dies and one file burns hours.
+# Nothing legitimate comes near these bounds.
+MAX_DIMENSION = 8192
+MAX_PIXELS = 1 << 24
+
+
+def _check_size(width: int, height: int) -> None:
+    if width <= 0 or height <= 0:
+        raise ValueError("zero-sized image")
+    if width > MAX_DIMENSION or height > MAX_DIMENSION or width * height > MAX_PIXELS:
+        raise ValueError(f"implausible image size {width}x{height}")
 
 
 def _pad(body: bytes, need: int) -> bytes:
@@ -288,6 +306,5 @@ def _parse_entry(data: bytes, off: int, e: str, gc: bool, img: ShapeImage) -> No
                 # GameCube palettes are RGB5A3 words unless they are 32-bit
                 palette = gx_texture.decode_palette(2, pbody, max(1, pw * max(ph, 1)))
             break
-    if w == 0 or h == 0:
-        raise ValueError("zero-sized image")
+    _check_size(w, h)
     img.rgba = _decode_image(code, w, h, body, palette, gc, img.warnings)

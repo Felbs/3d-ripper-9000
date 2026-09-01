@@ -365,3 +365,29 @@ def test_gamecube_shape_mip_codes_decode_as_gx():
     assert cmpr.shape == (8, 8, 4)
     i8 = ea_shape._decode_image(0x19, 8, 4, bytes(32), None, True, warn)
     assert i8.shape == (4, 8, 4) and any("0x19" in w for w in warn)
+
+
+def test_an_implausible_shape_size_is_refused_before_anything_is_allocated():
+    """NBA Live 06's stdMenu.gsh declares 4,294,836,225 pixels - 0xffff0001 read as a count.
+    Every decoder multiplied that out and built the buffer first, so the process grew by
+    hundreds of MB a second toward a 128 GiB MemoryError and one file burned hours."""
+    import time
+
+    import pytest
+
+    start = time.monotonic()
+    with pytest.raises(ValueError, match="implausible image size"):
+        ea_shape.decode_dxt(b"", 0xFFFF, 0xFFFF)
+    assert time.monotonic() - start < 1.0
+
+
+def test_a_zero_sized_shape_is_still_refused():
+    import pytest
+
+    with pytest.raises(ValueError, match="zero-sized image"):
+        ea_shape.decode_dxt(b"", 0, 16)
+
+
+def test_an_ordinary_size_still_decodes():
+    block = bytes.fromhex("ffff0000") + bytes.fromhex("00000000") + bytes(8)
+    assert ea_shape.decode_dxt(block, 4, 4).shape == (4, 4, 4)
