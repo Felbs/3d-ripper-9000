@@ -178,3 +178,47 @@ the palette happens to be ordered, which `AOSTREET`'s is and `CHWG`'s is not.
 
 **Once the codec falls the same reader covers the other 1,858 members and the other four
 discs** - they hold the same records, just packed.
+
+## Narrowing the last field - four things the next attempt should not re-derive
+
+**1. `span >= declared` does not mean a member is stored raw.**  Members are padded, so the
+span is an upper bound on the stored bytes, never the stored length.  `LOGOS.CDF` has span 512
+against declared 464 and is still packed - you can read it in the member itself, where
+`logos.cdf` appears as `"log" c0 "os.cdf"` with a control byte in the middle of its own name.
+Two members were treated as plaintext on this basis and produced pages of meaningless
+"solutions".  **The reliable test is the tag: a raw member has its 4CC at +16, a packed one has
+a `00` at +16 and the tag at +17.**  (The shipped `vc_iff` reader never used the span, so its
+971 textures are unaffected.)
+
+**2. There is no plaintext twin for the `AUSB` or `PLAY` tags.**  Of NBA 2K3's 108 members with
+span >= declared, 30 carry `RTXT` at +16 and are genuinely raw; the other 78 have no tag there
+and are packed.  So the only known plaintext on the disc is the texture records - which is what
+`gcrip/formats/vc_iff.py` reads, and it is why the framing could be verified at all.
+
+**3. The `b1` byte is a two-bit control, not the high half of a distance.**  Its low six bits
+are zero in **every** match observed, across every member: only `0x00`, `0x40`, `0x80` and
+`0xc0` ever appear.  A distance high byte would vary.
+
+**4. The rule for `control == 0` is also wrong, not just the unknown one.**  This is the
+finding that matters, and it invalidates part of the section above.  Take the members whose
+decode contains **exactly one** unknown match - so every other op is forced and the single
+unknown's length is fully determined by the declared output size.  Nine of them hit the
+identical triple `01 c0 1b` at the identical output position 41 with the identical distance 28,
+and they require **different lengths**:
+
+    AH999, ANIMS      29 upwards        CAIRBALL, BUILD36  39 upwards
+    CTIME, LINES      67 upwards        MDCLASS            exactly 119
+    MINTRO, MONONE    37 upwards        MDNONE, MOCLASS    107 upwards
+
+Same input bytes, same state, different answers.  A length is a function of the encoding, so
+one of the ops decoded *before* this point is consuming the wrong number of bytes - which means
+`length = b0 + 3, distance = b2 + 1` for `control == 0` is not right either, even though it
+reproduces the first four matches of `AH959` against the `RTXT` template exactly.
+
+That is the thread to pull: **the trace that verified `control == 0` is only four ops long**,
+and four ops of agreement on a template that is mostly zeros is weaker evidence than it looked.
+The raw `BUILD04/16/18/21.DAT` give the full `RTXT` plaintext to check a longer trace against -
+16 zeros, `RTXT`, the size twice, zeros, `RTXT`, `17`, `25`, zeros, then a name such as
+`headband00`, `armband0007`, `socks0000`, then `ff ff ff f5`.  A compressed member of the same
+tag (`AA754`, `AH743`, `AH945`, `AH954`, `AH959`, all 17,072 bytes) decodes to exactly that
+shape, so the first 176 bytes are known plaintext and can pin far more than four ops.
