@@ -127,8 +127,25 @@ cannot yield 1,332 coherent pictures.
 
 ## Still open
 
-**XD's members are wrapped differently.**  They open with their own length as a big-endian
-`u32` (`00 01 1a 17` on a 72,215-byte member) followed by two more sizes and a count, so its
-images sit one layer further in.  None of Colosseum's 1,332 pattern matches there yet.
+**XD's members are wrapped, and the wrapper is now known.**  296 of the 1,132 members in its
+ten largest archives are:
 
-Colosseum's other members - 1,456 in the same sample - are not images and are left alone.
+    +0    u32 the member's own length
+    +4    u32 payload bytes
+    +8    u32 relocation count
+    +12   u32 1
+    +32   the payload
+    ...   `count` u32 relocation entries, then padding to under 64 bytes
+
+`size == 32 + payload + count * 4` holds on all 296 - `pokeship_0100` is 2,253,031 =
+32 + 2,245,772 + 1,802 * 4 + 19.
+
+**Their payloads are not textures.**  They open with `f32` triples (3.69, 64.82, 531.09 on
+`pokeship_0100`) and none of the 296 matches the image header that Colosseum's 1,332 use, so
+these are models behind a pointer-relocation table rather than pictures.  That is a geometry
+job, not a continuation of the texture work.
+
+The other 836 members do not match the wrapper either and have not been characterised.
+
+Colosseum's non-image members - 1,456 in the same sample - are likewise not images and are
+left alone.
