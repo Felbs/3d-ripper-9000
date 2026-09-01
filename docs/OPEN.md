@@ -53,33 +53,36 @@ Worth saying plainly: there is no mesh layout to hunt in either until the codec 
 ## What the 191 empty discs actually hold (measured 2026-09-01)
 
 Re-measured after this session's fixes took the library to 700,199 models.  For every disc that
-still produces nothing, the largest file that is **not** audio, video or code:
+still produces nothing, the largest file that is not audio, video or code **by extension or by
+path**:
 
-| ext | discs | MB across their biggest files |
-|---|---|---|
-| `bin` | 18 | 2,842 |
-| `dat` | 14 | 7,600 |
-| `wad` | 6 | 1,598 |
-| `afs` | 6 | 1,890 |
-| `ngc` | 6 | 130 |
-| `arc` | 5 | 1,398 |
-| `blt` | 4 | 474 |
-| `gcp` | 4 | 1,104 |
-| `fpk` | 4 | 7 |
-| `pac`, `big`, `spd`, `sr`, `mst`, `zip`, `viv` | 3 each | |
+| ext | discs | | ext | discs |
+|---|---|---|---|---|
+| `bin` | 15 | | `blt` | 4 |
+| `dat` | 15 | | `afs` | 4 |
+| `arc` | 6 | | `pac`, `rom`, `sr`, `pck`, `mst` | 3 each |
+| `viv`, `fpk`, `pak`, `ngc` | 4 each | | | |
 
-**Only 2 of the 191 are genuinely dry** - Space Raiders and Tower of Druaga, both arcade ports
-with no non-media file over 1 MB.  The other 189 all have something substantial to attack, so
-the tail is not padded with hopeless discs.
+**Only 4 of the 191 are genuinely dry** - From Russia With Love, Cubic Lode Runner, Space
+Raiders and Tower of Druaga.  The other 187 all have something substantial, so the tail is not
+padded with hopeless discs.
 
-But it does not cluster: the biggest single group is 18 discs, and after `bin`/`dat` the
-distribution is a long tail of threes and fours.  That is the same conclusion the 2026-08-30
-survey reached from the other direction, now confirmed on the post-fix library - **there is no
-one format left that unlocks a large number of discs**, and the remaining work is per-engine.
+But it does not cluster.  The biggest group is 15 discs, and after `bin`/`dat` it is a long tail
+of threes and fours - the same conclusion the 2026-08-30 survey reached from the other
+direction, now confirmed on the post-fix library.  **There is no one format left that unlocks a
+large number of discs**; the rest is per-engine work.
 
-A caution for whoever repeats this: `h4m` and `bik` are video and `sab` is audio, but the
-manifest's own `kind` does not mark them, so a census that trusts `kind` alone reports 13 discs
-whose "biggest file" is an FMV.  The table above filters by extension as well.
+### Two filters are needed, and the first one alone lies
+
+`h4m` and `bik` are video and `sab` is audio, but the manifest's own `kind` does not mark them,
+so a census trusting `kind` reports 13 discs whose "biggest file" is an FMV.
+
+Filtering by extension too is still not enough, because **the biggest remaining file is often
+media by its path**: Tiger Woods' `Data/Movies/intro.ngc`, Gun's `streams/streamsn.wad`,
+Zapper's `packages/Music/music.gcp`, Muppets' `BVoice.BLT`, Freestyle Street Soccer's
+`Sound/InGame/Shouts/German/shouts.wad`.  An extension-only census put `wad` at 6 discs and
+`gcp` at 4; with the path filter both drop out of the table entirely.  Anyone repeating this
+needs both.
 
 ## The state of the tail (measured 2026-08-30)
 
