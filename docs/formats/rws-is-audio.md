@@ -205,7 +205,30 @@ in the first 300 blocks, which is what made "the payloads need no new reader" lo
 the whole archive most of them parse without raising and hand back **nothing**, so the honest
 figure is 7% of the geometry, not all of it.
 
-So the container is done and the reader is not.  Whether the remaining 93% are GameCube-native
-geometry the RenderWare reader skips, or something else, is the open question - and it is the
-same shape as Piglet's neighbours, whose `.dff` also read partially.  A disc that reported zero
-now reports 27,478 triangles, which is worth having and is not the 936 models it looks like.
+So the container is done and the reader is not.  A disc that reported zero now reports 27,478
+triangles, which is worth having and is not the 936 models the census makes it look like.
+
+### Why the other 93% yield nothing - diagnosed
+
+Three things, found by taking 400 clumps apart:
+
+1. **The clumps are non-standard.**  `CLUMP -> STRUCT, FRAMELIST, GEOMETRY`, with **no
+   `GEOMETRYLIST` wrapper**: of the 400, **0 have a `GEOMLIST` child and 59 have a `GEOMETRY`
+   one**.  A reader that only looks inside the wrapper sees nothing in any of them.
+2. **They declare `numAtomics = 0`**, so nothing binds the geometry to a frame even once it is
+   found, and it would be dropped again.
+3. **Most geometry is native.**  372 of the 400 parse to `atomics=0 geoms=0`, and the geometries
+   that do appear carry flags `0x01010037` - the `rpGEOMETRYNATIVE` bit - with `positions`,
+   `triangles` and `native` all `None`.  Exactly one sampled geometry lacks that bit, and it is
+   the one that produces a mesh.
+
+`gcrip/formats/rwstream.py` now handles (1) and (2): geometry directly under a clump is read,
+and a clump with geometry but no atomics draws each at the root.  Both are safe - they can only
+fire where the clump would otherwise yield no primitives at all - and together they are worth
+**one more scene out of 400**, which is the honest measure of how much of this is (3).
+
+**Where the vertex data is remains open, and one place is ruled out**: the native geometry is
+*not* in a `NATIVEDATA` extension inside the `GEOMETRY` chunk.  Those chunks hold only `STRUCT`
+and `MATLIST` - no `EXTENSION` at all.  So it lives outside the clump, and the archive's **533
+`0x1E` chunks** are the obvious candidate, being the only unidentified bulk left after 936
+clumps, 404 texture dictionaries and 4,891 animations.
