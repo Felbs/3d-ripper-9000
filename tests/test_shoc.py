@@ -110,3 +110,35 @@ def test_a_sized_fill_chunk_is_still_skipped_by_its_size():
     pad = chunk(b"FILL", bytes(24))
     body = build() + pad + shdr(b"sfx ", 2, 4) + wrap(chunk(shoc.ZDAT, zlib.compress(b"ping")))
     assert [m.kind for m in shoc.members(body)] == ["ter", "sfx"]
+
+
+def test_a_payload_shorter_than_declared_and_not_zlib_is_declined():
+    """The 731 Rdat chunks in a 2005 hole.hog each follow an 'sfx ' header wanting 812 bytes
+    and carry 340 - compressed by something that is not zlib.  Emitting them would produce 731
+    members of wrong-sized garbage; declining is what keeps the reader honest."""
+    data = (
+        shoc.MAGIC
+        + struct.pack(">I", 16)
+        + bytes(8)
+        + shdr(b"sfx ", 10, 812)
+        + wrap(chunk(b"Rdat", bytes(340)))
+    )
+    assert shoc.members(data) == []
+
+
+def test_a_long_run_of_untagged_chunks_between_members_is_not_swallowed():
+    """A hole.hog puts hundreds of 8 KB SONO audio chunks between its config members.  They are
+    not SHOC wrappers, so they must neither end the walk nor be joined onto the open member."""
+    sono = b"".join(chunk(b"SONO", bytes(120)) for _ in range(200))
+    body = b"config" * 4
+    data = (
+        shoc.MAGIC
+        + struct.pack(">I", 16)
+        + bytes(8)
+        + sono
+        + shdr(b"Cact", 3, len(body))
+        + wrap(chunk(b"SDAT", body))
+        + sono
+    )
+    (m,) = shoc.members(data)
+    assert (m.kind, m.data) == ("Cact", body)
