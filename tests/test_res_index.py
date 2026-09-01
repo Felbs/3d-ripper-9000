@@ -85,3 +85,57 @@ def test_expand_uses_the_name_where_there_is_one():
     assert any(n.startswith("000_surf_bobblehead_texture") for n in members)
     # the tag infix survives, because the plugin screens members on it
     assert all("_surf_" in n or "_strg_" in n or "_indx_" in n for n in members)
+
+
+def build_scene():
+    """A res file with one `node` that points at two `rdms` sections.
+
+    The reference is the format's usual self-relative offset: the word's value plus its own
+    position lands on the section.
+    """
+    data_off = 0x1000
+    node = bytearray(160)
+    payloads = [(b"rdms", 4, b"MESH-ONE"), (b"rdms", 8, b"MESH-TWO"), (b"node", 12, bytes(node))]
+    body = bytearray()
+    entries = []
+    for t, ident, blob in payloads:
+        entries.append((ident, t, len(body), len(blob)))
+        body += blob
+    dir_off = data_off + 0x1000
+    out = bytearray(dir_off)
+    out[:4] = res.MAGIC
+    struct.pack_into("<H", out, 4, 7)
+    struct.pack_into(">2I", out, 8, data_off, len(body))
+    struct.pack_into(">2I", out, 0x1C, dir_off, 4 + len(entries) * res.ENTRY)
+    struct.pack_into(">I", out, 0x24, len(entries))
+    out[data_off : data_off + len(body)] = body
+    dirbuf = bytearray(4 + len(entries) * res.ENTRY)
+    struct.pack_into(">I", dirbuf, 0, len(entries))
+    for i, (ident, t, off, size) in enumerate(entries):
+        struct.pack_into(">I4sIII", dirbuf, 4 + i * res.ENTRY, ident, t, off, size, 0)
+    blob = bytearray(bytes(out) + bytes(dirbuf))
+    one = data_off + entries[0][2]
+    two = data_off + entries[1][2]
+    node_at = data_off + entries[2][2]
+    for slot, target in ((48, one), (100, two)):     # 52 bytes apart, as the real records are
+        at = node_at + slot
+        struct.pack_into(">i", blob, at, target - at)
+    return bytes(blob), node_at, one, two
+
+
+def test_a_node_names_the_meshes_it_draws():
+    data, node_at, one, two = build_scene()
+    (link,) = res.node_links(data)
+    assert link.offset == node_at
+    assert link.meshes == [one, two]
+
+
+def test_a_mesh_takes_its_node_s_name_in_expand():
+    """Grouping is what the links buy: the parts of one object land together in the output."""
+    data, node_at, one, two = build_scene()
+    names = [n for n, _ in res.expand(data)]
+    assert sum("_rdms_node" in n for n in names) == 2
+
+
+def test_a_file_with_no_node_sections_yields_no_links():
+    assert res.node_links(build()) == []

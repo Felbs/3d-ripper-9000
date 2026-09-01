@@ -99,9 +99,16 @@ def expand(data: bytes) -> list[tuple[str, bytes]]:
     and ``_rdms_``, and the index only ever covers a handful of the sections.
     """
     named = {e.offset: e.name for e in index_entries(data)}
+    owners = {}
+    for link in node_links(data):
+        for mesh in link.meshes:
+            owners.setdefault(mesh, link.name or f"node{link.offset}")
     out = []
     for i, s in enumerate(sections(data)):
         label = _stem(named[s.offset]) if s.offset in named else str(s.ident)
+        if s.tag == "rdms" and s.offset in owners:
+            # a mesh takes its node's name, so the parts of one object land together
+            label = f"{_stem(owners[s.offset])}_{s.ident}"
         name = f"{i:03d}_{s.tag or 'sect'}_{label}.bin"
         out.append((name, data[s.offset : s.offset + s.size]))
     return out
@@ -151,4 +158,51 @@ def index_entries(data: bytes) -> list[IndexEntry]:
         if name is None:
             continue
         out.append(IndexEntry(name, label, target))
+    return out
+
+
+@dataclass
+class NodeLink:
+    offset: int          # of the node section
+    name: str | None     # from the index, when the node is named
+    meshes: list[int]    # offsets of the rdms sections this node draws
+
+
+def node_links(data: bytes) -> list[NodeLink]:
+    """Which meshes each ``node`` section draws.
+
+    A node refers to its meshes by the format's usual **self-relative** offset - a word whose
+    value plus its own position lands on an ``rdms`` section - and the reference sits inside a
+    52-byte record laid out as::
+
+        f32[6]   a min/max box, small and near the origin
+        u32 0 | u32 1 | u32 1 | u32 4
+        u32      the self-relative offset of the mesh
+        u32      0x7f7fffff (FLT_MAX)
+        u32 2
+
+    On Lemony Snicket's 25-section file **all seven ``rdms`` sections are referenced, each
+    exactly once**, by three nodes - so the nodes account for the whole geometry of the file.
+
+    **This is not the placement data.**  The box in each record is about 0.3 units wide and off
+    centre, while the mesh it points at spans +-39 and is symmetric about the origin, so it is
+    neither the mesh's bounds nor a scale of them.  What the links give is *grouping* - which
+    meshes belong to one object - and, through the index, that object's name.  Assembling a
+    level still needs the transform, which is somewhere else in the node section.
+    """
+    found = sections(data)
+    meshes = {s.offset for s in found if s.tag == "rdms"}
+    named = {e.offset: e.name for e in index_entries(data)}
+    out = []
+    for section in found:
+        if section.tag != "node":
+            continue
+        seen = []
+        for at in range(section.offset, section.offset + max(0, section.size - 3), 4):
+            (delta,) = struct.unpack_from(">i", data, at)
+            target = at + delta
+            if target in meshes and target not in seen:
+                seen.append(target)
+        if seen:
+            out.append(NodeLink(section.offset, named.get(section.offset), seen))
     return out

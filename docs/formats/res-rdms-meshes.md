@@ -108,9 +108,37 @@ space rather than assembled into a level.  Colour arrays are read but not bound 
 single entry on nearly every section), and `surf` textures are not yet matched to the meshes
 that use them.
 
-What the index buys towards that: a `node` section now has a name, and the named nodes pair
-with named `surf` textures by asset path (`fx_hud_target` beside `target_texture.tif`).  A node
-section itself reads as f32 triples that repeat - `(-4.501, 0.408, 1.771)` twice in one 812-byte
-section - beside `0x7f7fffff`, which is `FLT_MAX` and the usual way a bounding box is
-initialised.  So the placement data is in there; what is missing is the record layout, and the
-node section's own header (`u32 5`, `u32 80`) suggests a count and a stride to start from.
+### The nodes do reference their meshes (`res.node_links`)
+
+By the format's usual **self-relative** offset - a word whose value plus its own position lands
+on an `rdms` section.  On Lemony Snicket's file **all seven `rdms` sections are referenced,
+each exactly once**, by the three nodes, so the nodes account for the whole geometry:
+
+    node @63616  menus/train_game/fx_hud_bobblehead -> rdms 29184, 30144, 39552
+    node @84128  menus/train_game/fx_hud_shelf      -> rdms 74368
+    node @89408  menus/train_game/fx_hud_target     -> rdms 84992, 86016, 87040
+
+The reference sits in a **52-byte record**::
+
+    f32[6]   a min/max box, small and near the origin
+    u32 0 | u32 1 | u32 1 | u32 4
+    u32      the self-relative offset of the mesh
+    u32      0x7f7fffff (FLT_MAX)
+    u32 2
+
+Both three-mesh nodes put their references at exactly +148, +200 and +252, which is what fixes
+the stride at 52.
+
+**The box is not the placement, and it is worth saying so plainly.**  Each record's six floats
+are componentwise min < max, so they read as a box - but the box is about 0.3 units wide and
+off centre, while the mesh it points at spans +-39 and is symmetric about the origin.  It is
+neither the mesh's bounds nor any scale of them, and no uniform factor maps one onto the other.
+A node section also carries `0x7f7fffff` - `FLT_MAX`, the usual bounding-box initialiser - and
+repeated f32 triples such as `(-4.501, 0.408, 1.771)`, so the transform is somewhere in the
+node; this record is not it.
+
+What the links do buy is **grouping**: which meshes belong to one object, and through the index
+that object's name.  `expand()` uses it, so the three parts of the bobblehead come out as
+`004_rdms_fx_hud_bobblehead_436.bin`, `005_rdms_fx_hud_bobblehead_420.bin` and
+`008_rdms_fx_hud_bobblehead_372.bin` instead of three unrelated numbers.  Assembling a level
+still needs the transform.
