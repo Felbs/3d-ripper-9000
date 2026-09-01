@@ -106,9 +106,21 @@ The geometry is in a different container on each disc, from four studios that me
 RenderWare: Asterix 108 `.KGC` (~16 MB each), Madagascar 16 `.gcn`, Piglet one 232 MB
 `PIGGCN.pkd`, Frogger one 198 MB `gamedata.bin`.
 
-**Madagascar's `.gcn` is where to start**: entropy 1.61, two RenderWare-stamped chunks then a
+**Madagascar's `.gcn` is now CRACKED** (`plugins/tfb_gcn.py`, 114,936 triangles from `title.gcn`).  It was where to start: entropy 1.61, two RenderWare-stamped chunks then a
 node tree that names its own types in ASCII - `rwID_TEXDICTIONARY`, `TD_LEVEL FOLDER` - and
 carries the original build paths.  See [formats/rws-is-audio.md](formats/rws-is-audio.md).
+
+## Neko `.GCN` - four discs, one shared format, all at zero (2026-09-01)
+
+Not Madagascar's `.gcn`, which is cracked; a different format that happens to share the
+extension.  Cocoto Funfair (42 files), Cocoto Platform Jumper (41), Cocoto Kart Racer (16) and
+Charlie's Angels (13) all produce **nothing**, and their level files agree on two things:
+
+* the first `u32` is **big-endian and equals the file size minus 8** - `0x003f875a` against
+  4,163,426 bytes, `0x002a7516` against 2,782,494 - exact on all four;
+* the word at +8 is `0x000000ef` on every one.
+
+2.7 to 4.4 MB a level.  A shared header across four dead discs is a good place to start.
 
 ## Dead ends - confirmed, do not re-probe
 

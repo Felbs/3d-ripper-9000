@@ -64,3 +64,44 @@ Cluster 1 is not one format across six discs.  It is four different level contai
 `.gcn`, `.pkd`, `gamedata.bin` - from four studios that happened to license RenderWare, plus a
 shared audio format that was never going to yield a model.  Anything spent widening the `.rws`
 sniff would have been spent decoding sound.
+
+
+## CRACKED: Madagascar's `.gcn` (2026-09-01)
+
+`gcrip/formats/tfb_gcn.py` + `gcrip/plugins/tfb_gcn.py`.  **114,936 triangles from one file**,
+on a disc that reports zero today.
+
+A `.gcn` is a flat chain of little-endian RenderWare-style chunks that covers the file to the
+byte - 5,028,968 of 5,028,968 on `title.gcn`.  Three types: `0x071C` a class census, `0x0716` a
+named resource, `0x0704` unread.
+
+The census is genuinely useful on its own: `u32 count` then NUL-terminated names padded to four
+bytes with `0xBF`, each with an instance count - `CTFBModel` 15, `CProtoActor` 48,
+`SpriteObject` 165 - so a level says what it holds before anything is opened.
+
+A resource carries its payload behind a header whose **first word is the header's own length**,
+so the payload is at `body + 8 + header` and the build-path strings never have to be walked.
+It is confirmed by ending flush with the chunk, allowing the 1 to 3 bytes of four-byte
+alignment padding that made a strict test miss 24 of 49 resources.
+
+That finds **46 of the 49** RenderWare resources - every `rwID_CLUMP` (18), `rwID_WORLD` (5),
+`rwID_TEXDICTIONARY` (3) and `rwID_HANIMANIMATION` (20); only the three `rwID_2DFONT` differ.
+The payloads need no new reader: `plugins/renderware.py` takes them as they are, giving
+`mort_giant.dff`, `bird_big_mouth.dff`, `penguin_tube_loading.dff` and six world sections.
+
+**The trap**: the payload's library stamp is the old style `0x1c020016`, with no `0xffff` build
+bits, so a hand-rolled scan insisting on those finds *nothing at all* - which is exactly what my
+first pass did. `rwstream.looks_like_stream` already knows about old-style stamps.
+
+### `.gcn` is not one format - checked, not assumed
+
+Seven discs carry `.gcn` and five produce nothing, so it was tempting to claim all of them.
+Only Madagascar is this format.  Cocoto Funfair (42 files), Cocoto Platform Jumper (41), Cocoto
+Kart Racer (16) and Charlie's Angels (13) share a **different** one with each other:
+
+* the first `u32` is **big-endian and equals the file size minus 8** - 0x003f875a against
+  4,163,426 bytes, 0x002a7516 against 2,782,494, exact on all four;
+* the word at +8 is `0x000000ef` on every one.
+
+That is four more discs at zero, on one shared format, and a clean handle to start from.  It is
+not this reader's.
