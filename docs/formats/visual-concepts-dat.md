@@ -69,39 +69,68 @@ are 477 of NBA 2K3's 827 MB between them and hold neither geometry nor textures,
 over 32 MB are skipped rather than carried - holding those two would add half a gigabyte to
 every worker.
 
-## What is blocking it
+## The codec - framing solved, one field left
 
-The `.IFF` payload.  It is dense and bit-packed rather than byte-oriented, and none of the
-obvious families reads it:
+The earlier note said the payload was "dense and bit-packed rather than byte-oriented" and that
+nothing read it.  Both halves of that were wrong, and the sweep that produced them had two
+blind spots.  What follows is verified against known plaintext, not fitted.
 
-* zlib in all three window modes, gzip, `refpack`, `prs`, `yaz0`, `yay0`, `lzo`, `avlz` and
-  `lzr` all fail;
-* a sweep of **plain LZSS** - literal-flag bit either polarity, flag bits taken from either
-  end, match words big- or little-endian, offset in either half, 11/12/13 offset bits, match
-  length +1, +2 or +3, and a literal header of 0, 8, 12, 16, 20 or 32 bytes counted into the
-  output - reaches the exact output length on **none** of 47 members;
-* LZ4's token format fails at the first token.
+### Three facts that unlock it
 
-What the members do show, from a pair that differ in only seven bytes (`AH999.IFF` and
-`ANIMS.IFF`, both 112 bytes in and 144 out): a 16-byte header whose first two bytes vary and
-whose remainder is zero, then a stream carrying **byte-aligned literal text** - `street`,
-`ADDING`, `.bin` - interleaved with short groups of the shape `NN 00 MM` (`01 00 03`,
-`02 00 07`, `05 00 20`).  Byte-aligned literals rule out a bit-packed flag stream; the
-expansion ratio rules out pure run-length coding, since a 112-byte member grows by 29% and a
-13,136-byte one by 154%.
+**1. The 4CCs are stored byte-reversed.**  `RTXT` is `TXTR`, `YALP` is `PLAY`, `AUSB` is
+`BSUA`.  The earlier note recorded `RTXT` as a tag in its own right and never turned it round.
 
-The size column makes this cheap to test: every entry states both the stored span and the
-length the member should reach, so a candidate decoder is right or it is not - there is no
-judgement involved.  That is the thing to keep using.
+**2. Every packed member states its own output length.**  A `u32` at **+21** equals
+`declared - 16`, on 38 of 45 members sampled.  That is a second oracle beside the table's size
+column, and it is inside the member, so it survives any doubt about the table.
 
-## Worth knowing before starting
+**3. Fifty-eight of the 1,916 `.IFF` members are stored uncompressed** - `size == span` - and
+four of them are large: `PLAYERS.IFF` (10.2 MB), `LOADM.IFF` (4.5 MB), `CHWG.IFF` (3.5 MB),
+`AOSTREET.IFF` (1.2 MB).  **These give the plaintext the compressed members decode to**, which
+is what cracks the framing.  `AOSTREET.IFF` reads::
 
-* 1,968 entries in an 827 MB file, so a decoder has to be fast enough for the rip pass, but
-  the members are large rather than numerous.
-* The uncompressed members (`.DAT`, `.BIN`, `.CDF`, 52 of them) can be extracted **now** -
-  they need no codec, and `TEAMS.BIN` / `PLAYERS.BIN` are likely to be readable tables.
-* `.IFF` **is** chunked, with 4CC tags - `RTXT`, `BSUA`, and others - though there is no
-  `FORM` header.  An uncompressed member shows the shape plainly: sixteen zeros, `RTXT`, two
-  `u32` sizes, twelve zeros, a second `RTXT`, two more sizes, then a NUL-padded asset name.
-  An earlier draft of this note said there were no 4CCs anywhere; that was read off the first
-  twelve bytes alone and is wrong.
+    +0    16 bytes of header
+    +16   "RTXT"  u32 17056  u32 17056  u32 0   then 12 zero bytes
+    +44   "RTXT"  u32 17     u32 25     then zeros
+    +64   "HEAD0000"                          <- the asset name
+    ...   pixel data
+
+### The framing
+
+    16 bytes copied to the output verbatim
+    then, repeatedly:
+        u8 flags
+        eight items, bit taken LSB first:
+            bit 0 -> literal, one byte
+            bit 1 -> match, three bytes  b0 b1 b2
+                distance = ((b1 & 0x3f) << 8 | b2) + 1
+                length   = b0 + 3            (when b1 >> 6 == 0)
+
+The first flag byte of every member is `0x00`, so the first eight items are literals - and they
+are exactly the reversed 4CC and the `u32` size, matching the uncompressed layout byte for
+byte.  That is not a fit; it is the same eight bytes in both.
+
+Traced on `AH959.IFF` against the template above, the first four matches are `01 00 03`
+(len 4, dist 4), `01 00 03`, `02 00 07` (len 5, dist 8) and `01 80 1b` (dist 28), and the
+distances land the copied bytes exactly where `RTXT` and the two size fields belong - the
+second chunk's sizes come out **17 and 21**, the same shape as `AOSTREET`'s 17 and 25.
+
+### What is left
+
+**The top two bits of `b1`.**  They are not part of the distance: `01 80 1b` needs distance 28,
+and reading those bits into the offset gives 32,796 with only 41 bytes of output to copy from.
+The trace requires that match to copy **9** bytes where `b0 + 3` gives 4, so the two bits extend
+the length - but not additively.  Solving `length = b0 + 3 + extra[top2]` over `extra` in
+0..24 fits at best 10 of 14 small members and 19 of 39 overall, so the bits select a different
+op shape (a fourth byte, or a different length unit) rather than adding a constant.
+
+Ruled out along the way, each against the exact-length oracle: flag-byte LZSS with two-byte
+matches in every nibble arrangement, both bit orders, both polarities, offset widths 11-14 and
+length biases 1-4 (best progress 22% of the output); the same with back-distances *and* with
+absolute positions; ring-buffer LZSS in every window size, fill and start position - that one
+appears to score 16 of 32 until you notice the ring mask was quietly making impossible
+positions legal, which is why the ring parameters made no difference to the score.
+
+**The next step** is to decode `AH959.IFF` against `AOSTREET.IFF`'s chunk template and read the
+required length off each `top2 != 0` match directly, rather than sweeping for it - the template
+pins the output, so every such match has exactly one right answer.
