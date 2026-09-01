@@ -143,6 +143,21 @@ geometry was right and the offset was wrong.  Those two use a variant header wit
 +92, so it is now located by signature: a bounding sphere's radius lies between the largest
 half-extent and the box diagonal.
 
+### The bug every format test missed
+
+The first disc run of `wart_bmsh` **failed 5,651 meshes on Animaniacs** and wrote zero
+triangles, while all 16 cached members parsed and 12 tests passed.  Two mistakes in the plugin,
+neither visible from the format reader:
+
+* `Primitive.material` is an **index** into `scene.materials`, not the material's name.  Passing
+  the name raises `ValueError: invalid literal for int()` inside the exporter, once a mesh.
+* `Primitive.indices` is **flat**, three entries a triangle - not the `(M, 3)` the reader
+  naturally produces.
+
+Both are export-contract mistakes, so no amount of testing the parser finds them.  What finds
+them is running `ripcore.gltf.export` on the plugin's own output, which now happens in the
+tests: 42 scenes, 0 failures, 6,672 triangles written.
+
 ### The guard that threw away every skinned mesh
 
 A section may be **empty**, and rejecting a table that contains a zero size looks like a

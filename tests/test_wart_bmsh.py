@@ -144,3 +144,28 @@ def test_an_empty_section_does_not_invalidate_a_table():
     data = bytes(head) + table + b"".join(sections)
     assert wart_bmsh.tables(data)
     assert wart_bmsh.parse(data) is not None
+
+
+def test_the_primitive_matches_what_the_exporter_expects():
+    """The bug this pins failed 5,651 meshes on Animaniacs while every format test passed.
+
+    `Primitive.material` is an **index** into `scene.materials`, not the material's name, and
+    `indices` is **flat** with three entries a triangle, not (M, 3).  Neither is visible from
+    the format reader, so only a test of the plugin's output catches it.
+    """
+    (scene,) = plugin.extract(quad(), "frontend.hog/models/cog.bmsh", None)
+    prim = scene.primitives[0]
+    assert isinstance(prim.material, int)
+    assert 0 <= prim.material < len(scene.materials)
+    assert prim.indices.ndim == 1 and len(prim.indices) % 3 == 0
+    assert int(prim.indices.max()) < len(prim.positions)
+
+
+def test_a_scene_survives_a_real_gltf_export(tmp_path):
+    """Exercise the actual export path, not just the reader - which is how the material and
+    index mistakes reached a disc."""
+    from ripcore.gltf import export
+
+    (scene,) = plugin.extract(quad(), "frontend.hog/models/cog.bmsh", None)
+    export(scene, tmp_path / scene.name, thumbnail=False)
+    assert any(tmp_path.iterdir())

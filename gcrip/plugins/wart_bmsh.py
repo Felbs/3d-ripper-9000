@@ -22,13 +22,15 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
     stem = posixpath.basename(path).rsplit(".", 1)[0] or "mesh"
     scene = Scene(name=stem)
     for i, part in enumerate(mesh.parts):
-        material = MaterialDef(f"{stem}_{i}", None)
-        scene.materials.append(material)
+        scene.materials.append(MaterialDef(f"{stem}_{i}", None))
         scene.primitives.append(
             Primitive(
-                material=material.name,
+                # an index into scene.materials, not the name - passing the name exports
+                # nothing and fails every mesh on the disc
+                material=len(scene.materials) - 1,
                 positions=part.positions,
-                indices=part.indices,
+                # flat, three entries a triangle; SubMesh keeps them as (M, 3)
+                indices=part.indices.reshape(-1),
                 uvs=part.uvs,
             )
         )
