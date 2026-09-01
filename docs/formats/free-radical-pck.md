@@ -121,8 +121,37 @@ Each was then confirmed by looking: a sky gradient for `RGBA8`, a marble panel a
 flare for `I8`, shotgun shells and a GameCube controller for `CMPR`, a mouse pointer and a
 rain streak for `RGB5A3`.
 
+## Where the models actually are
+
+`gcr` is used for two unrelated things, which is worth knowing before sampling:
+
+* the `anim_*` and `cs_*` archives hold **animation** - their `.war` members are `ANR1` /
+  `ANRS` and their `.gcr` are streams of `f32` rotations (`anim__data__cs__l_cry__F_marine.gcr`
+  is 387,904 bytes of them).  Sampling the smallest archives finds only these;
+* **`data/chr.pak` (23.5 MB) is the characters**: 1,295 members, **314 `.gcr` and 981 `.gct`**,
+  named `ob__chrs__chr128.gcr` and so on.  That is where the geometry is.
+
+## What a character `gcr` looks like
+
+`ob__chrs__chr128.gcr`, 135,964 bytes:
+
+    +0    u32 12
+    +4    u32 135,912       the file length less 52
+    +8    u32 0
+    +12   a table of 16-byte records - twelve zero bytes then a u32 that counts 775, 776, 777
+    +176  u16 pairs: 0004 0002, 0004 0001, 0004 0046, 0002 0004, 0002 004c, 0006 0002 ...
+
+**`gxscan` finds one mesh of 36 triangles in it**, which is noise.  The earlier note recorded
+"not GX display lists" from a prop; it holds for the characters too, so that avenue is closed
+for the whole format rather than for one file type.
+
+A run of 138 `s16` at byte 30,018 reads as regular multiples of 256 - `0 0 0 0`, `0 256 256 0`,
+`256 512 512 0`, `512 768 768 0` - which is 1/256 fixed point, so at least one array in here is
+quantised coordinates or texture coordinates rather than floats.
+
 ## Still open
 
-`gcr` is the geometry and is untouched.  Both it and the palette-indexed `gct` are now
-reachable by the rest of the pipeline under their real names, which is what the container was
-in the way of.
+`gcr` geometry.  Both it and the palette-indexed `gct` are reachable by the rest of the
+pipeline under their real names, which is what the container was in the way of; the three
+discs export 5,239, 4,526 and 2,809 scenes today but only 38,653, 141 and 2,890 triangles
+between them, because almost all of that is textures.
