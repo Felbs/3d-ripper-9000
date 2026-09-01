@@ -103,8 +103,7 @@ other side, their `.rws` being `sound/` and `music/`.
 second rip time on those discs was the signal** - there was nothing for a model plugin to walk.
 
 The geometry is in a different container on each disc, from four studios that merely licensed
-RenderWare: Asterix 108 `.KGC` (~16 MB each; **recon done** - no RenderWare chunks and no offset table, so it is a serialised structure to walk from byte 0), Madagascar 16 `.gcn` (**cracked**), Piglet one 232 MB
-`PIGGCN.pkd`, Frogger one 198 MB `gamedata.bin`.
+RenderWare: Asterix 108 `.KGC` (~16 MB each; **recon done** - no RenderWare chunks and no offset table, so it is a serialised structure to walk from byte 0), Madagascar 16 `.gcn` (**cracked**), Piglet one 232 MB `PIGGCN.pkd` (**CRACKED** - `plugins/piglet_pkd.py`: a zlib chain covering all 232,370,273 bytes in 10,328 blocks, padded to 16 with assets spanning them, holding 936 CLUMP / 404 TEXDICT / 66 WORLD / 4,891 animations.  **The reader is the remaining gap**: renderware.py claims all 1,001 geometry assets and returns a scene for 68, 27,478 triangles.  Diagnosed - the clumps put GEOMETRY directly under CLUMP with no GEOMETRYLIST and declare numAtomics 0, both now handled, but most geometry carries the `rpGEOMETRYNATIVE` flag with no vertex arrays and **no NATIVEDATA extension inside the geometry chunk**, so the native data lives elsewhere - the 533 `0x1E` chunks are the candidate), Frogger one 198 MB `gamedata.bin`.
 
 **Madagascar's `.gcn` is now CRACKED** (`plugins/tfb_gcn.py`, 114,936 triangles from `title.gcn`).  It was where to start: entropy 1.61, two RenderWare-stamped chunks then a
 node tree that names its own types in ASCII - `rwID_TEXDICTIONARY`, `TD_LEVEL FOLDER` - and
