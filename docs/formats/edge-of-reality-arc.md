@@ -86,11 +86,31 @@ the Hedge and none of it is geometry.
 **1,913 members** on discs that had none. This closes the `Over the Hedge datasets.arc` entry
 that had been sitting in `docs/OPEN.md`.
 
+## What the members are - first pass
+
+None of the 1,913 is a TPL, so nothing decodes them yet, but each category has a legible shape:
+
+**`models.arc` (901 on The Sims) - named.** Four zero bytes, then a NUL-terminated name from
++6: `the_terrain_for_neighborhood_screen(derived_from_rev46)`.  After the name the payload is
+dense and unaligned - one string in the first 20 KB, no plausible float or offset columns - and
+**`gxscan` finds nothing in any of the six largest**, so the geometry is not GX display lists.
+
+**`datasets.arc` (309 / 153 / 106) - nested containers.** A member opens with its own name
+(`RD_TRAINSET_-_CHEAP_A`), then a count, then a sub-category name - `Textures` - so a dataset
+repeats the index's own name-then-table idea one level down.  That is the most promising thread:
+it is the only category that says in plain text what it holds.
+
+**`rletextu.arc` (377) - a palette then RLE indices.**  The first 1,024 bytes are **256 ARGB
+entries**, alpha first.  That byte order is not a guess: read from offset 0 the first column
+takes only **three distinct values** across all 256 entries (255 on 217 of them, 0 on 36, 190 on
+3) while the other three take 150, 144 and 122 values over a smooth ramp -
+`(255,199,170,130) (255,205,175,135) (255,212,182,142) (255,221,192,151)`.  A colour channel
+does not behave like that; an alpha channel does.  The remaining ~62 KB is the RLE stream.
+
 ## Still open
 
-The member formats. None of the 1,913 is a TPL, so nothing decodes them yet:
-
-* The Sims' `datasets.arc` members open with readable tags - `RD_S`, `RD_P`, `RD_T` - so that
-  is the thread to pull first;
-* `models.arc` members (901 of them) open with four zero bytes;
-* `rletextu.arc` members open `ff 00`, and the category name says run-length-encoded textures.
+* the RLE scheme and the image dimensions for `rletextu` - nothing in the member states a size,
+  so the dimensions probably live in the `Textures` table of the dataset that references it;
+* the `models.arc` payload, which is not GX;
+* the `Textures` category on Over the Hedge and Shark Tale, which have no `textures.arc` - like
+  `Models` there, they must be reached through `datasets.arc`.
