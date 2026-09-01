@@ -214,7 +214,7 @@ flowchart LR
         PRE["Neversoft PRE<br/>plugins.neversoft"]
         BIG["Crystal Dynamics bigfile.dat<br/>hash table + sector offsets<br/>plugins.cd_bigfile"] -.->|payloads open| GX
         TIM2["Sony TIM2 in AFS<br/>offset table -> pictures<br/>plugins.tim2"]
-        SHOC["EA SHOC .hog<br/>SHDR + Zdat/SDAT/Rdat<br/>plugins.shoc"] --> TXG["TXG texture groups<br/>TXHE headers + TXDA pixels<br/>plugins.ea_txg"] -.->|OBG terrain open| GX
+        SHOC["EA SHOC .hog<br/>SHDR + Zdat/SDAT/Rdat<br/>plugins.shoc"] --> TXG["TXG texture groups<br/>TXHE headers + TXDA pixels<br/>plugins.ea_txg"] --> OBG["OBG terrain<br/>ARRA arrays + ELDA strips<br/>plugins.ea_obg"]
         BAD["Climax .bad whole-game<br/>ring-buffer LZSS<br/>plugins.climax_bad"] -.->|inner container open| GX
         HOG["Warthog WART3.00 .hog<br/>records at +24, dir+file names<br/>formats.wart_hog"] -.->|member codec open| HOGX["29,021 .bmsh / 36,156 .btga"]
         GCP["Blitz .gcp archives<br/>named per-level members<br/>plugins.blitz"] --> BOBJ["tagged object stream<br/>scene graph + navmesh<br/>formats.blitz_obj"] & BTEX["chained texture descriptors<br/>RGBA8 / CMPR<br/>plugins.blitz_tex"] & GX["structure scan<br/>plugins.gx"]
