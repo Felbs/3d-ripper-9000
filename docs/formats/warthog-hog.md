@@ -218,3 +218,49 @@ So the literal count is not a fixed bit-field of the token.  Either it comes fro
 else, or `0x87` is not a high token at all and its `s`/`t`/`b`/`o` letters arrive by a reading
 of `87 40 0b XX` that this one does not have yet.  That single question is what is left.
 
+
+## 2026-09-01: the literal count comes from `a`, not from the token
+
+The note above ends: *"So the literal count is not a fixed bit-field of the token.  Either it
+comes from somewhere else, or `0x87` is not a high token at all."*  It is the first of those,
+and the field is **`a >> 6`**.
+
+Two units prove it, and they pull in opposite directions under the old rule:
+
+* `87 40 0b XX` - four of these in a row carrying `s`, `t`, `b`, `o`.  Each must consume
+  **one** literal.  The text confirms what they are: the output up to that point ends
+  `pcount(0) CRLF TAB`, and these four continue it as `scount(0)`, `tcount(0)`, `bcount(0)`,
+  `ocount(0)` - so the match copies `count(0) CRLF TAB`, **eleven characters at offset twelve**,
+  which is exactly `len = (a>>4)*2+3` with `a = 0x40` and `off = b+1` with `b = 0x0b`.  Those
+  two rules are therefore right, and were never the problem.
+* `8b 00 32` at stream 106 must consume **zero** literals.  The byte after it is `0xe0`, which
+  has to be read as a literal-run token because the four bytes it introduces are `Mesh`.  Take
+  two literals there - which `(t>>2)&3` does for `0x8b` - and `e0 4d` are swallowed as data,
+  the run is lost, and everything after it is wrong.
+
+`(t>>2)&3` gives 1 and 2 for those two tokens; `a >> 6` gives 1 and 0.  Only the second is
+consistent with the text.
+
+### What it fixes, and what it does not
+
+Holding the verified rules and changing only the literal count:
+
+| literal rule | output | printable | stream consumed |
+|---|---|---|---|
+| `(t>>2)&3` (old) | 386 / 386 | 380 / 386 | 197 / 199 |
+| `a >> 6` | 291 / 386 | **291 / 291** | 198 / 199 |
+
+The old rule's "complete" 386 bytes were never a decode - it emitted six unprintable bytes,
+including the `à M` of the swallowed `Mesh` run, and stopped two bytes short of the stream.
+The new rule produces **only printable characters** and gets `Mesh` and `frontend_cog1` right,
+but stops at 291.
+
+So the remaining error is in neither the literal count, the low form, nor the literal runs.
+It is in the length or offset of some high token later than stream 106 - the first place the
+new rule diverges is after `Mesh`, where it emits `Nlev({ObjectTy` instead of continuing the
+attribute list.
+
+**Do not re-test:** `(t&0x1f)+3` as the length reaches 344 bytes and stays printable, which
+looks like progress, but it breaks the four `count` units that are known to be correct -
+`scount(0)` comes out as `scount(0) CRLF tscount(0)`.  Printability alone will mislead here;
+the `count` run is the check to hold on to.
