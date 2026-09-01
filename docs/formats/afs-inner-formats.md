@@ -163,3 +163,27 @@ animation banks rather than a chunked file.
 
 `gxscan` finds no display lists in any member, so whatever geometry is there is not stored as
 GX primitives - the same result as Free Radical's `gcr`.
+
+## 2026-09-01: nothing gcrip already reads is hiding in here
+
+Worth doing once and recording, because it bounds the search: members from the five `.afs`
+discs that still produce nothing - Digimon World 4, R:Racing Evolution, Bleach, Sonic Riders,
+Viewtiful Joe Red Hot Rumble - were offered to **every one of gcrip's 86 non-fallback plugins**
+by `detect()`.
+
+**Not one member was claimed by any plugin, on any of the five discs.**
+
+So there is no already-supported format sitting unreached behind the AFS layer, and each of
+these discs is a separate inner-format crack rather than a routing problem.  That is the
+opposite of what was true for Avatar, where the container was open and the leaves turned out to
+be zlib'd textures a small reader could take.
+
+Two details to add to what is already recorded above:
+
+* Digimon World 4's **`ndmw.afs` members are named** - `dng4_47` and so on - and little-endian,
+  opening with what read as paired values (`560, 25, 2324, 38, 31312, 750, ...`) where the
+  larger ones are inside the member and the smaller ones look like counts.  The note above
+  already covers `area.afs`; this is the other archive, 973 members.
+* Bleach's `.rg1` carry a recurring word `37 00 02 1c` at +8, +20, +36 and +48 - not a fixed
+  stride, so it reads as a separator or type tag between variable-length records rather than a
+  field of one. The `16 00 00 00` opening and the names at +76 were already known.
