@@ -61,6 +61,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from gcrip.formats import gx_texture as gx
+
 MAGIC_AT = 56
 MAGIC = b"Build"
 NAME_AT = 16
@@ -70,6 +72,7 @@ SLOTS = 256
 SLOT = 8
 NO_TYPE = 0xFFFFFFFF
 NO_PAYLOAD = 0xFFFFFFFB
+RES_HANDLE_AT = 12
 RES_NAME_AT = 16
 RES_NAME_LEN = 32
 STRIDE = 56
@@ -86,6 +89,13 @@ MAX_VERTICES = 1 << 16
 MIN_STRIP = 3
 ZLIB_FLAGS = (0x01, 0x5E, 0x9C, 0xDA)
 BLOCK = 53248  # what one .cp block inflates to
+TEXTURE_KIND = 34
+TEX_HEADER = 256
+TEX_DIMS_AT = 168
+TEX_FORMAT_AT = 248
+MAX_LEVELS = 14
+MAX_DIM = 4096
+PALETTED = (8, 9, 10)
 
 
 @dataclass
@@ -95,6 +105,16 @@ class Resource:
     name: str
     offset: int
     size: int
+
+
+@dataclass
+class Texture:
+    name: str
+    width: int
+    height: int
+    format: int
+    levels: int
+    rgba: np.ndarray
 
 
 @dataclass
@@ -173,6 +193,59 @@ def resources(data: bytes) -> list[Resource]:
     for r in found:
         r.size = nxt.get(r.offset, len(data)) - r.offset
     return found
+
+
+def _levels(fmt: int, width: int, height: int, available: int) -> int | None:
+    """How many mip levels fit the resource exactly.
+
+    The header word that looks like a level count reads 1 on every texture, so it is not one.
+    The size settles it instead: `256 + the chain == the resource length` picks out a single
+    level count, and a texture where no count works is declined rather than decoded from a
+    header read in the wrong place.
+    """
+    total = 0
+    w, h = width, height
+    for n in range(1, MAX_LEVELS + 1):
+        total += gx.encoded_size(fmt, max(w, 1), max(h, 1))
+        if total == available:
+            return n
+        if total > available:
+            return None
+        w, h = max(w // 2, 1), max(h // 2, 1)
+    return None
+
+
+def texture(rec: bytes, name: str = "texture") -> Texture | None:
+    """One image: a 256-byte header, then a mip chain of GX pixels."""
+    if len(rec) < TEX_HEADER + 32:
+        return None
+    width, height = struct.unpack_from(">2I", rec, TEX_DIMS_AT)
+    fmt = struct.unpack_from(">I", rec, TEX_FORMAT_AT)[0]
+    if fmt not in gx.TILE_DIMS or fmt in PALETTED:
+        return None
+    if not (0 < width <= MAX_DIM and 0 < height <= MAX_DIM):
+        return None
+    levels = _levels(fmt, width, height, len(rec) - TEX_HEADER)
+    if levels is None:
+        return None
+    need = gx.encoded_size(fmt, width, height)
+    rgba = gx.decode(fmt, width, height, rec[TEX_HEADER : TEX_HEADER + need])
+    return Texture(name, width, height, fmt, levels, rgba)
+
+
+def texture_handle(rec: bytes, known: set[int]) -> int | None:
+    """A mesh resource names its texture by handle - the same u32 the type table carries.
+
+    74 of Teen Titans' 83 geometry resources hold exactly one, and the names line up:
+    ``barrel`` to ``ob_barrel``, ``doorgarage_ref`` to ``pd_porte_garage2``.  A resource
+    mentioning several is left unbound rather than guessed at.
+    """
+    seen = set()
+    for k in range(0, len(rec) - 3, 4):  # -3, so the last aligned word is read too
+        value = struct.unpack_from(">I", rec, k)[0]
+        if value in known:
+            seen.add(value)
+    return next(iter(seen)) if len(seen) == 1 else None
 
 
 def _strips(rec: bytes, dl0: int, dl1: int) -> list[list[int]] | None:

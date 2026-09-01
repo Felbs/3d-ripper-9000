@@ -130,22 +130,48 @@ That makes the signed agreement 1.0 by construction, so **the figure worth quoti
 unsigned one measured before the flip**; the reader returns it per mesh so it cannot be
 confused with a post-hoc score.
 
+## The textures - type 34
+
+Every image is one resource of type 34: a **256-byte header** then a GX mip chain.
+
+    +168  u32 width, u32 height     128x128, 64x64, 32x32, 128x256, 128x16
+    +248  u32 GX format             14 CMPR (163 of Teen Titans' 185), 6 RGBA8 (22)
+    +256  the pixels, level 0 first
+
+**`256 + the whole mip chain == the resource length` is the check**, and it holds on all 185.
+The word at +164 looks like a level count and reads `1` on every texture, so it is not one -
+the size is what says how many levels are stored, and a texture where no level count fits is
+declined rather than decoded from a header read in the wrong place.  Paletted formats are
+declined too: nothing has located a palette, so decoding one would invent its colours.
+
+Measured against a shuffled copy of the same pixels, the decodes are **3.3x to 69x smoother**
+than noise, and the alpha channel is meaningful rather than flat - `electricbarrel` averages
+82, `gizswirl` 30, `crate_big` 255.
+
+## Binding a mesh to its texture
+
+A geometry resource carries a `u32` equal to the texture resource's **handle** - the same word
+the type table holds.  74 of Teen Titans' 83 geometry resources contain exactly one, and the
+names line up: `barrel` to `ob_barrel`, `barrel_explosif` to `ob_barrelexplosif`,
+`doorgarage_ref` to `pd_porte_garage2`, `robot_sentry_drone_ref` to `robot_sentry_drone`.
+
+A resource mentioning several handles is left unbound rather than guessed at, since putting the
+wrong picture on a model is worse than shipping it bare.
+
 ## Results
 
-| disc | sampled | meshes | triangles | unsigned agreement |
-|---|---|---|---|---|
-| Teen Titans | `ppdusk.gc`, whole file | 49 | 5,461 | 0.961 (min 0.540) |
-| Happy Feet | 4 `.cp` | 40 | 73,277 | 0.944 (min 0.740) |
-| Ed, Edd n Eddy | 3 `.gc` | 46 | 13,422 | 0.907 (min 0.405) |
-| The Ant Bully | 3 `.gc` | 5 | 3,120 | 0.948 (min 0.866) |
-| Monster House | 3 `.gc` | 3 | 1,118 | 0.900 (min 0.833) |
+| disc | sampled | meshes | triangles | textures | bound |
+|---|---|---|---|---|---|
+| Teen Titans | `ppdusk.gc`, 1 of 1,368 | 49 | 5,461 | 185 | 32 / 49 |
+| Happy Feet | 3 of 684 `.cp` | 30 | 57,483 | 232 | 30 / 30 |
+| Ed, Edd n Eddy | 3 of 96 | 46 | 13,422 | 485 | 44 / 46 |
+| The Ant Bully | 3 of 732 | 5 | 3,120 | 187 | 4 / 5 |
+| Monster House | 3 of 633 | 3 | 1,118 | 188 | 3 / 3 |
 
-`ppdusk.gc` is one of Teen Titans' 1,368 files and Happy Feet's four are of 684, so the disc
-totals will be far larger.
+These are three files per disc out of hundreds, so the disc totals will be far larger.
 
 ## Still open
 
-**Textures.**  No resource type has been identified as image data yet, so the meshes come out
-untextured.  The vertex colours are carried through, which gives them their grey shading.
-Types 24 (the environment, one 1.29 MB resource), 34 (185 props) and 79 (163) are the places to
-look.
+Nothing blocking: the container, the meshes and the textures all read.  The one loose end is
+that a mesh naming more than one texture handle is left unbound (17 of Teen Titans' 49), and
+type 24 - a single 1.29 MB resource per level, the environment - has not been looked at.

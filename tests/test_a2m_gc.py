@@ -6,6 +6,7 @@ import zlib
 import numpy as np
 
 from gcrip.formats import a2m_gc
+from gcrip.formats import gx_texture as gx
 from gcrip.plugins import a2m_gc as plugin
 
 TYPE = 91
@@ -174,3 +175,92 @@ def test_the_plugin_builds_one_primitive_a_mesh():
     assert len(scene.primitives) == 1 and scene.triangles == 2
     assert scene.materials[0].name == "barrel"
     assert scene.primitives[0].colors is not None
+
+
+def texture_resource(name="ob_barrel", width=8, height=8, fmt=14, index=0, extra=0):
+    """A texture resource: a 256-byte header then a full mip chain."""
+    body = bytearray(a2m_gc.TEX_HEADER)
+    body[0:4] = b"\xab\xab\xab\xab"
+    struct.pack_into(
+        ">I",
+        body,
+        a2m_gc.RES_HANDLE_AT,
+        (a2m_gc.TEXTURE_KIND << 24) | (FILE_ID << 8) | index,
+    )
+    body[a2m_gc.RES_NAME_AT : a2m_gc.RES_NAME_AT + len(name)] = name.encode()
+    body[48:64] = b"\xef" * 16
+    struct.pack_into(">2I", body, a2m_gc.TEX_DIMS_AT, width, height)
+    struct.pack_into(">I", body, a2m_gc.TEX_FORMAT_AT, fmt)
+    chain = b""
+    w, h = width, height
+    while True:
+        chain += bytes(gx.encoded_size(fmt, max(w, 1), max(h, 1)))
+        if w <= 1 and h <= 1:
+            break
+        w, h = max(w // 2, 1), max(h // 2, 1)
+    return bytes(body) + chain + bytes(extra)
+
+
+def build_many(entries):
+    """entries: [(kind, payload)] - laid out as the real file is."""
+    head = bytearray(a2m_gc.TABLE_AT + a2m_gc.SLOTS * a2m_gc.SLOT)
+    struct.pack_into(">I", head, 0, 0x0301081F)
+    head[a2m_gc.NAME_AT : a2m_gc.NAME_AT + 6] = b"ppdusk"
+    head[a2m_gc.MAGIC_AT : a2m_gc.MAGIC_AT + 5] = a2m_gc.MAGIC
+    for i in range(a2m_gc.SLOTS):
+        struct.pack_into(">2I", head, a2m_gc.TABLE_AT + i * a2m_gc.SLOT, 0, a2m_gc.NO_TYPE)
+    by_kind = {}
+    for kind, payload in entries:
+        by_kind.setdefault(kind, []).append(payload)
+    tables = b""
+    at = len(head) + sum(len(v) * a2m_gc.SLOT for v in by_kind.values())
+    for kind, payloads in by_kind.items():
+        struct.pack_into(
+            ">2I",
+            head,
+            a2m_gc.TABLE_AT + kind * a2m_gc.SLOT,
+            len(payloads),
+            len(head) + len(tables),
+        )
+        for i, payload in enumerate(payloads):
+            tables += struct.pack(">2I", (kind << 24) | (FILE_ID << 8) | i, at)
+            at += len(payload)
+    body = b"".join(p for v in by_kind.values() for p in v)
+    return bytes(head) + tables + body
+
+
+def test_a_texture_round_trips():
+    (tex,) = [a2m_gc.texture(texture_resource(), "ob_barrel")]
+    assert tex is not None
+    assert (tex.width, tex.height, tex.format) == (8, 8, 14)
+    assert tex.rgba.shape == (8, 8, 4)
+
+
+def test_the_level_count_is_whatever_makes_the_size_work():
+    """The header word that looks like a level count reads 1 on every texture, so the size
+    is what settles it: 256 + the mip chain has to equal the resource length."""
+    assert a2m_gc.texture(texture_resource()).levels == 4
+    assert a2m_gc.texture(texture_resource(extra=16)) is None
+
+
+def test_a_paletted_format_is_declined_rather_than_guessed():
+    """C4/C8 need a palette and nothing has located one, so decoding would invent colours."""
+    assert a2m_gc.texture(texture_resource(fmt=9)) is None
+
+
+def test_a_mesh_is_bound_to_the_texture_it_names():
+    data = build_many([(a2m_gc.TEXTURE_KIND, texture_resource()), (TYPE, resource())])
+    handle = (a2m_gc.TEXTURE_KIND << 24) | (FILE_ID << 8)
+    known = {handle}
+    payload = resource() + struct.pack(">I", handle)
+    assert a2m_gc.texture_handle(payload, known) == handle
+    (scene,) = plugin.extract(data, "files/ppdusk.gc", None)
+    assert set(scene.textures) == {"ob_barrel"}
+
+
+def test_a_resource_naming_several_textures_is_left_unbound():
+    """Guessing which one a mesh means would put the wrong picture on it."""
+    a = (a2m_gc.TEXTURE_KIND << 24) | (FILE_ID << 8)
+    b = a + 1
+    payload = resource() + struct.pack(">2I", a, b)
+    assert a2m_gc.texture_handle(payload, {a, b}) is None
