@@ -227,8 +227,26 @@ and a clump with geometry but no atomics draws each at the root.  Both are safe 
 fire where the clump would otherwise yield no primitives at all - and together they are worth
 **one more scene out of 400**, which is the honest measure of how much of this is (3).
 
-**Where the vertex data is remains open, and one place is ruled out**: the native geometry is
-*not* in a `NATIVEDATA` extension inside the `GEOMETRY` chunk.  Those chunks hold only `STRUCT`
-and `MATLIST` - no `EXTENSION` at all.  So it lives outside the clump, and the archive's **533
-`0x1E` chunks** are the obvious candidate, being the only unidentified bulk left after 936
-clumps, 404 texture dictionaries and 4,891 animations.
+**Where the vertex data is remains open.  Two candidates are now ruled out:**
+
+* *a `NATIVEDATA` extension inside the `GEOMETRY` chunk* - those chunks hold only `STRUCT` and
+  `MATLIST`, with no `EXTENSION` at all;
+* *the 533 `0x1E` chunks* - they are 600 to 1,400 bytes each, about 0.5 MB in total against a
+  425 MB archive, so they cannot hold 936 models however promising the count looked.
+
+**It is inside the clumps, in a raw block after the chunked part.**  The biggest clumps run to
+2.8 MB and their chunk chain is short: `STRUCT` (12 bytes), `FRAMELIST` (4,600 to 17,000), one
+`0x11010` plugin chunk (1,024), and then the walk hits bytes that are not a header at all - and
+**2.85 MB of the 2.86 MB clump is that tail**.
+
+What the tail looks like, on the largest sample:
+
+* entropy 7.37, fairly even across it;
+* it opens on a descending byte ramp - `vpppp tttt rrrrrrrr nnnnnnnn mmmm llll` - which reads as
+  image data rather than structure;
+* further in there are `f32`-looking runs, then long stretches of repeated `s16` pairs;
+* `gxscan` finds **no** GX display lists in it, so whatever the geometry is, it is not stored as
+  GX primitives - the same answer Free Radical's `gcr` and Bleach's `.afs` gave.
+
+So the remaining work is a reader for that block, and it is a per-format job rather than a
+routing one.
