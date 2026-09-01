@@ -10,6 +10,22 @@ end of the file: ``u32 entry count`` then 20-byte entries ``u32 id | char tag[4]
 Section tags seen: ``wave`` / ``musc`` / ``mdat`` (audio), ``strg`` / ``indx`` (text and its
 index), and on level files ``sdta``, ``gshd``, ``node``, ``surf``, ``ndbg``, ``levl``,
 ``tern``, ``rdms`` - the geometry side, which is not decoded yet.
+
+``indx`` is **a name directory for the other sections**, not an index of the text::
+
+    u32 count
+    u32 4
+    then count entries of 12 bytes:
+        u32  name offset    self-relative from this field, into ``strg``
+        char tag[4]         the kind of section referred to
+        u32  delta          self-relative from this field, to the section itself
+
+**Both offsets are self-relative**, the same convention ``rdms`` uses for its array offsets, and
+that is what makes them resolve: `field position + value`.  Measured against a base of the
+``indx`` section start instead, none of the six names lands on a string.  All six of Lemony
+Snicket's entries and Samurai Jack's one entry resolve to a real section whose tag matches the
+entry's, and to a full asset path - ``menus/train_game/bobblehead_texture.tif``,
+``menus/train_game/fx_hud_shelf``.
 """
 
 from __future__ import annotations
@@ -19,6 +35,13 @@ from dataclasses import dataclass
 
 MAGIC = b"res\n"
 ENTRY = 20
+
+
+@dataclass
+class IndexEntry:
+    name: str
+    tag: str
+    offset: int  # absolute in the file, of the section this entry names
 
 
 @dataclass
@@ -61,9 +84,71 @@ def sections(data: bytes) -> list[Section]:
     return out
 
 
+def _stem(path: str) -> str:
+    """The asset's own name, safe to use as a file name."""
+    leaf = path.replace("\\", "/").rsplit("/", 1)[-1].rsplit(".", 1)[0]
+    return "".join(c if c.isalnum() or c in "-_" else "_" for c in leaf)[:48]
+
+
 def expand(data: bytes) -> list[tuple[str, bytes]]:
+    """One member a section.
+
+    Sections the ``indx`` directory names carry that name, so a texture comes out as
+    ``000_surf_bobblehead_texture.bin`` rather than ``000_surf_84213.bin``.  The numbered
+    prefix and the ``_tag_`` infix stay either way - the plugin screens members on ``_surf_``
+    and ``_rdms_``, and the index only ever covers a handful of the sections.
+    """
+    named = {e.offset: e.name for e in index_entries(data)}
     out = []
     for i, s in enumerate(sections(data)):
-        name = f"{i:03d}_{s.tag or 'sect'}_{s.ident}.bin"
+        label = _stem(named[s.offset]) if s.offset in named else str(s.ident)
+        name = f"{i:03d}_{s.tag or 'sect'}_{label}.bin"
         out.append((name, data[s.offset : s.offset + s.size]))
+    return out
+
+
+INDEX_HEADER = 8
+INDEX_ENTRY = 12
+
+
+def _string(table: bytes, at: int) -> str | None:
+    if not 0 <= at < len(table):
+        return None
+    end = table.find(b"\0", at)
+    if end < 0:
+        end = len(table)
+    return table[at:end].decode("latin-1") or None
+
+
+def index_entries(data: bytes) -> list[IndexEntry]:
+    """The ``indx`` directory: what each named section is called.
+
+    Returns [] when the file carries no ``indx``/``strg`` pair, and skips any entry whose
+    offsets do not land on a real section and a real string - the two self-relative offsets are
+    the check, so a misread entry drops out instead of naming the wrong thing.
+    """
+    found = sections(data)
+    index = next((s for s in found if s.tag == "indx"), None)
+    strings = next((s for s in found if s.tag == "strg"), None)
+    if index is None or strings is None or index.size < INDEX_HEADER:
+        return []
+    table = data[strings.offset : strings.offset + strings.size]
+    at_section = {s.offset: s.tag for s in found}
+    (count,) = struct.unpack_from(">I", data, index.offset)
+    if count * INDEX_ENTRY + INDEX_HEADER > index.size:
+        return []
+    out = []
+    for i in range(count):
+        at = index.offset + INDEX_HEADER + INDEX_ENTRY * i
+        name_off, tag, delta = struct.unpack_from(">I4sI", data, at)
+        if delta > 0x7FFFFFFF:
+            delta -= 1 << 32
+        target = at + 8 + delta
+        label = tag.decode("latin-1", "replace").strip("\0")
+        if at_section.get(target) != label:
+            continue
+        name = _string(table, at + name_off - strings.offset)
+        if name is None:
+            continue
+        out.append(IndexEntry(name, label, target))
     return out

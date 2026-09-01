@@ -65,9 +65,52 @@ sign that a layout is wrong; here it is normal.
 
 Median span over median edge is 2.7 to 6.6, so the meshes are coherent rather than exploded.
 
+## `indx` is a name directory (2026-09-01)
+
+Not an index of the text, which is what the tag suggests.  It names the other sections::
+
+    u32 count
+    u32 4
+    then count entries of 12 bytes:
+        u32  name offset    self-relative from this field, into `strg`
+        char tag[4]         the kind of section referred to
+        u32  delta          self-relative from this field, to the section itself
+
+**Both offsets are self-relative** - `field position + value` - which is the same convention
+`rdms` uses for its array offsets and the reason the earlier pass's base was wrong there too.
+Measured from the `indx` section's start instead, **none** of Lemony Snicket's six names lands
+on a string; measured from the field, all six do.
+
+Every entry resolves to a section whose tag matches the entry's own - 6 of 6 on Lemony Snicket,
+1 of 1 on Samurai Jack - and to a full asset path from the artists' tree:
+
+    surf @  4096  menus/train_game/bobblehead_texture.tif
+    node @ 63616  menus/train_game/fx_hud_bobblehead
+    surf @ 12416  menus/train_game/fx_hud_mainframe.tif
+    node @ 84128  menus/train_game/fx_hud_shelf
+    node @ 89408  menus/train_game/fx_hud_target
+    surf @ 91648  menus/train_game/target_texture.tif
+
+That the tag has to match the section it points at is also the parser's check: a misread entry
+drops out instead of naming the wrong thing.
+
+`expand()` now uses those names, so a texture comes out as `000_surf_bobblehead_texture.bin`
+rather than `000_surf_468.bin`.  The numbered prefix and the `_tag_` infix stay, because the
+plugin screens members on `_surf_` and `_rdms_`.
+
+**The index only covers a handful of sections** - 6 of Lemony Snicket's 25, 1 of Samurai Jack's
+3 - so it names the assets the file was built from, not every section in it.
+
 ## Still open
 
 The `node` sections hold the scene graph, so meshes come out one section at a time in their own
 space rather than assembled into a level.  Colour arrays are read but not bound (they are a
 single entry on nearly every section), and `surf` textures are not yet matched to the meshes
 that use them.
+
+What the index buys towards that: a `node` section now has a name, and the named nodes pair
+with named `surf` textures by asset path (`fx_hud_target` beside `target_texture.tif`).  A node
+section itself reads as f32 triples that repeat - `(-4.501, 0.408, 1.771)` twice in one 812-byte
+section - beside `0x7f7fffff`, which is `FLT_MAX` and the usual way a bounding box is
+initialised.  So the placement data is in there; what is missing is the record layout, and the
+node section's own header (`u32 5`, `u32 80`) suggests a count and a stride to start from.
