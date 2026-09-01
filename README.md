@@ -67,6 +67,37 @@ otherwise every eye texture is visible at once), sets the scene to 30 fps, and c
 the bones to Mixamo names. Its **GCRip** sidebar tab (press N) has one row of buttons per
 face part (eyes / mouth / brows) to switch expressions, and Mixamo <-> original bone renaming.
 
+### Spawn models from inside Blender (GCRip Library panel)
+
+The add-on's **GCRip Library** panel (N sidebar > GCRip tab) is a browser over every rip
+folder you point it at - the folders that hold `<GameID>/rip_results.json`, i.e. `out/rip`
+or a `gcrip dump` folder. Press **+**, pick the folder, and it is scanned (about 20 s for a
+whole 300-game dump, instant afterwards - the index is cached in Blender's user config).
+Then:
+
+- **Game** dropdown, **Category** dropdown - Characters (humanoid rigs, retarget-ready),
+  Creatures & enemies, Items & weapons, Vehicles, Props & scenery, Levels & rooms
+  (recompiled stages included), Effects & misc - and a **search** box.
+- Pick a row (thumbnail + triangle / joint / clip counts shown below) and press **Spawn**:
+  the model is imported at the 3D cursor into a collection named after the game, with the
+  expression meshes hidden and, for characters, Mixamo bone names applied.
+
+Categories come from the rip data: a model with 12+ bones mapped to the Mixamo humanoid
+is a character, other skinned rigs are creatures, disc paths under `Stage/`, `map/`,
+`Room` are level pieces, and name hints (sword, bomb, ship, kart, ptcl...) sort the rest.
+Meshes under 8 triangles (billboards, particle quads) are left out of the index.
+
+### Motion capture onto a character (GCRip Mocap panel)
+
+The **GCRip Mocap** panel retargets a `.bvh` clip onto the selected character and adds it
+as an NLA strip (track `MOCAP`; the game's own clips are muted, not deleted). It reads
+Bandai Namco Research Motiondataset clips, the `SMPLtoBVH` output of ComfyUI-MotionCapture
+(GVHMR video mocap), and Mixamo / Rokoko-style exports, in metres or centimetres. The
+source needs no T-pose: anatomical frames are built from joint positions at the first
+frame and world-space rotation deltas are transferred bone by bone, so the character's
+own rest pose and bone axes do not matter. Spawn a character, pick the file, press
+**Retarget onto selected character**; a second clip appends after the first.
+
 Wind Waker (USA): 2,759 models -> 1,856 unique glTFs, 4,175 animation clips, 1,867 textures in ~4.5 minutes.
 Twilight Princess (USA): 3,626 models -> 2,489 unique glTFs, 13,822 clips in ~10 minutes.
 Blender imports Link with all 594 clips in about 10 seconds.
