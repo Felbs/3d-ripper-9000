@@ -17,11 +17,15 @@ arrays.  The display list is found by content - it opens with a GX primitive opc
 tile its section exactly, ending on zero padding - rather than by position, because its index
 is not constant across meshes.
 
-The index stride is derived, not assumed.  Indices are ``u8`` on small meshes and big-endian
-``u16`` on larger ones, and the column count is whatever makes the list tile; a column is then
-matched to an array by requiring ``(max + 1) * element`` to equal the section size to within its
-four-byte padding.  Element sizes seen: **12** for positions (``f32`` x3), **3** for normals
-(``s8`` x3) and **4** for texture coordinates (``s16`` x2, scaled by 1/16384).
+The index stride is derived, not assumed, and so is the width of each column.  **Widths vary
+within a single vertex**: the skinned meshes index position and normal with big-endian ``u16``
+and the texture coordinate with ``u8``, so their lists tile at stride 5 and no single width can
+read them.  Every way of splitting the stride into 1- and 2-byte columns is tried and scored by
+how many columns find a home, so a stride that merely tiles loses to one that explains all of
+its columns.  A column is matched to an array by requiring ``(max + 1) * element`` to equal the
+section size to within its four-byte padding.  Element sizes seen: **12** for positions
+(``f32`` x3), **3** for normals (``s8`` x3) and **4** for texture coordinates (``s16`` x2,
+scaled by 1/16384).
 
 **Column order is not array order.**  On the larger meshes the columns run position, normal,
 texcoord against arrays in the same order, but on the smaller ones column 1 indexes the *last*
@@ -35,22 +39,24 @@ The resource header carries a bounding volume that checks the result independent
 
     +0   f32[3]  half-extent      +12  f32[3]  centre      +24  f32  radius
 
-**relative to a base that is 72 on most meshes and 92 on the variant header** two of the
-thirteen samples use, so it is located by signature rather than assumed - a bounding sphere's
+**relative to a base that is 72 on most meshes and 92 on the variant header** four of the
+sixteen samples use, so it is located by signature rather than assumed - a bounding sphere's
 radius lies between the largest half-extent and the diagonal, which narrows a header to a
 handful of candidates.
 
-The check is then that the decoded geometry reproduces one of them.  It does, on **13 of 13**,
-and in every case **exactly one** candidate matches - centre and extent to better than 1% of
-the extent.  Reading the block at a fixed 72 is what first made two meshes look misplaced by
-740 units when their geometry was right and the offset was wrong; both sub-meshes of each
-agreed with each other, which is what said so.
+The check is then that the decoded geometry reproduces one of them.  It does on **16 of 16**
+sampled members, and in every case **exactly one** candidate matches - centre and extent to
+better than 1% of the extent.  Reading the block at a fixed 72 is what first made two meshes
+look misplaced by 740 units when their geometry was right and the offset was wrong; both
+sub-meshes of each agreed with each other, which is what said so.
 
 **Nothing here rests on a triangle count**, which is all a display-list scanner can offer - the
-generic one manages 4 of these 16 files and 504 triangles against 13 and 1,926.
+generic one manages 4 of these 16 files and 504 triangles against 16 and 6,672.
 
-Skinned character meshes are a different layout, carrying no section table at all, and are not
-read here.  See ``docs/OPEN.md``.
+A section may be **empty**.  Rejecting a table that contains a zero size looks like a sensible
+guard and is wrong: it threw out every skinned character mesh, whose tables carry long runs of
+them.  ``sum(size) == total`` and the chain reaching the member's end are the real guards, and
+they hold with the zeroes in place.
 """
 
 from __future__ import annotations
@@ -154,7 +160,7 @@ def _table(data: bytes, at: int):
     if at + 8 + count * 4 > len(data):
         return None
     sizes = struct.unpack_from(f">{count}I", data, at + 8)
-    if any(s == 0 or s % ALIGN for s in sizes) or sum(sizes) != total:
+    if any(s % ALIGN for s in sizes) or sum(sizes) != total:
         return None
     start = at + 8 + count * 4
     if start + total > len(data):
@@ -204,13 +210,34 @@ def _display_list(data: bytes, off: int, size: int, stride: int):
     return prims if at == end and prims else None
 
 
-def _columns(rows: np.ndarray, width: int) -> list[np.ndarray]:
-    if width == 1:
-        return [rows[:, c].astype(np.int64) for c in range(rows.shape[1])]
-    return [
-        (rows[:, 2 * c].astype(np.int64) << 8) | rows[:, 2 * c + 1]
-        for c in range(rows.shape[1] // 2)
-    ]
+def _columns(rows: np.ndarray, widths: tuple[int, ...]) -> list[np.ndarray]:
+    """Split the display list's index bytes into columns of the given byte widths.
+
+    **Widths vary per column, not per list.**  The skinned meshes index position and normal
+    with `u16` and the texture coordinate with `u8` in the same vertex, so a single width for
+    the whole list cannot read them - one such list tiles at stride 5.
+    """
+    out, at = [], 0
+    for width in widths:
+        if width == 1:
+            out.append(rows[:, at].astype(np.int64))
+        else:
+            out.append((rows[:, at].astype(np.int64) << 8) | rows[:, at + 1])
+        at += width
+    return out
+
+
+def _width_patterns(stride: int, max_columns: int):
+    """Every way to split ``stride`` bytes into 1- and 2-byte columns, widest first."""
+    if stride == 0:
+        yield ()
+        return
+    if max_columns <= 0:
+        return
+    for width in (2, 1):
+        if width <= stride:
+            for rest in _width_patterns(stride - width, max_columns - 1):
+                yield (width,) + rest
 
 
 def _assign(maxima, arrays):
@@ -254,10 +281,10 @@ def _faces(kind: int, n: int) -> list[tuple[int, int, int]]:
     return []
 
 
-def _build(data, prims, width, found):
+def _build(data, prims, widths, found):
     """De-index: one vertex an entry of the display list, faces into those entries."""
     rows = np.concatenate([r for _, r in prims])
-    cols = _columns(rows, width)
+    cols = _columns(rows, widths)
     _, pos_off, _ = found[0]
     need = int(cols[0].max()) + 1
     array = np.frombuffer(data, ">f4", need * 3, pos_off).reshape(need, 3)
@@ -285,27 +312,36 @@ def _build(data, prims, width, found):
 
 
 def _part(data: bytes, sections: list[tuple[int, int]]) -> SubMesh | None:
+    """The sub-mesh a section table describes, or ``None``.
+
+    Every (stride, width pattern) that tiles the display list is tried and scored by how many
+    index columns find a home in the vertex arrays; the best-scoring reading wins, so a stride
+    that happens to tile but leaves columns dangling loses to one that explains all of them.
+    """
     for idx, (off, size) in enumerate(sections):
         if size < 3 or (data[off] & 0xF8) not in PRIMITIVES:
             continue
-        arrays = [s for j, s in enumerate(sections) if j not in (0, idx)]
+        arrays = [s for j, s in enumerate(sections) if j not in (0, idx) and s[1] > 0]
         if not arrays:
             continue
+        best = None
         for stride in range(1, MAX_STRIDE + 1):
             prims = _display_list(data, off, size, stride)
             if not prims:
                 continue
             rows = np.concatenate([r for _, r in prims])
-            for width in (1, 2):
-                if stride % width or stride // width > len(arrays) + 1:
-                    continue
-                cols = _columns(rows, width)
+            for widths in _width_patterns(stride, len(arrays) + 1):
+                cols = _columns(rows, widths)
                 found = _assign([int(c.max()) for c in cols], arrays)
                 if found is None or found[0] is None or found[0][2] != POSITION_ELEM:
                     continue
-                part = _build(data, prims, width, found)
-                if part is not None:
-                    return part
+                score = (sum(f is not None for f in found), len(found))
+                if best is None or score > best[0]:
+                    best = (score, prims, widths, found)
+        if best is not None:
+            part = _build(data, best[1], best[2], best[3])
+            if part is not None:
+                return part
     return None
 
 

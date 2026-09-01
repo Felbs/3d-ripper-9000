@@ -54,7 +54,7 @@ def test_the_geometry_reproduces_the_header_bounding_volume():
 
 
 def test_the_bounding_block_is_located_not_assumed():
-    """Two of thirteen real meshes carry it at 92 rather than 72.  Reading a fixed 72 made them
+    """Four of sixteen real meshes carry it at 92 rather than 72.  Reading a fixed 72 made them
     look misplaced by 740 units when the geometry was right."""
     data = quad(at=92)
     mesh = wart_bmsh.parse(data)
@@ -98,3 +98,49 @@ def test_the_plugin_declines_other_resource_kinds():
     """.btga, .bskl and .banr share the resource header and are not meshes."""
     assert not plugin.detect("x.btga", bytes(header(kind=3))[:64], 4096)
     assert plugin.extract(bytes(header(kind=3)), "x.bmsh", None) == []
+
+
+def mixed_width_quad():
+    """A strip whose position index is u16 and whose texcoord index is u8 - stride 3.
+
+    The skinned character meshes are built this way, and a parser using one index width for the
+    whole list reads none of them.
+    """
+    corners = [(-4.0, -2.0, 1.0), (4.0, -2.0, 1.0), (-4.0, 2.0, -1.0), (4.0, 2.0, -1.0)]
+    positions = b"".join(struct.pack(">3f", *c) for c in corners)
+    uvs = b"".join(struct.pack(">2h", u, v) for u, v in ((0, 0), (16384, 0), (0, 16384), (16384, 16384)))
+    dl = bytes([0x98]) + struct.pack(">H", 4)
+    for i in range(4):
+        dl += struct.pack(">HB", i, i)
+    dl += bytes(-len(dl) % 4)
+    sections = [bytes(16), dl, positions, uvs]
+    head = header(extent=(4.0, 2.0, 1.0), centre=(0.0, 0.0, 0.0))
+    table = struct.pack(">2I", len(sections), sum(len(s) for s in sections))
+    table += b"".join(struct.pack(">I", len(s)) for s in sections)
+    return bytes(head) + table + b"".join(sections)
+
+
+def test_index_widths_vary_within_one_vertex():
+    data = mixed_width_quad()
+    mesh = wart_bmsh.parse(data)
+    assert mesh is not None and len(mesh.parts[0].indices) == 2
+    positions = np.concatenate([p.positions for p in mesh.parts])
+    assert wart_bmsh.matching_bounds(data, positions) == [72]
+    assert mesh.parts[0].uvs is not None
+
+
+def test_an_empty_section_does_not_invalidate_a_table():
+    """Rejecting a table containing a zero size looks like a sensible guard and threw out every
+    skinned character mesh, whose tables carry long runs of them."""
+    corners = [(-4.0, -2.0, 1.0), (4.0, -2.0, 1.0), (-4.0, 2.0, -1.0), (4.0, 2.0, -1.0)]
+    positions = b"".join(struct.pack(">3f", *c) for c in corners)
+    uvs = b"".join(struct.pack(">2h", u, v) for u, v in ((0, 0), (16384, 0), (0, 16384), (16384, 16384)))
+    dl = bytes([0x98]) + struct.pack(">H", 4) + bytes([0, 0, 1, 1, 2, 2, 3, 3])
+    dl += bytes(-len(dl) % 4)
+    sections = [bytes(16), dl, positions, uvs, b"", b"", b""]
+    head = header(extent=(4.0, 2.0, 1.0))
+    table = struct.pack(">2I", len(sections), sum(len(s) for s in sections))
+    table += b"".join(struct.pack(">I", len(s)) for s in sections)
+    data = bytes(head) + table + b"".join(sections)
+    assert wart_bmsh.tables(data)
+    assert wart_bmsh.parse(data) is not None

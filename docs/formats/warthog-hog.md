@@ -108,8 +108,8 @@ that is mostly `0x00` and `0xff` both readings look structured no matter which i
 
 ## `.bmsh` meshes ship too
 
-**13 of 13** members that carry a section table, on the cached `frontend.hog` sample - 1,926
-triangles against the generic display-list scanner's 504 from 4 files.
+**16 of 16** members on the cached `frontend.hog` sample - **6,672 triangles** with positions
+and UVs, against the generic display-list scanner's 504 from 4 files.
 
 A `.bmsh` is the resource header then a **chain of section tables**, one table a sub-mesh:
 `u32 count`, `u32 total`, then `count` section sizes, the sections back to back.  Two identities
@@ -119,9 +119,12 @@ than quietly succeeding.
 
 Section 0 is GX register state and runtime pointers; one section is a display list, found by
 content because its index is not constant; the rest are vertex arrays.  The index stride is
-derived, not assumed: `u8` on small meshes, big-endian `u16` on larger ones, and a column is
-matched to an array by requiring `(max + 1) * element` to equal the section size to within its
-four-byte padding.  Elements seen are **12** (positions, `f32` x3), **3** (normals, `s8` x3) and
+derived, not assumed, and so is the width of **each column**: the skinned meshes index position
+and normal with `u16` and the texcoord with `u8` in the same vertex, so their lists tile at
+stride 5 and no single width reads them.  Every split of the stride into 1- and 2-byte columns
+is tried and scored by how many columns find a home, so a stride that merely tiles loses to one
+that explains all of its columns.  A column is matched to an array by requiring
+`(max + 1) * element` to equal the section size to within its four-byte padding.  Elements seen are **12** (positions, `f32` x3), **3** (normals, `s8` x3) and
 **4** (texcoords, `s16` x2 over 16384).  **Column order is not array order** - on the smaller
 meshes column 1 indexes the last array - so the mapping is solved rather than assumed, and a
 column matching nothing is the **matrix index** the multi-matrix meshes carry, with values
@@ -130,8 +133,8 @@ running to about 250 that index no array at all.
 ### The check, and what it caught
 
 The header carries a bounding volume - half-extent, centre, radius - and the decoded geometry
-has to reproduce it.  It does on 13 of 13, and in every case **exactly one** candidate offset
-matches, to better than 1% of the extent.  That is what confirms the stride and the column
+has to reproduce it.  It does on **16 of 16**, and in every case **exactly one** candidate
+offset matches, to better than 1% of the extent.  That is what confirms the stride and the column
 mapping together; a triangle count would show none of it.
 
 It also caught my own error.  Reading the block at a fixed +72 made two meshes look misplaced
@@ -140,8 +143,15 @@ geometry was right and the offset was wrong.  Those two use a variant header wit
 +92, so it is now located by signature: a bounding sphere's radius lies between the largest
 half-extent and the box diagonal.
 
-Still open: the **skinned character meshes** carry no section table at all - a different
-layout, and none of the above applies to them.
+### The guard that threw away every skinned mesh
+
+A section may be **empty**, and rejecting a table that contains a zero size looks like a
+sensible sanity check.  It is not: the skinned character meshes carry long runs of zero-length
+sections - one table has 48 sections of which 8 are empty - and that guard alone made all three
+of them look like a different format with no section table at all.  `sum(size) == total` and
+the chain reaching the member's end are the real guards, and they hold with the zeroes in
+place.  Dropping the guard and reading per-column index widths took the sample from 13 files
+and 1,926 triangles to **16 and 6,672**.
 
 ---
 
