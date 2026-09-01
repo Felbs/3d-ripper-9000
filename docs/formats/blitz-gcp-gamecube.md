@@ -263,3 +263,46 @@ recording so they are not tried again:
 
 Format 19 is only ever 16x16 on this disc and several candidates decode it to a constant image,
 which no test can separate.
+
+## How common format 17 actually is (measured 2026-09-01)
+
+**One descriptor in 1,057.**  Counting every entry - not just the decodable ones - across
+everything reachable without a large read:
+
+| source | packs | descriptors | 21 | 15 | 17 | 19 |
+|---|---|---|---|---|---|---|
+| Fairly OddParents: Shadow Showdown | 170 | 734 | 692 | 41 | **1** | 0 |
+| Bratz: Rock Angelz | 400 | 319 | 319 | 0 | 0 | 0 |
+| Pac-Man World 3 `AllPaks.gcp`, recursed | 426 blobs | 4 | 0 | 4 | 0 | 0 |
+
+Bad Boys: Miami Takedown, Cubix and Frogger: Ancient Shadow contribute **no descriptors at all**
+from their small `.gcp` - consistent with the note above that Bad Boys is a later engine
+generation.
+
+So cracking format 17 would gain, on the discs where this format ships, **one 64x64 texture**.
+The `up to 9 discs` framing in `docs/OPEN.md` was the count of discs on BlitzTech, not the count
+that carry this format, and the item is demoted accordingly.  The one sample is cached as
+`TrainingWishes.gcp`.
+
+**Where the earlier 40-texture sample might be**: not located.  It is not in any of the above,
+and the only reachable place left is Bratz: Forever Diamondz's own `AllPaks.gcp` (223 MB),
+which was not expanded here.  Anyone resuming should start there and re-measure before
+spending a session on the encoding.
+
+### The census trap that cost two measurements
+
+`blitz_tex.textures()` returns only entries whose format it can decode.  A census built on it
+reports format 17 as **absent from every disc**, which is what my first two passes concluded.
+`blitz_tex.descriptors()` now returns every entry and is the one to count with.
+
+### Rejected: format 17 is not a linear (untiled) 16-bit image
+
+Worth recording so it is not retried.  Every test in the table above decodes with GX tiling, so
+an untiled layout would be scrambled by all of them and would explain the uniformly poor
+scores.  It does not: on the 64x64 sample, linear is **worse than tiled in all three codes** -
+`IA8` 90.2 against 76.0, `RGB565` 90.5 against 79.7, `RGB5A3` 93.6 against 82.4.
+
+A planar reading - the first `w*h` bytes one 8-bit plane, the rest another - is the only thing
+tried that produces anything: the *second* plane scores 31.8 tiled at 8x4, against 115 for the
+first and 76-94 for every interleaved reading.  That is still far above a real image and rests
+on a single sample, so it is a lead and not a finding.

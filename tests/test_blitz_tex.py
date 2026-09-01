@@ -112,3 +112,16 @@ def test_the_unknown_format_size_is_sixteen_bits_a_pixel():
     from gcrip.formats import blitz_tex
 
     assert blitz_tex.BYTES_PER_PIXEL == {17: 2}
+
+
+def test_descriptors_counts_what_textures_hides():
+    """`textures` returns only what it can decode, so a census built on it reports format 17 as
+    absent no matter how much of it a disc holds.  That cost two wrong measurements of how
+    common the format is; `descriptors` is the one to count with."""
+    body = pack_header() + descriptor(64, 64, 21) + bytes(64 * 64 // 2)
+    body += descriptor(16, 16, 17) + bytes(16 * 16 * blitz_tex.BYTES_PER_PIXEL[17])
+    body += descriptor(32, 32, 15) + bytes(32 * 32 * 4)
+    every = blitz_tex.descriptors(body)
+    assert [d.format for d in every] == [21, 17, 15]
+    assert [t.format for t in blitz_tex.textures(body)] == [21, 15]
+    assert 17 not in {t.format for t in blitz_tex.textures(body)}

@@ -97,20 +97,33 @@ def _descriptor(data: bytes, at: int) -> Texture | None:
     return Texture(width, height, fmt, body, size)
 
 
-def textures(data: bytes) -> list[Texture]:
-    """Every *decodable* texture in the chain, or [] if the pack does not open with a
-    descriptor.  A format whose size is known but whose encoding is not is stepped over, so
-    one undecodable entry no longer hides everything behind it."""
+def descriptors(data: bytes) -> list[Texture]:
+    """**Every** entry in the chain, decodable or not, or [] if the pack does not open with a
+    descriptor.
+
+    Use this to count what a pack holds.  :func:`textures` returns only the entries this module
+    can decode, so a census built on it cannot see format 17 at all and will report it as
+    absent - which is exactly what happened twice while measuring how common it is.
+    """
     out: list[Texture] = []
     at = FIRST
     for _ in range(MAX_TEXTURES):
         found = _descriptor(data, at)
         if found is None:
             break
-        if found.format in GX_FOR:
-            out.append(found)
+        out.append(found)
         at = found.offset + found.size
     return out
+
+
+def textures(data: bytes) -> list[Texture]:
+    """Every *decodable* texture in the chain, or [] if the pack does not open with a
+    descriptor.  A format whose size is known but whose encoding is not is stepped over, so
+    one undecodable entry no longer hides everything behind it.
+
+    This deliberately omits what it cannot decode; :func:`descriptors` is the one to count with.
+    """
+    return [t for t in descriptors(data) if t.format in GX_FOR]
 
 
 def decode(data: bytes, tex: Texture) -> np.ndarray:
