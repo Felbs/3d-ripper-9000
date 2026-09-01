@@ -103,6 +103,25 @@ files, and several of the files are not geometry at all.  The scanner is not the
 | Alien Hominid | the 45 `.pak` are ZIPs gcrip already opens, and their **1,948 members are 1,896 `RSND` sound records, 33 `SWF6` Flash movies, 11 `PIXL` textures, 7 `GLYP` font atlases and one `PDAG`**.  It is a Flash game: the artwork is vector data inside the SWFs, not textures.  The 11 `PIXL` do decode - 128x128 `CMPR`, pixels at +96, and the word at +48 is the data end so the size identifies the format exactly - but eleven font-ish textures is not worth a plugin |
 | TMNT world materials | genuinely untextured in the source data |
 
+## Neversoft `pass table not found` - a THUG-only signature (2026-09-01)
+
+Three Tony Hawk discs fail on it, and one produces nothing at all:
+
+| disc | models | exported | failed | triangles |
+|---|---|---|---|---|
+| Tony Hawk's American Wasteland | 99 | **0** | 99 | 0 |
+| Tony Hawk's Underground 2 | 6,121 | 1,805 | 2,507 | **0** |
+| Tony Hawk's Underground | 5,596 | 1,232 | 1,352 | 935,074 |
+
+`_pass_table` locates the 32-byte pass records by a **literal byte signature** - `00 01 00 00
+00 00 00 00` at +24 and three zero bytes at +21 - fitted to THUG, whose models do parse (935k
+triangles).  American Wasteland and Underground 2 are a later engine generation and match it
+nowhere, so the search runs off the end of every model.
+
+This is a format gap, not a bug: the fix is to learn what a pass record looks like on the newer
+engine, which needs the discs.  Recorded here rather than guessed at - loosening the signature
+until something matches is exactly how a wrong reading gets shipped.
+
 ## The export contract, and the census that found it broken (2026-09-01)
 
 `Primitive.material` is an **index into `scene.materials`**, and `Primitive.indices` is **flat**,

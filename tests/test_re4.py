@@ -268,3 +268,37 @@ def test_smd_member_extracts_through_its_container():
 
     scenes = plug.extract(das[:64], "St1/r102.das/das_000.SMD", Src())
     assert len(scenes) == 1 and scenes[0].triangles == 1
+
+
+def _bin_head() -> bytes:
+    """A head that satisfies `re4.is_bin`."""
+    head = bytearray(0x40)
+    struct.pack_into(">I", head, 0, 0x40)
+    struct.pack_into(">H", head, 0x1A, 4)
+    struct.pack_into(">I", head, 0x1C, 0x100)
+    struct.pack_into(">I", head, 0x30, 0x200)
+    return bytes(head)
+
+
+def test_a_member_of_a_container_re4_cannot_open_is_not_claimed():
+    """A container member's sniffed head is not its own - the manifest walker records it
+    without an offset - so `is_bin` is reading somebody else's bytes there.
+
+    Trusting it took every member of Madden NFL 2004's `ANIMDATA.DAT`, 1,121 of them on an EA
+    disc this plugin has nothing to do with, and then failed each one with
+    "not found in files/ANIMDATA.DAT" because `fetch` cannot open a container `is_container`
+    does not recognise.  Claiming a file and failing it also stops any other plugin trying.
+    """
+    assert not plug.detect("files/ANIMDATA.DAT/0000.bin", _bin_head(), 0x1000)
+    assert not plug.detect("files/other.pak/inner.bin", _bin_head(), 0x1000)
+
+
+def test_real_re4_members_are_still_claimed_by_path():
+    """Its own containers are recognised by the path, which is the trustworthy evidence."""
+    assert plug.detect("files/St1/r100.das/das_025.BIN", b"\0" * 0x40, 0x1000)
+    assert plug.detect("files/St1/r100.das/das_004.SMD", b"\0" * 0x40, 0x1000)
+
+
+def test_a_plain_disc_file_is_still_sniffed():
+    """Outside a container the head really is the file's, so it can be trusted."""
+    assert plug.detect("files/etc/model.bin", _bin_head(), 0x1000)

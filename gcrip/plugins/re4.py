@@ -47,15 +47,31 @@ def expand(data: bytes) -> list[tuple[str, bytes]]:
 _MEMBER_RE = re.compile(r"\.(das|drs|udas)/|\.dat/dat_\d{3}\.[A-Z0-9]+$", re.I)
 
 
+def _inside_a_container(path: str) -> bool:
+    """Whether this is a member of some archive rather than a file on the disc.
+
+    A container member's parent component carries the archive's own extension -
+    ``files/ANIMDATA.DAT/0000.bin``, ``files/St1/r100.das/das_025.BIN`` - where a plain disc
+    file's does not.
+    """
+    parts = path.split("/")
+    return len(parts) > 1 and "." in parts[-2]
+
+
 def detect(path: str, head: bytes, size: int) -> bool:
     low = path.lower()
+    # Members of our containers are recorded without an offset by the manifest walker, so their
+    # sniffed head is not theirs and `is_bin`/`is_smd` are reading somebody else's bytes.  Inside
+    # a container the path is the only trustworthy evidence, and claiming on a stale head took
+    # every member of Madden NFL 2004's ANIMDATA.DAT - 1,121 of them, an EA disc this plugin has
+    # nothing to do with - and then failed each one with "not found in files/ANIMDATA.DAT",
+    # because `fetch` cannot open a container `is_container` does not recognise.
+    member = _inside_a_container(path)
     if low.endswith(".smd") and size >= 0x10:
-        return re4.is_smd(head, size) or bool(_MEMBER_RE.search(path))
+        return bool(_MEMBER_RE.search(path)) or (not member and re4.is_smd(head, size))
     if not low.endswith(".bin") or size < 0x40:
         return False
-    # members of our containers are recorded without an offset by the manifest
-    # walker, so their sniffed head is not theirs: go by the path instead
-    return re4.is_bin(head, size) or bool(_MEMBER_RE.search(path))
+    return bool(_MEMBER_RE.search(path)) or (not member and re4.is_bin(head, size))
 
 
 # ---------------------------------------------------------------------------
