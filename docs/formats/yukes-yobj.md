@@ -63,5 +63,16 @@ Ten files of 732 on X8, so the disc total will be far larger.
 * **XIX's index block**, described above - the geometry arrays read perfectly there, only
   the primitive lists do not.
 * **`DUMY`**, which is what nearly every `.ymg` on the two Day of Reckoning discs is
-  (147 of 150 sampled, and all 166 `.pms` and 150 sampled `.ypc`).  It is presumably a
-  wrapper around a `YOBJ`; those discs also carry `.mpc` files with no readable magic.
+  (147 of 150 sampled, and all 166 `.pms` and 150 sampled `.ypc`).  It is **not** a thin
+  wrapper around a `YOBJ`, which is the first thing to try and the first thing to rule out.
+
+  `3s01A.pms` (2,688,516 bytes) opens `DUMY`, `u32 16`, sixteen zero bytes, then a **`POF0`**
+  chunk at +24 with a `u32` size of 2,688,064.  `POF0` is a pointer-relocation table, and the
+  two chunks account for the file exactly: `24 + 8 + 2,688,064 = 2,688,096`, then a second
+  `POF0` of 412 bytes runs to the final byte.  Inside the first payload are five more `DUMY`
+  chunks (10,252, 60,208, 186,932, 252,772, 330,372), so it nests.
+
+  There is **exactly one `YOBJ`** in the file, at 2,678,040, and it is a 10 KB tail that the
+  reader here declines - so the geometry on those discs is not simply `YOBJ` behind a wrapper.
+  The relocation tables suggest the offsets inside are meant to be fixed up at load, which
+  would explain why a `YOBJ` lifted out on its own does not resolve.  That is where to start.
