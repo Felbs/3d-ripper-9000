@@ -134,3 +134,47 @@ positions legal, which is why the ring parameters made no difference to the scor
 **The next step** is to decode `AH959.IFF` against `AOSTREET.IFF`'s chunk template and read the
 required length off each `top2 != 0` match directly, rather than sweeping for it - the template
 pins the output, so every such match has exactly one right answer.
+
+## The textures that need no codec at all
+
+Fifty-eight of NBA 2K3's `.IFF` members are stored as they are, and they are texture banks.
+`gcrip/formats/vc_iff.py` + `gcrip/plugins/vc_iff.py` read them, and **971 textures come out**
+without touching the codec:
+
+    PLAYERS.IFF   600 records  128x128
+    AOSTREET.IFF   72 records  128x128
+    CHWG.IFF       53 records  256x256
+    BUILD00.DAT    60 records  ... and the rest of the BUILDnn.DAT
+
+A record is one image::
+
+    +0    16 bytes of header
+    +16   "RTXT"  u32 size (the record less 16), the same u32 again, then zeros
+    +44   "RTXT"  two more sizes
+    +64   char name[]     NUL-terminated, padded to 4 - "HEAD0000", "logo030", "0369"
+    ...   12 bytes, then u32 width, u32 height
+    +176  width * height bytes of 8-bit palette indices
+    ...   512 bytes: 256 palette entries, RGB565 big-endian
+
+**`176 + width * height + 512 == record size` is the check.**  It holds on every record of the
+three members above and fails on `LOADM.IFF`, whose 102 records are laid out differently - so
+those are declined rather than turned into garbage pictures.  Three members on NFL 2K3 carry the
+tag and fail the same check; they are declined too.
+
+Two things here are the opposite of what the rest of this project assumes, so they are worth
+stating rather than leaving to be rediscovered:
+
+* **The indices are not tiled.**  Reading them row-major is measurably smoother than
+  de-swizzling them as GX `C8` - 1.4x on every record tried, in both axes.  Every other
+  GameCube texture in gcrip is tiled.
+* **The palette is `RGB565`, not `RGB5A3`.**  Decoding with `RGB565` gives an image about twice
+  as smooth as `IA8` or `RGB5A3` (47 against 90-115 on `AOSTREET`'s first records), and the
+  other two invent an alpha channel the format does not have.
+
+Smoothness against a shuffled copy of the same indices is what settled both: a real picture is
+several times smoother than its own pixels in a random order, and that test does not care what
+the picture is of.  Measuring it on the *indices* is what does not work - it only agrees when
+the palette happens to be ordered, which `AOSTREET`'s is and `CHWG`'s is not.
+
+**Once the codec falls the same reader covers the other 1,858 members and the other four
+discs** - they hold the same records, just packed.
