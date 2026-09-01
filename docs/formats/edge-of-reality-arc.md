@@ -107,10 +107,50 @@ takes only **three distinct values** across all 256 entries (255 on 217 of them,
 `(255,199,170,130) (255,205,175,135) (255,212,182,142) (255,221,192,151)`.  A colour channel
 does not behave like that; an alpha channel does.  The remaining ~62 KB is the RLE stream.
 
+## Inside a dataset - the structure is solved, the pixel format is not
+
+A dataset member is the index's own idea one level down, and it walks cleanly:
+
+    char name[]        NUL-terminated: "RD_TRAINSET_-_CHEAP_A"
+    u32  sections
+    then per section:
+        char name[]    "Textures", "RleTextures", "Animations", "Samples", "Binaries"
+        u32  count
+        then per entry:
+            u32 hash
+            u32 size       from the start of the name to the end of the entry
+            u32 0
+            char name[]    "LFXTstrings_theory_stereo", "LFXTmusic_note_particle"
+            u16, u16 width, u16 height
+            12 bytes
+            the pixels
+
+**Entries are interleaved with their payloads and the stride closes exactly**: the first entry
+of `0fcf8afd` sits at 47 with `size` 2094, and `47 + 12 + 2094 = 2153` is precisely where the
+second entry's hash begins.
+
+**270 of The Sims' 309 datasets parse**, and the dimensions are the proof: every pair is a
+power of two - 32x32 (72), 64x64 (45), 128x64 (37), 128x128 (36), 512x512 (24), 16x16 (12),
+64x32 (11), 512x256 (9), 256x256 (8), 256x128 (8).  A layout read at the wrong offset does not
+produce powers of two 270 times.
+
+**This is where the missing texture dimensions live**, which is what `rletextu` needs - no
+member of that archive states its own size.
+
+### What the pixels are not
+
+The sizes point straight at GX `CMPR` and it does not hold up.  `LFXTstrings_theory_stereo` is
+64x64 with 2,050 bytes available where `CMPR` needs exactly 2,048, and the second entry has
+2,112 against the same 2,048 - so the arithmetic fits twice over.  But decoding it as `CMPR`
+from the byte after the header gives an image only **1.2x and 1.6x smoother than a shuffled
+copy of its own bytes**, where every texture actually cracked in this project scores 3x to 69x.
+That is not a picture.  Either the payload starts a few bytes later than the header implies, or
+it is compressed - the sibling category being called `RleTextures` suggests this engine does
+compress its textures, and `Textures` may simply be the compressed variant of the same thing.
+
 ## Still open
 
-* the RLE scheme and the image dimensions for `rletextu` - nothing in the member states a size,
-  so the dimensions probably live in the `Textures` table of the dataset that references it;
-* the `models.arc` payload, which is not GX;
-* the `Textures` category on Over the Hedge and Shark Tale, which have no `textures.arc` - like
-  `Models` there, they must be reached through `datasets.arc`.
+* the pixel format inside a dataset's `Textures` entry - the structure around it is solid, so
+  this is now a question about one blob with known dimensions rather than about the container;
+* the RLE scheme for `rletextu`, whose dimensions can now be looked up by hash in the datasets;
+* the `models.arc` payload, which is not GX.
