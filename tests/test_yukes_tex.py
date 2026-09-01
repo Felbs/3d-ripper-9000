@@ -35,14 +35,27 @@ def build(entries=ENTRIES, swap=False, overlap=False, count=None):
 
 
 def test_detection_is_the_type_tag_at_thirty_two():
-    """It is inside the 64 bytes classify sniffs, which is what makes it usable."""
+    """It is inside the 64 bytes classify sniffs, which is what makes it usable.  The tag is
+    checked for shape rather than for the literal "tpl", because .pac is the same directory
+    with other member types - so a non-printable tag is what has to be refused."""
     data = build()
     assert yukes_tex.is_tex(data[:64])
     assert plugin.is_container("036_0.tex", data[:64])
-    assert not plugin.is_container("036_0.pac", data[:64])
+    assert plugin.is_container("main.pac", data[:64])
+    assert not plugin.is_container("main.mpq", data[:64])
     bad = bytearray(data)
-    bad[yukes_tex.HEADER + yukes_tex.TYPE_AT] = ord("x")
+    bad[yukes_tex.HEADER + yukes_tex.TYPE_AT] = 0x01
     assert not yukes_tex.is_tex(bytes(bad)[:64])
+    upper = bytearray(data)
+    upper[yukes_tex.HEADER + yukes_tex.TYPE_AT] = ord("T")
+    assert not yukes_tex.is_tex(bytes(upper)[:64])
+
+
+def test_a_tag_that_is_not_nul_terminated_is_refused():
+    """Four printable bytes with no terminator is a 4CC, not one of these tags."""
+    data = bytearray(build())
+    data[yukes_tex.HEADER + yukes_tex.TYPE_AT : yukes_tex.HEADER + yukes_tex.TYPE_AT + 4] = b"abcd"
+    assert not yukes_tex.is_tex(bytes(data)[:64])
 
 
 def test_members_come_out_named_and_tiling():

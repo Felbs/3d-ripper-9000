@@ -55,13 +55,25 @@ class Member:
 
 
 def is_tex(head: bytes) -> bool:
-    """The first entry's type tag sits at +32, inside the 64 bytes classify sniffs."""
+    """The first entry's type tag sits at +32, inside the 64 bytes classify sniffs.
+
+    ``.pac`` uses the identical header and mostly holds ``tpl`` members too, so the tag is
+    checked for shape - a short lowercase word, NUL-terminated - rather than for the literal
+    ``tpl``.  The real guard is :func:`members`, which refuses anything whose entries fall
+    outside the file or overlap.
+    """
     if len(head) < SNIFF:
         return False
     count, _version, zero, table = struct.unpack_from("<4I", head, 0)
     if not (0 < count <= MAX_COUNT) or zero != 0 or table != HEADER:
         return False
-    return head[TYPE_AT + HEADER : TYPE_AT + HEADER + len(KIND)] == KIND
+    tag = head[TYPE_AT + HEADER : TYPE_AT + HEADER + TYPE_LEN]
+    word = tag.split(b"\x00", 1)[0]
+    if not 1 <= len(word) <= TYPE_LEN - 1 or len(tag) < TYPE_LEN:
+        return False
+    if tag[len(word)] != 0:
+        return False
+    return all(97 <= c <= 122 or 48 <= c <= 57 for c in word)
 
 
 def members(data: bytes) -> list[Member]:

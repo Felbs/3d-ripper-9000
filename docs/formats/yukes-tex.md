@@ -86,3 +86,16 @@ The models. `.pms` (166 files, 101 MB on Day of Reckoning), `.mpc` (45, 62 MB), 
 (196, 57 MB) and `.ymg` (1,099, 14 MB) are unexamined, and the texture names -
 `c036_hand`, `c036_waist`, `n001_waist` - say the meshes are per-wrestler and should bind by
 the same numbering.
+
+## `.pac` is the same directory
+
+`.pac` uses an identical header and mostly holds `tpl` members too - WrestleMania X8's
+`main.pac` is 41 entries, all `tpl`, and `font.pac` 24.  Across the sampled archives the member
+kinds are 159 `tpl` and 36 `dat`, so the type tag is checked for shape - a short lowercase word,
+NUL-terminated - rather than for the literal `tpl`.  The overlap check in `members()` is what
+actually guards the reader, not the tag.
+
+## The models: `YOBJ`
+
+The `.ymg` files are meshes and are read by `gcrip/formats/yukes_yobj.py` - see
+[yukes-yobj.md](yukes-yobj.md).

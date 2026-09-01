@@ -10,9 +10,13 @@ from gcrip.formats import yukes_tex
 NAME = "yukes_tex"
 
 
+SUFFIXES = (".tex", ".pac")
+
+
 def is_container(name: str, head: bytes) -> bool:
-    """``rip.py`` passes the member's basename, never a path."""
-    return name.lower().endswith(".tex") and yukes_tex.is_tex(head)
+    """``rip.py`` passes the member's basename, never a path.  ``.pac`` is the same directory
+    with different member types - mostly ``tpl`` there too."""
+    return name.lower().endswith(SUFFIXES) and yukes_tex.is_tex(head)
 
 
 def detect(path: str, head: bytes, size: int) -> bool:
