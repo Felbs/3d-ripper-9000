@@ -9,7 +9,7 @@ from __future__ import annotations
 import posixpath
 
 from gcrip.formats import res, res_rdms, res_surf
-from ripcore.scene import Primitive, Scene
+from ripcore.scene import MaterialDef, Primitive, Scene
 
 NAME = "res"
 
@@ -36,9 +36,13 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
         if mesh is None:
             return []
         scene = Scene(name=name)
+        # A real material, not the -1 "no material" sentinel with an empty list: the thumbnail
+        # pass indexes material_colors by it, and `[][-1]` is an IndexError that failed 62,640
+        # meshes across the three discs - every mesh that had triangles to draw.
+        scene.materials.append(MaterialDef(name=name, texture=None))
         scene.primitives.append(
             Primitive(
-                material=-1,
+                material=0,
                 positions=mesh.positions,
                 indices=mesh.indices,
                 normals=mesh.normals,

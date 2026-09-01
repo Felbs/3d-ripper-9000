@@ -75,3 +75,27 @@ def test_the_plugin_builds_one_scene_with_a_material():
 def test_a_member_with_almost_no_geometry_is_not_claimed():
     """A couple of triangles is noise, not terrain."""
     assert plugin.extract(build(strips=((0, 1, 2),)), "hole.hog/ter.bin", None) == []
+
+
+def test_the_primitive_matches_what_the_exporter_expects():
+    """`Primitive.material` is an index into `scene.materials`, not the material's name.
+
+    Passing the name raised inside the exporter on every mesh and cost Tiger Woods 06 all 665
+    of its terrain meshes - 0 triangles from 1,031 models - while every test here passed,
+    because none of them touched the export contract.
+    """
+    long_strip = (0, 1, 2, 3, 4, 2, 1, 0)
+    (scene,) = plugin.extract(build(strips=(long_strip,)), "hole.hog/ter.bin", None)
+    prim = scene.primitives[0]
+    assert isinstance(prim.material, int)
+    assert 0 <= prim.material < len(scene.materials)
+    assert prim.indices.ndim == 1 and len(prim.indices) % 3 == 0
+
+
+def test_a_scene_survives_a_real_gltf_export(tmp_path):
+    from ripcore.gltf import export
+
+    long_strip = (0, 1, 2, 3, 4, 2, 1, 0)
+    (scene,) = plugin.extract(build(strips=(long_strip,)), "hole.hog/ter.bin", None)
+    export(scene, tmp_path / scene.name, thumbnail=False)
+    assert any(tmp_path.iterdir())

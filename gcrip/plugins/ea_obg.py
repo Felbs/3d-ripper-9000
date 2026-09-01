@@ -28,7 +28,9 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
     scene = Scene(name=stem)
     scene.materials = [MaterialDef(name=stem, texture=None)]
     scene.primitives = [
-        Primitive(material=stem, positions=pos.astype("f4"), indices=tri.astype("u4").ravel())
+        # an index into scene.materials, not the material's name - passing the name raises
+        # inside the exporter and cost Tiger Woods 06 all 665 of its terrain meshes
+        Primitive(material=0, positions=pos.astype("f4"), indices=tri.astype("u4").ravel())
     ]
     scene.extras = {"format": "ea_obg", "elements": sum(1 for c in found if c.tag == b"ELDA")}
     return [scene]

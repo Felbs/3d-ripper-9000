@@ -348,9 +348,23 @@ def export(scene: Scene, out_base: Path, *, thumbnail: bool = True) -> ExportSta
 def thumbnail(st: ExportStats, out_base: Path, size: int = 256) -> Path | None:
     if st.positions is None or st.triangles_arr is None or len(st.triangles_arr) == 0:
         return None
-    colors = np.array([st.material_colors[m] for m in st.tri_material], np.float64)
+    # A primitive may carry no material - either the -1 sentinel or an index a scene without
+    # materials cannot satisfy - and indexing straight into these lists then raises IndexError
+    # for the whole model.  A thumbnail is a convenience; it must not be able to fail an export.
+    def _material(index: int) -> int | None:
+        return index if 0 <= index < len(st.material_colors) else None
+
+    grey = (0.7, 0.7, 0.7)
+    colors = np.array(
+        [st.material_colors[m] if (m := _material(i)) is not None else grey for i in st.tri_material],
+        np.float64,
+    )
     tri_tex = np.array(
-        [m if st.material_textures[m] is not None else -1 for m in st.tri_material], np.int32
+        [
+            i if (m := _material(i)) is not None and st.material_textures[m] is not None else -1
+            for i in st.tri_material
+        ],
+        np.int32,
     )
     img = thumb.render(
         st.positions,

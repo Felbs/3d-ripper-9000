@@ -139,3 +139,28 @@ def test_a_mesh_takes_its_node_s_name_in_expand():
 
 def test_a_file_with_no_node_sections_yields_no_links():
     assert res.node_links(build()) == []
+
+
+def test_an_rdms_scene_carries_a_real_material():
+    """`material=-1` with no materials at all is what the thumbnail pass indexes into, and
+    `[][-1]` is an IndexError that failed 62,640 meshes across the three discs - every mesh
+    that had triangles to draw."""
+    import numpy as np
+
+    from gcrip.formats import res_rdms
+    from gcrip.plugins import res as plugin
+
+    class FakeMesh:
+        positions = np.zeros((4, 3), np.float32)
+        indices = np.array([0, 1, 2, 1, 3, 2], np.uint32)
+        normals = None
+        uvs = None
+
+    original = res_rdms.mesh
+    res_rdms.mesh = lambda data: FakeMesh()
+    try:
+        (scene,) = plugin.extract(b"x" * 64, "000_rdms_12.bin", None)
+    finally:
+        res_rdms.mesh = original
+    assert scene.materials, "an rdms scene must declare a material"
+    assert scene.primitives[0].material == 0

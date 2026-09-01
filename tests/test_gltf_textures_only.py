@@ -51,3 +51,31 @@ def test_a_scene_whose_materials_name_textures_keeps_the_narrower_set():
 def test_a_scene_with_neither_writes_nothing():
     stats, pngs = export(Scene(name="t"))
     assert stats.textures == 0 and pngs == []
+
+
+def test_a_thumbnail_cannot_fail_an_export_over_a_missing_material():
+    """A thumbnail is a convenience and must not be able to fail a model.
+
+    `res` shipped primitives with the -1 "no material" sentinel and an empty materials list;
+    the thumbnail pass indexed straight into `material_colors` and raised for the whole model.
+    """
+    import tempfile
+
+    import numpy as np
+
+    from ripcore import gltf
+    from ripcore.scene import MaterialDef, Primitive, Scene
+
+    out = Path(tempfile.mkdtemp())
+    for materials, index, label in (([], -1, "sentinel"), ([MaterialDef("a", None)], 9, "range")):
+        scene = Scene(name=label)
+        scene.materials = materials
+        scene.primitives.append(
+            Primitive(
+                material=index,
+                positions=np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]], np.float32),
+                indices=np.array([0, 1, 2], np.uint32),
+            )
+        )
+        stats = gltf.export(scene, out / label, thumbnail=False)
+        gltf.thumbnail(stats, out / label)  # must not raise
