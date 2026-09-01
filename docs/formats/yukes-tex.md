@@ -1,8 +1,8 @@
-# Yuke's `.tex` texture directories - WWE Day of Reckoning 1 and 2, WrestleMania XIX - CRACKED
+# Yuke's `.tex` texture directories - WWE Day of Reckoning 1 and 2, WrestleMania XIX and X8 - CRACKED
 
-Three discs holding **7,641 `.tex` files and 309 MB** between them, and all three reported
-almost nothing: 14, 76 and 9 textures. Nothing opened the `.tex`, so every TPL inside was
-invisible.
+Four discs holding **8,652 `.tex` files and 381 MB** between them, and all four reported
+almost nothing: 14, 76, 9 and 623 textures.  Nothing opened the `.tex`, so every TPL inside
+was invisible.
 
 Read by `gcrip/formats/yukes_tex.py` + `gcrip/plugins/yukes_tex.py`.
 
@@ -11,6 +11,7 @@ Read by `gcrip/formats/yukes_tex.py` + `gcrip/plugins/yukes_tex.py`.
 | WWE Day of Reckoning | 5,338 | 162 |
 | WrestleMania XIX | 1,783 | 100 |
 | WWE Day of Reckoning 2 | 520 | 47 |
+| WrestleMania X8 | 1,011 | 72 |
 
 ## How it was found
 
@@ -68,6 +69,7 @@ Measured on the first 40 `.tex` of each disc:
 | WWE Day of Reckoning | 40 of 5,338 | 40 | 153 | 153 | 153 |
 | WWE Day of Reckoning 2 | 40 of 520 | 40 | 181 | 181 | 181 |
 | WrestleMania XIX | 40 of 1,783 | 40 | 1,265 | 1,265 | 1,265 |
+| WrestleMania X8 | 20 of 1,011 | 20 | - | - | - |
 
 **1,599 textures from 120 of the 7,641 files**, every member a TPL and every one decoding.
 
