@@ -43,7 +43,7 @@ What is **not** cracked yet, with what is blocking each one, is tracked in [OPEN
 
 | Studio / engine | Games in the library | What we get | Modules | Notes |
 | --- | --- | --- | --- | --- |
-| EA BIG / VIV / RefPack, Tiburon TERF, Black Box ZZDATA | ~70 EA discs | container | `gcrip/plugins/ea.py` | [formats/ea-eagl-gamecube.md](formats/ea-eagl-gamecube.md) |
+| EA BIG / VIV / RefPack, Tiburon TERF, Black Box ZZDATA | ~70 EA discs | container, and `MMAP` textures.  **EA format 11 is `C8`** - GX leaves 11 undefined, but the pixels are exactly 8 bits each and the palette block declares 256 populated `RGB5A3` entries, which only indices need; it raised on 863 textures over four discs (847 on NASCAR Thunder 2003) before being mapped | `gcrip/plugins/ea.py`, `gcrip/formats/ea_terf.py` | [formats/ea-eagl-gamecube.md](formats/ea-eagl-gamecube.md) |
 | EA Canada EAGL (`.ord` + `.orp` ELF) | FIFA 2002-2004, NBA Live 2003-04, NHL 2003-04, MVP, Def Jam, Fight Night, SSX | rigged, skinned models; textures from SHPG `.gsh` | `gcrip/plugins/eagl.py`, `gcrip/formats/eagl.py` | same note |
 | EA Sports EBO | NHL 2005/06, NBA Live 2005/06, FIFA 05, FIFA WC 2006, UEFA CL | models + rigs + textures (the sibling `.gsh` shapes: mixed-case `ShpG` tag and a one-image header variant; NBA Short3 open) | `gcrip/plugins/ebo.py`, `gcrip/formats/ebo.py` | same note |
 | Capcom RE4 DAS / DRS / UDAS + BIN | Resident Evil 4 | rooms, characters, textures | `gcrip/plugins/re4.py` | |

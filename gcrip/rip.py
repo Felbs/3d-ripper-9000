@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import html
 import json
+import re
 import sys
 import time
 import traceback
@@ -167,12 +168,40 @@ class _Source:
         return data
 
 
+# characters Windows rejects in a path component, plus the control range
+_BAD_PATH_CHARS = re.compile(r'[<>:"|?*\x00-\x1f]')
+# CON, PRN and friends are device names on Windows whatever the extension
+_RESERVED = {"con", "prn", "aux", "nul"} | {f"com{i}" for i in range(1, 10)} | {
+    f"lpt{i}" for i in range(1, 10)
+}
+
+
+def _safe_component(part: str) -> str:
+    """One path component, made safe to create on this filesystem.
+
+    Members carry names that are not filenames.  EA's cinema assets keep the artist's own
+    absolute path - ``d:/DJV2/assets/textures/final/gc`` - inside the member path, so joining it
+    onto the output directory produced ``D:\\3d dump\\...\\d:\\DJV2\\...`` and Windows rejected
+    the lot; NHL 2004 has names with raw control bytes in them.  Between them that failed
+    thousands of models on ten discs, all with ``OSError: [WinError 123]``.
+
+    Components that are already legal come back unchanged, so this does not churn existing
+    output paths.
+    """
+    out = _BAD_PATH_CHARS.sub("_", part)
+    out = out.rstrip(". ")  # Windows silently drops a trailing dot or space
+    if out.split(".")[0].lower() in _RESERVED:
+        out = "_" + out
+    return out or "_"
+
+
 def _rel_out_path(entry_path: str) -> Path:
     """Manifest path -> output path (strip the leading 'files/')."""
     p = entry_path
     if p.startswith("files/"):
         p = p[len("files/") :]
-    return Path(p)
+    parts = [_safe_component(x) for x in p.replace("\\", "/").split("/") if x not in ("", ".", "..")]
+    return Path(*parts) if parts else Path("_")
 
 
 def _log(quiet: bool, msg: str) -> None:

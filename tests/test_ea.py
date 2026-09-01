@@ -145,8 +145,12 @@ def test_shape_dxt1():
 # ---------------------------------------------------------------- TERF / MMAP
 
 
-def _mmap_c8(w: int, h: int) -> bytes:
-    """A C8 MMAP whose palette is two RGB5A3 colours and whose pixels alternate 0/1."""
+def _mmap_c8(w: int, h: int, code: int = 9) -> bytes:
+    """A C8 MMAP whose palette is two RGB5A3 colours and whose pixels alternate 0/1.
+
+    `code` is what the header declares; the pixels are always C8.  EA writes 11 for this on
+    some discs, which GX does not define.
+    """
     tiles = gx_texture.encoded_size(9, w, h)
     hdr_size = 0x28
     level_off = hdr_size + 16
@@ -156,7 +160,7 @@ def _mmap_c8(w: int, h: int) -> bytes:
     out = bytearray(b"MMAP" + struct.pack(">HH", 2, 0) + bytes([0, 1, 2, 3]))
     out += struct.pack(">HHHH", 1, 1, 1, 0)
     out += struct.pack(">IIIII", total, hdr_size, pal_block, 0, 0)
-    out += struct.pack(">HHHHII", w, h, 9, 0, tiles, level_off)
+    out += struct.pack(">HHHHII", w, h, code, 0, tiles, level_off)
     out += bytes((i % 2) for i in range(tiles))
     out += struct.pack(">HHIII", 1, 2, 256 * 2, pal_entries, 0)
     pal = bytearray(256 * 2)
@@ -391,3 +395,22 @@ def test_a_zero_sized_shape_is_still_refused():
 def test_an_ordinary_size_still_decodes():
     block = bytes.fromhex("ffff0000") + bytes.fromhex("00000000") + bytes(8)
     assert ea_shape.decode_dxt(block, 4, 4).shape == (4, 4, 4)
+
+
+def test_ea_format_11_is_c8():
+    """GX does not define 11.  EA writes it for 8-bit paletted data: the pixels are exactly
+    8 bits each and the standard palette block declares 256 populated RGB5A3 entries, which is
+    meaningless unless they are indices.  Unfixed it raised on 863 textures over four discs,
+    847 of them on NASCAR Thunder 2003.
+    """
+    same = ea_terf.decode_mmap(_mmap_c8(8, 4, code=9))[0]
+    as_eleven = ea_terf.decode_mmap(_mmap_c8(8, 4, code=11))[0]
+    assert (same == as_eleven).all()
+
+
+def test_a_format_gx_really_does_not_define_still_raises():
+    """The map must not become a licence to guess: 7 is undefined and stays undefined."""
+    import pytest
+
+    with pytest.raises(ValueError, match="unknown GX format 7"):
+        ea_terf.decode_mmap(_mmap_c8(8, 4, code=7))

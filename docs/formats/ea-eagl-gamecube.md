@@ -202,3 +202,26 @@ Binding: the `.ebo` Material imports only name a runtime slot (`gTexture_RMRunti
 (`referee0.ebo` -> `referee.gsh`, `icegirl2005.ebo` -> `IceGirl.gsh`) or, when the folder has
 exactly one shape, that one.  NHL 06 `gamedata/actors.viv`: 8 scenes, 9,308 triangles, 98 of
 98 materials bound (was 0).  NHL 2005 decodes 8 of 8 shapes, NBA Live 06 5 of 7.
+
+
+## `MMAP` format 11 is `C8` (2026-09-01)
+
+GX leaves 11 undefined, and `decode_mmap` raised on it - **863 textures across four discs**,
+847 of them on NASCAR Thunder 2003, the rest on NFL Street 2, NASCAR 2005 and NCAA Football
+2003.
+
+It is 8 bits a pixel, from the size field alone: both samples are 24x20 with `size` 480, which
+is `w * h` exactly and matches no other depth.  What identifies it as *paletted* rather than
+`I8` or `IA4` is the palette block it carries - **256 `RGB5A3` entries, every one populated
+with a plausible colour**, and the pixels use all 256 index values.  A palette that complete is
+meaningless unless the pixels are indices into it.
+
+**Smoothness cannot settle this one and should not be quoted as if it had**: on 480 pixels
+`C8` scores 1.54, `I8` 2.13 and `IA4` 1.11, all within the noise floor.  The palette is the
+evidence.
+
+A correction to the header note above while I was in there: the palette block's first `u16` is
+**the texture's own format code**, not a constant 1 - it reads 11 on a format-11 MMAP.
+
+Only 11 is mapped.  7 stays undefined and still raises, so the map does not become a licence to
+guess at the next unknown code.

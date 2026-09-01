@@ -12,7 +12,8 @@ Members carry no names; they are numbered and get an extension from their magic.
 MMAP (big-endian): "MMAP", u16 version, u16 0, u8[4] channel order, u16 levels, u16, u16,
 u16, u32 total size, u32 header size, u32 palette block, u32 name block, u32 -, then per
 level u16 width, u16 height, u16 GX format, u16 0, u32 size, u32 offset. Palette block:
-u16 1, u16 GX palette format, u32 size, u32 entries offset.
+u16 format (the texture's own code, not a constant 1 - it reads 11 on a format-11 MMAP),
+u16 GX palette format, u32 size, u32 entries offset.
 """
 
 from __future__ import annotations
@@ -111,6 +112,16 @@ def expand(data: bytes) -> list[tuple[str, bytes]]:
 # ---------------------------------------------------------------- MMAP
 
 
+# EA uses one code GX does not define.  **11 is C8**: its data is exactly 8 bits a pixel
+# (24x20 = 480 bytes, exact on both samples), and it carries the standard palette block
+# declaring **256 RGB5A3 entries, all of them populated with plausible colours**, which is
+# meaningless unless the pixels are indices into it.  Smoothness cannot confirm it at that size
+# - C8 1.54, I8 2.13, IA4 1.11 are all near the noise floor on 480 pixels - so the palette is
+# the evidence, not the picture.  Unfixed, this raised on 863 textures across four EA discs,
+# 847 of them on NASCAR Thunder 2003.
+EA_FORMATS = {11: 9}
+
+
 def is_mmap(head: bytes) -> bool:
     return len(head) >= 0x28 and head[:4] == b"MMAP"
 
@@ -124,14 +135,15 @@ def decode_mmap(data: bytes) -> tuple[np.ndarray, list[str]]:
     if levels < 1:
         raise ValueError("MMAP without levels")
     w, h, fmt, _z, size, off = struct.unpack_from(">HHHHII", data, hdr_size)
-    if fmt not in gx_texture.TILE_DIMS:
+    gx_fmt = EA_FORMATS.get(fmt, fmt)
+    if gx_fmt not in gx_texture.TILE_DIMS:
         raise ValueError(f"MMAP with unknown GX format {fmt}")
     if w == 0 or h == 0:
         raise ValueError("zero-sized MMAP")
     warnings: list[str] = []
     palette = None
-    if fmt in (8, 9, 10):
-        count = {8: 16, 9: 256, 10: 16384}[fmt]
+    if gx_fmt in (8, 9, 10):
+        count = {8: 16, 9: 256, 10: 16384}[gx_fmt]
         if pal_off and pal_off + 12 <= len(data):
             _one, pfmt, psize, poff = struct.unpack_from(">HHII", data, pal_off)
             count = min(count, max(1, psize // 2))
@@ -143,5 +155,5 @@ def decode_mmap(data: bytes) -> tuple[np.ndarray, list[str]]:
             warnings.append("paletted MMAP without a palette block")
             palette = np.stack([np.arange(count) % 256] * 3 + [np.full(count, 255)], -1)
             palette = palette.astype(np.uint8)
-    rgba = gx_texture.decode(fmt, w, h, data[off : off + size], palette)
+    rgba = gx_texture.decode(gx_fmt, w, h, data[off : off + size], palette)
     return rgba, warnings
