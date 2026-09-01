@@ -58,18 +58,39 @@ each.  Read by `gcrip/formats/fsys.py` + `gcrip/plugins/fsys.py`.
 
 ## Still open: the `LZSS` codec
 
-It is the whole of the remaining value here - 2,257 of Colosseum's 2,414 members in the
-40 largest archives, and every one of XD's.
+It is the whole of the remaining value here - 2,257 of Colosseum's 2,414 members in the 40
+largest archives, and every one of XD's.
 
-A member's `LZSS` header is the magic, the unpacked size, the stored size and a zero
-word, then the stream from +16.  The unpacked size makes an exact oracle, and **48
-parameter sets already reach it** across the usual ring-buffer LZSS space - both bit
-orders and polarities, 4 KB and 8 KB windows, fills of 0x00 and 0x20, three
-offset/length layouts and two length biases.  They collapse to **four distinct outputs**,
-and every one of them starts with ring-fill bytes (`00 00 00 ...` or `20 20 20 ...`),
-meaning the first operation copies from a window nothing has written yet.
+A member's `LZSS` header is the magic, the unpacked size, the stored size and a zero word, then
+the stream from +16.  The unpacked size is an exact oracle.  `megatonkick_attack` is the worked
+example: 139,532 bytes out of 91,699, stream beginning
+`12 ed fd ff fe f8 ed f0 04 dc ff 1f ...`.
 
-So the exact-length oracle is not sufficient on its own here, and none of the standard
-variants is right.  The next attempt should start from the first few operations of a
-stream and require the output to begin with real data, rather than sweeping for a length
-match.
+### What the first flag byte settles
+
+`0x12` is `00010010`.  With **`0` meaning literal** the first operation is a literal in either
+bit order, so that polarity is fixed - and MSB-first would give three literals (`ed fd ff`)
+before the first match, which is what the start of a real file should look like.
+
+### Two families ruled out
+
+**Back-distance LZSS is out entirely.**  Sweeping every combination of bit order, polarity,
+four offset/length layouts, three length biases and both distance conventions - 96 in all -
+and requiring each match to reference output already written, **none decodes to the declared
+length at all**.
+
+**Ring-buffer LZSS reaches the length but only implausibly.**  Across window sizes 2/4/8 KB,
+fills of `0x00` and `0x20`, four start positions, three biases and three layouts, the sets
+that hit 139,532 exactly are **all LSB-first**, and every one of them reads roughly **1,000
+bytes of untouched window fill within the first 4 KB of output** - long runs of `00` or `20`
+where a real file has data.  MSB-first, the order the first flag byte argues for, never
+reaches the length at all.
+
+So the exact-length oracle is satisfied only by decoders that are visibly producing rubbish,
+and the standard schemes are exhausted.  The `LZSS` in the header is the game's label, not a
+guarantee of Okumura's scheme.
+
+**What to try next:** work forward from the first dozen operations by hand, requiring the
+output to be real data rather than window fill, instead of sweeping parameters against the
+length.  The three-literal opening under MSB-first is the thread; the question is what match
+encoding follows it.
