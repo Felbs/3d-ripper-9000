@@ -23,23 +23,22 @@ def is_container(name: str, head: bytes) -> bool:
 
 
 def expand(data: bytes) -> list[tuple[str, bytes]]:
-    """Only the uncompressed members are handed over.
-
-    Nearly everything on these discs is `LZSS`, and that codec is not solved - see the format
-    note.  Emitting the compressed blobs would put thousands of undecodable members into every
-    manifest for nothing, so they are skipped until the codec falls, at which point this is the
-    only place that has to change.
-    """
+    """Members come out decompressed.  Nearly everything on these discs is `LZSS`."""
     out = []
     seen: dict[str, int] = {}
     for m in fsys.members(data):
+        blob = data[m.offset : m.offset + m.size]
         if m.compressed:
-            continue
+            payload = fsys.decompress(blob[fsys.LZSS_HEADER :], m.unpacked)
+            if payload is None:
+                continue
+        else:
+            # an uncompressed member repeats its own length first
+            payload = blob[4:]
         stem = m.name
         n = seen.get(stem, 0)
         seen[stem] = n + 1
         if n:
             stem = f"{stem}_{n}"
-        # an uncompressed member repeats its own length first; hand over what follows
-        out.append((f"{stem}.bin", data[m.offset + 4 : m.offset + m.size]))
+        out.append((f"{stem}.bin", payload))
     return out

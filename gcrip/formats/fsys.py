@@ -83,8 +83,74 @@ class Member:
     compressed: bool
 
 
+RING_BITS = 12
+RING_FILL = 0x00
+RING_START = (1 << RING_BITS) - 18
+LENGTH_BIAS = 3
+
+
 def is_fsys(head: bytes) -> bool:
     return head[:4] == MAGIC
+
+
+def decompress(stream: bytes, want: int) -> bytes | None:
+    """The ``LZSS`` payload: Okumura's scheme, 4 KB ring, literals flagged by a set bit.
+
+    A flag byte then eight items, bit taken LSB first; a set bit is a one-byte literal and a
+    clear bit is a two-byte match with the window position in twelve bits and the length in
+    four, ``(b1 & 0x0f) + 3``.
+
+    Getting here needed a **two-sided** check rather than the obvious one.  Matching the
+    declared output length alone is far too weak - eighty parameter sets satisfy it, and the
+    four distinct outputs they produce all begin with runs of untouched window fill.  Requiring
+    the decoder to consume the stream to its final byte *at the same moment* it reaches the
+    declared length cuts that down, and re-compressing the result ranks what is left: real data
+    squeezes back to roughly the ratio the file was stored at, noise does not.
+
+    The other thing that misled the first attempt was insisting the first operation be a
+    literal, on the grounds that a match cannot reference an empty window.  It can: these files
+    open with sixteen zero bytes, and against a zero-filled window a match is exactly what an
+    encoder should emit.  That heuristic pointed at the wrong flag polarity for hours.
+
+    ``RING_FILL`` only shows through where a match reads window that nothing has written yet,
+    which happens in the first few bytes of a file or not at all; ``0x00`` is used because
+    these files start with zeros rather than spaces.
+    """
+    size = 1 << RING_BITS
+    mask = size - 1
+    window = bytearray([RING_FILL]) * size
+    r = RING_START
+    out = bytearray()
+    at, n = 0, len(stream)
+    while at < n and len(out) < want:
+        flags = stream[at]
+        at += 1
+        for i in range(8):
+            if len(out) >= want:
+                break
+            if (flags >> i) & 1:
+                if at >= n:
+                    return None
+                c = stream[at]
+                at += 1
+                out.append(c)
+                window[r] = c
+                r = (r + 1) & mask
+                continue
+            if at + 2 > n:
+                return None
+            b0, b1 = stream[at], stream[at + 1]
+            at += 2
+            pos = ((b1 & 0xF0) << 4) | b0
+            for _ in range((b1 & 0x0F) + LENGTH_BIAS):
+                c = window[pos & mask]
+                pos += 1
+                out.append(c)
+                window[r] = c
+                r = (r + 1) & mask
+                if len(out) > want:
+                    return None
+    return bytes(out) if len(out) == want else None
 
 
 def _cstr(data: bytes, at: int) -> str:

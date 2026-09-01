@@ -8,6 +8,16 @@ from gcrip.plugins import fsys as plugin
 ENTRIES = (("sensei_b1", b"model bytes here", False), ("hunter_f_b2", b"more bytes", False))
 
 
+def compress(payload):
+    """Encode with the same scheme the reader decodes: literals only, which is valid LZSS."""
+    out = bytearray()
+    for i in range(0, len(payload), 8):
+        chunk = payload[i : i + 8]
+        out.append((1 << len(chunk)) - 1)  # every item a literal
+        out += chunk
+    return bytes(out)
+
+
 def build(entries=ENTRIES, count=None):
     names_at = 96 + len(entries) * 4
     names = b""
@@ -25,10 +35,10 @@ def build(entries=ENTRIES, count=None):
     for name, payload, comp in entries:
         offset = data_at + len(body)
         if comp:
-            blob = fsys.LZSS + struct.pack(">3I", len(payload) * 2, len(payload) + 16, 0)
-            blob += payload
+            packed = compress(payload)
+            blob = fsys.LZSS + struct.pack(">3I", len(payload), len(packed) + 16, 0) + packed
             stored = len(blob)
-            unpacked = len(payload) * 2
+            unpacked = len(payload)
         else:
             stored = len(payload) + 4
             unpacked = stored
@@ -73,7 +83,7 @@ def test_the_unpacked_size_is_at_eight_and_the_stored_one_at_twenty():
     invisible on the archive you would check first.  A compressed member is where it shows."""
     data = build(entries=(("zap", b"x" * 40, True),))
     (m,) = fsys.members(data)
-    assert m.compressed and m.unpacked == 80 and m.size == 56
+    assert m.compressed and m.unpacked == 40 and m.size > 40
 
 
 def test_a_member_that_is_neither_stored_nor_lzss_is_refused():
@@ -85,13 +95,28 @@ def test_a_member_that_is_neither_stored_nor_lzss_is_refused():
     assert [x.name for x in fsys.members(bytes(data))] == ["hunter_f_b2"]
 
 
-def test_expand_skips_the_compressed_members():
-    """Nearly everything on these discs is LZSS and that codec is unsolved, so emitting the
-    blobs would fill every manifest with undecodable members."""
-    data = build(entries=(("kept", b"plain data", False), ("zap", b"x" * 40, True)))
-    got = plugin.expand(data)
-    assert [n for n, _ in got] == ["kept.bin"]
-    assert got[0][1] == b"plain data"
+def test_expand_decompresses_the_lzss_members():
+    data = build(entries=(("kept", b"plain data", False), ("zap", b"packed!!", True)))
+    got = dict(plugin.expand(data))
+    assert got["kept.bin"] == b"plain data"
+    assert got["zap.bin"] == b"packed!!"
+
+
+def test_a_literal_only_stream_round_trips():
+    payload = bytes(range(256)) * 3
+    assert fsys.decompress(compress(payload), len(payload)) == payload
+
+
+def test_a_match_reads_the_window_and_the_length_bias_is_three():
+    """A clear bit is a two-byte match: twelve bits of window position, four of length + 3."""
+    pos = fsys.RING_START
+    match = bytes([pos & 0xFF, ((pos >> 4) & 0xF0) | 0])  # length nibble 0 -> three bytes
+    stream = bytes([0xFF]) + b"ABCDEFGH" + bytes([0xFE]) + match
+    assert fsys.decompress(stream, 11) == b"ABCDEFGHABC"
+
+
+def test_a_stream_that_cannot_reach_the_declared_length_is_refused():
+    assert fsys.decompress(b"A", 100) is None
 
 
 def test_a_count_larger_than_the_file_is_refused():

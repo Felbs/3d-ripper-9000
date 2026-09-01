@@ -56,41 +56,50 @@ largest archives of each disc, Colosseum has 157 stored members (17 MB) against 
 `hunter_f_b2`, `jiji_b_b1`, `hunter_m_b1`, `warugaki_b3` - the game's cast, one entry
 each.  Read by `gcrip/formats/fsys.py` + `gcrip/plugins/fsys.py`.
 
-## Still open: the `LZSS` codec
+## The `LZSS` codec - CRACKED
 
-It is the whole of the remaining value here - 2,257 of Colosseum's 2,414 members in the 40
-largest archives, and every one of XD's.
+It was the whole of the value here: 2,257 of Colosseum's 2,414 members in the 40 largest
+archives, and every one of XD's.
 
 A member's `LZSS` header is the magic, the unpacked size, the stored size and a zero word, then
-the stream from +16.  The unpacked size is an exact oracle.  `megatonkick_attack` is the worked
-example: 139,532 bytes out of 91,699, stream beginning
-`12 ed fd ff fe f8 ed f0 04 dc ff 1f ...`.
+the stream from +16.  The stream is **Okumura's LZSS**: a flag byte then eight items, bit taken
+**LSB first**, a **set** bit meaning a one-byte literal and a clear bit a two-byte match with
+twelve bits of window position and four of length, `(b1 & 0x0f) + 3`.  The window is 4 KB and
+`r` starts at `4096 - 18`.
 
-### What the first flag byte settles
+**800 members decode to their declared size exactly, 0 failures** - 400 sampled on each disc -
+and the outputs open with structured u16 pairs (`00 2a 00 54`, `00 c8 00 96`, `00 54 00 54`:
+42x84, 200x150, 84x84).
 
-`0x12` is `00010010`.  With **`0` meaning literal** the first operation is a literal in either
-bit order, so that polarity is fixed - and MSB-first would give three literals (`ed fd ff`)
-before the first match, which is what the start of a real file should look like.
+### Why the first attempt failed, which is the useful part
 
-### Two families ruled out
+**Matching the declared output length is far too weak a test.**  Eighty parameter sets satisfy
+it, and the four distinct outputs they produce all begin with runs of untouched window fill.
+Sweeping against length alone cannot find the answer here and will happily report success.
 
-**Back-distance LZSS is out entirely.**  Sweeping every combination of bit order, polarity,
-four offset/length layouts, three length biases and both distance conventions - 96 in all -
-and requiring each match to reference output already written, **none decodes to the declared
-length at all**.
+Two things fixed it:
 
-**Ring-buffer LZSS reaches the length but only implausibly.**  Across window sizes 2/4/8 KB,
-fills of `0x00` and `0x20`, four start positions, three biases and three layouts, the sets
-that hit 139,532 exactly are **all LSB-first**, and every one of them reads roughly **1,000
-bytes of untouched window fill within the first 4 KB of output** - long runs of `00` or `20`
-where a real file has data.  MSB-first, the order the first flag byte argues for, never
-reaches the length at all.
+* **a two-sided oracle** - the decoder must consume the stream to its *final byte* at the same
+  moment it reaches the declared length.  Both ends have to line up;
+* **re-compression as the ranking** - a correct decode squeezes back down to roughly the ratio
+  the file was stored at (0.52 against a stored 0.657), while a wrong one does not.
 
-So the exact-length oracle is satisfied only by decoders that are visibly producing rubbish,
-and the standard schemes are exhausted.  The `LZSS` in the header is the game's label, not a
-guarantee of Okumura's scheme.
+And one belief had to be abandoned: that the first operation must be a literal, on the grounds
+that a match cannot reference an empty window.  **It can, and here it does.** These files open
+with sixteen zero bytes, and against a zero-filled window a match is precisely what a good
+encoder emits.  That heuristic pointed at the wrong flag polarity and cost the first pass.
 
-**What to try next:** work forward from the first dozen operations by hand, requiring the
-output to be real data rather than window fill, instead of sweeping parameters against the
-length.  The three-literal opening under MSB-first is the thread; the question is what match
-encoding follows it.
+`RING_FILL` only shows through where a match reads window nothing has written, which happens in
+a file's first few bytes or not at all; `0x00` is used because these files start with zeros
+rather than spaces.
+
+## Results
+
+`people_archive.fsys` yields **157 named members**; across the 8 largest archives of each disc
+the reader now decompresses **804 members on Colosseum and 1,132 on XD**.  Read by
+`gcrip/formats/fsys.py` + `gcrip/plugins/fsys.py`.
+
+## Still open
+
+The member formats themselves - no existing plugin claims a decompressed member yet.  The u16
+pairs at the head of many of them look like dimensions, so textures are the place to start.
