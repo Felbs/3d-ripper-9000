@@ -3,9 +3,7 @@ Action and Harry Potter and the Sorcerer's Stone.
 
 101 archives across the three discs hold **138,326 named members**, among them 19,156
 ``.bmsh`` meshes, 29,047 ``.btga`` textures, 3,286 ``.bskl`` skeletons and 10,509 ``.anm``
-animations.  The directory below is solved and verified; **the member codec is not**, so this
-module reads the table and is deliberately not registered as a container plugin - expanding
-into still-compressed members would only feed the pipeline garbage.  See ``docs/OPEN.md``.
+animations.  Both the directory and the member codec are solved; see ``decompress`` for the codec.
 
 Big-endian throughout::
 
@@ -49,8 +47,15 @@ ENTRY = 24
 MAX_COUNT = 1 << 20
 LITERAL_RUN = 0xE0
 HIGH_FORM = 0x80
+LONG_FORM = 0xC0
 LIT_MASK = 3
+LONG_LEN_HIGH = 0x1C
+RUN_MASK = 0x1F
 LEN_BIAS = 3
+HIGH_LEN_BIAS = 4
+LONG_LEN_BIAS = 5
+LOW_LEN_MASK = 7
+LOW_OFF_MASK = 0x60
 OFF_BIAS = 1
 
 
@@ -108,22 +113,40 @@ def members(data: bytes) -> list[Member]:
 
 
 def decompress(data: bytes, want: int) -> bytes | None:
-    """The member codec, as far as it is solved.  ``None`` when a token in the unsolved
-    ``0x80``-``0xDF`` range is reached, so a caller never sees a half-decoded member.
+    """The member codec.  ``None`` unless the stream yields exactly ``want`` bytes.
 
-    Two of the three ranges are known and verified against real text, not against a length::
+    Four token forms, all big-endian in spirit but byte-oriented.  Every match form carries its
+    own literals, which are emitted **before** the copy, and the copy is self-referencing, so a
+    length may exceed its offset (that is how runs are encoded)::
 
-        b >= 0xE0            a literal run of ((b & 0x0f) + 1) * 4 bytes
-        b <  0x80            a match carrying its own literals:
-                                 literals = b & 3     emitted BEFORE the match
-                                 length   = (b >> 2) + 3
-                                 offset   = next byte + 1
-        0x80 <= b < 0xE0     unsolved - see docs/formats/warthog-hog.md
+        t >= 0xE0    literal run of ((t & 0x1f) + 1) * 4 bytes
+        t <  0x80    lits = t & 3    len = ((t >> 2) & 7) + 3   off = ((t & 0x60) << 3 | b) + 1
+        0x80..0xBF   lits = a >> 6   len = (t & 0x3f) + 4       off = ((a & 0x3f) << 8 | b) + 1
+        0xC0..0xDF   lits = t & 3    len = ((t & 0x1c) << 6 | c) + 5   off = (a << 8 | b) + 1
 
-    The stream order is token, offset byte, literal bytes; the literals come out first and the
-    match copies after them.  Under this, Animaniacs' ``frontend_cog1.lvl`` decodes to
-    ``level CRLF { CRLF TAB name({cactus}) CRLF TAB acount(4) CRLF TAB pcount(0) CRLF TAB``
-    before reaching the first high token.
+    The three forms are one design: a short match with a 10-bit window, a longer match with a
+    14-bit window, and a long match with an explicit length byte and a full 16-bit window.  The
+    operand bytes follow the token, then the literal bytes.
+
+    **The low form is where this stayed stuck for four sessions.**  ``len = (t >> 2) + 3`` and
+    ``off = b + 1`` fit every token in the small vectors and are both wrong: the length is only
+    three bits and bits 5-6 of the token are the offset's high bits.  Nothing showed it until a
+    token with bit 5 set turned up - ``0x34 0x61`` in ``frontend_scroll.lvl``, which needs
+    offset 354 to copy ``Number, `` and gets 98 under ``b + 1``.  Every earlier vector happened
+    to have those bits clear, so a rule fitted to them looked general and was not.
+
+    **Two masks were a byte too narrow and only binary members showed it.**  The run count is
+    five bits, not four - ``0xF0``-``0xFF`` are runs of 68 to 128 bytes - and in the text
+    members those tokens only ever land as the final run, where the end of the stream truncates
+    them to the right length anyway.  Likewise the long form's length carries the token's bits
+    2-4, which text never exercised because it never needed a match over 260 bytes.  Both were
+    invisible in every text vector and cost two thirds of a real archive.
+
+    Verified on eight members of Animaniacs' ``frontend.hog``: all eight decode to **exactly**
+    their declared size, and the three ``frontend_cog*.lvl`` - 199 packed bytes each, differing
+    at one stream byte - give three 386-byte texts differing at exactly one character, the
+    ``1``/``2``/``3`` of ``{frontend_cog1}``.  ``general_eng.loc`` comes out as the game's
+    localisation table and ``scriptfns.txt`` as its scripting reference, both closing cleanly.
     """
     out = bytearray()
     i, n = 0, len(data)
@@ -131,20 +154,33 @@ def decompress(data: bytes, want: int) -> bytes | None:
         token = data[i]
         i += 1
         if token >= LITERAL_RUN:
-            run = ((token & 0x0F) + 1) * 4
-            if i + run > n:
-                return None
+            # the last run of a member may be cut short by the end of the stream
+            run = min(((token & RUN_MASK) + 1) * 4, n - i)
             out += data[i : i + run]
             i += run
             continue
-        if token >= HIGH_FORM:
+        if token < HIGH_FORM:
+            operands, literals = 1, token & LIT_MASK
+            length = ((token >> 2) & LOW_LEN_MASK) + LEN_BIAS
+        elif token < LONG_FORM:
+            operands, literals = 2, (data[i] >> 6 if i < n else 0)
+            length = (token & 0x3F) + HIGH_LEN_BIAS
+        else:
+            operands, literals = 3, token & LIT_MASK
+            length = (
+                ((token & LONG_LEN_HIGH) << 6 | data[i + 2]) + LONG_LEN_BIAS
+                if i + 2 < n
+                else 0
+            )
+        if i + operands + literals > n:
             return None
-        literals = token & LIT_MASK
-        length = (token >> 2) + LEN_BIAS
-        if i + 1 + literals > n:
-            return None
-        offset = data[i] + OFF_BIAS
-        i += 1
+        if operands == 1:
+            offset = ((token & LOW_OFF_MASK) << 3 | data[i]) + OFF_BIAS
+        elif operands == 2:
+            offset = ((data[i] & 0x3F) << 8 | data[i + 1]) + OFF_BIAS
+        else:
+            offset = (data[i] << 8 | data[i + 1]) + OFF_BIAS
+        i += operands
         out += data[i : i + literals]
         i += literals
         if not 0 < offset <= len(out):

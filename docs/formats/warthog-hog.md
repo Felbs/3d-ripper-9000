@@ -1,4 +1,93 @@
-# `WART3.00` `.hog` archives - Warthog's engine
+# Warthog `WART3.00` `.hog` - SOLVED 2026-09-01
+
+Animaniacs: The Great Edgar Hunt, Looney Tunes: Back in Action, Harry Potter and the Sorcerer's
+Stone.  101 archives, **138,326 named members**.  Directory, member framing and codec all read;
+`gcrip/plugins/wart_hog.py` is a container plugin and every member now reaches the pipeline.
+
+Measured on the three discs, first archives of each: Animaniacs **4,582 of 4,663** members
+(98.3%), Harry Potter **290 of 292** (99.3%), Looney Tunes **857 of 859** (99.8%).
+
+## Member framing
+
+A record's `packed` size counts a **`u32` big-endian prefix holding the length of the packed
+stream**, so the stream is `blob[4:4+prefix]` and `prefix + 4 == packed`.  Slicing from the
+record offset instead feeds the codec its own length word as a token and decodes nothing - that
+alone held the container at 78 members of 8,576.
+
+Two members are stored rather than packed, and they look different:
+
+* `packed == unpacked` - stored, take the bytes as they are.
+* `packed == 0` - also stored, and the record's span is its **unpacked** size.  Every member of
+  Looney Tunes' level archives is like this.  What says they are stored and not truncated is
+  that the offsets chain exactly through the unpacked sizes.
+
+## The codec
+
+Four token forms.  Every match form carries its own literals, emitted **before** the copy, and
+the copy is self-referencing, so a length may exceed its offset - that is how runs are encoded.
+Operand bytes follow the token, then the literal bytes.
+
+| token | literals | length | offset |
+|---|---|---|---|
+| `t >= 0xE0` | `((t & 0x1f) + 1) * 4` literal bytes, no match | | |
+| `t < 0x80` | `t & 3` | `((t >> 2) & 7) + 3` | `((t & 0x60) << 3 \| b) + 1` |
+| `0x80..0xBF` | `a >> 6` | `(t & 0x3f) + 4` | `((a & 0x3f) << 8 \| b) + 1` |
+| `0xC0..0xDF` | `t & 3` | `((t & 0x1c) << 6 \| c) + 5` | `(a << 8 \| b) + 1` |
+
+One design, three windows: a short match with a 10-bit window, a longer match with a 14-bit
+window, and a long match with an explicit length byte and a full 16-bit window.
+
+## What kept this closed for four sessions, and what opened it
+
+**Every wrong rule was fitted to vectors that could not tell it apart from the right one.**
+
+The low form was recorded as `len = (t >> 2) + 3` and `off = b + 1`.  Both are wrong: the
+length is only three bits and **bits 5-6 of the token are the offset's high bits**.  Every
+token in the small vectors happens to have those bits clear, so the wrong rule reproduced them
+perfectly and looked general.  What exposed it was `34 61` in `frontend_scroll.lvl`, which has
+to reach back **354** bytes to copy `Number, ` and gets 98 under `b + 1`, quietly emitting
+`r, 0.0000` instead.
+
+The same shape of error hid two more masks, and only **binary** members showed them:
+
+* the run count is **five** bits, not four - `0xF0`-`0xFF` are runs of 68 to 128 bytes.  In text
+  members those tokens land only as the final run, where the end of the stream truncates them
+  to the right length anyway, so a four-bit mask decodes every text vector exactly.
+* the long form's length carries the token's **bits 2-4**.  Text never needed a match over 260
+  bytes, so `c + 5` was never contradicted.
+
+Together those two cost **two thirds of a real archive** while all eight text vectors decoded
+byte-exact.  A format's own documentation files are the easiest members to test against and the
+least representative of what it has to decode.
+
+## What actually settled it
+
+Not an exact-length oracle - that was satisfied by wrong rules for four sessions, exactly as it
+was on the Pokemon LZSS.  Three things did:
+
+1. **Reconstructing the plaintext.** `frontend_cog1.lvl` is a templated level script, so its
+   full 386 bytes can be written out by hand from the fragments already decoding.  With the
+   text known, each token's required length and offset can be read off directly instead of
+   searched for - that is how `len = (t & 0x3f) + 4` fell, from `0xbb` needing 63 and `0x3f`
+   being the only mask that gives it.  Reconstruction also **found my own error**: the decode
+   said `Amend` where I had written `Const`, and the decode was right.
+2. **A one-character differential.** `frontend_cog1/2/3.lvl` are 199 packed bytes differing at
+   one stream byte, so a correct decoder must give three 386-byte texts differing at exactly
+   one character.  Only the right rules do; a plausible-but-wrong decoder cannot.
+3. **Thousands of members with declared sizes.** Once the container framing was right, a real
+   archive is a 96-way oracle, and it is what turned up the two masks the text could not see.
+
+## Where the value is
+
+The members are a resource format sharing an 8-byte header (`u32 id`, `u32 kind`), kind 3 =
+`.btga`, 10 = `.bmsh`, 1 = `.bskl`, 2 = `.banr`.  **29,047 `.btga` textures and 19,156 `.bmsh`
+meshes** are now decompressed and named but not yet parsed - that is the next step, and it is
+ordinary format work rather than another codec.
+
+---
+
+# The record below is the pre-solution note, kept for the reasoning
+
 
 Three discs, 101 archives, **165,704 named members** - 36,156 `.btga` textures, 29,021 `.bmsh`
 meshes, 3,622 `.bskl` skeletons, 10,597 `.anm` animations, 5,226 `.lvl` and 3,269 `.mdl`.

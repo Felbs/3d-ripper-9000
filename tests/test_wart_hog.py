@@ -116,10 +116,72 @@ def test_the_length_and_offset_biases_are_three_and_one():
     assert got == b"abcdabcd"  # length (4>>2)+3 = 4, offset 3+1 = 4
 
 
-def test_an_unsolved_high_token_declines_rather_than_half_decoding():
-    """0x80-0xDF is still open, and a caller must never be handed a partial member."""
+def test_a_truncated_member_declines_rather_than_half_decoding():
+    """A caller must never be handed a partial member."""
     assert wart_hog.decompress(bytes([0xE0]) + b"abcd" + bytes([0x87, 0x40]), 16) is None
 
 
 def test_a_member_that_does_not_reach_its_declared_size_is_refused():
     assert wart_hog.decompress(bytes([0xE0]) + b"abcd", 99) is None
+
+
+# Eight members of Animaniacs' frontend.hog, three of them embedded here.  frontend_cog1 and
+# frontend_cog2 are 199 packed bytes differing at a single stream byte, which makes them the
+# sharpest test available: a decoder that is merely plausible cannot produce two 386-byte texts
+# one character apart.
+COG1 = bytes.fromhex(
+    "e56c6576656c0d0a7b0d0a096e616d65287b6361637475737d011029e161636f756e742834040b0d0b70050b30"
+    "8740 0b7387400b7487400b6287400b6fe16174747269627574005de64f626a656374547970657d2c20436f6e73"
+    "742c204e756d6265722c200b00302e308b0032e04d657368019a4e1c30011b53e36e672c207b66726f6e74656e"
+    "645f636f0eb267311c37e1496e697469616c5002076f73023e6f6e022b416d03812c205687406f6f9a00099200"
+    "55e04f726965bbc0586e7461e07d0d0a0dfd0a".replace(" ", "")
+)
+COG2 = COG1[:142] + bytes([0x32]) + COG1[143:]
+SCROLL = bytes.fromhex(
+    "e56c6576656c0d0a7b0d0a096e616d65287b6361637475737d011029e161636f756e742835040b0d0b70050b30"
+    "87400b7387400b7487400b6287400b6fe16174747269627574005de64f626a656374547970657d2c20436f6e73"
+    "742c204e756d6265722c200b00302e30e12c2053756247726f039175704e0d8a7b1c42e04d6573680418 1c4001"
+    "1b53e46e672c207b66726f6e74656e645f7363726f6c6c0021990049e1496e697469616c5002076f73022e6f6e"
+    "023d416d03a32c205689409 16f9a0009a00065e04f726965c30068566e7461e34c696768744578636c7564654d"
+    "61736b1c66346196404831e07d0d0a0dfd0a".replace(" ", "")
+)
+
+
+def test_the_three_cog_streams_decode_and_differ_at_exactly_one_character():
+    """frontend_cog1/2 differ at one packed byte and must differ at one decoded character -
+    the MeshName.  Length alone proves nothing here; this does."""
+    one, two = wart_hog.decompress(COG1, 386), wart_hog.decompress(COG2, 386)
+    assert len(one) == len(two) == 386
+    assert [i for i in range(386) if one[i] != two[i]] == [201]
+    assert b"{frontend_cog1}" in one and b"{frontend_cog2}" in two
+
+
+def test_a_member_decodes_to_its_declared_text():
+    CRLF = chr(13) + chr(10)
+    got = wart_hog.decompress(COG1, 386).decode("ascii")
+    assert got.startswith("level" + CRLF + "{" + CRLF + chr(9) + "name({cactus})")
+    assert "attribute({ObjectType}, Const, Number, 0.000000)" in got
+    assert "attribute({MeshName}, Const, String, {frontend_cog1})" in got
+    assert got.endswith(")" + CRLF + "}" + CRLF + CRLF)
+    assert got.count("attribute(") == 4 == int(got.split("acount(")[1][0])
+
+
+def test_the_low_form_offset_is_ten_bits_not_eight():
+    """The token that broke four sessions of guessing.  frontend_scroll carries `34 61`, whose
+    copy has to reach back 354 bytes for `Number, `; `b + 1` gives 98 and quietly produces
+    `r, 0.0000` instead.  Every smaller vector has bits 5-6 of the token clear, so a rule
+    fitted to them looks general and is not."""
+    got = wart_hog.decompress(SCROLL, 525).decode("ascii")
+    assert "attribute({LightExcludeMask}, Amend, Number, 1.000000, SubGroupName{})" in got
+    assert "{frontend_scroll}" in got
+
+
+def test_every_token_form_appears_in_the_vectors():
+    """Guards against a form quietly going untested: the three cog/scroll streams between them
+    exercise the literal run, both short forms and the three-operand long form."""
+    seen = set()
+    for stream in (COG1, SCROLL):
+        for byte in stream:
+            seen.add("run" if byte >= 0xE0 else
+                     "long" if byte >= 0xC0 else "high" if byte >= 0x80 else "low")
+    assert seen == {"run", "long", "high", "low"}
