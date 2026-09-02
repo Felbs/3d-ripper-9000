@@ -84,13 +84,17 @@ What does not work is member reconciliation.  78 `SHDR` heads are found and **on
 survive, totalling 5,204 bytes of a 4.9 MB file**.  The small `Cact` members reconcile; every
 large resource fails its declared size:
 
-| resource | inflated | declared | |
+| resource | bytes collected | declared | |
 |---|---|---|---|
 | `ter` (terrain) | 2,319,208 | 3,922,304 | 59% |
 | `tgd` | 1,037,900 | 1,675,700 | 62% |
 | `txf` (textures) | 707,396 | 1,471,392 | 48% |
 | `gras` | 381,860 | 617,136 | 62% |
 | `TEO` x6 | 984-10,764 | 4,480-21,504 | 22-50% |
+
+Those are **raw bytes collected, not inflated bytes** - `ter`'s blob does not start with a zlib
+header, so the reader's inflate branch is never taken and the member fails the size check on
+its raw length.
 
 The cause is not yet established and is **recorded as reconnaissance, not a finding**.  What
 is known: the 551 `Rdat` chunks each carry a ~48-byte prefix of little-endian pointer-shaped
@@ -99,6 +103,27 @@ words (`0012dc40`, `0012fcc4`, `0040124e`), a dumped runtime struct rather than 
 being stripped once from the joined blob cannot be right.  Feeding every later data chunk into
 one decompressor while ignoring intervening `SHDR` markers fails immediately with `incorrect
 header check`, so the resources are not one contiguous stream either.
+
+### The terrain is `OBG `, behind an LZ stream
+
+The gap is not interleaving.  Taking **every** data chunk from `ter`'s `SHDR` to the end of the
+file still gives only 3,770,284 bytes against 3,922,304 declared, and file-wide the data chunks
+hold 4,478,132 bytes against 7,753,488 declared across all `SHDR`.  More is declared than is
+stored, so the payload is compressed - just not with zlib and not from byte 0.
+
+Dumping the first `ter` data chunk past its prefix shows what it is::
+
+    +64  00 00 20 2e 88 0a  4f 42 47 20  01 04 00 00  41 52   .. ...OBG ....AR
+    +80  90 03 88 30 19 04 00 00 06 3f 00 04 00 00 5a 7a      ...0.....?....Zz
+
+`OBG ` at +70 is **the same EA terrain format `plugins/ea_obg.py` already rips on Tiger Woods
+06**, and `41 52` immediately after is the start of its `ARRA` array tag.  The `88 0a`, `90 03`,
+`88 30` between the literal runs are LZ control bytes - literals, then back-references - so each
+resource is one LZ stream carrying an ordinary `OBG `/`TXG ` payload.
+
+Identifying that codec is the whole job.  It is not zlib and not EA refpack at the stream start
+(no `10 fb`), and it is the single thing standing between six discs and their course terrain and
+textures, both of which gcrip can already read once decompressed.
 
 The payload is worth returning for: `Rdat` is 2.97 MB at 7.64 bits/byte and contains `TXG `
 and `HEAD` tags, and `gcrip/formats/ea_txg.py` already reads `TXG `.  The course textures on
