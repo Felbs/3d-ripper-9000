@@ -99,6 +99,11 @@ the scanner first - are **entirely media on 165 discs (26%)**, and eight or more
 (49%).  On a quarter of the library the whole per-disc budget was spent before anything that
 could hold a triangle was opened.
 
+**Validated on Tiger Woods 2003 at the default budget: 0 models before, 35 models and 113,135
+triangles after, 0 failed, 941 s** - and its 100 MB `intro.ngc` sorted 381st of 381.  Wave 21
+re-rips the 201 discs where at least eight of the ten biggest files are media *and* the disc
+reports zero triangles.
+
 ## The state of the tail (measured 2026-08-30)
 
 223 discs still produce neither a model nor a texture.  For each one, the largest file that
