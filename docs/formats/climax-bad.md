@@ -96,13 +96,19 @@ Decoding ATV's whole stream with the scaled limit settles what the fragmentary t
 
 * **The input is consumed exactly**: 98,812,344 of 98,812,344 bytes, 100.0000%, and the output
   stops on its own at 274,073,929 without reaching the limit.  Landing precisely on the final
-  byte is not something a desynced stream does, so the **flag framing is correct** - the flag
-  bits and the literal/match split read right.
+  byte.  **This is not evidence of anything**, and two successive versions of this note claimed
+  that it was.
 
-  **Correction (same session):** an earlier version of this note said consumption also validated
-  the match *lengths*.  It does not.  A match consumes exactly two input bytes whatever length it
-  declares, and a literal one, so the input pointer is driven entirely by the flag bits.
-  Consumption says nothing about the length field and nothing about the position field.
+  **What consumption actually measures: the loop's termination condition, and nothing else.**
+  The walk runs until `i >= n`, so it ends on the last byte whatever it did along the way.
+  Measured directly - decoding the same stream from a deliberately *wrong* start offset consumes
+  **32.69%** of the input for a 3 MB output budget, and the correct start consumes **32.69%**:
+  2,056,605 bytes against 2,056,648.  A wrong start is indistinguishable.
+
+  The first version of this claim said consumption validated the match lengths; it cannot, since
+  a match takes two input bytes whatever length it declares.  The second said it validated the
+  flag framing; it cannot do that either, for the reason above.  **Exact consumption carries no
+  information about correctness in this format.  It should not be cited again.**
 * That also measures the truncation the old cap caused: **5,638,473 bytes**, the last 2% of the
   archive, were being silently dropped.
 
@@ -152,6 +158,17 @@ has now burned through three that looked reasonable and were not:
 * *"the input is consumed exactly"* - true for every variant, by construction;
 * *"a part name should not repeat"* - `rlmudguard` appears 186 times, but nothing establishes
   that a 643-part table cannot legitimately list it once per vehicle configuration.
+
+## An oracle that does work: the length of the name chain
+
+The container declares **643** parts, so a correct decode must contain a long run of
+back-to-back NUL-terminated identifiers - a name table.  Measured on the shipped decode, over a
+4 MB window centred on the first part name, **the longest such chain is 5**, and those five are
+`MIT`, `UGR`, `SEP`, `QCN`, `OAL` - three-letter noise, not part names.
+
+This one is countable, is tied to a number the file itself declares, and fails loudly on the
+current output.  It is the oracle a further attempt should be scored against: **a correct
+variant should produce a chain in the hundreds.**
 
 The one oracle that would settle it is a **known-plaintext pair**, as on Tiger Woods: some
 asset present both compressed here and uncompressed elsewhere on the disc. That is the next
