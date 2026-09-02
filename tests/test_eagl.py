@@ -271,3 +271,37 @@ def test_table_reads_rejects_a_table_of_zeros():
     blanked[shoff:] = bytes(len(blanked) - shoff)
     assert eagl._table_fits(bytes(blanked))
     assert not eagl._table_reads(bytes(blanked))
+
+
+def test_display_list_is_chosen_by_opcode_not_by_position():
+    """FIFA 2003's static objects put a one-entry __EAGL::TAR texture pointer AFTER the display
+    list.  Taking the last stream then fed a 1-byte "display list" to the opcode check, which
+    returned None with no warning and lost 14 objects' geometry in silence."""
+    from gcrip.formats import eagl
+
+    d = bytearray(64)
+    d[10] = 0x98  # a GX primitive opcode
+    d[40] = 0x01  # the trailing texture pointer, not an opcode
+    streams = [
+        (8, 0, None),    # attribute stream
+        (8, 2, None),    # attribute stream
+        (20, 10, None),  # the display list
+        (1, 40, None),   # the trailing pointer
+    ]
+    assert eagl._display_list_index(streams, bytes(d)) == 2
+
+
+def test_display_list_index_keeps_the_ordinary_case():
+    """When the display list IS last, the answer must not change."""
+    from gcrip.formats import eagl
+
+    d = bytearray(64)
+    d[20] = 0x98
+    streams = [(8, 0, None), (8, 2, None), (16, 20, None)]
+    assert eagl._display_list_index(streams, bytes(d)) == 2
+
+
+def test_display_list_index_is_none_when_no_stream_opens_on_a_primitive():
+    from gcrip.formats import eagl
+
+    assert eagl._display_list_index([(4, 0, None), (4, 8, None)], bytes(64)) is None

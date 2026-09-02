@@ -309,3 +309,30 @@ mesh in them, so `models=0` is the correct answer and always was.  The container
 What the fix buys is real but narrower than it first looked: the ELF now parses instead of
 pointing at zeros, so the bone data is reachable at all, and any disc whose prefix differs from
 its `.ord` length was being joined wrongly.
+
+### The display list is not always the last stream
+
+With the join fixed, FIFA 2003's `static.big` / `pstatic.big` objects parsed and still produced
+nothing.  `_decode_packet` was returning `None` on the first `return` it reached, silently.
+
+The packet entries for `PitchDetail` read::
+
+    [1] tag __const MATRIX4        <- the anchor
+    [2] count 1584  ptr    32      attribute stream
+    [3] count 1584  ptr 19040      attribute stream
+    [4] count 7552  ptr 31712      **the display list**
+    [5] count    1  ptr 39376      the __EAGL::TAR texture pointer
+    [6] tag __EAGL::GeoPrimState
+
+`streams[-1]` took entry 5 - a one-byte "display list" - and the opcode check then failed.  The
+display list is now chosen by that same opcode test rather than by position, searching from the
+end so the ordinary case is unchanged.
+
+**Result on FIFA 2003: 14 of 22 `static.big`/`pstatic.big` objects now yield 10,567 triangles**,
+against 0 before - `Player__HiBody4` 4,977, `Player__MedBody` 1,299, `Player__LowBody` 669,
+`Player__Cards` 28.  Those are real player body meshes, and they reached the reader only because
+their `.orp` lives in `ngccache1/2.big` rather than beside them, which is the cross-container
+sibling fix.
+
+So three defects were stacked on this disc, and all three had to go before a triangle came out:
+the sibling lookup, the prefix-as-length join, and the display-list choice.

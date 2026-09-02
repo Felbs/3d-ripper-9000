@@ -309,6 +309,27 @@ def _packet_entries(elf: _Elf, o_shader: int) -> list[tuple[int, int | None, str
     return out
 
 
+def _display_list_index(streams, d) -> int | None:
+    """Which stream is the display list.
+
+    Normally the last one, but not always: FIFA 2003's static objects carry a trailing
+    one-entry pointer (the ``__EAGL::TAR`` texture) after it.  Taking ``streams[-1]`` then hands
+    a 1-byte "display list" to the opcode check, which fails and returns ``None`` with no
+    warning - 14 objects' worth of geometry lost in silence.
+
+    So the display list is chosen by the same test that used to merely validate the choice: it
+    has to open on a GX primitive opcode and lie inside ``.data``.  Searching from the end keeps
+    the ordinary case identical.
+    """
+    for k in range(len(streams) - 1, -1, -1):
+        size, ptr, _ = streams[k]
+        if ptr is None or ptr >= len(d) or ptr + size > len(d):
+            continue
+        if (d[ptr] & 0xF8) in PRIM_OPS:
+            return k
+    return None
+
+
 def _decode_packet(elf: _Elf, o_shader: int, shader: str, warn: list[str]) -> Packet | None:
     d = elf.data
     ents = _packet_entries(elf, o_shader)
@@ -338,10 +359,16 @@ def _decode_packet(elf: _Elf, o_shader: int, shader: str, warn: list[str]) -> Pa
         j += 1
     if len(streams) < 2:
         return None
-    size, dlp, _ = streams[-1]
-    attrs = streams[:-1]
-    if dlp + size > len(d) or (d[dlp] & 0xF8) not in PRIM_OPS:
+    # The display list is normally the last stream, but not always: FIFA 2003's static objects
+    # carry a trailing one-entry pointer (the `__EAGL::TAR` texture) after it, and taking
+    # `streams[-1]` then hands a 1-byte "display list" to the opcode check, which fails and
+    # returns None with no warning.  Pick the stream that actually opens on a GX primitive
+    # opcode - the same test that validated the choice before, applied as the choice.
+    dl_idx = _display_list_index(streams, d)
+    if dl_idx is None or dl_idx < 1:
         return None
+    size, dlp, _ = streams[dl_idx]
+    attrs = streams[:dl_idx]
     dl = d[dlp : dlp + size]
     nattr = len(attrs)
     stride = 2 + 2 * nattr  # [posmtx][texmtx] + u16 per stream
