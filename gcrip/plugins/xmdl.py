@@ -7,7 +7,7 @@ from __future__ import annotations
 import posixpath
 
 from gcrip.formats import xmdl
-from ripcore.scene import Primitive, Scene
+from ripcore.scene import MaterialDef, Primitive, Scene
 
 NAME = "xmdl"
 
@@ -24,9 +24,14 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
     out = []
     for i, model in enumerate(found):
         scene = Scene(name=stem if len(found) == 1 else f"{stem}_{i:03d}")
+        # `material` is an INDEX into scene.materials, so -1 against an empty list is not
+        # "no material" - it is an IndexError at export.  That cost Home Run King 6,273 of its
+        # models, the largest single failure count in the library, and cost `res` and
+        # `wart_bmsh` theirs before it.
+        scene.materials.append(MaterialDef(f"{scene.name}_mat", None))
         scene.primitives.append(
             Primitive(
-                material=-1,
+                material=0,
                 positions=model.positions,
                 indices=model.indices,
                 normals=model.normals,

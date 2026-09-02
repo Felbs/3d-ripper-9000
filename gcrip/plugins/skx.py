@@ -7,7 +7,7 @@ from __future__ import annotations
 import posixpath
 
 from gcrip.formats import skx
-from ripcore.scene import Primitive, Scene
+from ripcore.scene import MaterialDef, Primitive, Scene
 
 NAME = "skx"
 
@@ -22,10 +22,14 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
         return []
     stem = posixpath.basename(path).rsplit(".", 1)[0] or "skx"
     scene = Scene(name=stem)
+    # `material` indexes scene.materials, so -1 against an empty list is an IndexError at
+    # export rather than "no material" - see plugins/xmdl.py.  One material for the scene:
+    # SKX carries no per-mesh material and every mesh shares it.
+    scene.materials.append(MaterialDef(f"{stem}_mat", None))
     for mesh in found:
         scene.primitives.append(
             Primitive(
-                material=-1,
+                material=0,
                 positions=mesh.positions,
                 indices=mesh.indices,
                 normals=mesh.normals,
