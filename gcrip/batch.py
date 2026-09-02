@@ -131,6 +131,17 @@ def batch(
                     exported=len(ok),
                     duplicates=sum(1 for m in res.models if m.duplicate_of),
                     failed=len(errs),
+                    # plugins that recognised a file and produced nothing: not failures, but
+                    # the class that hid 89 objects on FIFA 2003 behind a healthy-looking zero
+                    claimed_empty=sum(1 for m in res.models if m.empty),
+                    empty_examples=sorted(
+                        {
+                            f"{m.warnings[0].removeprefix('format: ')}: "
+                            f"{m.path.rsplit('/', 1)[-1]}"
+                            for m in res.models
+                            if m.empty and m.warnings
+                        }
+                    )[:5],
                     fail_examples=[f"{m.path.split('/')[-1]}: {m.error}" for m in errs[:5]],
                     triangles=sum(m.triangles for m in ok),
                     clips=sum(len(m.animations) for m in ok),

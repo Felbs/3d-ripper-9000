@@ -50,6 +50,11 @@ class ModelResult:
     anim_sources: list[str] = field(default_factory=list)  # archives the clips came from
     expressions: list[str] = field(default_factory=list)
     std_bones: dict[str, str] = field(default_factory=dict)
+    #: the plugin recognised this file and returned no scenes.  Not an error - a skeleton-only
+    #: EAGL object legitimately has no mesh - but not nothing either, and it used to leave no
+    #: trace at all, which made "silently read as empty" indistinguishable from "nobody claimed
+    #: it".  That is what hid 89 objects on FIFA 2003 and 247 on Fight Night Round 2.
+    empty: bool = False
     blend_rel: str | None = None  # set by `gcrip blend`
     glb_rel: str | None = None  # set by `gcrip pack`
     seconds: float = 0.0
@@ -516,7 +521,17 @@ def _run_plugins(src, manifest, result, game_dir, quiet, thumbnails, limit, path
                 r.seconds = time.monotonic() - t0
                 continue
             if not scenes:
-                result.models.remove(r)  # not this plugin's file after all: no record
+                from gcrip.plugins import is_fallback
+
+                if is_fallback(mod):
+                    # a fallback only ever probes speculatively, so "no scenes" really does
+                    # mean "not this plugin's file" and a record would be noise
+                    result.models.remove(r)
+                else:
+                    # an ordinary plugin's detect() said it recognised the format, so returning
+                    # nothing is a fact worth keeping rather than an absence of one
+                    r.empty = True
+                    r.seconds = time.monotonic() - t0
                 continue
             for k, scene in enumerate(scenes):
                 rk = r if k == 0 else ModelResult(path=f"{e.path}#{k}", out_rel=None, sha1=None)
