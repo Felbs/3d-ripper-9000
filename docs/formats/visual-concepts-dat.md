@@ -69,71 +69,49 @@ are 477 of NBA 2K3's 827 MB between them and hold neither geometry nor textures,
 over 32 MB are skipped rather than carried - holding those two would add half a gigabyte to
 every worker.
 
-## The codec - framing solved, one field left
-
-The earlier note said the payload was "dense and bit-packed rather than byte-oriented" and that
-nothing read it.  Both halves of that were wrong, and the sweep that produced them had two
-blind spots.  What follows is verified against known plaintext, not fitted.
-
-### Three facts that unlock it
-
-**1. The 4CCs are stored byte-reversed.**  `RTXT` is `TXTR`, `YALP` is `PLAY`, `AUSB` is
-`BSUA`.  The earlier note recorded `RTXT` as a tag in its own right and never turned it round.
-
-**2. Every packed member states its own output length.**  A `u32` at **+21** equals
-`declared - 16`, on 38 of 45 members sampled.  That is a second oracle beside the table's size
-column, and it is inside the member, so it survives any doubt about the table.
-
-**3. Fifty-eight of the 1,916 `.IFF` members are stored uncompressed** - `size == span` - and
-four of them are large: `PLAYERS.IFF` (10.2 MB), `LOADM.IFF` (4.5 MB), `CHWG.IFF` (3.5 MB),
-`AOSTREET.IFF` (1.2 MB).  **These give the plaintext the compressed members decode to**, which
-is what cracks the framing.  `AOSTREET.IFF` reads::
-
-    +0    16 bytes of header
-    +16   "RTXT"  u32 17056  u32 17056  u32 0   then 12 zero bytes
-    +44   "RTXT"  u32 17     u32 25     then zeros
-    +64   "HEAD0000"                          <- the asset name
-    ...   pixel data
-
-### The framing
+## The codec - solved (2026-09-02)
 
     16 bytes copied to the output verbatim
     then, repeatedly:
         u8 flags
         eight items, bit taken LSB first:
             bit 0 -> literal, one byte
-            bit 1 -> match, three bytes  b0 b1 b2
-                distance = ((b1 & 0x3f) << 8 | b2) + 1
-                length   = b0 + 3            (when b1 >> 6 == 0)
+            bit 1 -> match, three bytes read as one big-endian 24-bit word:
+                        length   = word >> 14           (10 bits)
+                        distance = (word & 0x3fff) + 1  (14 bits)
 
-The first flag byte of every member is `0x00`, so the first eight items are literals - and they
-are exactly the reversed 4CC and the `u32` size, matching the uncompressed layout byte for
-byte.  That is not a fit; it is the same eight bytes in both.
+That is the whole thing: a **10:14 split of a 24-bit word**.
 
-Traced on `AH959.IFF` against the template above, the first four matches are `01 00 03`
-(len 4, dist 4), `01 00 03`, `02 00 07` (len 5, dist 8) and `01 80 1b` (dist 28), and the
-distances land the copied bytes exactly where `RTXT` and the two size fields belong - the
-second chunk's sizes come out **17 and 21**, the same shape as `AOSTREET`'s 17 and 25.
+### Why every earlier attempt stopped in the same place
 
-### What is left
+Read byte by byte, the second byte's top two bits look like a control field sitting beside an
+8-bit length in the first byte - and every reading of them *as a control* has to explain nine
+members that hit the identical triple `01 c0 1b`, at the identical position, with the identical
+distance, and need **different lengths**.  They are not a control.  They are the bottom two
+bits of the length, and the length is 10 bits wide.
 
-**The top two bits of `b1`.**  They are not part of the distance: `01 80 1b` needs distance 28,
-and reading those bits into the offset gives 32,796 with only 41 bytes of output to copy from.
-The trace requires that match to copy **9** bytes where `b0 + 3` gives 4, so the two bits extend
-the length - but not additively.  Solving `length = b0 + 3 + extra[top2]` over `extra` in
-0..24 fits at best 10 of 14 small members and 19 of 39 overall, so the bits select a different
-op shape (a fourth byte, or a different length unit) rather than adding a constant.
+The note used to record "`b1` is a two-bit control, its low six bits are zero in every match
+observed".  That was measured over the first few ops of one member.  Over a whole member `b1`
+takes 90-odd values.
 
-Ruled out along the way, each against the exact-length oracle: flag-byte LZSS with two-byte
-matches in every nibble arrangement, both bit orders, both polarities, offset widths 11-14 and
-length biases 1-4 (best progress 22% of the output); the same with back-distances *and* with
-absolute positions; ring-buffer LZSS in every window size, fill and start position - that one
-appears to score 16 of 32 until you notice the ring mask was quietly making impossible
-positions legal, which is why the ring parameters made no difference to the score.
+### What settles it
 
-**The next step** is to decode `AH959.IFF` against `AOSTREET.IFF`'s chunk template and read the
-required length off each `top2 != 0` match directly, rather than sweeping for it - the template
-pins the output, so every such match has exactly one right answer.
+The 251 packed members in the first 24 MB of NBA 2K3's `game.dat`, each of which states its own
+output length at +21:
+
+* **246 of 251 arrive at that length exactly** - the walk is not stopped there, it ends there -
+  and the two that fall short and three that overrun by sixteen bytes are reported, not hidden.
+* **All 246 then carry `RTXT` at +16 and the nested `RTXT` at +44**, the header the uncompressed
+  members show, and read back as named textures: `unif`, `office_photos`, `coachface`, `uni600`.
+* The walk consumes 90.4% of the stored span; the remainder is the member's padding.
+
+**The measurement that matters is that the decoder *arrives* at the declared length.**  Clipping
+the final copy to the target - the ordinary way to end an LZ decode - makes the length oracle
+vacuous, and a wrong split (`length = ((b0 << 2) | (b1 >> 6)) + 3`) scored 251 of 251 that way
+while producing visible garbage: `office_photos` interleaved with fragments of itself.  With the
+clip removed the same rule scores 164.  That is now recorded in `gcrip/oracles.py`.
+
+`gcrip/formats/vc_pack.py` ships it, with both identities declared.
 
 ## The textures that need no codec at all
 

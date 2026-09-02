@@ -29,6 +29,7 @@ def test_discredited_oracles_record_how_they_failed():
         "input fully consumed",
         "box containment for quantised vertices",
         "quantised axis uses its full range",
+        "decoder stopped at the declared length",
     }
     for o in bad:
         assert any(

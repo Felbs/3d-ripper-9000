@@ -143,6 +143,16 @@ ORACLES: tuple[Oracle, ...] = (
         "which therefore needs re-checking against something else.",
     ),
     Oracle(
+        "decoder stopped at the declared length",
+        "the decode ends on the length the file states",
+        DISCREDITED,
+        "Only when the walk is allowed to RUN there.  Clipping the last copy to the target - "
+        "the ordinary way to end an LZ decode - makes every rule land on it: a wrong split of "
+        "Visual Concepts' match word scored 251 of 251 that way and produced garbage.  Take "
+        "the clip out and the same rule scores 164, while the right one reaches the exact "
+        "length unaided on 246 of 251.  The arrival is the evidence; the stop is not.",
+    ),
+    Oracle(
         "input fully consumed",
         "a correct decoder consumes its input exactly",
         DISCREDITED,
