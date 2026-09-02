@@ -38,12 +38,16 @@ from __future__ import annotations
 
 import struct
 
+import numpy as np
+
 RING = 4096
 MAX_MATCH = 18
 THRESHOLD = 2
 ALL_LITERALS = 0xFF
 HEADER = 8
 MAX_SKIPS = 8
+#: below this the JIT's call overhead outweighs the win
+_JIT_MIN = 1 << 16
 #: A flag byte covers eight items and a match costs two input bytes for up to 18 output, so a
 #: stream cannot expand by more than 18*8/(1+16) - call it nine.  The old flat 1<<28 default
 #: silently truncated ATV: its 98.8 MB stream stopped at exactly 268,435,466 bytes, which is
@@ -59,6 +63,57 @@ def output_limit(size: int) -> int:
     return min(LIMIT_CEILING, max(DEFAULT_LIMIT, size * MAX_EXPANSION))
 
 
+def _decompress_core(data, out, ring, limit, ring_size, max_match, threshold):
+    """The ring-buffer walk, written so numba can compile it.
+
+    LZ decoding is inherently serial - every match copies from output the decoder has just
+    produced - so there is nothing here for threads or a GPU to do.  What it does respond to is
+    being compiled: a 98 MB stream took minutes as a Python loop, which is why sweeping decoder
+    variants against real data was too expensive to be practical.
+    """
+    r = ring_size - max_match
+    flags = 0
+    i = 0
+    written = 0
+    n = len(data)
+    while i < n and written < limit:
+        flags >>= 1
+        if not flags & 0x100:
+            flags = data[i] | 0xFF00
+            i += 1
+            if i >= n:
+                break
+        if flags & 1:
+            c = data[i]
+            i += 1
+            out[written] = c
+            written += 1
+            ring[r] = c
+            r = (r + 1) % ring_size
+        else:
+            if i + 2 > n:
+                break
+            lo = data[i]
+            hi = data[i + 1]
+            i += 2
+            pos = lo | ((hi & 0xF0) << 4)
+            for k in range((hi & 0x0F) + threshold + 1):
+                c = ring[(pos + k) % ring_size]
+                out[written] = c
+                written += 1
+                ring[r] = c
+                r = (r + 1) % ring_size
+    return written
+
+
+try:  # numba is optional: the pure-Python path stays the reference implementation
+    from numba import njit as _njit
+
+    _decompress_fast = _njit(cache=True, nogil=True)(_decompress_core)
+except Exception:  # noqa: BLE001
+    _decompress_fast = None
+
+
 def decompress(data: bytes, limit: int | None = None) -> bytes:
     """Inflate the stream.  ``limit`` defaults to :func:`output_limit` for the input's size.
 
@@ -67,6 +122,13 @@ def decompress(data: bytes, limit: int | None = None) -> bytes:
     """
     if limit is None:
         limit = output_limit(len(data))
+    if _decompress_fast is not None and len(data) > _JIT_MIN:
+        src = np.frombuffer(data, np.uint8)
+        # +MAX_MATCH so the last match cannot run past the buffer; the limit still bounds it
+        buf = np.zeros(limit + MAX_MATCH, np.uint8)
+        ring_arr = np.zeros(RING, np.uint8)
+        written = _decompress_fast(src, buf, ring_arr, limit, RING, MAX_MATCH, THRESHOLD)
+        return buf[:written].tobytes()
     ring = bytearray(RING)
     r = RING - MAX_MATCH
     out = bytearray()

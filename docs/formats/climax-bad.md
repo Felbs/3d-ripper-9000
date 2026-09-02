@@ -193,3 +193,28 @@ Woods codec open.
 The one oracle that would settle it is a **known-plaintext pair**, as on Tiger Woods: some
 asset present both compressed here and uncompressed elsewhere on the disc. That is the next
 thing to look for, before any more decoder variants.
+
+## The decoder is compiled now (2026-09-02)
+
+One of the two reasons this codec was parked was cost: each full decode of the 98.8 MB stream
+took about a minute in a Python loop, so testing a decoder variant against real data was a
+coffee break and sweeping sixteen of them was a morning.
+
+LZ decoding is **inherently serial** - every match copies from output the decoder has just
+produced - so there is nothing here for threads or a GPU to do, whatever hardware is available.
+What it does respond to is compilation.  The ring-buffer walk is now factored into
+`_decompress_core` and JIT-compiled with numba when it is installed, with the pure-Python walk
+kept as the reference implementation and used for inputs below 64 KB.
+
+Measured on 6.3 MB of the real ATV stream: **3.53 s to 0.08 s, 45x**, and byte-identical.
+Extrapolated to the whole file that is **55 seconds down to 1.2**.
+
+The tests compare the compiled path against the reference byte for byte on five random inputs,
+at the small-input boundary, under the output limit, and with numba forced off - because a
+faster decoder that disagrees with the reference is worse than no decoder at all.
+
+**This removes the cost obstacle, not the oracle one.**  The codec is still parked on the harder
+problem: four oracles have been tried and none can tell a good decode from a bad one.  What has
+changed is that the *proven* oracle is now affordable - `gcrip/knownplain.py` against a full
+decode takes seconds, so the next attempt should look for a Climax asset stored raw somewhere in
+the library rather than guessing at operand encodings.
