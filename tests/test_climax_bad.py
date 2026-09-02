@@ -62,3 +62,24 @@ def test_detection_does_not_need_to_reach_the_stream():
 def test_a_stream_yielding_almost_nothing_is_not_claimed():
     data = struct.pack(">2I", 1, 4) + pack(b"tiny")
     assert plugin.expand(data) == []
+
+
+def test_output_limit_scales_with_the_input():
+    """A flat 1<<28 default silently truncated ATV: its 98.8 MB stream stopped at exactly
+    268,435,466 bytes - the cap plus one match - and the tail was lost with nothing to say so."""
+    from gcrip.formats import climax_bad as cb
+
+    assert cb.output_limit(1024) == cb.DEFAULT_LIMIT          # small streams keep the old floor
+    assert cb.output_limit(98_812_344) > 1 << 28              # ATV gets room to finish
+    assert cb.output_limit(98_812_344) == 98_812_344 * cb.MAX_EXPANSION
+    assert cb.output_limit(1 << 30) == cb.LIMIT_CEILING       # and memory stays bounded
+
+
+def test_hit_limit_detects_truncation():
+    """The loop tests the limit before emitting, so a truncated result overshoots it by up to
+    one match - which is why the check is >= and not ==."""
+    from gcrip.formats import climax_bad as cb
+
+    assert cb.hit_limit(b"x" * (1 << 28), 1024)
+    assert cb.hit_limit(b"x" * ((1 << 28) + 10), 1024)
+    assert not cb.hit_limit(b"x" * 4096, 1024)

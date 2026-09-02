@@ -48,3 +48,44 @@ records.  But the geometry is **not GX display lists**: `gxscan` over 12.7 MB of
 finds 10 meshes and 652 triangles, and over Hot Wheels and The Italian Job it finds none at
 all.  The inner container - its directory, and whatever holds the vertices - is the next step,
 and it is now reachable, which it was not before.
+
+## 2026-09-02: the ATV payload was being truncated, and it does not decode cleanly
+
+Two findings, one certain and one a correction to this note's own claim.
+
+**Certain: the decode hit its cap.**  `decompress` took a flat `limit = 1 << 28`, and ATV's
+98,812,344-byte stream produced **exactly 268,435,466 bytes** - the cap plus one match, because
+the loop tests the limit before emitting.  The tail of a 268 MB archive was simply lost, with
+nothing anywhere to say so.  The limit now scales with the input (`output_limit`, nine bytes out
+per byte in, which is the format's own maximum: a flag byte covers eight items and a match costs
+two input bytes for up to 18 output), capped at 1 GiB so one member cannot run away with memory.
+`hit_limit` lets a caller ask whether a result is complete.
+
+**A correction: "the whole game on each disc is now reachable" does not hold for ATV.**  The
+payload's text does not survive.  `mass di` appears 6 times and `ass dis` 5, but **`tribution`
+appears 0 times** - the phrase is present in fragments and never completes.  `distribution`,
+`engine`, `suspension`, `texture` and `vertex` occur **zero** times in 268 MB.  The longest
+"clean" runs in the output are repeated single characters - `----`, `////`, `0000` - which is
+ring fill, not text.
+
+What does survive is structure: `CUBAN` 23 times, `BOG 1.01` 114 times, `ROM 1.26` 51.  Literals
+and short runs come out right while longer matches do not, which points at the match handling
+rather than at the framing.
+
+Ruled out along the way:
+
+* **ring initialisation** - filling the 4096-byte ring with `0x20` instead of `0x00`, the usual
+  LZSS convention, changes nothing at all (identical output length, identical word counts);
+* five alternative match encodings (absolute, relative-back, byte-swapped, nibble-shifted, and
+  a 12-bit split the other way) crossed with lengths of `+2` and `+3` and stream starts of 0 and
+  8.  **This test was inconclusive, not negative**: all of them score zero common words on the
+  first 2 MB - and so does the shipped variant, because that window is binary.  A rerun needs to
+  score against a window that actually holds text.
+
+## The container underneath
+
+`CUBAN 1.02` is the archive magic, with the part count at `+0x28` - **643**, matching the part
+names the earlier survey found - and 12-byte records of two big-endian floats from `+0x38`.
+Inside it are versioned sub-blocks: `BOG 1.01` (114), `ROM 1.26` (51), `CUBAN 1.02` (23) and
+`POINT 1.00`.  That is the directory this note asked for, but reading it is not worth doing
+until the payload it points into is trustworthy.

@@ -44,9 +44,29 @@ THRESHOLD = 2
 ALL_LITERALS = 0xFF
 HEADER = 8
 MAX_SKIPS = 8
+#: A flag byte covers eight items and a match costs two input bytes for up to 18 output, so a
+#: stream cannot expand by more than 18*8/(1+16) - call it nine.  The old flat 1<<28 default
+#: silently truncated ATV: its 98.8 MB stream stopped at exactly 268,435,466 bytes, which is
+#: the cap plus one match, and the tail of the archive was simply lost with nothing to say so.
+MAX_EXPANSION = 9
+#: bound on what one member may cost in memory, whatever the arithmetic above allows
+LIMIT_CEILING = 1 << 30
+DEFAULT_LIMIT = 1 << 28
 
 
-def decompress(data: bytes, limit: int = 1 << 28) -> bytes:
+def output_limit(size: int) -> int:
+    """How much output to allow for `size` compressed bytes."""
+    return min(LIMIT_CEILING, max(DEFAULT_LIMIT, size * MAX_EXPANSION))
+
+
+def decompress(data: bytes, limit: int | None = None) -> bytes:
+    """Inflate the stream.  ``limit`` defaults to :func:`output_limit` for the input's size.
+
+    A caller that needs to know whether the result is complete should compare its length
+    against the limit - see :func:`hit_limit`.
+    """
+    if limit is None:
+        limit = output_limit(len(data))
     ring = bytearray(RING)
     r = RING - MAX_MATCH
     out = bytearray()
@@ -78,6 +98,17 @@ def decompress(data: bytes, limit: int = 1 << 28) -> bytes:
                 ring[r] = c
                 r = (r + 1) % RING
     return bytes(out)
+
+
+def hit_limit(out: bytes, size: int, limit: int | None = None) -> bool:
+    """True when the output stopped because it ran out of room rather than out of input.
+
+    The loop tests the limit before emitting, so a truncated result overshoots it by up to one
+    match - which is why this is a `>=` against the limit and not an equality.
+    """
+    if limit is None:
+        limit = output_limit(size)
+    return len(out) >= limit
 
 
 def stream_start(data: bytes) -> int | None:
