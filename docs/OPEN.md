@@ -259,6 +259,9 @@ every detail and the plugin still export nothing.  Three plugins had it wrong at
 | `res` | 3 (Digimon Rumble Arena 2, Lemony Snicket, Samurai Jack) | **62,640** | `material=-1` with `scene.materials` left empty |
 | `wart_bmsh` | 2 (Animaniacs, Looney Tunes) | 13,967 | material passed as a name; `(M,3)` indices |
 | `ea_obg` | 1 (Tiger Woods 06) | 665 | material passed as a name |
+| `xmdl` | 1 (Home Run King) | **6,273** | `material=-1` into an index - the largest single failure count in the library |
+| `mdgc` | 1 (Superman: SoA) | 947 | same |
+| `skx` | 1 (Darkened Skye) | 193 | same |
 
 The `res` one is worth understanding rather than just fixing.  `export()` tolerates a `-1`
 material; the **separate `thumbnail()` pass** indexes `material_colors` by it, and `[][-1]`
