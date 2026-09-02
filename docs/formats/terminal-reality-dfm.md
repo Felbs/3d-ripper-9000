@@ -51,3 +51,27 @@ English, which is the strongest check of the pair together:
 
 Binoculars in the left hand and a waist on the spine are not what a mis-read table produces.
 All 59 and all 23 bone references resolve inside their skeletons.
+
+
+## What the boxes are *not*, measured
+
+The obvious first use of a per-part box is to look for the vertices that produced it.  That
+fails, and the failure is informative: **the box extremes do not appear verbatim in the
+geometry**.  Packing each of the six floats and searching the tail finds only **42 of 354** on
+`soldier.dfm` and **14 of 138** on `mentor.dfm`, about a tenth - which is the rate you would get
+from coincidence on float-dense data, not from a real hit.
+
+So the boxes are not the min and max of stored `f32` vertices.  Combined with the tail being
+only 9.9% plausible `f32`, the reading that fits is that **the vertices are quantised and the
+box is the dequantisation range** - `position = box_min + (raw / FULL) * (box_max - box_min)` or
+some variant - which is the usual reason a format stores a tight box per part at all.
+
+That also explains why the crude form of the oracle does not discriminate.  Scanning the tail
+for `f32` triples inside the *union* of all boxes scores 0.40 to 0.43 for **every** stride tried
+(12, 16, 20, 24, 28, 32, 36 at every word offset), because on data of this shape four words in
+ten land in that range by chance.  The union box is useless; the per-part box is the test, and
+using it needs the part-to-vertex mapping first.
+
+The 36-byte records are **not** per-part 3x3 transforms, which was worth ruling out since the
+skinning wants bind matrices: read as nine floats from the first plausible offsets the rows are
+not unit length (0.42, 0.53, 0.61) and two of them share components.
