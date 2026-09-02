@@ -121,4 +121,47 @@ Sampled from Spawn's `global.wad`:
   tightly (`04ff 04fd 04fe 0502 0500 ...`) - which reads as fixed-point coordinates around a
   centre rather than as an index list, since indices would start low and spread.
 
-That is where the next session should start on these two discs.
+## CRACKED: the `PHM` vertex record (2026-09-01)
+
+`gcrip/formats/phm.py` + `gcrip/plugins/phm.py`.  `SPAWN.PHM` gives **1,987 vertices and 3,488
+triangles** with positions, normals and texture coordinates.
+
+Twenty bytes, ten big-endian `s16`::
+
+    0,1    texture coordinates, 0..1024
+    2,3,4  position
+    5,6,7  normal, divided by 4096
+    8,9    -1, -1 on every vertex
+
+Three identities pin the record, none of them a judgement about what looks right:
+
+* **the normal is unit length** - columns 5, 6 and 7 over 4096 give mean 0.9998, standard
+  deviation 0.0001, and **every one of the 1,987 vertices** lands between 0.98 and 1.02.  That
+  confirms the stride, the array's offset and the field's position together, because a wrong
+  stride smears a column;
+* **columns 8 and 9 are constant** at -1 across all 1,987 records, which a wrong stride cannot
+  produce;
+* **the array ends where the next section starts** - 1,987 x 20 = 39,740 from 30,384 reaches
+  70,124 and the header lists 70,128.
+
+Which three columns hold the *position* is settled by agreement with those known-good normals:
+face normals from columns 2, 3, 4 agree at **0.748 mean and 59.7% of triangles above 0.8**,
+against 0.42 to 0.56 and 15 to 32% for every other triple.
+
+**On using normal agreement at all**: the Terminal Reality note records it failing badly as a
+*search* - every high-scoring fit there was planar-degenerate.  The difference here is that the
+normals were already verified by their own arithmetic, so this is agreement used to choose among
+candidates rather than to find one, which is the use that note actually endorses.
+
+### What the reader does not do yet
+
+Agreement is 0.748 rather than near 1.0 because the index array is treated as **one strip**.  It
+is almost certainly several - the values jump from 1288 to 0 to 1 and back to 1250 partway
+through - and the run boundaries are not read.  The triangles are right where a strip is
+continuous and wrong across each seam.
+
+Arrays are located by their own arithmetic rather than fixed offsets: the vertex array is the
+one whose normals come out unit length, the index array the one whose values span exactly
+0..vertices-1.  So the reader does not depend on the header table, which is not yet understood -
+its records are not a uniform stride and reading them as `(count, offset, 0, size)` gives
+overlapping sections.
