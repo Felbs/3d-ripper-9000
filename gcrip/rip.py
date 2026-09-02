@@ -212,6 +212,31 @@ def _safe_component(part: str) -> str:
     return out or "_"
 
 
+#: Audio and video, which a geometry scanner can never get anything from however big they
+#: are.  The fallback pass is time-budgeted per disc and spent biggest-first, on the theory
+#: that the largest files hold the most models.  That is wrong on the many discs whose
+#: largest files are a movie and an audio stream: Tiger Woods 2003 begins with a 100 MB
+#: `Data/Movies/intro.ngc`, and the budget was gone long before the `.skg` that `gxscan`
+#: does find display lists in.  Media is scanned last rather than skipped, so a mislabelled
+#: file still gets its turn if the budget reaches it.
+MEDIA_DIRS = frozenset(
+    {"movie", "movies", "video", "videos", "stream", "streams", "audiostr", "sound",
+     "sounds", "audio", "music", "bgm", "voice", "speech"}
+)
+MEDIA_EXTS = frozenset(
+    {".thp", ".h4m", ".adp", ".dsp", ".ast", ".mth", ".bik", ".mpg", ".mp3", ".ogg",
+     ".wav", ".aiff", ".brstm", ".afc", ".mus", ".sbk", ".ssm", ".aud", ".adx", ".csb"}
+)
+
+
+def _looks_like_media(path: str) -> bool:
+    """True for audio/video by directory or extension - see :data:`MEDIA_DIRS`."""
+    parts = [q for q in re.split(r"[\\/]", path.lower()) if q]
+    if any(q in MEDIA_DIRS for q in parts[:-1]):
+        return True
+    return parts and any(parts[-1].endswith(e) for e in MEDIA_EXTS)
+
+
 def _rel_out_path(entry_path: str) -> Path:
     """Manifest path -> output path (strip the leading 'files/')."""
     p = entry_path
@@ -419,12 +444,15 @@ def _run_plugins(src, manifest, result, game_dir, quiet, thumbnails, limit, path
         return
     if limit:
         cands = cands[:limit]
-    # real formats in disc order, then fallback-only files biggest first so a per-disc
-    # time budget goes to the archives most likely to hold models
+    # real formats in disc order, then fallback-only files biggest first - but media
+    # last whatever its size, so the per-disc budget is not eaten by movies and audio
     from gcrip.plugins import is_fallback
 
     real = [c for c in cands if not all(is_fallback(m) for m in c[1])]
-    fb = sorted((c for c in cands if all(is_fallback(m) for m in c[1])), key=lambda c: -c[0].size)
+    fb = sorted(
+        (c for c in cands if all(is_fallback(m) for m in c[1])),
+        key=lambda c: (_looks_like_media(c[0].path), -c[0].size),
+    )
     cands = real + fb
     for mod in {m for _, mods in cands for m in mods}:
         begin = getattr(mod, "begin_disc", None)
