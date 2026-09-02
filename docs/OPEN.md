@@ -104,6 +104,31 @@ triangles after, 0 failed, 941 s** - and its 100 MB `intro.ngc` sorted 381st of 
 re-rips the 201 discs where at least eight of the ten biggest files are media *and* the disc
 reports zero triangles.
 
+## Oracles, identities and determinism are now enforced, not remembered (2026-09-02)
+
+Three of the five improvements from the retrospective, beyond the claimed-empty outcome below.
+
+**Identities are executable** (`gcrip/identities.py`).  The arithmetic each format note quotes -
+"200 of 200", "exact on 17 of 17" - is declared as `IDENTITIES` on the module and run in the
+suite.  Checked against real cached members: Cabela's blocks tile at 412,520 and 147,312 to the
+byte, 192/192 and 90/90 images reconcile, all four Terminal Reality files report 3 hold 0 failed.
+Each test also proves the identity *fails* on damaged data, because one that cannot fail is not
+evidence.
+
+**Oracles are graded** (`gcrip/oracles.py`).  Eleven entries, each with the evidence attached.
+Two are marked **discredited** and say exactly how they failed: *printable text* (a wrong Climax
+decode is 100% printable and meaningless) and *input fully consumed* (true for every variant by
+construction - a deliberately wrong start consumed 32.69% against the right start's 32.69%).
+Three more are **weak** with their limits stated.  "We tried that" is only useful with the
+reason.
+
+**Determinism is a test** (`tests/test_determinism.py`).  No module in `gcrip/formats` may read
+the clock, because a reader decides what a file contains and two runs must agree - that is the
+`find_toc` bug generalised.  `plugins/gx.py` is allowlisted **by name and with its reason**: its
+budget is a genuine time limit on a speculative scan.  The consequence is recorded rather than
+hidden - **gx can find different meshes on different runs** - and it is tolerable only because
+it names nothing the manifest depends on, which is exactly what `find_toc` did.
+
 ## "Claimed but empty" is now a recorded outcome (2026-09-02)
 
 The structural fix for every silent-drop bug this session found one plugin at a time.
