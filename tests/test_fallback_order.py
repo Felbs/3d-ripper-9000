@@ -96,3 +96,16 @@ def test_reordering_never_drops_a_candidate():
     order = sorted(files, key=lambda c: (_looks_like_media(c[0]), c[2], -c[1]))
     assert sorted(order) == sorted(files)
     assert len(order) == len(files)
+
+
+def test_media_names_seen_in_real_runs():
+    """Found by watching wave 21: a shard was scanning files/audiostreams/*.exa, which the
+    first list missed - it had `audiostr` but not the plural directory, and no `.exa`."""
+    assert _looks_like_media("files/audiostreams/trn2_igc01.exa")
+    assert _looks_like_media("files/audiostream/x.bin")
+    assert _looks_like_media("anything/fmv/opening.bin")
+    assert _looks_like_media("root/voices/en/line01.bin")
+    assert _looks_like_media("files/track.vag")
+    # and the guard still holds
+    assert not _looks_like_media("files/soundstage/level.arc")
+    assert not _looks_like_media("files/Data/Char/35char.skg")

@@ -220,12 +220,14 @@ def _safe_component(part: str) -> str:
 #: does find display lists in.  Media is scanned last rather than skipped, so a mislabelled
 #: file still gets its turn if the budget reaches it.
 MEDIA_DIRS = frozenset(
-    {"movie", "movies", "video", "videos", "stream", "streams", "audiostr", "sound",
-     "sounds", "audio", "music", "bgm", "voice", "speech"}
+    {"movie", "movies", "video", "videos", "stream", "streams", "audiostr", "audiostream",
+     "audiostreams", "sound", "sounds", "audio", "music", "bgm", "voice", "voices", "speech",
+     "fmv", "fmvs", "sfx", "song", "songs"}
 )
 MEDIA_EXTS = frozenset(
     {".thp", ".h4m", ".adp", ".dsp", ".ast", ".mth", ".bik", ".mpg", ".mp3", ".ogg",
-     ".wav", ".aiff", ".brstm", ".afc", ".mus", ".sbk", ".ssm", ".aud", ".adx", ".csb"}
+     ".wav", ".aiff", ".brstm", ".afc", ".mus", ".sbk", ".ssm", ".aud", ".adx", ".csb",
+     ".exa", ".sng", ".vag", ".xa", ".cmp", ".mpeg", ".m2v", ".sad", ".rsd", ".aif"}
 )
 
 
