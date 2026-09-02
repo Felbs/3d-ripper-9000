@@ -108,6 +108,41 @@ def _table_fits(data: bytes) -> bool:
     return e_shoff + e_shnum * e_shentsize <= len(data)
 
 
+def _table_reads(data: bytes) -> bool:
+    """Whether the ELF's section table is not merely inside the file but actually *readable*.
+
+    `_table_fits` is arithmetic only, and it passes on a wrong join: append the tail to a 27 KB
+    `.ord` whose header declares a 12 KB extent and the table "fits" while pointing at zeros.
+    That is how FIFA 2003's 933 player objects parsed to nothing without a single warning.  So a
+    candidate join is accepted only when the section names resolve.
+    """
+    if not _table_fits(data):
+        return False
+    e_shoff = struct.unpack_from("<I", data, 0x20)[0]
+    e_shentsize, e_shnum, e_shstrndx = struct.unpack_from("<HHH", data, 0x2E)
+    if e_shnum == 0 or e_shstrndx >= e_shnum or e_shentsize < 40:
+        return False
+    try:
+        entries = [
+            struct.unpack_from("<10I", data, e_shoff + i * e_shentsize) for i in range(e_shnum)
+        ]
+    except struct.error:
+        return False
+    str_off, str_size = entries[e_shstrndx][4], entries[e_shstrndx][5]
+    if str_size == 0 or str_off + str_size > len(data):
+        return False
+    named = 0
+    for ent in entries:
+        at = ent[0]
+        if at >= str_size:
+            continue
+        end = data.find(b"\0", str_off + at, str_off + str_size)
+        name = data[str_off + at : end if end >= 0 else str_off + str_size]
+        if name and all(32 <= c < 127 for c in name):
+            named += 1
+    return named >= max(1, e_shnum // 2)
+
+
 def join(ord_data: bytes, tail: bytes | None) -> bytes:
     """Reassemble the ELF from its two members.
 
@@ -128,7 +163,22 @@ def join(ord_data: bytes, tail: bytes | None) -> bytes:
         return ord_data
     declared = struct.unpack_from(">I", tail, 0)[0]
     declared_le = struct.unpack_from("<I", tail, 0)[0]  # some titles store it LE
-    joined = ord_data + (tail[4:] if len(ord_data) in (declared, declared_le) else tail)
+    # The leading word is an OFFSET, not a length.  Where it equals the .ord's size an overlay
+    # there is the same thing as appending, which is why reading it as a length worked for
+    # years; on FIFA 2003 it is 7,840 against a 27,232-byte .ord and the tail belongs *inside*.
+    body = tail[4:]
+    for at in (declared, declared_le):
+        if not 0 < at <= len(ord_data):
+            continue
+        blob = bytearray(ord_data)
+        end = at + len(body)
+        if end > len(blob):
+            blob.extend(bytes(end - len(blob)))
+        blob[at:end] = body
+        candidate = bytes(blob)
+        if _table_reads(candidate):
+            return candidate
+    joined = ord_data + (body if len(ord_data) in (declared, declared_le) else tail)
     if not _table_fits(joined):
         raise EaglError(
             f"tail of {len(tail):#x} bytes does not complete a {len(ord_data):#x}-byte .ord"

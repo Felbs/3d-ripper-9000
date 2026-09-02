@@ -215,3 +215,59 @@ def test_the_join_is_checked_by_the_elf_s_own_arithmetic():
 def test_a_missing_tail_is_still_tolerated():
     ord_, _, _ = build_object()
     assert eagl.join(ord_, None) == ord_
+
+
+def _elf32(sections, shoff_extra=0):
+    """A minimal little-endian ELF32 whose section table is built from `sections`."""
+    import struct
+
+    names = b"\x00" + b"".join(n.encode() + b"\x00" for n, _ in sections)
+    body = bytearray(b"\x7fELF" + bytes(0x34 - 4))
+    body.extend(bytes(64 - len(body)))
+    str_off = len(body)
+    body.extend(names)
+    ents = []
+    at = 1
+    for n, size in sections:
+        ents.append((at, 1, 0, 0, str_off, len(names) if n == ".shstrtab" else size, 0, 0, 0, 0))
+        at += len(n) + 1
+    shoff = len(body)
+    for e in ents:
+        body.extend(struct.pack("<10I", *e))
+    struct.pack_into("<I", body, 0x20, shoff)
+    struct.pack_into("<HHH", body, 0x2E, 40, len(ents), 0)
+    return bytes(body), shoff
+
+
+def test_join_treats_the_prefix_as_an_offset_not_a_length():
+    """FIFA 2003's .orp begins with 7,840 against a 27,232-byte .ord: the tail belongs INSIDE
+    the .ord, not after it.  Where the prefix happens to equal the .ord's length an overlay
+    there is the same thing as appending, which is why reading it as a length worked elsewhere.
+    """
+    import struct
+
+    from gcrip.formats import eagl
+
+    whole, shoff = _elf32([(".shstrtab", 0), (".data", 16)])
+    cut = 64  # everything from the string table on lives in the tail
+    ord_half = whole[:cut] + bytes(len(whole) - cut)  # zeroed, as on disc
+    tail = struct.pack(">I", cut) + whole[cut:]
+
+    joined = eagl.join(ord_half, tail)
+    assert eagl._table_reads(joined)
+    assert joined[cut:] == whole[cut:]
+    # and the wrong reading - appending - would not have read
+    assert not eagl._table_reads(ord_half + whole[cut:])
+
+
+def test_table_reads_rejects_a_table_of_zeros():
+    """_table_fits is arithmetic only and passes on a wrong join whose table points at zeros -
+    that is how 933 objects parsed to nothing without a warning."""
+    from gcrip.formats import eagl
+
+    whole, _ = _elf32([(".shstrtab", 0), (".data", 16)])
+    blanked = bytearray(whole)
+    shoff = int.from_bytes(blanked[0x20:0x24], "little")
+    blanked[shoff:] = bytes(len(blanked) - shoff)
+    assert eagl._table_fits(bytes(blanked))
+    assert not eagl._table_reads(bytes(blanked))

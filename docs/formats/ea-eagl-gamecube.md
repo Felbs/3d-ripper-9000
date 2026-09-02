@@ -267,33 +267,45 @@ models and no bones, so that disc gains clean records rather than geometry.  Whe
 appear is per-disc and the re-rip will show it; the fix removes the error, and only the discs
 whose `.ord` actually carry `__Model` sections will gain triangles.
 
-## FIFA 2003's player geometry is silently unread (2026-09-02)
+## FIFA 2003: the `.orp` prefix is an offset, and the objects are skeletons (2026-09-02)
 
-FIFA Soccer 2003 records **994 failures, all `EaglError`**, and 926 of them are in one
-container, `data/dplyrgeo.big` - "display player geometry".  Two things turned out to be true
-and neither is what the error said.
+FIFA Soccer 2003 recorded **994 failures, all `EaglError`**, 926 of them in `data/dplyrgeo.big`.
+Two separate things were wrong, and the second corrects the first.
 
-**The recorded errors are stale.**  Re-running the plugin's own path against the real container
-finds the sibling every time and raises nothing: `Player____model1020308739__0.ord` (27,232
-bytes) pairs with `...__0.orp` (4,324) in the same container, `eagl.join` gives 31,556 bytes
-opening `7f 45 4c 46`, and `_sibling` returns the 4,324-byte half.  Over **40 sampled `.ord`:
-0 errors**.
+### The recorded errors are stale, and the join was wrong
 
-**But also 0 models.**  Those same 40 give `0 scenes` and `0 triangles`, and
-`eagl.parse` reports `models=0, skeleton=0` with **no warnings at all**.  So 933 player objects
-on this disc are not failing - they are being read as empty, quietly, which is worse than
-failing because nothing in the report says so.
+Re-run today the sibling is found every time and nothing raises across 40 sampled `.ord`.  But
+`eagl.parse` returned `models=0, skeleton=0` **with no warnings**, because the join was building
+a broken ELF that still passed validation.
 
-The lead: the joined blob does not read as a plain ELF32 under either byte order.  Its ident is
-`7f 45 4c 46 01 01`, which is 32-bit little-endian, yet taking `e_shoff`/`e_shnum`/`e_shentsize`
-from the usual little-endian offsets gives `shoff=11920, shnum=6, shentsize=40` - and
-`11920 + 6*40 = 12160` against a file of **31,556**, where the identity that validates this
-format elsewhere is `e_shoff + e_shnum*e_shentsize == len(ord) + len(orl)`.  Every section name
-then resolves to `"ELF"` with size 0, which is what reading a table that is not there looks
-like.
+`join` read the tail's leading `u32` as *the `.ord`'s length* and appended the rest.  It is an
+**offset**.  On FIFA 2003 it is **7,840** against a 27,232-byte `.ord`, and the tail belongs
+*inside* the object, not after it.  Where the prefix happens to equal the `.ord` length an
+overlay at that offset is the same bytes as appending - which is exactly why the length reading
+worked on every other disc for so long.
 
-So the section table on these objects is not where a standard ELF32 header points, and
-`eagl.parse` finding nothing is consistent with that rather than with the files being empty.
-**Where the table actually is, is the next question** - and it should be answered before anyone
-concludes FIFA 2003 has no player geometry, because a 34 MB container of 933 named
-`Player____model*` objects plainly does.
+Two identities confirm the offset reading, on **12 of 12** sampled pairs:
+
+* `prefix + len(tail) - 4 == e_shoff + e_shnum * e_shentsize`;
+* overlaid, the section table resolves - `.data` (7,776 bytes at 64), `.shstrtab` **at 7,840,
+  exactly the prefix**, `.strtab`, `.symtab`, `.rel.data`.  Appended, every section name came
+  back as `"ELF"` with size 0, which is what reading a table that is not there looks like.
+
+`_table_fits` could not catch that: it is arithmetic only, and `11,920 + 6*40 = 12,160` sits
+happily inside a wrongly-joined 31,556-byte file.  Joins are now accepted by `_table_reads`,
+which requires the section *names* to resolve.
+
+### Correction: these are not lost meshes
+
+An earlier version of this note said 933 player objects were "being read as empty" and implied
+their geometry was lost.  **That was wrong.**  The symbol table says what they are - 60 symbols,
+one `__MATRIX4 *:::EAGLAnimationBuffer` and the rest `__Bone:::Player____model1020308739__0.<joint>`
+- `RThumb1`, `TorsoChn`, `Jaw-DJ`, `LLowLeg-DJ`.
+
+They are **skeletons and animation buffers**.  There is no `__Model` in them because there is no
+mesh in them, so `models=0` is the correct answer and always was.  The container name
+`dplyrgeo.big` and the `__model` in the filenames are identifiers, not a promise of geometry.
+
+What the fix buys is real but narrower than it first looked: the ELF now parses instead of
+pointing at zeros, so the bone data is reachable at all, and any disc whose prefix differs from
+its `.ord` length was being joined wrongly.
