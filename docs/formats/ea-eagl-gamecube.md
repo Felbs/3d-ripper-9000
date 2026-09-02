@@ -266,3 +266,34 @@ NHL 2003 goes from 1,483 failures to **0 across 1,310 `.ord`** - but those objec
 models and no bones, so that disc gains clean records rather than geometry.  Whether models
 appear is per-disc and the re-rip will show it; the fix removes the error, and only the discs
 whose `.ord` actually carry `__Model` sections will gain triangles.
+
+## FIFA 2003's player geometry is silently unread (2026-09-02)
+
+FIFA Soccer 2003 records **994 failures, all `EaglError`**, and 926 of them are in one
+container, `data/dplyrgeo.big` - "display player geometry".  Two things turned out to be true
+and neither is what the error said.
+
+**The recorded errors are stale.**  Re-running the plugin's own path against the real container
+finds the sibling every time and raises nothing: `Player____model1020308739__0.ord` (27,232
+bytes) pairs with `...__0.orp` (4,324) in the same container, `eagl.join` gives 31,556 bytes
+opening `7f 45 4c 46`, and `_sibling` returns the 4,324-byte half.  Over **40 sampled `.ord`:
+0 errors**.
+
+**But also 0 models.**  Those same 40 give `0 scenes` and `0 triangles`, and
+`eagl.parse` reports `models=0, skeleton=0` with **no warnings at all**.  So 933 player objects
+on this disc are not failing - they are being read as empty, quietly, which is worse than
+failing because nothing in the report says so.
+
+The lead: the joined blob does not read as a plain ELF32 under either byte order.  Its ident is
+`7f 45 4c 46 01 01`, which is 32-bit little-endian, yet taking `e_shoff`/`e_shnum`/`e_shentsize`
+from the usual little-endian offsets gives `shoff=11920, shnum=6, shentsize=40` - and
+`11920 + 6*40 = 12160` against a file of **31,556**, where the identity that validates this
+format elsewhere is `e_shoff + e_shnum*e_shentsize == len(ord) + len(orl)`.  Every section name
+then resolves to `"ELF"` with size 0, which is what reading a table that is not there looks
+like.
+
+So the section table on these objects is not where a standard ELF32 header points, and
+`eagl.parse` finding nothing is consistent with that rather than with the files being empty.
+**Where the table actually is, is the next question** - and it should be answered before anyone
+concludes FIFA 2003 has no player geometry, because a 34 MB container of 933 named
+`Player____model*` objects plainly does.
