@@ -262,6 +262,7 @@ every detail and the plugin still export nothing.  Three plugins had it wrong at
 | `xmdl` | 1 (Home Run King) | **6,273** | `material=-1` into an index - the largest single failure count in the library |
 | `mdgc` | 1 (Superman: SoA) | 947 | same |
 | `skx` | 1 (Darkened Skye) | 193 | same |
+| `hsd` | 8 (Disney Sports: Skateboarding, One Piece Treasure Battle, Dragon Drive, Rave Master, Kururin Squash, Pokemon Channel, bobobo-bo bo-bobo, Virtua Quest) | 228 | `RecursionError` - the parser guarded cycles but not depth, so one absurd `child` chain killed the whole file.  `MAX_JOBJ_DEPTH` truncates that branch and `Jobj.walk` is now iterative |
 
 The `res` one is worth understanding rather than just fixing.  `export()` tolerates a `-1`
 material; the **separate `thumbnail()` pass** indexes `material_colors` by it, and `[][-1]`

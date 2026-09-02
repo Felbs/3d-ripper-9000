@@ -268,9 +268,16 @@ class Jobj:
         return bool(self.flags & JOBJ_HIDDEN)
 
     def walk(self):
-        yield self
-        for c in self.children:
-            yield from c.walk()
+        """Depth-first, children before siblings.
+
+        Iterative on purpose: recursing here costs one Python frame per joint, and these trees
+        come from disc data that may be damaged or simply not be a skeleton at all.
+        """
+        stack = [self]
+        while stack:
+            j = stack.pop()
+            yield j
+            stack.extend(reversed(j.children))
 
 
 @dataclass
@@ -283,6 +290,10 @@ class Model:
 # -- parsing --------------------------------------------------------------------------
 
 
+#: a real skeleton is tens of joints deep; beyond this the chain is not a skeleton
+MAX_JOBJ_DEPTH = 256
+
+
 class Parser:
     def __init__(self, dat: DatFile) -> None:
         self.dat = dat
@@ -291,11 +302,18 @@ class Parser:
         self.warnings: list[str] = []
         self._jobj_stack: set[int] = set()
 
-    def jobj(self, off: int) -> Jobj | None:
+    def jobj(self, off: int, depth: int = 0) -> Jobj | None:
         d = self.dat
         if off in self.jobjs:
             return self.jobjs[off]
         if not d.valid(off, 0x40) or off in self._jobj_stack:
+            return None
+        # The cycle guards above catch a tree that points back at itself, but not one that is
+        # merely absurdly deep - and a `child` chain read out of arbitrary bytes can be.  That
+        # raised RecursionError on 8 discs (30 recorded failures), killing the whole file rather
+        # than the one bad branch.  A real skeleton is tens of joints deep, not hundreds.
+        if depth > MAX_JOBJ_DEPTH:
+            self.warnings.append(f"jobj tree deeper than {MAX_JOBJ_DEPTH} at {off:#x}; truncated")
             return None
         self._jobj_stack.add(off)
         flags, child, nxt, u = struct.unpack_from(">IIII", d.data, HEADER + off + 4)
@@ -319,7 +337,7 @@ class Parser:
         seen_c: set[int] = set()
         while child and child not in seen_c:
             seen_c.add(child)
-            c = self.jobj(child)
+            c = self.jobj(child, depth + 1)
             if c is None:
                 break
             j.children.append(c)
