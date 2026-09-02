@@ -142,3 +142,18 @@ def test_a_long_run_of_untagged_chunks_between_members_is_not_swallowed():
     )
     (m,) = shoc.members(data)
     assert (m.kind, m.data) == ("Cact", body)
+
+
+def test_chunk_header_is_forty_four_bytes():
+    """Proven by size identity on Tiger Woods 2005, not by inspection: summing payload - 44 over
+    a resource's data chunks reproduces its declared size exactly for RLst (8,548 over 2 chunks)
+    and sync (65,536 over 9).  The same sum is 63% of declared for `ter`, which is what says
+    `ter` is genuinely compressed rather than simply read wrong."""
+    from gcrip.formats import shoc
+
+    assert shoc.CHUNK_HEADER == 44
+    # the two identities, as arithmetic
+    assert (8636 - 2 * shoc.CHUNK_HEADER) == 8548
+    assert (65932 - 9 * shoc.CHUNK_HEADER) == 65536
+    # and the one that does NOT reconcile, which is the point
+    assert (1724896 - 212 * shoc.CHUNK_HEADER) != 2716800

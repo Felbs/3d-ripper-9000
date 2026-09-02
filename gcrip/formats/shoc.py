@@ -38,6 +38,12 @@ FILL = b"FILL"
 TAGS = {SHOC, SHDR, ZDAT, b"SDAT", b"Rdat", FILL, MAGIC, b"SYNC", b"PADD"}
 ZLIB_CMF = b"x"
 RAW_PREFIX = 40
+#: Bytes of per-chunk header before a data chunk's payload, proven by size identity on
+#: Tiger Woods 2005: summing `payload - 44` over a resource's chunks reproduces the size
+#: its SHDR declares exactly, for `RLst` (8,548 over 2 chunks) and `sync` (65,536 over 9).
+#: The same sum is 63% of declared for `ter` and 39% for `txfh`, which is how we know
+#: those are genuinely packed rather than merely mis-read.
+CHUNK_HEADER = 44
 MAX_CHUNKS = 1 << 18
 
 
