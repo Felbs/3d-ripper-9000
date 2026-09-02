@@ -153,12 +153,29 @@ against 0.42 to 0.56 and 15 to 32% for every other triple.
 normals were already verified by their own arithmetic, so this is agreement used to choose among
 candidates rather than to find one, which is the use that note actually endorses.
 
-### What the reader does not do yet
+### Why agreement is 0.75 and not 1.0 - it is not the strip seams
 
-Agreement is 0.748 rather than near 1.0 because the index array is treated as **one strip**.  It
-is almost certainly several - the values jump from 1288 to 0 to 1 and back to 1250 partway
-through - and the run boundaries are not read.  The triangles are right where a strip is
-continuous and wrong across each seam.
+That was my first explanation and it is **wrong**.  The index array does jump about - 1288 to 0
+to 1 to 1250 - so strip seams looked like the obvious cause.  Three measurements say otherwise:
+
+* **every index reading scores the same.**  Consecutive triples 0.751, one long strip 0.748,
+  triples offset by one 0.739, by two 0.754.  A wrong grouping would not score like the right
+  one;
+* **there is no triple structure.**  Within a candidate triple, 63.2% of index steps are within
+  32; across triple boundaries, 64.2%.  Identical, so the array is not a list of triangles;
+* **splitting the strip at the jumps makes it worse.**  Cutting wherever consecutive indices
+  differ by more than 32, 50, 100, 200 or 400 gives 0.824 to 0.826 against **0.832 for no split
+  at all**, while halving the triangle count.  The triangles a seam-split removes were scoring
+  as well as the ones it keeps.
+
+The real reason is in the normals themselves: **the three vertices of a triangle agree with each
+other at only 0.771**.  The mesh is smooth-shaded, so a face normal cannot match a vertex normal
+closely no matter how the triangles are formed.  Measured against the *average* of a triangle's
+three vertex normals - the fair comparison for smooth shading - agreement is **0.832 with 74.6%
+above 0.8**, and that is the ceiling this data allows.
+
+So one strip over the whole array is kept: it scores best and yields the most geometry.  All
+1,987 vertices are referenced by the index list, which is the other sign it is being read whole.
 
 Arrays are located by their own arithmetic rather than fixed offsets: the vertex array is the
 one whose normals come out unit length, the index array the one whose values span exactly
