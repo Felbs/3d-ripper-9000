@@ -1,7 +1,7 @@
 """Sega Ninja models in the GameCube byte order (Phantasy Star Online Episode I & II /
 III ``.nj`` / ``.gj`` files and BML members): ``NJCM`` / ``GJCM`` chunk-model blocks with
 little-endian block sizes and big-endian payloads, parsed with the SA2B chunk parser
-(gcrip.formats.sa2b) and evaluated by dcrip's Ninja scene builder.  Textures come from the
+(gcrip.formats.sa2b) and evaluated by the Ninja scene builder.  Textures come from the
 ``NJTL`` / ``GJTL`` name list matched against a sibling GVM (``name.gvm`` or the same stem)."""
 
 from __future__ import annotations
@@ -9,8 +9,8 @@ from __future__ import annotations
 import posixpath
 import struct
 
-from dcrip import ninja_eval
-from dcrip.formats import ninja
+from gcrip import ninja_eval
+from gcrip.formats import ninja
 from gcrip.formats import ginja, gvr, sa2b
 from ripcore.scene import Scene
 

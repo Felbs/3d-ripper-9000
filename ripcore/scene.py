@@ -1,4 +1,4 @@
-"""The engine-neutral scene that dcrip's parsers produce and its glTF writer consumes:
+"""The engine-neutral scene that the format parsers produce and its glTF writer consumes:
 joints (a hierarchy with rest TRS), one skinned mesh split into per-material primitives,
 materials that name a texture, decoded RGBA textures, and sampled animation clips."""
 

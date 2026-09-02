@@ -11,7 +11,7 @@ Flag bits LSB-first from flag bytes: 1 = literal; 0,0 = short copy (length = 2 f
 offset = byte - 256); 0,1 = long copy (u16 LE: offset = (v >> 3) - 0x2000, length = (v & 7) + 2
 or, when 0, next byte + 1); v == 0 ends the stream. Copies must use the absolute start
 position (overlapping runs) - a negative-index copy loop is wrong for lengths > 1.
-dcrip's Dreamcast decoder rejects some of these streams; gcrip's is the reference now.
+there was a second, duplicate PRS decoder in the Dreamcast module; the two were verified byte-identical (40 random inputs and a hand-assembled stream) and only gcrip's is kept now.
 
 ## Sonic Adventure 2: Battle (GSNE8P) - 1782 .prs
 

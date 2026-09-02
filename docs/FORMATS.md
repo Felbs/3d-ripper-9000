@@ -96,7 +96,6 @@ What is **not** cracked yet, with what is blocking each one, is tracked in [OPEN
 | Nintendo REL modules + SA Tools split tables: SADX Basic models / land tables, SA2B stage land tables (Ginja) | Sonic Adventure DX, Sonic Adventure 2: Battle stages | characters rigged, stages textured (SADX stage textures open) | `gcrip/plugins/sadx.py`, `gcrip/formats/rel.py`, `satools.py`, `sadx.py`, `gcrip/data/satools/` | [formats/sonic-team-gamecube.md](formats/sonic-team-gamecube.md) |
 | PSO BML, NJCM (GC order), GJCM "Ginja" | Phantasy Star Online Ep I & II (+ Plus) | rigged models, textures (`.rel` levels open) | `gcrip/plugins/bml.py`, `ninja_gc.py`, `gcrip/formats/bml.py`, `ginja.py` | same note |
 | Traveller's Tales NU2 vertex stream (`03 01 00 01` blocks in NU20 `.gsc` / `.csc`) | LEGO Star Wars: The Video Game (chars + levels), Bionicle Heroes cutscene scenes | meshes with UVs, normals, colours (materials / textures open) | `gcrip/plugins/nu2.py`, `gcrip/formats/nu2.py` | [formats/tt-nu2-gamecube.md](formats/tt-nu2-gamecube.md) |
-| Dreamcast Ninja (NJ / NJCM / NJBM, PVR, AFS, PRS) | Dreamcast library (dcrip) | rigged models, clips | `dcrip/` | |
 
 ## Universal fallback
 

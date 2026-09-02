@@ -348,8 +348,8 @@ position ranges) that become skin weights on the object-index joints.
 Sonic Team's GameCube ports reuse the Dreamcast pipeline: `.prs` files are Sega PRS
 streams (`plugins/segaprs.py` unpacks them into a `payload.bin` member), Sonic Adventure
 2: Battle's `*mdl.prs` payloads are id/offset tables of NJS_OBJECT trees with Ninja chunk
-attaches byte-swapped to big-endian (`formats/sa2b.py` subclasses dcrip's chunk parser and
-`dcrip.ninja_eval` builds the rigged scene), `*tex.prs` / `.gvm` archives hold GVR textures
+attaches byte-swapped to big-endian (`formats/sa2b.py` subclasses the Ninja chunk parser and
+`gcrip.ninja_eval` builds the rigged scene), `*tex.prs` / `.gvm` archives hold GVR textures
 (`plugins/gvm.py`, GX pixel formats behind a `GVRT` header), and Shadow the Hedgehog's
 `One Ver 0.60` archives (`formats/one.py`) unpack to RenderWare DFF/TXD for the
 `renderware` plugin.
@@ -357,14 +357,14 @@ Phantasy Star Online Episode I & II packs its objects in `.bml` archives (`plugi
 PRS-compressed Ninja model + GVM pairs) and ships `.nj` files whose `NJCM` blocks are the
 Dreamcast chunk format in GameCube byte order, plus `GJCM` "Ginja" blocks - GX-native
 attaches with vertex sets, parameter lists and raw display lists (`formats/ginja.py`);
-`plugins/ninja_gc.py` feeds both through dcrip's Ninja scene builder.
+`plugins/ninja_gc.py` feeds both through the Ninja scene builder.
 Billy Hatcher and the Giant Egg is the same Ginja lineage one step further: its `.prd`
 packages are PRS streams over a `U:8-` archive (`formats/prd.py`), the `.arc` members are
 Ninja object trees whose pointers are relative to 0x20 (`formats/billy.py` slices the file
 and finds the tree roots by the `FDFDFDFD` pad after every NJS_OBJECT), and skinned
 characters use the attach's skin-set pointer - bone nodes write `s16` position/normal rows
 with weights into the shared GX vertex cache that the mesh node then indexes, which
-`formats/ginja.py` now decodes and `dcrip.ninja_eval` evaluates in two passes (all writes,
+`formats/ginja.py` now decodes and `gcrip.ninja_eval` evaluates in two passes (all writes,
 then draws).  Stage terrain (`stg_*.lnd`, `formats/billy_lnd.py`) is not an object tree:
 one vertex pool (f32 positions, RGBA colours, s16 UVs) drawn by ~1,300 raw GX display
 lists through batch entries that name the material, whose word 9 indexes the file's texlist

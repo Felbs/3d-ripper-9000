@@ -21,7 +21,7 @@ no ordinary plugin claimed - the structure-based crackers in ``generic`` and ``g
 there, so a known format always wins over a guess.
 
 The rip calls every plugin whose detect() says yes, exports each returned Scene through
-ripcore.gltf (same glTF/thumbnail/report path as J3D and Dreamcast models), and records
+ripcore.gltf (the same glTF/thumbnail/report path as J3D models), and records
 warnings/errors per file - one broken plugin never stops a rip. Plugins are discovered by
 listing this package, so adding a format is adding a file.
 """

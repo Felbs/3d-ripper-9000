@@ -22,8 +22,8 @@ import struct
 
 import numpy as np
 
-from dcrip.formats import ninja
-from dcrip.formats.ninja import Material, Model, NinjaError, Strip, VertexWrite, _argb
+from gcrip.formats import ninja
+from gcrip.formats.ninja import Material, Model, NinjaError, Strip, VertexWrite, _argb
 from gcrip.formats import ginja, sa2b
 
 

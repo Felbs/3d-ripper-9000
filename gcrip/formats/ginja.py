@@ -18,8 +18,8 @@ import struct
 
 import numpy as np
 
-from dcrip.formats import ninja
-from dcrip.formats.ninja import Material, Model, NinjaError, Strip, VertexWrite
+from gcrip.formats import ninja
+from gcrip.formats.ninja import Material, Model, NinjaError, Strip, VertexWrite
 
 _OPS = (0x80, 0x90, 0x98, 0xA0)
 

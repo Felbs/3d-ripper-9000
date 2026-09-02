@@ -6,8 +6,8 @@ import struct
 
 import numpy as np
 
-from dcrip import ninja_eval
-from dcrip.formats import ninja, pvr
+from gcrip import ninja_eval
+from gcrip.formats import ninja
 from ripcore import gltf
 
 
@@ -145,34 +145,3 @@ def test_motion_sampling():
     assert abs(clip.rotation[1][10][1] - 0.7071) < 1e-3  # 90 degrees about Y at the end
 
 
-def test_pvr_twiddled_roundtrip():
-    w = h = 8
-    rgb = np.zeros((h, w, 3), np.uint8)
-    rgb[..., 0] = np.arange(w) * 32
-    rgb[..., 1] = np.arange(h)[:, None] * 32
-    r5 = (rgb[..., 0] >> 3).astype(np.uint16)
-    g6 = (rgb[..., 1] >> 2).astype(np.uint16)
-    words = (r5 << 11) | (g6 << 5)
-    idx = pvr.twiddle_index(w, h)
-    storage = np.zeros(w * h, np.uint16)
-    storage[idx.reshape(-1)] = words.reshape(-1)
-    data = b"PVRT" + struct.pack("<IBBHHH", 8 + w * h * 2, 1, 0x01, 0, w, h) + storage.tobytes()
-    t = pvr.parse(b"GBIX" + struct.pack("<II", 8, 42) + b"\x00" * 4 + data)
-    assert t.gbix == 42 and t.fmt_name == "RGB565/twiddled"
-    out = t.decode()
-    assert out.shape == (8, 8, 4)
-    assert np.array_equal(out[..., 0] >> 3, r5) and np.array_equal(out[..., 1] >> 2, g6)
-    assert out[..., 3].min() == 255
-
-
-def test_pvm_pack():
-    tex = b"PVRT" + struct.pack("<IBBHHH", 8 + 8, 2, 0x09, 0, 2, 2) + bytes(8)
-    header = struct.pack("<HH", 0x3, 2)
-    for i, name in enumerate((b"alpha", b"beta")):
-        header += struct.pack("<H", i) + name.ljust(28, b"\x00") + struct.pack("<I", 100 + i)
-    data = b"PVMH" + struct.pack("<I", len(header)) + header + tex + tex
-    ents = pvr.parse_pvm(data)
-    assert [e.name for e in ents] == ["alpha", "beta"]
-    assert [e.gbix for e in ents] == [100, 101]
-    assert ents[1].offset == 8 + len(header) + len(tex)
-    assert pvr.parse(data[ents[1].offset : ents[1].offset + ents[1].size]).width == 2

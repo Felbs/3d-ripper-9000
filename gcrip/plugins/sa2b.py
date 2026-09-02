@@ -1,13 +1,13 @@
 """Sonic Adventure 2: Battle model archives (the ``payload.bin`` of a ``.prs`` whose bytes
 start with an id / offset table of NJS_OBJECT trees; gcrip.formats.sa2b).  One Scene per
-table entry, evaluated with dcrip's Ninja scene builder (rig from the object tree)."""
+table entry, evaluated with the Ninja scene builder (rig from the object tree)."""
 
 from __future__ import annotations
 
 import posixpath
 
-from dcrip import ninja_eval
-from dcrip.formats import ninja
+from gcrip import ninja_eval
+from gcrip.formats import ninja
 from gcrip.formats import gvr, sa2b
 from ripcore.scene import Scene
 

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import struct
 
-from dcrip.formats import prs
+from gcrip.formats import prs
 from gcrip.formats import prs as sega_prs
 
 NAME_COUNT = 256

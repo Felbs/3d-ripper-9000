@@ -1,6 +1,6 @@
 """Billy Hatcher and the Giant Egg (GameCube) ``.arc`` resources: Ginja object trees with an
 embedded GVM.  Big-endian; every pointer is relative to 0x20, so the file after its header
-is a plain Ginja buffer (gcrip.formats.ginja parses it, dcrip.ninja_eval evaluates it).
+is a plain Ginja buffer (gcrip.formats.ginja parses it, gcrip.ninja_eval evaluates it).
 
 Header (0x20): ``u32 file size | u32 pointer table (relocation list at the end of the file)
 | u32 | 0 | 0 | "0100" | 0 | 0``, then a resource record list at 0x20 whose first word is
@@ -20,8 +20,8 @@ import struct
 
 import numpy as np
 
-from dcrip import ninja_eval
-from dcrip.formats import ninja
+from gcrip import ninja_eval
+from gcrip.formats import ninja
 from gcrip.formats import ginja, gvr
 from ripcore.scene import Scene
 

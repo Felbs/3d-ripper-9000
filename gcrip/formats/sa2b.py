@@ -1,7 +1,7 @@
 """Sonic Adventure 2: Battle (GameCube) model archives: Sega-PRS-compressed files holding a
 table of ``u32 id, u32 offset`` pairs (terminated by 0xffffffff) that point at NJS_OBJECT
 trees whose attaches are Ninja chunk models - the same format the Dreamcast games use
-(dcrip.formats.ninja) with every field byte-swapped to big-endian: the vertex-chunk header
+(gcrip.formats.ninja) with every field byte-swapped to big-endian: the vertex-chunk header
 becomes ``u16 size, u8 flags, u8 type, u16 count, u16 index offset`` and the poly-chunk
 header ``u8 flags, u8 type``.  Object/attach/vertex floats and u32s are big-endian.
 """
@@ -12,15 +12,15 @@ import struct
 
 import numpy as np
 
-from dcrip.formats import ninja
-from dcrip.formats.ninja import Material, Model, NinjaError, Strip, VertexWrite, _argb, _unpack_vnx
+from gcrip.formats import ninja
+from gcrip.formats.ninja import Material, Model, NinjaError, Strip, VertexWrite, _argb, _unpack_vnx
 
 _VTX = ninja._VTX
 _STRIP = ninja._STRIP
 
 
 class GcChunkParser(ninja._ChunkParser):
-    """dcrip's chunk parser reading the GameCube byte order."""
+    """the Ninja chunk parser reading the GameCube byte order."""
 
     def u16(self, o: int) -> int:
         return struct.unpack_from(">H", self.d, o)[0]

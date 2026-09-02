@@ -1,15 +1,15 @@
 """Sonic Adventure DX and Sonic Adventure 2: Battle ``.rel`` modules: models, characters and
 stage land tables at the addresses SA Tools documents (gcrip.formats.satools), read from
 the relocated module (gcrip.formats.rel) with the big-endian Basic / chunk / Ginja parsers
-(gcrip.formats.sadx) and dcrip's Ninja scene builder.  Textures: the ``texture=`` name of
+(gcrip.formats.sadx) and the Ninja scene builder.  Textures: the ``texture=`` name of
 an entry -> ``<name>.gvm`` on the disc (SADX) or the stage's ``landtxNN.prs`` (SA2B)."""
 
 from __future__ import annotations
 
 import posixpath
 
-from dcrip import ninja_eval
-from dcrip.formats import ninja
+from gcrip import ninja_eval
+from gcrip.formats import ninja
 from gcrip.formats import gvr, prs, rel, sadx, satools
 from ripcore.scene import Primitive, Scene
 

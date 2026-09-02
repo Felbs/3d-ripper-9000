@@ -135,7 +135,7 @@ def export(scene: Scene, out_base: Path, *, thumbnail: bool = True) -> ExportSta
     st = ExportStats(warnings=list(scene.warnings))
     buf = _Buffer()
     gltf: dict = {
-        "asset": {"version": "2.0", "generator": "3D Ripper 9000 dcrip"},
+        "asset": {"version": "2.0", "generator": "3D Ripper 9000"},
         "scene": 0,
         "scenes": [{"nodes": []}],
         "nodes": [],

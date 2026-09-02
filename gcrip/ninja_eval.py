@@ -11,7 +11,7 @@ import math
 
 import numpy as np
 
-from dcrip.formats import ninja
+from gcrip.formats import ninja
 from ripcore.scene import Clip, Joint, MaterialDef, Primitive, Scene
 
 
