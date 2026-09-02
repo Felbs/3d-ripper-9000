@@ -80,3 +80,19 @@ def test_fallback_containers_do_not_deprioritise_everything():
 
     fallbacks = [m for m in container_plugins() if is_fallback(m)]
     assert [getattr(m, "NAME", m.__name__) for m in fallbacks] == ["generic"]
+
+
+def test_reordering_never_drops_a_candidate():
+    """The fix is a sort key, not a filter.  A container archive or a movie still gets scanned
+    if the budget reaches it - which matters because a disc whose only models come from raw-
+    scanning a container blob must not lose them, only wait longer for them."""
+    files = [
+        ("files/Data/Movies/intro.ngc", 100 << 20, False),
+        ("files/Data/01_Peb/hole_01/hole.hog", 5 << 20, True),
+        ("files/Data/Char/35char.skg", 512_000, False),
+        ("files/sound/bank.dsp", 60 << 20, False),
+        ("files/model/player.bmd", 4 << 10, False),
+    ]
+    order = sorted(files, key=lambda c: (_looks_like_media(c[0]), c[2], -c[1]))
+    assert sorted(order) == sorted(files)
+    assert len(order) == len(files)
