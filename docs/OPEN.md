@@ -94,6 +94,11 @@ routed anyway, so they were burning the entire budget before the 35 `.skg` that 
 geometry were reached.  Fallback containers are excluded from that test: `plugins/generic.py`
 claims every file there is.
 
+Measured across the 635 discs with a manifest, the ten biggest files - what the old order fed
+the scanner first - are **entirely media on 165 discs (26%)**, and eight or more of ten on 313
+(49%).  On a quarter of the library the whole per-disc budget was spent before anything that
+could hold a triangle was opened.
+
 ## The state of the tail (measured 2026-08-30)
 
 223 discs still produce neither a model nor a texture.  For each one, the largest file that

@@ -42,6 +42,25 @@ Two ordering fixes follow, both in `gcrip/rip.py`:
   `plugins/generic.py` claims every file there is, and counting it would deprioritise the
   entire disc and change nothing.
 
+## How much of the library this affects
+
+Tiger Woods is the case that exposed it, but the ordering was wrong nearly everywhere.  Taking
+the ten biggest files on each of the 635 discs with a manifest - which is what the old
+biggest-first order fed the scanner first - and counting how many are media by path:
+
+| media among the 10 biggest files | discs | share |
+|---|---|---|
+| all 10 | **165** | 26% |
+| 8 or more | 313 | 49% |
+| 5 or more | 412 | 65% |
+| 3 or more | 470 | 74% |
+| 1 or more | 520 | 82% |
+
+On a quarter of the library the scanner's entire per-disc budget went to video and audio before
+it reached a single file that could contain a triangle.  The worst carry about a gigabyte of it
+in those ten files alone - Frogger's Adventures 1,094 MB, Charlie's Angels 1,084 MB, SSX Tricky
+1,075 MB, Freestyle Street Soccer 1,011 MB, NBA Live 06 1,006 MB.
+
 ## Correction: these archives are not "audio and configuration"
 
 `docs/OPEN.md` recorded the 2003/2004/2005 `.hog` as **"Resolved negatively: audio and
