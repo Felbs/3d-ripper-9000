@@ -166,9 +166,29 @@ back-to-back NUL-terminated identifiers - a name table.  Measured on the shipped
 4 MB window centred on the first part name, **the longest such chain is 5**, and those five are
 `MIT`, `UGR`, `SEP`, `QCN`, `OAL` - three-letter noise, not part names.
 
-This one is countable, is tied to a number the file itself declares, and fails loudly on the
-current output.  It is the oracle a further attempt should be scored against: **a correct
-variant should produce a chain in the hundreds.**
+It is countable and tied to a number the file declares, so it was worth sweeping against.
+**Sixteen operand packings scored 2 to 13 and none produced a name table** - four ways of
+splitting the two operand bytes into position and length, crossed with length offsets of +2 and
++3 and ring starts of 4078 and 0.  The best was the shipped packing itself, at 13.
+
+**But this oracle is not safely grounded either, and the sweep is a weak negative rather than a
+proof.**  It assumes the 643 names sit in a packed string table.  They may not: the occurrences
+of a single part name are spaced irregularly - 5,968 then 3,975 then 1,026 then 8,303 bytes
+apart - so the file is neither a packed table nor a fixed-stride record array, and a short chain
+may be what a *correct* decode of this container looks like.  Four oracles have now been tried
+here and none of them can distinguish a good decode from a bad one.
+
+## What *is* established
+
+One thing decodes verifiably right: **the start**.  The raw stream opens `ff` - an all-literals
+flag byte - followed by eight bytes that spell `CUBAN 1.`, and the next flag byte `5f` takes
+five more literals giving `02  @`.  That reproduces the container magic `CUBAN 1.02` exactly,
+which validates the stream offset, the flag polarity and the literal path together.
+
+So the framing at the start is right, the packing sweep finds nothing better, and no available
+oracle can judge the rest.  **This needs a known-plaintext pair before any more decoder work** -
+an asset stored both compressed here and uncompressed elsewhere - which is what broke the Tiger
+Woods codec open.
 
 The one oracle that would settle it is a **known-plaintext pair**, as on Tiger Woods: some
 asset present both compressed here and uncompressed elsewhere on the disc. That is the next
