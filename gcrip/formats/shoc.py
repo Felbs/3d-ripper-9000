@@ -27,6 +27,8 @@ import struct
 import zlib
 from dataclasses import dataclass
 
+from gcrip.identities import Identity
+
 HEADER = 8
 WRAPPER = 16
 MAGIC = b"CTRL"
@@ -118,3 +120,132 @@ def members(data: bytes) -> list[Member]:
             parts.append(data[at + WRAPPER + HEADER : at + span])
     flush()
     return out
+
+# -- block structure -----------------------------------------------------------------------
+
+#: A data chunk's inner tag says how its block is stored, and this is the whole difference
+#: between the discs that read and the discs that did not:
+#:
+#: ``SDAT``  stored - the payload after the 44-byte header IS the data
+#: ``Zdat``  a zlib stream (Tiger Woods 06)
+#: ``Rdat``  a ``u32`` big-endian uncompressed size, then EA's own LZ (2003/2004/2005)
+#:
+#: The old reader knew the first two and treated ``Rdat`` as one of them, which is why those
+#: three discs produced 57 members totalling 5 KB out of a 4.9 MB archive.
+STORED, ZLIB, EALZ = b"SDAT", b"Zdat", b"Rdat"
+#: a zlib block's output size is not recorded; it has to be inflated
+UNKNOWN = -1
+
+
+@dataclass
+class Block:
+    """One data chunk's payload, and how to get the bytes out of it."""
+
+    how: bytes  # STORED / ZLIB / EALZ
+    offset: int  # of the block, after the 44-byte chunk header
+    size: int  # bytes of block present in the file
+    #: what it must produce, or ``UNKNOWN`` for a zlib block - deflate does not record its
+    #: output size, so that one can only be had by inflating
+    unpacked: int
+
+    @property
+    def stored(self) -> bool:
+        return self.how == STORED
+
+
+@dataclass
+class Resource:
+    kind: str
+    index: int
+    declared: int
+    blocks: list[Block]
+
+    @property
+    def sizes_known(self) -> bool:
+        """False when any block is zlib, whose output size is not recorded anywhere."""
+        return all(b.unpacked != UNKNOWN for b in self.blocks)
+
+    @property
+    def reconciles(self) -> bool:
+        """The identity: the blocks account for exactly what the ``SHDR`` declares.
+
+        Only meaningful when :attr:`sizes_known` - a zlib block has to be inflated before it can
+        be counted, so a `Zdat` resource is not evidence either way rather than a failure.
+        """
+        return self.sizes_known and sum(b.unpacked for b in self.blocks) == self.declared
+
+
+def resources(data: bytes) -> list[Resource]:
+    """Every ``SHDR`` resource and the blocks that make it up.
+
+    Verified by the identity on `Resource.reconciles`: **267 of 267 resources** on Tiger Woods
+    2005's `_gree/hole_01` account for their declared size exactly.
+    """
+    if not is_shoc(data[:4]):
+        return []
+    out: list[Resource] = []
+    cur: Resource | None = None
+    for tag, at, span in _chunks(data):
+        if tag != SHOC or at + WRAPPER + 4 > len(data):
+            continue
+        inner = data[at + WRAPPER : at + WRAPPER + 4]
+        if inner == SHDR:
+            body = data[at + WRAPPER + 4 : at + WRAPPER + 20]
+            if len(body) == 16:
+                _v, kind, idx, unp = struct.unpack(">I4s2I", body)
+                cur = Resource(kind.decode("latin-1").strip() or "data", idx, unp, [])
+                out.append(cur)
+        elif inner in DATA and cur is not None:
+            # the payload follows the 4-byte inner tag directly, then the 44-byte header;
+            # WRAPPER + HEADER would be 4 bytes too far and breaks the identity outright
+            start = at + WRAPPER + 4 + CHUNK_HEADER
+            end = at + span
+            if start >= end:
+                continue
+            if inner == EALZ:
+                if start + 4 > len(data):
+                    continue
+                unpacked = struct.unpack_from(">I", data, start)[0]
+                cur.blocks.append(Block(inner, start + 4, end - start - 4, unpacked))
+            elif inner == ZLIB:
+                cur.blocks.append(Block(inner, start, end - start, UNKNOWN))
+            else:
+                cur.blocks.append(Block(inner, start, end - start, end - start))
+    return out
+
+
+# -- identities ---------------------------------------------------------------------------
+
+
+def _blocks_account_for_declared(data: bytes):
+    """Every resource's blocks sum to exactly the size its SHDR declares."""
+    rs = [r for r in resources(data) if r.blocks and r.sizes_known]
+    if not rs:
+        return None, "no resource with known block sizes (all zlib, or not a SHOC archive)"
+    ok = sum(1 for r in rs if r.reconciles)
+    return ok == len(rs), f"{ok} of {len(rs)} resources account for their declared size"
+
+
+def _tags_are_known(data: bytes):
+    rs = resources(data)
+    if not rs:
+        return None, "not a SHOC archive"
+    blocks = [b for r in rs for b in r.blocks]
+    if not blocks:
+        return None, "no data blocks"
+    good = sum(1 for b in blocks if b.how in (STORED, ZLIB, EALZ))
+    return good == len(blocks), f"{good} of {len(blocks)} blocks carry a known storage tag"
+
+
+IDENTITIES = [
+    Identity(
+        "blocks account for the declared size",
+        "sum(block.unpacked) == SHDR.declared, per resource",
+        _blocks_account_for_declared,
+    ),
+    Identity(
+        "every block says how it is stored",
+        "inner tag is SDAT, Zdat or Rdat",
+        _tags_are_known,
+    ),
+]

@@ -157,3 +157,39 @@ def test_chunk_header_is_forty_four_bytes():
     assert (65932 - 9 * shoc.CHUNK_HEADER) == 65536
     # and the one that does NOT reconcile, which is the point
     assert (1724896 - 212 * shoc.CHUNK_HEADER) != 2716800
+
+
+def test_the_inner_tag_says_how_a_block_is_stored():
+    """This is the whole difference between the discs that read and the ones that did not.
+
+    SDAT is stored, Zdat is zlib (Tiger Woods 06), Rdat is EA's own LZ with a u32 uncompressed
+    size in front (2003/2004/2005).  The old reader knew the first two and treated Rdat as one
+    of them, which is why those three discs produced 57 members totalling 5 KB from a 4.9 MB
+    archive.
+    """
+    from gcrip.formats import shoc
+
+    assert shoc.STORED == b"SDAT"
+    assert shoc.ZLIB == b"Zdat"
+    assert shoc.EALZ == b"Rdat"
+    assert set(shoc.DATA) == {shoc.STORED, shoc.ZLIB, shoc.EALZ}
+
+
+def test_a_zlib_block_reports_an_unknown_size_rather_than_a_wrong_one():
+    """deflate does not record its output size, so a Zdat resource is not evidence either way -
+    counting its compressed length as its unpacked length would fail the identity for a reason
+    that has nothing to do with the format being read wrong."""
+    from gcrip.formats import shoc
+
+    zlib_block = shoc.Block(shoc.ZLIB, 0, 100, shoc.UNKNOWN)
+    stored = shoc.Block(shoc.STORED, 0, 50, 50)
+    assert not shoc.Resource("x", 0, 50, [zlib_block, stored]).sizes_known
+    assert not shoc.Resource("x", 0, 50, [zlib_block, stored]).reconciles
+    assert shoc.Resource("x", 0, 50, [stored]).reconciles
+
+
+def test_a_stored_block_is_its_own_payload():
+    from gcrip.formats import shoc
+
+    b = shoc.Block(shoc.STORED, 64, 8128, 8128)
+    assert b.stored and b.unpacked == b.size
