@@ -64,3 +64,54 @@ def test_a_plugin_using_index_zero_also_creates_a_material():
         if constants and "MaterialDef" not in src:
             offenders.append(path.name)
     assert offenders == [], f"pass material=0 but never build a MaterialDef: {offenders}"
+
+
+def test_readers_explain_every_drop():
+    """A reader that takes a warning list and returns empty without using it drops geometry
+    silently, and a silent drop reads as "this disc has no geometry".
+
+    That is exactly how FIFA 2003 reported a healthy zero across 89 objects: three of
+    `_decode_packet`'s five return-None paths said nothing.
+
+    Two exemptions, both deliberate: a `-> None` function, where returning nothing is the whole
+    contract, and a return whose own line is commented `legitimate` - some absences are not
+    failures (`feporr_gs._skin` on an object that simply has no skin block) and warning about
+    them would be noise.  The marker has to be written on the line, so it is a choice someone
+    made and a reviewer can see.
+    """
+    import ast
+    import pathlib
+
+    offenders = []
+    for f in sorted(pathlib.Path("gcrip/formats").glob("*.py")):
+        src_lines = f.read_text(encoding="utf-8").splitlines()
+        tree = ast.parse(f.read_text(encoding="utf-8"))
+        for fn in [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]:
+            if not ({"warn", "warnings"} & {a.arg for a in fn.args.args}):
+                continue
+            ret = fn.returns
+            if isinstance(ret, ast.Constant) and ret.value is None:
+                continue
+            empty = sum(
+                1
+                for n in ast.walk(fn)
+                if isinstance(n, ast.Return)
+                and (
+                    n.value is None
+                    or (isinstance(n.value, ast.Constant) and n.value.value is None)
+                    or (isinstance(n.value, ast.List) and not n.value.elts)
+                )
+                and "legitimate" not in src_lines[n.lineno - 1]
+            )
+            warned = sum(
+                1
+                for n in ast.walk(fn)
+                if isinstance(n, ast.Call)
+                and isinstance(n.func, ast.Attribute)
+                and n.func.attr == "append"
+                and isinstance(n.func.value, ast.Name)
+                and n.func.value.id in ("warn", "warnings")
+            )
+            if empty > warned:
+                offenders.append(f"{f.name}:{fn.name} ({empty} empty returns, {warned} warnings)")
+    assert offenders == [], "these can drop geometry without saying why: " + "; ".join(offenders)

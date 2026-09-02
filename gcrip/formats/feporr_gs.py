@@ -135,7 +135,10 @@ _ENVELOPE = np.dtype(
 
 def _skin(data: bytes, rel: int, warnings: list[str]) -> Skin | None:
     off = BASE + rel
-    if not rel or off + 0x10 > len(data):
+    if not rel:
+        return None  # no skin block at all: legitimate, not a failure
+    if off + 0x10 > len(data):
+        warnings.append(f"skin block at {off:#x} runs past the file")
         return None
     hsize, tsize, n_env, n_slot = struct.unpack_from(">IIHH", data, off)
     if hsize < 0x10 or off + tsize > len(data) or not n_env:

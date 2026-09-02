@@ -118,6 +118,15 @@ twenty-seven were queued on failure counts; all twenty-seven needed re-ripping.
 So when a fix removes a silent `return None`, the discs to re-run are **every disc the plugin
 touches**, not the ones with rows in the failure table.
 
+And the class is now closed off rather than fixed once.  An audit of every reader that takes a
+warning list found seven functions with empty returns; `eagl._decode_packet` (5 returns, 2
+warnings) was the worst, and `ttyd_map._packed_mesh` and `feporr_gs._skin` had one each.  All
+now explain themselves, and `tests/test_material_index_contract.py::test_readers_explain_every_drop`
+fails the build if a reader gains an unexplained empty return.  Two exemptions are allowed and
+both are visible in the source: a function declared `-> None`, and a return whose own line is
+commented `legitimate` - because some absences really are not failures, and warning about those
+would just be noise.
+
 ## The state of the tail (measured 2026-08-30)
 
 223 discs still produce neither a model nor a texture.  For each one, the largest file that

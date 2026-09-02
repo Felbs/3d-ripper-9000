@@ -271,6 +271,9 @@ def _packed_mesh(data: bytes, moff: int, vcd: _Vcd, warnings: list[str]) -> Mesh
                 tris.append(t + base)
                 base += count
     if not rows:
+        # a silent drop reads as "this disc has no geometry" - see
+        # docs/formats/ea-eagl-gamecube.md, where three of these hid 89 objects
+        warnings.append(f"mesh @{moff:#x}: display list yielded no primitive rows")
         return None
     verts = np.concatenate(rows)
     uniq, inverse = np.unique(verts, return_inverse=True)
