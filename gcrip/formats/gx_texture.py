@@ -132,6 +132,17 @@ def decode_palette(pal_fmt: int, data: bytes, count: int) -> np.ndarray:
     raise ValueError(f"unknown palette format {pal_fmt}")
 
 
+#: GX hardware tops out at 1024x1024; these are deliberately generous so a real texture is
+#: never refused, and exist only to stop a garbage header from being believed.
+#:
+#: Without them a bad size is not caught anywhere: `decode` pads `data` up to `encoded_size`
+#: and then stacks tiles, so a header claiming 65536x65536 asked numpy for a
+#: (8192, 8, 8192, 8, 4) array - 16 GiB - and the rip died with MemoryError instead of
+#: rejecting one texture.
+MAX_DIMENSION = 4096
+MAX_PIXELS = 1 << 24  # 4096 x 4096
+
+
 def decode(
     fmt: int,
     width: int,
@@ -142,6 +153,10 @@ def decode(
     """Decode one mip level to an (H, W, 4) uint8 RGBA array."""
     if fmt not in TILE_DIMS:
         raise ValueError(f"unsupported texture format {fmt}")
+    if not (0 < width <= MAX_DIMENSION and 0 < height <= MAX_DIMENSION):
+        raise ValueError(f"texture {width}x{height} is outside 1..{MAX_DIMENSION}")
+    if width * height > MAX_PIXELS:
+        raise ValueError(f"texture {width}x{height} is more than {MAX_PIXELS} pixels")
     tw, th = TILE_DIMS[fmt]
     bw = (width + tw - 1) // tw
     bh = (height + th - 1) // th
