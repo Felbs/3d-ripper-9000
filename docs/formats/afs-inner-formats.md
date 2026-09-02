@@ -230,3 +230,29 @@ declared length and turn the guess into an arithmetic check.
 
 The linear (untiled) width sweep is **not** evidence either way: its scores fall monotonically
 from width 8, which is an artifact of narrow images having fewer rows, not a peak.
+
+## Bleach `chr.afs`, measured 2026-09-02
+
+`chr.afs` is 192 MB; the first 42 MB expand to 66 members.  The two big ones (2,425,642 and
+2,506,360 bytes) are the typed-record files; the rest are smaller and different - `member0002`
+onwards open `00 00 00 04` / `00 00 00 03` big-endian with `3f 80 00 00` (1.0f) a few words in,
+at power-of-two sizes of 65,536 and 131,072.
+
+The head of `member0000`::
+
+    +0    16 00 00 00      22
+    +4    5c 0a 04 00      264,796
+    +8    37 00 02 1c      marker      +12: 1        +16: 4
+    +20   37 00 02 1c      marker      +24: 0x30004  +28: 21       +32: 66,180
+    +36   37 00 02 1c      marker      +40: 1        +44: 66,156
+    +48   37 00 02 1c      marker
+    +76   "ich_t001"       the asset name
+
+**The per-type header theory does not survive this.**  The note proposed that the recurring word
+is `u16 type, u16 0x1c02` and that "the per-type header shape is what is needed next".  All four
+markers here carry **the same type**, `0x0037`, and yet the gaps between them are **12, 16, 12** -
+so record length is not a function of the type, and shaping headers per type will not produce a
+walk.  Whatever selects the length is in the record's own fields, and that is where to look.
+
+Recorded rather than guessed at: none of `at + 12 + size`, `at + 8 + size` or a fixed 12-byte
+stride reproduces the observed marker positions.
