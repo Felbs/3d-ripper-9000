@@ -40,6 +40,8 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass
 
+from gcrip.identities import Identity
+
 HEADER = 104
 NAME = 30
 STRIDE = 58
@@ -88,3 +90,39 @@ def mesh(data: bytes) -> Mesh | None:
             return None
         parts.append(Part(raw.decode("latin-1", "replace"), bone, box[:3], box[3:]))
     return Mesh(version, bones, skel, parts)
+
+# -- identities ---------------------------------------------------------------------------
+
+
+def _boxes_are_boxes(data: bytes) -> tuple[bool | None, str]:
+    """min <= max on all three axes, on every part - the check that pins the 58-byte stride."""
+    m = mesh(data)
+    if m is None:
+        return None, "not a readable _dfm"
+    bad = sum(
+        1 for p in m.parts if any(lo > hi for lo, hi in zip(p.box_min, p.box_max))
+    )
+    return bad == 0, f"{len(m.parts) - bad} of {len(m.parts)} boxes have min <= max"
+
+
+def _bones_in_range(data: bytes) -> tuple[bool | None, str]:
+    m = mesh(data)
+    if m is None:
+        return None, "not a readable _dfm"
+    bad = sum(1 for p in m.parts if p.bone >= m.bone_count)
+    return bad == 0, f"{len(m.parts) - bad} of {len(m.parts)} bone indices inside {m.bone_count}"
+
+
+def _names_decode(data: bytes) -> tuple[bool | None, str]:
+    m = mesh(data)
+    if m is None:
+        return None, "not a readable _dfm"
+    ok = sum(1 for p in m.parts if p.name and all(32 <= ord(c) < 127 for c in p.name))
+    return ok == len(m.parts), f"{ok} of {len(m.parts)} part names printable"
+
+
+IDENTITIES = [
+    Identity("every box is a box", "box_min[k] <= box_max[k] for k in 0..2", _boxes_are_boxes),
+    Identity("bone indices resolve", "part.bone < header bone count", _bones_in_range),
+    Identity("part names decode", "every part name is printable ASCII", _names_decode),
+]

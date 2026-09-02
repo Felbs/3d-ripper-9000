@@ -43,6 +43,8 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass
 
+from gcrip.identities import Identity
+
 HEADER = 8
 NAME = 32
 STRIDE = 36
@@ -89,3 +91,37 @@ def bones(data: bytes) -> list[Bone]:
     if roots != 1 or not out:
         return []
     return out
+
+# -- identities ---------------------------------------------------------------------------
+
+
+def _one_root(data: bytes) -> tuple[bool | None, str]:
+    got = bones(data)
+    if not got:
+        return None, "not a readable .SKL"
+    roots = sum(1 for b in got if b.parent == -1)
+    return roots == 1, f"{roots} root(s) among {len(got)} bones"
+
+
+def _no_forward_parents(data: bytes) -> tuple[bool | None, str]:
+    """Topological order: a wrong stride scatters this immediately."""
+    got = bones(data)
+    if not got:
+        return None, "not a readable .SKL"
+    bad = [i for i, b in enumerate(got) if b.parent >= i]
+    return not bad, f"{len(got) - len(bad)} of {len(got)} parents precede their child"
+
+
+def _table_fits(data: bytes) -> tuple[bool | None, str]:
+    if not is_skl(data[:HEADER]):
+        return None, "not a .SKL"
+    count = struct.unpack_from("<I", data, 4)[0]
+    end = HEADER + count * STRIDE
+    return end <= len(data), f"{count} bones end at {end}, file is {len(data)}"
+
+
+IDENTITIES = [
+    Identity("exactly one root", "one bone has parent -1", _one_root),
+    Identity("no forward parents", "parent index < child index for every bone", _no_forward_parents),
+    Identity("bone table fits", "8 + count * 36 <= len(file)", _table_fits),
+]

@@ -244,7 +244,29 @@ flowchart TD
     L & N --> SC["geometry score<br/>mean edge / percentile bbox · √N<br/>real ≈ 1-2, spaghetti ≈ 0.5·√N"]
     SC -->|"accepted"| M["Scene: one primitive per mesh,<br/>extras.gxscan = true"]
     R & M --> E["ripcore.gltf.export<br/>+ thumbnail + report row"]
+    R -->|"claimed, returned nothing"| Z["claimed_empty<br/>recorded, NOT a failure"]
+    D -->|"nobody claims it"| N["no record"]
 ```
+
+A plugin has **three** outcomes, and keeping them apart is what stops a silent bug reading as an
+empty disc:
+
+```mermaid
+flowchart LR
+    P["plugin claims a file"] --> S{"scenes returned?"}
+    S -->|"yes"| OK["exported<br/>triangles, joints, textures"]
+    S -->|"no, and it raised"| F["failed<br/>error + fail_examples"]
+    S -->|"no, quietly"| C{"is it a fallback?"}
+    C -->|"gx / generic:<br/>it probes everything"| V["no record<br/>(a miss is not news)"]
+    C -->|"any other plugin:<br/>detect() recognised it"| EM["claimed_empty<br/>+ empty_examples"]
+```
+
+Each cracked format also declares **executable identities** (`gcrip/identities.py`) - the
+arithmetic its note quotes, as code.  `MULA`'s payloads must tile the block to the byte, a
+`.SKL`'s parents must precede their children, a `_dfm` box must have `min <= max` on all three
+axes.  They run in the test suite against synthetic data and can be run against real members,
+so a reader that regresses shows up as an identity that stopped holding rather than as a disc
+that quietly produces less.
 
 EA Canada's EAGL objects (`plugins/eagl.py`: FIFA, NBA Live, NHL, MVP, Def Jam, Fight
 Night - `.ord` + `.orp` = one ELF relocatable split in two) are the first non-J3D format

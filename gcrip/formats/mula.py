@@ -51,6 +51,8 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass
 
+from gcrip.identities import Identity
+
 MAGIC = b"MULA"
 GCT = b"GCT "
 HEADER = 8
@@ -145,3 +147,47 @@ def texture(blob: bytes, name: str = "") -> Texture | None:
     palette = blob[pad + GCT_HEADER : pad + GCT_HEADER + pal]
     pixels = blob[pad + GCT_HEADER + pal :]
     return Texture(name or "gct", width, height, fmt, levels, palette, pixels)
+
+# -- identities ---------------------------------------------------------------------------
+
+
+def _tiling(data: bytes) -> tuple[bool | None, str]:
+    """The payloads run to the end of the block, exactly."""
+    got = members(data)
+    if not got:
+        return None, "not a MULA block"
+    end = got[-1].offset + got[-1].size
+    return end == len(data), f"last payload ends at {end}, block is {len(data)}"
+
+
+def _texture_sizes(data: bytes) -> tuple[bool | None, str]:
+    """32 + palette + pixel bytes == the entry's size, on every image."""
+    got = members(data)
+    if not got:
+        return None, "not a MULA block"
+    checked = bad = 0
+    for m in got:
+        blob = data[m.offset : m.offset + m.size]
+        if not is_gct(blob):
+            continue
+        checked += 1
+        if texture(blob, m.name) is None:
+            bad += 1
+    if not checked:
+        return None, "no GCT images in this block"
+    return bad == 0, f"{checked - bad} of {checked} images reconcile"
+
+
+def _names_decode(data: bytes) -> tuple[bool | None, str]:
+    got = members(data)
+    if not got:
+        return None, "not a MULA block"
+    ok = sum(1 for m in got if m.name and all(32 <= ord(c) < 127 for c in m.name))
+    return ok == len(got), f"{ok} of {len(got)} names printable"
+
+
+IDENTITIES = [
+    Identity("payloads tile the block", "last payload end == len(block)", _tiling),
+    Identity("image sizes reconcile", "32 + palette + pixel bytes == entry size", _texture_sizes),
+    Identity("names decode", "every member name is printable ASCII", _names_decode),
+]

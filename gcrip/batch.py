@@ -197,16 +197,17 @@ def write_matrix(out_root: Path, rows: list[dict]) -> Path:
         "",
         f"{len(rows)} games · {tot_models:,} models exported · {tot_clips:,} animation clips · "
         f"{sum(r.get('failed', 0) for r in rows)} model failures · "
+        f"{sum(r.get('claimed_empty', 0) for r in rows)} claimed-but-empty · "
         f"{sum(1 for r in rows if r.get('error'))} games errored",
         "",
-        "| game | ID | exported | dups | failed | tris | clips | animated | expr | Mixamo rigs "
-        "| textured % | textures | extras | s | top warnings |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---|",
+        "| game | ID | exported | dups | failed | empty | tris | clips | animated | expr "
+        "| Mixamo rigs | textured % | textures | extras | s | top warnings |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---|",
     ]
     for r in rows:
         if r.get("error"):
             lines.append(
-                f"| {r['file']} | | ⚠ {r['error']} | | | | | | | | | | | {r.get('seconds', 0)} | |"
+                f"| {r['file']} | | ⚠ {r['error']} | | | | | | | | | | | | {r.get('seconds', 0)} | |"
             )
             continue
         warns = "; ".join(f"{k} ×{v}" for k, v in r.get("warnings", {}).items())[:160]
@@ -215,7 +216,8 @@ def write_matrix(out_root: Path, rows: list[dict]) -> Path:
         lines.append(
             f"| [{r['title']}]({r['report']}) | {r['game_id']} | {r['exported']} | "
             f"{r['duplicates']} | "
-            f"{r['failed']} | {r['triangles']:,} | {r['clips']} | {r['animated_models']} | "
+            f"{r['failed']} | {r.get('claimed_empty', 0)} | "
+            f"{r['triangles']:,} | {r['clips']} | {r['animated_models']} | "
             f"{r['expressions']} | {r['mixamo_rigs']} | {r['textured_pct']} | {r['textures']} | "
             f"{_extras_cell(r)} | {r['seconds']} | {note} |"
         )
