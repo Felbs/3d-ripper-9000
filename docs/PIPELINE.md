@@ -14,7 +14,7 @@ flowchart LR
     WALK --> MAN["disc_manifest.json<br/>every file, format, hash"]
     MAN --> RIP["2  Rip loop<br/>gcrip.rip"]
     RIP -->|"BMD / BDL"| J3D["3  J3D parse<br/>gcrip.formats.j3d"]
-    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, eurocom, hsf, sa2b, sadx, ninja_gc, billy, nu2, ttdisp, hgo, unreal, openspace, afs, lpac, melee, dbl, blitz, blitz_tex, dds_pack, fsta, agg, asb_tex, bmp, hff, png, frd_gct, frd_pak, ft_pak, gct, jam2, kceo, ljam, skye_pak, skx, toc_tim, toc_wad, vc_dat, tpl, mdgc, xmdl, u8, res (rdms meshes, surf textures), zip, pod, tr_pkg, tr_tex, tr_smf, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
+    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, eurocom, hsf, sa2b, sadx, ninja_gc, billy, nu2, ttdisp, hgo, unreal, openspace, afs, lpac, melee, dbl, blitz, blitz_tex, dds_pack, fsta, agg, asb_tex, bmp, hff, png, frd_gct, frd_pak, ft_pak, gct, jam2, kceo, ljam, skye_pak, skx, toc_tim, toc_wad, vc_dat, tpl, mdgc, xmdl, u8, res (rdms meshes, surf textures), totemtech, zip, pod, tr_pkg, tr_tex, tr_smf, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
     RIP -->|"nothing claims it"| GX["3c  Structure scan (fallback)<br/>gcrip.gxscan: GX display lists,<br/>vertex + index arrays"]
     J3D --> ANIM["4  Clip matching<br/>rip._AnimIndex + j3d_anim"]
     ANIM --> GLTF["5  glTF export<br/>gcrip.export.gltf / ripcore.gltf"]
@@ -174,6 +174,7 @@ The full ledger with byte-layout notes is [FORMATS.md](FORMATS.md).
 flowchart LR
     subgraph EA["Electronic Arts"]
         BIG["BIG / VIV / TERF / ZZDATA<br/>plugins.ea"] --> EAGL["EAGL .ord/.orp<br/>plugins.eagl"]
+        NGC[".ngc index<br/>formats.totemtech"] --> DGC["TotemTech .dgc record chain<br/>plugins.totemtech"]
         BIG --> EBO["EBO .ebo<br/>plugins.ebo"]
     end
     subgraph SEGA["Sega / Sonic Team"]
@@ -237,7 +238,7 @@ primitives, decoded textures, clips) and hands them to the same exporter, so the
 ```mermaid
 flowchart TD
     F["file no J3D parser wants"] --> D{"plugins_for(path, head, size)"}
-    D -->|"retro / hsd / gma / pikmin / lm / sfa / jade /<br/>re4 / neversoft / renderware / ea / eagl / ebo / p3d / mdl2 / mdl3 / eurocom / hsf / sa2b / ninja_gc / billy / ttdisp / unreal / openspace / ttyd / feporr / mula"| R["real parser<br/>meshes + materials + textures<br/>(+ rig, + clips where the format has them)"]
+    D -->|"retro / hsd / gma / pikmin / lm / sfa / jade /<br/>re4 / neversoft / renderware / ea / eagl / ebo / p3d / mdl2 / mdl3 / eurocom / hsf / sa2b / ninja_gc / billy / ttdisp / unreal / openspace / ttyd / feporr / mula / totemtech"| R["real parser<br/>meshes + materials + textures<br/>(+ rig, + clips where the format has them)"]
     D -->|"no ordinary plugin"| S["gx (fallback)<br/>entropy &lt; 7.5 → gxscan.scan_blob(budget)<br/>media and container archives scanned last"]
     S --> L["GX display lists<br/>opcode · count · index tuples,<br/>stride chained, NOP padding"]
     S --> N["neutral meshes<br/>f32 vertex run + u16 index run"]
