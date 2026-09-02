@@ -187,6 +187,38 @@ This is a format gap, not a bug: the fix is to learn what a pass record looks li
 engine, which needs the discs.  Recorded here rather than guessed at - loosening the signature
 until something matches is exactly how a wrong reading gets shipped.
 
+## The remaining 13,556 failures, and one more fixed (2026-09-01)
+
+After this session's fixes took the library from 103,130 recorded failures to 13,556, grouping
+the first `fail_examples` entry of every disc leaves a short list:
+
+| kind | discs | failed | |
+|---|---|---|---|
+| `xmdl / IndexError` | 1 | 6,273 | Home Run King - the single biggest item left |
+| `neversoft / NeversoftError` | 3 | 3,958 | recorded above as a format gap, needs the newer pass record |
+| `eagl / EaglError` | 12 | 1,302 | what the `.orl` fix did not reach |
+| `mdgc / IndexError` | 1 | 947 | |
+| `gx / KeyError` | 8 | **502** | **fixed** |
+| `hsd / RecursionError` | 8 | 228 | |
+| `skx / IndexError` | 1 | 193 | |
+
+### `gx / KeyError` - the walk and the fetch disagreed about who opened a container
+
+`manifest._walk_plugin_container` **skips the fallback plugins** for anything under a container
+an ordinary plugin opened - the rule that stopped RE4's `.das` members exploding into 25,000
+pseudo-files.  `_Source._expanded` in `rip.py` knew nothing about those roots and simply took
+the first plugin that claimed, so at fetch time a different plugin could name the members and
+the one being asked for was not in the dict.  The model then died with a bare `KeyError` on its
+own path.
+
+The signature is unmistakable once seen: `gg0002: gx: KeyError: '.../crypt3.lvl/g0057'` on
+Rayman Arena - the model being fetched is `gg0002`, two levels down, and the path that is
+missing is its parent.
+
+The fetch now keeps searching when a plugin's expansion does not contain the member being asked
+for: a plugin that does not produce it is not the plugin that produced it.  If none does, the
+`KeyError` is raised as before rather than some other plugin's bytes being returned.
+
 ## The export contract, and the census that found it broken (2026-09-01)
 
 `Primitive.material` is an **index into `scene.materials`**, and `Primitive.indices` is **flat**,

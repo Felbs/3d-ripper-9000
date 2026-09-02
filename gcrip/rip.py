@@ -118,12 +118,24 @@ class _Source:
         if rarc.is_rarc(parent) or tgc.is_tgc(parent):
             return parent[e.offset : e.offset + e.size]
         # a container a format plugin expanded (PAK, BIG, ...): members are not slices
-        return self._expanded(e.container, parent)[path]
+        return self._expanded(e.container, parent, want=path)[path]
 
-    def _expanded(self, container: str, payload: bytes) -> dict[str, bytes]:
-        """Members of a plugin container, keyed by full manifest path (cached)."""
+    def _expanded(self, container: str, payload: bytes, want: str | None = None) -> dict[str, bytes]:
+        """Members of a plugin container, keyed by full manifest path (cached).
+
+        ``want`` is the member being fetched.  It matters because **this can disagree with the
+        walk that built the manifest**: `manifest._walk_plugin_container` skips the fallback
+        plugins for anything under a container an ordinary plugin opened, and nothing here knows
+        about those roots, so the first plugin to claim at fetch time is not always the one that
+        named the members.  When that happened the member simply was not in the dict and the
+        model died with a bare `KeyError` on its own path - 502 of them across eight discs,
+        Resident Evil, Rayman Arena and Burnout 2 among them.
+
+        So a plugin whose expansion does not contain the member being asked for is not the
+        plugin that produced it, and the search carries on.
+        """
         cache = self.__dict__.setdefault("_plugin_cache", {})
-        if container in cache:
+        if container in cache and (want is None or want in cache[container]):
             cache[container] = cache.pop(container)  # LRU touch: parents stay hot
             return cache[container]
         from gcrip.plugins import container_plugins
@@ -132,9 +144,9 @@ class _Source:
         folder = container.rsplit("/", 1)[0] if "/" in container else ""
 
         def sibling(n: str) -> bytes | None:
-            want = f"{folder}/{n}".lower() if folder else n.lower()
+            want_name = f"{folder}/{n}".lower() if folder else n.lower()
             for p in self.by_path:
-                if p.lower() == want:
+                if p.lower() == want_name:
                     return self.get(p)
             return None
 
@@ -146,10 +158,15 @@ class _Source:
                         entries = mod.expand_with(payload, name, sibling)
                     else:
                         entries = mod.expand(payload)
-                    members = {f"{container}/{inner}": blob for inner, blob in entries}
+                    got = {f"{container}/{inner}": blob for inner, blob in entries}
                     # a plugin that claims and yields nothing must not shadow the next one
                     # that would - see the note in manifest._walk_plugin_container
-                    if members:
+                    if not got:
+                        continue
+                    if not members:
+                        members = got
+                    if want is None or want in got:
+                        members = got
                         break
             except Exception:  # noqa: BLE001
                 continue
