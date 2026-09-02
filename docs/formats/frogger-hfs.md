@@ -42,6 +42,31 @@ checksum and an uncompressed size at +12 and +16 is the start of the compressed 
 
 The payload is compressed - entropy 7.59 to 7.75 - and opens `ff ff ef 03 18 01 00 fa`.
 
+## What the payload is, measured 2026-09-02
+
+The directory still reads 8 of 8.  Member 0's header is `PRS1`, tag `jp`, then `37 43 00 00` -
+17,207 little-endian, exactly the length the directory gives, which confirms the 12-byte header
+independently.  The `ff ff ef 03 18 01 00 fa` recorded above is at **+20**, not at the start of
+the payload; +12 is `fd 23 eb f0` and +16 is `7c 14 00 00` (5,244 - and since that is far
+*smaller* than the 17,207 compressed bytes it cannot be an uncompressed size).
+
+**The byte histogram says what the content is.**  The most common bytes in the payload are
+`ff` (1,061), `3f` (492), `bf` (404), `40` (327), `00` (308), `3e` (251), and the most common
+pairs are `9f b0`, `ff 3f`, `1b a0`, `ff bf`, `ff ff`, `3f ff`.  `3f`, `bf`, `3e` and `40` are
+the exponent bytes of IEEE-754 floats near 1.0 - so there is float-heavy geometry in here.
+
+But it is **not raw floats**: read as `f32` at every plausible offset in both byte orders, only
+0.21-0.23 of the words are finite and in a sane range, where a real vertex array runs 0.67 and
+up.  Exponent bytes present while 4-byte alignment is destroyed is what an LZ stream *over*
+float data looks like, so the payload is compressed, and it is compressed over exactly the kind
+of content worth having.
+
+A family of LZSS decoders was tried and none survives: control words of 8 and 16 bits, literal
+flag as 1 and as 0, LSB-first and MSB-first, four common (distance, length) packings, each from
++12, +16 and +20 - **48 combinations, and not one produces 2,000 bytes** before running past
+the start of its own output.  Frogger is a RenderWare game, so a correct decode would show
+RenderWare chunk ids; that oracle never fired.
+
 **`gcrip.formats.prs` rejects it** at every plausible offset (8, 12, 16, 20, 24), always with
 *back-reference before start*.  So the `PRS1` tag is not Sega's PRS, whatever it borrowed from
 it.  That codec is the remaining work, and it is a session of its own; the archive around it is
