@@ -20,11 +20,47 @@ def detect(path: str, head: bytes, size: int) -> bool:
     return path.lower().endswith(".ord") and eagl.is_ord(head)
 
 
+_BASENAME_ATTR = "_eagl_basename_index"
+
+
+def _basename_index(src) -> dict[str, list[str]]:
+    """lower-case file name -> every manifest path with that name (built once per source)."""
+    index = getattr(src, _BASENAME_ATTR, None)
+    if index is not None:
+        return index
+    index = {}
+    for p in getattr(src, "by_path", {}) or {}:
+        index.setdefault(p.lower().rsplit("/", 1)[-1], []).append(p)
+    with contextlib.suppress(Exception):
+        setattr(src, _BASENAME_ATTR, index)
+    return index
+
+
 def _sibling(src, path: str, name: str) -> bytes | None:
-    try:
-        return src.get(posixpath.join(posixpath.dirname(path), name))
-    except Exception:  # noqa: BLE001
-        return None
+    """The paired half of an EAGL object, which is not always beside its partner.
+
+    The obvious lookup is the same folder, and that is right most of the time.  It is wrong on
+    NBA Live, where the pair is split across **two containers in the same directory**: the
+    `.ord` sits in `anim/body/xanims.viv/` and its `.orl` in `anim/body/xsyms.viv/`.  A
+    same-folder lookup can never find that, and it cost 32 models across 8 discs with the
+    misleading error "section table outside the file (missing .orp?)" - the half was on the
+    disc all along.
+    """
+    folder = posixpath.dirname(path)
+    with contextlib.suppress(Exception):
+        return src.get(posixpath.join(folder, name))
+    return _sibling_across_containers(src, path, name)
+
+
+def _sibling_across_containers(src, path: str, name: str) -> bytes | None:
+    folder = posixpath.dirname(path)
+    parent = posixpath.dirname(folder)  # the real directory both containers live in
+    for candidate in _basename_index(src).get(name.lower(), ()):
+        holder = posixpath.dirname(candidate)
+        if holder == folder or posixpath.dirname(holder) == parent:
+            with contextlib.suppress(Exception):
+                return src.get(candidate)
+    return None
 
 
 _INDEX_ATTR = "_eagl_shape_index"
