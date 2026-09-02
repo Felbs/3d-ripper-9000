@@ -46,8 +46,47 @@ is not done here.
 `TMESH` entries are located in the 5.3 MB `.dgc`** by their big-endian hash.  Both declared
 identities hold.
 
+## The record chain
+
+The `.dgc` is a flat chain of records, packed to the byte (not aligned):
+
+    u32 size          bytes from here to the next record
+    u32 class hash    hash("MESH"), hash("SURFACE"), hash("BITMAP") ...
+    u32 self hash     the object the .ngc names
+    u32 name hash     its short name
+    ... payload ...
+
+`size` is a **size identity**: 2,027 of 2,036 hops land byte-exactly on the next record's own
+header and the other nine within 32 bytes, so the walk restarts rather than truncating.  On
+LEVEL07A it yields **3,673 records** - T3DNODE 2,763, TSURFACE 116, TVOLUME 107, TGA 102,
+TBITMAP 77, TMESH 52.
+
+## The mesh payload
+
+At a fixed `+116` from the record start, three streams then the strips:
+
+    u32 count, count * (f32 x, y, z)     positions
+    u32 count, count * (f32 u, v)        texture coordinates
+    u32 count, count * (f32 x, y, z)     normals
+    u32 strips, per strip:
+        u32 count, count * u16 index, u32 tag, u8 mode
+    strips * f32                         one value per strip
+
+Two identities say this is read correctly, and both are in the PROVEN class:
+
+* **unit length** - across all 52 meshes the worst normal is `|n| - 1 = 7.7e-07`.
+* **containment** - every strip index of every strip lands inside the position array on
+  **52 of 52** meshes (max 424 against 425 positions on the first).  Not the vacuous kind:
+  these are absolute floats with an explicit count, not a dequantised box.
+
+Both `mode` values are triangle **strips**, not fans: scored as strips, adjacent face normals
+agree at 0.82 (mode 1) and 0.81 (mode 2); scored as fans, at -0.66 and -0.38.
+
+Result on LEVEL07A alone: **52 meshes, 21,142 triangles, 13,559 vertices**, exported to glTF.
+
 ## What is left
 
-Walking from a mesh's hash to its geometry.  A `TMESH` hash appears twice - a reference and a
-definition - and the definition is followed by float-dense data (74% plausible big-endian `f32`
-in the 4 KB after `O_ECHAFAUDAGE_MESH.TMESH`).  The header between them is unread.
+Which stream indexes the texture coordinates and the normals.  Further index lists follow the
+strips, but the first of them reaches 356 where the file declares 354 texture coordinates, so
+the obvious reading is wrong and the reader ships positions only.  The `T3DNODE` transforms
+that would place each mesh in the level are also unread - meshes come out in local space.
