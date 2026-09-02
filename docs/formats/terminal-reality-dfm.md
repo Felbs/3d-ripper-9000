@@ -153,3 +153,31 @@ washed out and why a single global layout was never going to fit.
 What is still unknown is which columns are position, and the scale.  The narrow columns do not
 look like box-normalised quantisation - values in the hundreds, not spanning `0..65535` - so the
 dequantisation is not the simple box mapping this note assumed twice.
+
+### Segmenting the arrays by their constant field
+
+Sliding a 20-byte-strided window and asking, at each phase, how long a run of records shares the
+same leading `u16` locates the arrays without assuming where they start.
+
+The dominant marker is **`0x0400` (1024)**, holding constant across runs of up to **229
+records** on `soldier.dfm` and 123 on `mentor.dfm`, at several phases.  A second marker,
+`0x01FE` (510), holds for 130.
+
+Inside the 229-record run the columns separate clearly::
+
+    col  4    0 ..  253    78 distinct
+    col 12    6 .. 1018    59 distinct
+    col 14  343 .. 1008    52 distinct
+    col 16  256 ..  768   **5 distinct**
+    col  0, 2, 6, 8, 10, 18   full range, 83-104 distinct
+
+**Column 16 taking only five values across 229 records** is an enumerated field, not a
+coordinate - the values are `0x0100`, `0x0101`, `0x01FE`, `0x0300`, so the high byte is 1 or 3
+and the low byte is 0, 1 or 0xFE.  Columns 12 and 14, narrow and finely divided, are the
+plausible quantised coordinates.
+
+That is as far as this goes for now.  The stride is settled, the arrays are separable, and the
+columns are characterised - but which columns are position and what the scale is remain open,
+and the two obvious ways to decide it are the ones already recorded as discredited.  The next
+attempt should look for a **declared count** to match an array length against, since a size
+identity is the one oracle in this project that has never misled.
