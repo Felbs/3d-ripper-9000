@@ -105,3 +105,51 @@ Both dead oracles are now in `gcrip/oracles.py` graded `DISCREDITED` with these 
 next attempt does not spend its afternoon rediscovering them.  What is still true and useful is
 everything the part table gives: names, bone indices that resolve, and boxes that are real even
 if they cannot referee a layout.
+
+## The 20-byte stride, confirmed by the data rather than by arithmetic
+
+With both box oracles dead, the way in is to ask the bytes what their period is instead of
+proposing a layout and testing it.
+
+**Byte autocorrelation settles the stride.**  Measuring how often a byte equals the byte `s`
+later, over the whole geometry region:
+
+| stride | soldier.dfm | mentor.dfm |
+|---|---|---|
+| **20** | **0.363** | **0.287** |
+| 40 | 0.332 | 0.262 |
+| 60 | 0.319 | 0.251 |
+| *mean over all strides* | *0.103* | *0.102* |
+
+Twenty, with clean harmonics at forty and sixty.  That is the note's "20-byte vertex by size
+arithmetic" arrived at independently, and it is not a coincidence of one file.
+
+**And it is genuinely 20, not a multiple of something smaller.**  Windowed, there are large
+regions where stride-20 agreement holds at 0.41-0.43 while stride-12 and stride-4 fall to
+**0.004** - so the periodicity is 20-byte and nothing shorter.
+
+### Columns are locally constant, which is why global statistics said nothing
+
+Read as ten `u16` columns over the *whole* region, all ten look identical - full range, about
+2,000 distinct values each, nothing constant.  That is because the region is not one array.
+
+Inside a single 20-byte-periodic window (90 records at byte 7,778) the structure appears at
+once::
+
+    col  0   constant 510 across all 90 records
+    col  8   10 .. 245
+    col 16   688 .. 826   (49 distinct)
+    col 18   308 .. 516   (38 distinct)
+    the rest full-range
+
+A column that holds one value across 90 consecutive records is the classic confirmation that a
+stride is right - a wrong stride smears it.
+
+And the same signature turns up elsewhere at a different column: at byte 10,778 the ranges
+`688..826` and `308..516` sit at columns 4 and 6 rather than 16 and 18.  **So the tail holds
+several arrays whose column meanings differ**, which is exactly why whole-region statistics
+washed out and why a single global layout was never going to fit.
+
+What is still unknown is which columns are position, and the scale.  The narrow columns do not
+look like box-normalised quantisation - values in the hundreds, not spanning `0..65535` - so the
+dequantisation is not the simple box mapping this note assumed twice.
