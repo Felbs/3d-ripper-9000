@@ -229,6 +229,32 @@ MEDIA_EXTS = frozenset(
 )
 
 
+def _claimed_by_container(path: str, head: bytes) -> bool:
+    """True when a container plugin already walks this file, so its members are extracted
+    through their own formats and scanning the whole blob again is duplicated work.
+
+    Tiger Woods 2003 is the case that forced this: 273 of its files are EA ``SHOC`` ``.hog``
+    course archives of 2-5 MB, every one claimed by ``plugins/shoc.py`` and every one also
+    handed to the fallback scanner, where each costs up to ``BUDGET`` seconds and yields
+    nothing - a full scan of one finds no display lists at all.  273 x 45s against a 900s
+    per-disc budget means the scan never reaches the ``.skg``, which do hold geometry.
+
+    Fallback containers do not count.  ``plugins/generic.py`` is registered as one and claims
+    every file there is, so counting it would deprioritise the whole disc and change nothing.
+    """
+    from gcrip.plugins import container_plugins, is_fallback
+
+    for mod in container_plugins():
+        if is_fallback(mod):
+            continue
+        try:
+            if mod.is_container(path, head):
+                return True
+        except Exception:  # noqa: BLE001
+            continue
+    return False
+
+
 def _looks_like_media(path: str) -> bool:
     """True for audio/video by directory or extension - see :data:`MEDIA_DIRS`."""
     parts = [q for q in re.split(r"[\\/]", path.lower()) if q]
@@ -439,21 +465,22 @@ def _run_plugins(src, manifest, result, game_dir, quiet, thumbnails, limit, path
             continue
         mods = plugins_for(e.path, head, e.size)
         if mods:
-            cands.append((e, mods))
+            cands.append((e, mods, _claimed_by_container(e.path, head)))
     if not cands:
         return
     if limit:
         cands = cands[:limit]
-    # real formats in disc order, then fallback-only files biggest first - but media
-    # last whatever its size, so the per-disc budget is not eaten by movies and audio
+    # real formats in disc order, then fallback-only files biggest first - but media and
+    # archives a container plugin already walks go last whatever their size, so the per-disc
+    # scan budget is not eaten by movies, audio, or blobs whose members are handled anyway
     from gcrip.plugins import is_fallback
 
     real = [c for c in cands if not all(is_fallback(m) for m in c[1])]
     fb = sorted(
         (c for c in cands if all(is_fallback(m) for m in c[1])),
-        key=lambda c: (_looks_like_media(c[0].path), -c[0].size),
+        key=lambda c: (_looks_like_media(c[0].path), c[2], -c[0].size),
     )
-    cands = real + fb
+    cands = [(e, mods) for e, mods, _ in real + fb]
     for mod in {m for _, mods in cands for m in mods}:
         begin = getattr(mod, "begin_disc", None)
         if begin:

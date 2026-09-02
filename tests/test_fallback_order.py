@@ -52,3 +52,31 @@ def test_media_sorts_after_geometry_of_every_size():
         "files/Data/Movies/intro.ngc",
         "files/sound/bank.dsp",
     ]
+
+
+def test_container_archives_sort_after_ordinary_files():
+    """Tiger Woods 2003: 273 EA SHOC `.hog` of 2-5 MB, all claimed by plugins/shoc.py and all
+    bigger than the `.skg` that actually hold geometry.  Scanning them as raw blobs finds no
+    display lists and spends the whole per-disc budget, so the `.skg` were never reached."""
+    files = [  # (path, size, claimed by a real container plugin)
+        ("files/Data/Movies/intro.ngc", 100 << 20, False),
+        ("files/Data/01_Peb/hole_01/hole.hog", 5 << 20, True),
+        ("files/Data/Char/35char.skg", 512_000, False),
+        ("files/Data/Tex/18alltex.fxg", 1_236_992, False),
+    ]
+    order = sorted(files, key=lambda c: (_looks_like_media(c[0]), c[2], -c[1]))
+    assert [p.rsplit("/", 1)[1] for p, _, _ in order] == [
+        "18alltex.fxg",
+        "35char.skg",
+        "hole.hog",
+        "intro.ngc",
+    ]
+
+
+def test_fallback_containers_do_not_deprioritise_everything():
+    """plugins/generic.py is a registered container that claims every file there is.  Counting
+    it would mark the whole disc "claimed" and change no ordering at all."""
+    from gcrip.plugins import container_plugins, is_fallback
+
+    fallbacks = [m for m in container_plugins() if is_fallback(m)]
+    assert [getattr(m, "NAME", m.__name__) for m in fallbacks] == ["generic"]
