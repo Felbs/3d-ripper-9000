@@ -104,6 +104,26 @@ triangles after, 0 failed, 941 s** - and its 100 MB `intro.ngc` sorted 381st of 
 re-rips the 201 discs where at least eight of the ten biggest files are media *and* the disc
 reports zero triangles.
 
+## "Claimed but empty" is now a recorded outcome (2026-09-02)
+
+The structural fix for every silent-drop bug this session found one plugin at a time.
+
+`_run_plugins` deleted the record when a plugin returned no scenes - *"not this plugin's file
+after all"*.  True for a **fallback**, which probes everything it is offered.  False for an
+ordinary plugin, whose `detect()` said it recognised the format: returning nothing is a fact,
+and deleting the record made *silently read as empty* indistinguishable from *nobody claimed
+it*.
+
+`ModelResult.empty` now records it, and the batch row carries `claimed_empty` and
+`empty_examples` beside `failed` and `fail_examples`.  It is **not** counted as a failure - a
+skeleton-only EAGL object legitimately has no mesh - so the three outcomes are distinct:
+exported, failed, claimed-empty.  The same split runs inside `eagl.extract`: barren **with**
+warnings raises, barren **without** returns empty.
+
+This is what makes the next census able to see the class at all.  Note that rows written before
+this change have no `claimed_empty` field, including everything wave 21 produced - it binds its
+plugins at import.
+
 ## A failure list under-counts a silent bug (2026-09-02)
 
 Worth writing down because it nearly cost this session a result.  The re-rip queue was built
