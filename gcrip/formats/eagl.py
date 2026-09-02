@@ -309,6 +309,15 @@ def _packet_entries(elf: _Elf, o_shader: int) -> list[tuple[int, int | None, str
     return out
 
 
+#: How many matrix index bytes precede a vertex's attribute u16s, in the order tried.
+#:
+#: Two and none are what shipped; **one** is FIFA's shadow packets, whose vertices are five
+#: bytes - `2d 00 00 00 00` - and it is tried LAST on purpose.  A display list that chains at
+#: `2*nattr` also chains at `1 + 2*nattr`, so putting one second re-read packets that were
+#: already correct and cost two triangles on FIFA 2003.  Order is not cosmetic here.
+MATRIX_BYTE_ORDER = (2, 0, 1)
+
+
 def _streams_after_anchor(ents, i_m: int) -> list:
     """The attribute/display-list streams that follow the matrix anchor.
 
@@ -395,22 +404,37 @@ def _decode_packet(elf: _Elf, o_shader: int, shader: str, warn: list[str]) -> Pa
     attrs = streams[:dl_idx]
     dl = d[dlp : dlp + size]
     nattr = len(attrs)
-    stride = 2 + 2 * nattr  # [posmtx][texmtx] + u16 per stream
-    prims = _chain(dl, stride)
-    if prims is None:
-        stride = 2 * nattr  # no matrix bytes (static objects)
+    # A vertex carries a u16 per attribute stream, preceded by nothing, one matrix index, or
+    # two.  FIFA's shadow packets use exactly one - `98 00 07` then seven records of
+    # `2d 00 00 00 00`, five bytes each - and trying only 2 and 0 matrix bytes missed them.
+    # Order matters: 2 then 0 are what shipped, and one matrix byte is tried only after both,
+    # so no display list that already chained can be re-read a different way.  Putting 1 second
+    # instead cost two triangles on this disc - a packet that legitimately chains at 2*nattr
+    # also chains at 1 + 2*nattr, and the first match wins.
+    for matrix_bytes in MATRIX_BYTE_ORDER:
+        stride = matrix_bytes + 2 * nattr
         prims = _chain(dl, stride)
-        if prims is None:
-            warn.append(f"packet @{o_shader:#x}: display list does not chain at stride {stride}")
-            return None
+        if prims is not None:
+            break
+    else:
+        warn.append(
+            f"packet @{o_shader:#x}: display list chains at none of "
+            f"{sorted({m + 2 * nattr for m in MATRIX_BYTE_ORDER})}"
+        )
+        return None
     rows = np.concatenate(
         [
             np.frombuffer(dl, np.uint8, count * stride, off).reshape(count, stride)
             for _, count, off in prims
         ]
     )
-    has_mtx = stride == 2 + 2 * nattr
-    f0 = 2 if has_mtx else 0
+    # The attribute u16s start after whatever matrix bytes the record carries, so this has to
+    # be the count the stride search actually settled on.  Deriving it from the stride only
+    # worked while the choice was two-or-none: with one matrix byte it read the indices a byte
+    # early and every one came out enormous ("index 14592 outside 56 vertices").
+    f0 = matrix_bytes
+    # the skin table is indexed by the position-matrix slot, which only the two-byte form has
+    has_mtx = matrix_bytes == 2
     idx = (rows[:, f0].astype(np.uint32) << 8) | rows[:, f0 + 1]
     nv, pos_ptr, _ = attrs[0]
     if idx.max() >= nv or pos_ptr + nv * 6 > len(d):

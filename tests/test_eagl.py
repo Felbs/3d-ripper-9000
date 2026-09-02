@@ -339,3 +339,25 @@ def test_a_single_matrix_anchor_still_collects_the_same_streams():
         (1, None, "__EAGL::GeoPrimState:::x"),
     ]
     assert [g[1] for g in eagl._streams_after_anchor(ents, 0)] == [16, 64]
+
+
+def test_matrix_byte_order_tries_the_new_form_last():
+    """A display list that chains at 2*nattr also chains at 1 + 2*nattr, so the one-matrix-byte
+    form has to be tried after both shipped forms.  Putting it second re-read packets that were
+    already decoding correctly and cost two triangles on FIFA 2003."""
+    from gcrip.formats import eagl
+
+    assert eagl.MATRIX_BYTE_ORDER == (2, 0, 1)
+    assert eagl.MATRIX_BYTE_ORDER[-1] == 1
+
+
+def test_attribute_offset_follows_the_matrix_bytes():
+    """The attribute u16s start after whatever matrix bytes the record carries.  Deriving that
+    from the stride only worked while the choice was two-or-none; with one it read the indices a
+    byte early and every index came out enormous."""
+    import inspect
+
+    from gcrip.formats import eagl
+
+    src = inspect.getsource(eagl._decode_packet)
+    assert "f0 = matrix_bytes" in src, "the attribute offset must be the chosen matrix-byte count"

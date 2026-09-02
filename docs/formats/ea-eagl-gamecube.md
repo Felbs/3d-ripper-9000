@@ -396,3 +396,28 @@ That class of warning is now gone from the disc.  What is left is 27 warnings, a
 index-out-of-range, 1 `no display list among 5 streams`, 1 other unknown header.  Every one of
 those is a lead with an address attached, which is the whole point of having made the drops
 speak.
+
+### A vertex can carry one matrix byte, not just two or none
+
+The next warning the disc gave up was `display list does not chain at stride 4`, eight times.
+Printing the list settles it in one line - `98 00 07` is a seven-vertex strip and the records
+that follow are **five bytes each**::
+
+    98 00 07  2d 00 00 00 00  2d 00 00 00 00  2d 00 01 00 01  ...
+
+One position-matrix byte, then a `u16` per attribute stream.  The code tried `2 + 2*nattr`
+(both matrix bytes) and `2*nattr` (neither) and nothing between.
+
+Two details made this a three-step fix rather than one:
+
+* **Order.** A list that chains at `2*nattr` *also* chains at `1 + 2*nattr`, so trying one
+  second re-read packets that were already correct and lost two triangles.  `MATRIX_BYTE_ORDER`
+  is `(2, 0, 1)` and the constant carries that reason.
+* **The attribute offset.** `f0` was derived from the stride - `2 if stride == 2 + 2*nattr else
+  0` - which is only right when the choice is two-or-none.  With one matrix byte it read the
+  indices a byte early and every one came out enormous: *"index 14592 outside 56 vertices"*.  It
+  is now the matrix-byte count the search actually settled on.
+
+**FIFA 2003 finishes at 89 of 89 objects and 46,251 triangles**, from 0 at the start of this
+work.  The warnings that remain are 11 `unknown header` on *skeletons*, five index complaints
+and one missing display list - none of them geometry being lost.
