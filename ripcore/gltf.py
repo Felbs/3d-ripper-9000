@@ -329,7 +329,13 @@ def export(scene: Scene, out_base: Path, *, thumbnail: bool = True) -> ExportSta
 
     gltf["accessors"] = buf.accessors
     gltf["bufferViews"] = buf.views
+    # The buffer is named after the model, and a container of the same name expands into a
+    # DIRECTORY beside it - `pld/pl01.bin/` from a `pl01.bin` archive against `pl01.gltf`'s
+    # buffer.  Writing a file where a directory sits is a PermissionError on Windows, and it
+    # killed the export rather than the one name.
     bin_name = f"{out_base.name}.bin"
+    if (out_base.parent / bin_name).is_dir():
+        bin_name = f"{out_base.name}_buf.bin"
     gltf["buffers"] = [{"byteLength": len(buf.data), "uri": bin_name}]
     if scene.extras:
         gltf["asset"]["extras"] = scene.extras
