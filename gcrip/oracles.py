@@ -116,6 +116,25 @@ ORACLES: tuple[Oracle, ...] = (
         "it and the result is a weak negative, not a proof.",
     ),
     Oracle(
+        "box containment for quantised vertices",
+        "decoded positions fall inside the part's declared bounding box",
+        DISCREDITED,
+        "Proposed twice for Terminal Reality's `_dfm`, as 'the oracle the vertex search lacked'.  "
+        "It is **vacuous**: if positions are quantised and dequantised as "
+        "box_min + raw/FULL * (box_max - box_min), containment is guaranteed by construction "
+        "whatever the stride, byte order or offset.  It can only test a layout that stores "
+        "positions as absolute floats - which `_dfm` does not, its tail being 1.9% plausible f32.",
+    ),
+    Oracle(
+        "quantised axis uses its full range",
+        "a tight box implies raw u16 positions span 0..65535",
+        DISCREDITED,
+        "The intended repair for the one above, and no better.  Every candidate stride from 12 to "
+        "32 bytes produced a column spanning exactly 0..65535 - and every one sat at "
+        "offset stride-1, straddling record boundaries.  With a few thousand samples arbitrary "
+        "bytes span the full range, so this passes on noise.",
+    ),
+    Oracle(
         "printable text",
         "the output decodes to a high fraction of printable characters",
         DISCREDITED,

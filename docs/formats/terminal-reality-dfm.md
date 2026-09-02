@@ -75,3 +75,33 @@ using it needs the part-to-vertex mapping first.
 The 36-byte records are **not** per-part 3x3 transforms, which was worth ruling out since the
 skinning wants bind matrices: read as nine floats from the first plausible offsets the rows are
 not unit length (0.42, 0.53, 0.61) and two of them share components.
+
+## Correction: the box oracle I proposed is vacuous (2026-09-02)
+
+This note said twice that the per-part boxes were "the oracle the vertex search lacked".  They
+are not, and the reason is structural rather than a matter of tuning.
+
+**If positions are quantised, dequantising them into the box guarantees they land inside it** -
+`box_min + raw/FULL * (box_max - box_min)` cannot produce an outside value whatever the stride,
+byte order or offset is.  The test can only discriminate for a layout that stores absolute
+floats, and `_dfm` does not: measured, the tail holds just **two float runs totalling 571 words,
+1.9% of it**.
+
+Running it anyway confirms the emptiness.  Every candidate scores a longest in-box run of
+**exactly 93 consecutive vertices, for every one of the 59 parts alike** - because the part boxes
+all sit around the body centre and overlap almost completely, so containment says nothing about
+*which* part a vertex belongs to either.
+
+**The repair was no better.**  "A tight box means the raw axis must span 0..65535" sounds
+non-vacuous, and every stride from 12 to 32 bytes produced a column spanning exactly that - each
+one at offset `stride - 1`, straddling record boundaries.  A few thousand samples of arbitrary
+bytes span the full range.
+
+The one oracle proven on quantised geometry in this project - PHM's *index values run 0 to
+vertices-1 exactly* - finds **nothing** here: zero candidate windows on `soldier.dfm`, and only
+two or three unconvincing ones on `mentor.dfm` (max index 214, 132 distinct of 512).
+
+Both dead oracles are now in `gcrip/oracles.py` graded `DISCREDITED` with these reasons, so the
+next attempt does not spend its afternoon rediscovering them.  What is still true and useful is
+everything the part table gives: names, bone indices that resolve, and boxes that are real even
+if they cannot referee a layout.

@@ -24,9 +24,17 @@ def test_every_oracle_states_its_evidence():
 def test_discredited_oracles_record_how_they_failed():
     """The whole point: the next attempt must not re-run these hoping for a different answer."""
     bad = oracles.by_grade(oracles.DISCREDITED)
-    assert {o.name for o in bad} == {"printable text", "input fully consumed"}
+    assert {o.name for o in bad} == {
+        "printable text",
+        "input fully consumed",
+        "box containment for quantised vertices",
+        "quantised axis uses its full range",
+    }
     for o in bad:
-        assert any(w in o.evidence for w in ("wrong", "meaningless", "nothing else")), (
+        assert any(
+            w in o.evidence
+            for w in ("wrong", "meaningless", "nothing else", "vacuous", "passes on noise")
+        ), (
             f"{o.name} is marked discredited but does not say what it failed to distinguish"
         )
 
