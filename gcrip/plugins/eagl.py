@@ -154,4 +154,17 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
                 "variations_are": "kit toggle sets (enable_* flags), not LODs",
             }
             scenes.append(scene)
+    if not scenes and obj.warnings:
+        # An object that yields nothing must not also yield nothing to read.  obj.warnings is
+        # attached to a Scene, so with no Scene every diagnostic was discarded and the file
+        # reported a healthy zero - the same silence the readers were fixed for, one level up.
+        # Fight Night Round 2 dropped 247 objects this way with not one line of explanation.
+        counts: dict[str, int] = {}
+        for w in obj.warnings:
+            key = w.split(": ", 1)[-1]
+            counts[key] = counts.get(key, 0) + 1
+        top = sorted(counts.items(), key=lambda kv: -kv[1])[:3]
+        raise eagl.EaglError(
+            "no models; " + ", ".join(f"{k} (x{n})" for k, n in top)
+        )
     return scenes

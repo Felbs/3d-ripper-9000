@@ -438,3 +438,32 @@ Checking the shape instead of the literal bytes gives FIFA 2003 **11 skinned sce
 largest carrying 51 joints**, where it had none.  The one header on the disc that is genuinely
 not a skeleton - `0743 0050 c3d4`, whose marker is `0050` - is still rejected, and there is a
 test holding both halves of that.
+
+## Do the FIFA 2003 fixes generalise?  Partly - and the honest answer is no
+
+Seven defects came off this reader in sequence, all found on one disc.  Checking a second,
+**Fight Night Round 2**, answers the obvious question and the answer is not the flattering one.
+
+Its 247 `.ord`/`.orl` pairs are found, joined, and read: 121 symbols each, 76 `__Bone`, 2
+`__Model`, 275 shader references, section table valid.  And **0 objects with geometry**.
+
+First, one more layer of silence, and the worst of them.  `extract` attaches `obj.warnings` to a
+`Scene`; an object that produces no `Scene` therefore discarded *every* diagnostic it had
+generated.  Fight Night lost 247 objects without a line of explanation, and the readers'
+warnings - carefully added the commit before - never reached the report.  A barren object now
+raises with a summary of its own warnings.
+
+What it then says is: **`no display list among 3 streams`**.  Dumping the streams shows why, and
+it is not a bug:
+
+    count 125  ptr 1596   3e 6a ca 8e 42 2d 00 56 ...   op 0x38
+    count 125  ptr 5348   02 e1 d4 a0 2e f7 fc ad ...   op 0x00
+    count 125  ptr 7852   b9 2d 14 6e 3c 30 61 40 ...   op 0xb8
+
+Three streams of **equal count**, all holding floats, none opening on a GX primitive opcode
+(`0x80`, `0x90`, `0x98`, `0xa0`).  This generation stores parallel attribute arrays and has no
+display list in the packet at all - the primitives must be described somewhere else.
+
+So the seven fixes are FIFA-2003-shaped.  They take that disc from 0 to 89 of 89 objects, and
+they do nothing for Fight Night, which needs its own reading.  What *did* generalise is the
+diagnostics: the disc now says what is missing instead of reporting a healthy zero.

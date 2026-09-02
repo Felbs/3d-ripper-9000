@@ -381,3 +381,29 @@ def test_skeleton_header_still_rejects_other_data():
     assert not eagl._skeleton_header(bytes.fromhex("07430050c3d40000"), 0)  # marker is 0050
     assert not eagl._skeleton_header(bytes.fromhex("c0da01fec0db0000"), 0)  # tags differ
     assert not eagl._skeleton_header(b"\xc0\xda\x01", 0)                    # too short
+
+
+def test_an_object_with_no_models_reports_why():
+    """obj.warnings is attached to a Scene, so an object that produced no Scene discarded every
+    diagnostic and the file reported a healthy zero.  Fight Night Round 2 lost 247 objects that
+    way without a line of explanation."""
+    import pytest
+
+    from gcrip.formats import eagl
+    from gcrip.plugins import eagl as peagl
+
+    class Obj:
+        models = []
+        bones = []
+        warnings = ["packet @0x10: no display list among 3 streams"] * 3
+
+    saved_parse, saved_join = eagl.parse, eagl.join
+    eagl.parse = lambda data: Obj()
+    eagl.join = lambda a, b: a
+    try:
+        with pytest.raises(eagl.EaglError) as got:
+            peagl.extract(b"\x7fELF" + bytes(64), "x/y.ord", None)
+    finally:
+        eagl.parse, eagl.join = saved_parse, saved_join
+    assert "no models" in str(got.value)
+    assert "no display list among 3 streams (x3)" in str(got.value)
