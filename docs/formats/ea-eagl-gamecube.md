@@ -356,3 +356,21 @@ nothing at all.
 last it is found first and the answer is unchanged - there is a test for that.  A check on MVP
 Baseball 2004 came out 0 against 0, which confirms no regression but proves nothing about the
 gain: its `.orl` halves live in containers that sample did not read.
+
+### Every dropped packet now says why
+
+`_decode_packet` had five `return None` paths and only two of them recorded a warning.  The
+three silent ones are what let FIFA 2003 report a healthy zero for 89 objects: a packet that
+returns nothing without saying so is indistinguishable, in the report, from a disc that has no
+geometry.
+
+All five now append a warning, and the effect is immediate.  Of the objects on FIFA 2003 that
+*still* yield nothing after the three fixes, the reasons are no longer a mystery:
+
+| warning | packets |
+|---|---|
+| `0 attribute streams, need at least 2` | 32 |
+| `unknown header c61601fec6160000` | 4 |
+
+Those are leads a future session can pick up from the report itself rather than by
+instrumenting the parser by hand, which is how this one had to find them.

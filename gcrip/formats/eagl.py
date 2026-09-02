@@ -335,6 +335,9 @@ def _decode_packet(elf: _Elf, o_shader: int, shader: str, warn: list[str]) -> Pa
     ents = _packet_entries(elf, o_shader)
     i_m = next((i for i, e in enumerate(ents) if e[2] and e[2].startswith("__const MATRIX4")), None)
     if i_m is None:
+        # every one of these used to be silent, and a silent drop reads as "this disc has no
+        # geometry" - which is how FIFA 2003 reported a healthy zero for 89 objects
+        warn.append(f"packet @{o_shader:#x}: no __const MATRIX4 anchor among {len(ents)} entries")
         return None
     # skin table: the counted pointer right before the const MATRIX4 tag, one row per GX
     # position-matrix slot: 4 f32 weights whose low mantissa byte carries the bone index
@@ -358,6 +361,7 @@ def _decode_packet(elf: _Elf, o_shader: int, shader: str, warn: list[str]) -> Pa
         streams.append(ents[j])
         j += 1
     if len(streams) < 2:
+        warn.append(f"packet @{o_shader:#x}: {len(streams)} attribute streams, need at least 2")
         return None
     # The display list is normally the last stream, but not always: FIFA 2003's static objects
     # carry a trailing one-entry pointer (the `__EAGL::TAR` texture) after it, and taking
@@ -366,6 +370,11 @@ def _decode_packet(elf: _Elf, o_shader: int, shader: str, warn: list[str]) -> Pa
     # opcode - the same test that validated the choice before, applied as the choice.
     dl_idx = _display_list_index(streams, d)
     if dl_idx is None or dl_idx < 1:
+        warn.append(
+            f"packet @{o_shader:#x}: no display list among {len(streams)} streams"
+            if dl_idx is None
+            else f"packet @{o_shader:#x}: display list is the only stream"
+        )
         return None
     size, dlp, _ = streams[dl_idx]
     attrs = streams[:dl_idx]
