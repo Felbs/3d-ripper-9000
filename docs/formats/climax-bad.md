@@ -89,3 +89,33 @@ names the earlier survey found - and 12-byte records of two big-endian floats fr
 Inside it are versioned sub-blocks: `BOG 1.01` (114), `ROM 1.26` (51), `CUBAN 1.02` (23) and
 `POINT 1.00`.  That is the directory this note asked for, but reading it is not worth doing
 until the payload it points into is trustworthy.
+
+## The framing is right; the match position is not
+
+Decoding ATV's whole stream with the scaled limit settles what the fragmentary text meant.
+
+* **The input is consumed exactly**: 98,812,344 of 98,812,344 bytes, 100.0000%, and the output
+  stops on its own at 274,073,929 without reaching the limit.  Landing precisely on the final
+  byte is not something a desynced stream does, so the **framing is correct** - the flag bits,
+  the literal/match split and the match lengths all read right.
+* That also measures the truncation the old cap caused: **5,638,473 bytes**, the last 2% of the
+  archive, were being silently dropped.
+
+**But exact consumption cannot vindicate the match position**, and this is the point that
+matters.  `pos` is only ever used to *read* the ring; the input pointer advances identically
+whatever value it takes.  A completely wrong `pos` consumes exactly as much input as a correct
+one.  So 100% consumption is evidence about the framing and **no** evidence about `pos`.
+
+* **The tail is 100% printable and meaningless**: `ptteptoptpeoawsoptpeoaw ytpwstt`.
+  This matters beyond ATV, because "decodes to 100% printable text" is the evidence this note
+  originally gave for Hot Wheels.  **That oracle is weak** - it passes on this garbage - and the
+  Hot Wheels result should be re-checked against something stronger before it is relied on.
+
+Taken together: framing right, content wrong, and the one field the consumption check cannot see
+is exactly the one the fragmented text implicates.  The match position formula is where to look.
+
+For the record, the ring contents argue the same way from the other side.  At the point where
+`mass distri` breaks off, the emitted bytes are `u` and the ring around the referenced
+position holds `t u v w x y z` - a clean counting big-endian
+`u16` sequence.  That region of the ring is *correct data*, just not the data this match wanted:
+the literals that fill the ring are fine and the pointer into it is not.
