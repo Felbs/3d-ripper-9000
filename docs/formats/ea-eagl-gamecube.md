@@ -336,3 +336,23 @@ sibling fix.
 
 So three defects were stacked on this disc, and all three had to go before a triangle came out:
 the sibling lookup, the prefix-as-length join, and the display-list choice.
+
+### Measured across the whole disc
+
+Taking all six EAGL containers on FIFA 2003 together - `static`, `pstatic`, `staticps`, `disk`,
+`ngccache1`, `ngccache2` - and running the old rule against the new one:
+
+| display-list rule | objects with geometry | triangles |
+|---|---|---|
+| last stream (old) | **0 of 89** | 0 |
+| first stream opening on a GX opcode (new) | **81 of 89** | **44,927** |
+
+The old rule is simulated faithfully - the last stream, accepted only if it passes the same
+bounds and opcode test the old code applied inline - so this is like for like.  Every EAGL
+object on this disc carries the trailing texture pointer, which is why the disc reported
+nothing at all.
+
+**No regression elsewhere**: the new rule searches from the end, so where the display list *is*
+last it is found first and the answer is unchanged - there is a test for that.  A check on MVP
+Baseball 2004 came out 0 against 0, which confirms no regression but proves nothing about the
+gain: its `.orl` halves live in containers that sample did not read.
