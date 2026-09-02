@@ -118,3 +118,50 @@ def test_generic_plugin_nesting_cap():
     assert plug._level_of("files/a.bin/g0003") == "g"
     assert plug._level_of("files/a.bin/g0003/gg0001") is None
     assert not plug.is_container("x/gg0001", head)
+
+
+def test_find_toc_is_deterministic():
+    """`find_toc` used to stop on a 0.15-second deadline, which made `generic.expand`
+    non-deterministic: the same bytes gave a different member list depending on machine load.
+
+    The manifest names a container's members once and the rip fetches them later, so when the
+    two disagreed the model died on a bare KeyError on its own path - 36 recorded examples
+    across 8 discs, every one of them a `gNNNN` name, which is generic's own scheme.
+    """
+    import struct
+
+    import numpy as np
+
+    rng = np.random.default_rng(11)
+    noise = bytes(rng.integers(0, 256, 1 << 18, dtype=np.uint8))
+    table = b"".join(struct.pack(">2I", 1024 + i * 256, 256) for i in range(64))
+    real = table + bytes(1024 - len(table)) + bytes(rng.integers(0, 256, 64 * 256, dtype=np.uint8))
+
+    for blob in (noise, real):
+        results = set()
+        for _ in range(5):
+            toc = generic.find_toc(blob)
+            results.add(None if toc is None else tuple((m.offset, m.size) for m in toc))
+        assert len(results) == 1, "find_toc must be a pure function of its bytes"
+
+
+def test_expand_is_deterministic():
+    """The property that actually matters: the same container always yields the same members."""
+    import struct
+
+    import numpy as np
+
+    rng = np.random.default_rng(5)
+    table = b"".join(struct.pack(">2I", 512 + i * 128, 128) for i in range(32))
+    blob = table + bytes(512 - len(table)) + bytes(rng.integers(0, 256, 32 * 128, dtype=np.uint8))
+    runs = {tuple(n for n, _ in generic.expand(blob)) for _ in range(5)}
+    assert len(runs) == 1
+
+
+def test_the_work_cap_is_not_a_clock():
+    """A wall-clock budget cannot give a repeatable answer; the cap counts work instead."""
+    import inspect
+
+    src = inspect.getsource(generic)
+    assert "TOC_MAX_WORK" in src
+    assert "time.monotonic" not in src, "find_toc must not depend on wall-clock time"

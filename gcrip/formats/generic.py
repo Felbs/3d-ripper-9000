@@ -15,7 +15,6 @@ less random than what it came from.
 
 from __future__ import annotations
 
-import time
 import zlib
 from dataclasses import dataclass
 
@@ -88,14 +87,22 @@ def _header_pointers(data: bytes, n: int) -> list[int]:
     return sorted(out)
 
 
-TOC_BUDGET = 0.15  # seconds per call: return the best table found so far when it runs out
+#: Work cap per call, counted in (base, stride) pairs examined, NOT in seconds.
+#:
+#: This used to be a 0.15-second deadline, and that made `expand()` **non-deterministic**: the
+#: same bytes gave a different member list depending on machine load.  The manifest walk names a
+#: container's members once and the rip fetches them later, so when the two disagreed the model
+#: died on a bare `KeyError` on its own path - 36 recorded examples across 8 discs, all of them
+#: `generic`'s own `gNNNN` member names.  A container expansion has to be a pure function of its
+#: bytes.
+TOC_MAX_WORK = 4096
 
 
 def find_toc(
     data: bytes,
     max_scan: int = 512,
     max_rows: int = 2048,
-    budget: float = TOC_BUDGET,
+    max_work: int = TOC_MAX_WORK,
     offset_only: bool = True,
 ) -> list[Member] | None:
     """Look for an (offset, size) record table near the start of the blob (or where a
@@ -112,13 +119,14 @@ def find_toc(
     head_words = min(n // 4, (max(bases) // 4) + max_rows * 16 + 16)
     words = np.frombuffer(data, ">u4", head_words).astype(np.int64)
     best: tuple[float, list[Member]] | None = None
-    deadline = time.monotonic() + budget
+    work = 0
     # base-major: the first bases (where real tables live) see every stride before the
-    # budget can run out
+    # work cap can run out
     for base in bases:
-        if time.monotonic() > deadline:
+        if work >= max_work:
             return best[1] if best else None
         for stride in range(4, 65, 4):
+            work += 1
             cols = stride // 4
             b = base // 4
             rows = min(max_rows, (len(words) - b) // cols)
