@@ -421,3 +421,20 @@ Two details made this a three-step fix rather than one:
 **FIFA 2003 finishes at 89 of 89 objects and 46,251 triangles**, from 0 at the start of this
 work.  The warnings that remain are 11 `unknown header` on *skeletons*, five index complaints
 and one missing display list - none of them geometry being lost.
+
+### The skeleton magic was a tag, not a magic
+
+The last warning class on the disc was `unknown header c61601fec6160000`, eleven times, from
+`_parse_skeleton`.  Set beside the constant it was checked against, the answer is immediate:
+
+    _SKEL_MAGIC   c0da 01fe c0da
+    FIFA 2003     c616 01fe c616
+
+The same **shape** with a different tag - a `u16`, the marker `01 fe`, then the same `u16`
+again.  The word that follows is the bone count, and it confirms the reading: **51, against
+exactly 51 `__Bone` symbols** in the same object.
+
+Checking the shape instead of the literal bytes gives FIFA 2003 **11 skinned scenes, the
+largest carrying 51 joints**, where it had none.  The one header on the disc that is genuinely
+not a skeleton - `0743 0050 c3d4`, whose marker is `0050` - is still rejected, and there is a
+test holding both halves of that.

@@ -361,3 +361,23 @@ def test_attribute_offset_follows_the_matrix_bytes():
 
     src = inspect.getsource(eagl._decode_packet)
     assert "f0 = matrix_bytes" in src, "the attribute offset must be the chosen matrix-byte count"
+
+
+def test_skeleton_header_matches_the_shape_not_a_fixed_tag():
+    """The check was an exact six-byte magic, c0da 01fe c0da.  FIFA 2003's skeletons are
+    c616 01fe c616 - the same shape with a different tag - and eleven of them were thrown away.
+    What is constant is a u16 tag, the marker 01 fe, then the same tag again."""
+    from gcrip.formats import eagl
+
+    assert eagl._skeleton_header(bytes.fromhex("c0da01fec0da0000"), 0)  # the shipped tag
+    assert eagl._skeleton_header(bytes.fromhex("c61601fec6160000"), 0)  # FIFA 2003
+    assert eagl._skeleton_header(bytes.fromhex("0000") + bytes.fromhex("abcd01feabcd"), 2)
+
+
+def test_skeleton_header_still_rejects_other_data():
+    """The one header left on FIFA 2003 that is genuinely not a skeleton must stay rejected."""
+    from gcrip.formats import eagl
+
+    assert not eagl._skeleton_header(bytes.fromhex("07430050c3d40000"), 0)  # marker is 0050
+    assert not eagl._skeleton_header(bytes.fromhex("c0da01fec0db0000"), 0)  # tags differ
+    assert not eagl._skeleton_header(b"\xc0\xda\x01", 0)                    # too short

@@ -484,8 +484,23 @@ def _decode_packet(elf: _Elf, o_shader: int, shader: str, warn: list[str]) -> Pa
 # ---------------------------------------------------------------------------
 
 
-_SKEL_MAGIC = bytes.fromhex("c0da01fec0da")
+_SKEL_MAGIC = bytes.fromhex("c0da01fec0da")  # the shipped tag; see _skeleton_header
+_SKEL_MARK = bytes.fromhex("01fe")
 _BONE_REC = 112  # scale3 parent quat4 trans3 id | inverse bind 4x4
+
+
+def _skeleton_header(d: bytes, sk: int) -> bool:
+    """Whether a ``__Skeleton`` table starts here.
+
+    The check used to be an exact six-byte magic, ``c0da 01fe c0da``.  FIFA 2003's is
+    ``c616 01fe c616`` - the same **shape** with a different tag - and eleven skeletons on that
+    disc were thrown away for it.  What is actually constant is the structure: a ``u16`` tag,
+    the marker ``01 fe``, then the same ``u16`` tag again.  The bone count that follows is what
+    confirms it, and it does: 51, against exactly 51 ``__Bone`` symbols in the same object.
+    """
+    if sk + 6 > len(d):
+        return False
+    return d[sk + 2 : sk + 4] == _SKEL_MARK and d[sk : sk + 2] == d[sk + 4 : sk + 6]
 
 
 def _parse_skeleton(elf: _Elf, warn: list[str]) -> list[Bone]:
@@ -502,7 +517,7 @@ def _parse_skeleton(elf: _Elf, warn: list[str]) -> list[Bone]:
         return [
             Bone(names[k], None, (0, 0, 0), (0, 0, 0, 1), (1, 1, 1), ident) for k in sorted(names)
         ]
-    if d[sk : sk + 6] != _SKEL_MAGIC:
+    if not _skeleton_header(d, sk):
         warn.append(f"skeleton @{sk:#x}: unknown header {d[sk : sk + 8].hex()}")
         return []
     count = elf.u32(sk + 8)
