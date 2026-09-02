@@ -309,6 +309,25 @@ def _packet_entries(elf: _Elf, o_shader: int) -> list[tuple[int, int | None, str
     return out
 
 
+def _streams_after_anchor(ents, i_m: int) -> list:
+    """The attribute/display-list streams that follow the matrix anchor.
+
+    A packet can bind **more than one** matrix - FIFA's shadow packets carry
+    ``gpModelViewMatrix`` and ``gpViewMatrix`` back to back - and the collection loop stops at
+    the first tagged entry.  Anchoring on the first of the run therefore found zero streams and
+    dropped the packet, which is what the "0 attribute streams" warning was reporting on 32 of
+    FIFA 2003's packets.  Skip the whole run of matrix tags, then collect.
+    """
+    j = i_m + 1
+    while j < len(ents) and ents[j][2] and ents[j][2].startswith("__const MATRIX4"):
+        j += 1
+    out = []
+    while j < len(ents) and ents[j][1] is not None and ents[j][2] is None:
+        out.append(ents[j])
+        j += 1
+    return out
+
+
 def _display_list_index(streams, d) -> int | None:
     """Which stream is the display list.
 
@@ -355,11 +374,7 @@ def _decode_packet(elf: _Elf, o_shader: int, shader: str, warn: list[str]) -> Pa
                 slot_bones = slot_weights = None
             else:
                 slot_weights /= tot
-    streams = []
-    j = i_m + 1
-    while j < len(ents) and ents[j][1] is not None and ents[j][2] is None:
-        streams.append(ents[j])
-        j += 1
+    streams = _streams_after_anchor(ents, i_m)
     if len(streams) < 2:
         warn.append(f"packet @{o_shader:#x}: {len(streams)} attribute streams, need at least 2")
         return None

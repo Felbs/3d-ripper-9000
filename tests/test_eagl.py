@@ -305,3 +305,37 @@ def test_display_list_index_is_none_when_no_stream_opens_on_a_primitive():
     from gcrip.formats import eagl
 
     assert eagl._display_list_index([(4, 0, None), (4, 8, None)], bytes(64)) is None
+
+
+def test_streams_are_collected_past_a_run_of_matrix_tags():
+    """FIFA's shadow packets bind gpModelViewMatrix AND gpViewMatrix back to back.  Anchoring on
+    the first and collecting immediately found 0 streams and dropped the packet - 32 of them on
+    FIFA 2003, reported as "0 attribute streams, need at least 2"."""
+    from gcrip.formats import eagl
+
+    ents = [
+        (1, 0, None),
+        (1, None, "__MATRIX4 *:::EAGLAnimationBuffer"),
+        (20, 32, None),
+        (1, None, "__const MATRIX4:::EAGL::ViewPort::gpModelViewMatrix"),
+        (1, None, "__const MATRIX4:::EAGL::ViewPort::gpViewMatrix"),
+        (56, 352, None),
+        (56, 1024, None),
+        (544, 1248, None),
+        (1, None, "__COORD3:::ReferenceTriangle"),
+    ]
+    got = eagl._streams_after_anchor(ents, 3)
+    assert [g[1] for g in got] == [352, 1024, 1248]
+
+
+def test_a_single_matrix_anchor_still_collects_the_same_streams():
+    """The ordinary one-matrix case must be unchanged."""
+    from gcrip.formats import eagl
+
+    ents = [
+        (1, None, "__const MATRIX4:::EAGL::ViewPort::gpModelViewMatrix"),
+        (8, 16, None),
+        (8, 64, None),
+        (1, None, "__EAGL::GeoPrimState:::x"),
+    ]
+    assert [g[1] for g in eagl._streams_after_anchor(ents, 0)] == [16, 64]

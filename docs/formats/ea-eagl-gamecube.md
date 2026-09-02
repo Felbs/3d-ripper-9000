@@ -374,3 +374,25 @@ All five now append a warning, and the effect is immediate.  Of the objects on F
 
 Those are leads a future session can pick up from the report itself rather than by
 instrumenting the parser by hand, which is how this one had to find them.
+
+### A packet can bind more than one matrix
+
+The very first thing the new warnings said was `0 attribute streams, need at least 2`, on 32
+packets.  The cause is visible the moment the entries are printed - FIFA's shadow packets bind
+**two** matrices back to back::
+
+    [3] __const MATRIX4:::EAGL::ViewPort::gpModelViewMatrix   <- anchored here
+    [4] __const MATRIX4:::EAGL::ViewPort::gpViewMatrix        <- and stopped here
+    [5] count  56  ptr  352      attribute stream
+    [6] count  56  ptr 1024      attribute stream
+    [7] count 544  ptr 1248      display list
+
+The collection loop requires an untagged entry, so anchoring on the first matrix and collecting
+immediately found nothing at all.  Skipping the whole run of `__const MATRIX4` tags first takes
+FIFA 2003 from **81 of 89 objects and 44,927 triangles to 85 of 89 and 45,647**.
+
+That class of warning is now gone from the disc.  What is left is 27 warnings, all specific:
+11 `unknown header c61601fec6160000`, 8 `display list does not chain at stride 4`, 5
+index-out-of-range, 1 `no display list among 5 streams`, 1 other unknown header.  Every one of
+those is a lead with an address attached, which is the whole point of having made the drops
+speak.
