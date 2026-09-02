@@ -104,6 +104,20 @@ triangles after, 0 failed, 941 s** - and its 100 MB `intro.ngc` sorted 381st of 
 re-rips the 201 discs where at least eight of the ten biggest files are media *and* the disc
 reports zero triangles.
 
+## A failure list under-counts a silent bug (2026-09-02)
+
+Worth writing down because it nearly cost this session a result.  The re-rip queue was built
+from recorded failures, which is the obvious thing to do and is wrong for any defect that
+returns nothing instead of raising.
+
+The EAGL display-list bug is exactly that shape: `_decode_packet` hit a `return None` and the
+disc reported a healthy zero.  FIFA 2003 only appeared in the queue because it *also* had a
+sibling-lookup error; every other EA sports disc failed silently and was invisible.  Ten of
+twenty-seven were queued on failure counts; all twenty-seven needed re-ripping.
+
+So when a fix removes a silent `return None`, the discs to re-run are **every disc the plugin
+touches**, not the ones with rows in the failure table.
+
 ## The state of the tail (measured 2026-08-30)
 
 223 discs still produce neither a model nor a texture.  For each one, the largest file that
