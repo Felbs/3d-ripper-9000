@@ -109,3 +109,15 @@ def test_media_names_seen_in_real_runs():
     # and the guard still holds
     assert not _looks_like_media("files/soundstage/level.arc")
     assert not _looks_like_media("files/Data/Char/35char.skg")
+
+
+def test_media_dirs_from_a_manifest_census():
+    """Chosen from a census of which directory names actually hold the library's bytes: `thp/`
+    alone holds 7.8 GB across the 635 discs, and a shard was seen scanning Data/Audio/Voiceover.
+    `media/` is deliberately NOT in the list - a directory by that name holds anything."""
+    assert _looks_like_media("files/thp/intro.bin")
+    assert _looks_like_media("files/Data/Audio/Voiceover/CO/line.bin")
+    assert _looks_like_media("x/dialogue/en/l1.bin")
+    assert not _looks_like_media("files/media/level.arc")
+    assert not _looks_like_media("files/levels/world1.arc")
+    assert not _looks_like_media("files/assets/model.bin")

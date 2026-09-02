@@ -222,7 +222,8 @@ def _safe_component(part: str) -> str:
 MEDIA_DIRS = frozenset(
     {"movie", "movies", "video", "videos", "stream", "streams", "audiostr", "audiostream",
      "audiostreams", "sound", "sounds", "audio", "music", "bgm", "voice", "voices", "speech",
-     "fmv", "fmvs", "sfx", "song", "songs"}
+     "fmv", "fmvs", "sfx", "song", "songs", "thp", "voiceover", "vo", "dialog", "dialogue",
+     "narration"}
 )
 MEDIA_EXTS = frozenset(
     {".thp", ".h4m", ".adp", ".dsp", ".ast", ".mth", ".bik", ".mpg", ".mp3", ".ogg",
