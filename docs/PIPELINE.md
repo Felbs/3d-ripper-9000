@@ -237,8 +237,8 @@ primitives, decoded textures, clips) and hands them to the same exporter, so the
 ```mermaid
 flowchart TD
     F["file no J3D parser wants"] --> D{"plugins_for(path, head, size)"}
-    D -->|"retro / hsd / gma / pikmin / lm / sfa / jade /<br/>re4 / neversoft / renderware / ea / eagl / ebo / p3d / mdl2 / mdl3 / eurocom / hsf / sa2b / ninja_gc / billy / ttdisp / unreal / openspace / ttyd / feporr"| R["real parser<br/>meshes + materials + textures<br/>(+ rig, + clips where the format has them)"]
-    D -->|"no ordinary plugin"| S["gx (fallback)<br/>entropy < 7.5 → gxscan.scan_blob(budget)"]
+    D -->|"retro / hsd / gma / pikmin / lm / sfa / jade /<br/>re4 / neversoft / renderware / ea / eagl / ebo / p3d / mdl2 / mdl3 / eurocom / hsf / sa2b / ninja_gc / billy / ttdisp / unreal / openspace / ttyd / feporr / mula"| R["real parser<br/>meshes + materials + textures<br/>(+ rig, + clips where the format has them)"]
+    D -->|"no ordinary plugin"| S["gx (fallback)<br/>entropy &lt; 7.5 → gxscan.scan_blob(budget)<br/>media and container archives scanned last"]
     S --> L["GX display lists<br/>opcode · count · index tuples,<br/>stride chained, NOP padding"]
     S --> N["neutral meshes<br/>f32 vertex run + u16 index run"]
     L & N --> SC["geometry score<br/>mean edge / percentile bbox · √N<br/>real ≈ 1-2, spaghetti ≈ 0.5·√N"]
