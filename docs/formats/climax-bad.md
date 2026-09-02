@@ -96,8 +96,13 @@ Decoding ATV's whole stream with the scaled limit settles what the fragmentary t
 
 * **The input is consumed exactly**: 98,812,344 of 98,812,344 bytes, 100.0000%, and the output
   stops on its own at 274,073,929 without reaching the limit.  Landing precisely on the final
-  byte is not something a desynced stream does, so the **framing is correct** - the flag bits,
-  the literal/match split and the match lengths all read right.
+  byte is not something a desynced stream does, so the **flag framing is correct** - the flag
+  bits and the literal/match split read right.
+
+  **Correction (same session):** an earlier version of this note said consumption also validated
+  the match *lengths*.  It does not.  A match consumes exactly two input bytes whatever length it
+  declares, and a literal one, so the input pointer is driven entirely by the flag bits.
+  Consumption says nothing about the length field and nothing about the position field.
 * That also measures the truncation the old cap caused: **5,638,473 bytes**, the last 2% of the
   archive, were being silently dropped.
 
@@ -106,7 +111,13 @@ matters.  `pos` is only ever used to *read* the ring; the input pointer advances
 whatever value it takes.  A completely wrong `pos` consumes exactly as much input as a correct
 one.  So 100% consumption is evidence about the framing and **no** evidence about `pos`.
 
-* **The tail is 100% printable and meaningless**: `ptteptoptpeoawsoptpeoaw ytpwstt`.
+* **The tail is 100% printable and meaningless**: `pttept
+opt
+peoaws
+opt
+peoaw yt
+p
+wstt`.
   This matters beyond ATV, because "decodes to 100% printable text" is the evidence this note
   originally gave for Hot Wheels.  **That oracle is weak** - it passes on this garbage - and the
   Hot Wheels result should be re-checked against something stronger before it is relied on.
@@ -119,3 +130,29 @@ For the record, the ring contents argue the same way from the other side.  At th
 position holds `t u v w x y z` - a clean counting big-endian
 `u16` sequence.  That region of the ring is *correct data*, just not the data this match wanted:
 the literals that fill the ring are fine and the pointer into it is not.
+
+## Both nibble splits fail, and the search is parked
+
+Decoding ATV's whole stream under each reading of the two operand bytes:
+
+| reading | input consumed | output | tail |
+|---|---|---|---|
+| shipped - `pos = lo \| (hi & 0xf0) << 4`, `len = (hi & 0x0f) + 3` | 100.0000% | 274,073,929 | gibberish |
+| swapped - `pos = lo \| (hi & 0x0f) << 8`, `len = (hi >> 4) + 3` | 100.0000% | 292,237,044 | gibberish |
+
+**Both consume the input exactly**, which is the point made above: consumption is a property of
+the flag bytes alone and cannot separate these. Neither tail is readable English, and neither
+output contains `distribution` or `Copyright` even once in ~280 MB.
+
+So the swapped split is not the answer either, and I am parking this rather than trying a
+seventh variant. What a further attempt needs first is a **trustworthy oracle**, and this note
+has now burned through three that looked reasonable and were not:
+
+* *"decodes to 100% printable text"* - passes on gibberish;
+* *"the input is consumed exactly"* - true for every variant, by construction;
+* *"a part name should not repeat"* - `rlmudguard` appears 186 times, but nothing establishes
+  that a 643-part table cannot legitimately list it once per vehicle configuration.
+
+The one oracle that would settle it is a **known-plaintext pair**, as on Tiger Woods: some
+asset present both compressed here and uncompressed elsewhere on the disc. That is the next
+thing to look for, before any more decoder variants.
