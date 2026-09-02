@@ -36,3 +36,34 @@ Five `.arc`: `movies.arc` (574 MB) and `audiostr.arc` / `samples.arc` are media.
 script data**, not geometry - it is full of readable names like `EITrigger`,
 `D_CAM_TriggerBox_HatTree`, `EICameraFollowDualSpline`, `S_Ambient_Wild_Loop`.  Models, if any,
 are in `datasets.arc`.
+
+
+## CRACKED: Evolution Snowboarding's `KCEO ARCDT` (2026-09-01)
+
+`gcrip/formats/kceo_arc.py` + `gcrip/plugins/kceo_arc.py`.  Cluster 2's last unexamined disc:
+29 `.arc` hold everything it draws, the rest being 48 `.h4m` movies and a 163 MB audio stream.
+
+Big-endian, and about as friendly as an archive gets::
+
+    +0      char magic[16]  "KCEO ARCDT 1.0B"   Konami Computer Entertainment Osaka
+    +16     u32  count
+    +20     u32  alignment  0x800 on every sample, and where the directory starts
+    +24     u32  directory bytes, always count * 36
+    +28     '-' padding to the alignment
+    +0x800  entries of 36 bytes: char name[24], u32 sector, u32 size, u32 zero
+
+Two identities check it and both hold on every sample: the declared directory size is exactly
+`count * 36`, and every member's `sector * alignment + size` lands inside the file.  Measured
+over four archives of 1, 5, 75 and 74 entries - **all 155 fit and all 155 are named**.
+
+Members come out as `FL_STG13_MS_00.BPX` and friends, and **28 of 30 read so far open `BPXB`**
+(the other two are an 8-byte `DUMMY.BIN` reading `dummy
+`).  A `BPX` declares its own length
+after the magic - 463,424 against a 463,936-byte member, the difference being 512 bytes of
+sector padding.
+
+**The gaps are why a strict walk fails**: members sit on sector boundaries with 64 to 2,048
+bytes between them, so a reader that insists each begins exactly where the last ended works on
+the two small archives and fails on the two large ones.  Padded, not packed.
+
+`BPX` itself is the next step; the archive around it is solved.
