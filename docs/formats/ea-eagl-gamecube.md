@@ -467,3 +467,29 @@ display list in the packet at all - the primitives must be described somewhere e
 So the seven fixes are FIFA-2003-shaped.  They take that disc from 0 to 89 of 89 objects, and
 they do nothing for Fight Night, which needs its own reading.  What *did* generalise is the
 diagnostics: the disc now says what is missing instead of reporting a healthy zero.
+
+### What Fight Night's packets do contain (reconnaissance, 2026-09-02)
+
+Not shipped, but measured, so the next attempt starts from facts rather than from the packet
+dump again.
+
+A packet has 14 entries.  After the `__const MATRIX4` anchor come **three streams of equal
+count** (125 here), then four `__EAGL::TAR` texture tags and a `__EAGL::GeoPrimState`.
+
+**The first stream is positions and reads cleanly.**  Taken as 125 big-endian `f32` triples from
+its pointer: **100% finite and in range**, bounding box `[-7.82, 40.86, -5.33] .. [7.72, 50.39,
+7.44]` - a body part standing around y=40-50, which is what a boxing game's mesh should look
+like.
+
+**The array is stored twice.**  Bytes at `+1596` and `+3096` are identical for **exactly 1500
+bytes** - 125 x 12 - and diverge immediately after.  So the positions are duplicated back to
+back; whether that is a morph target, a damage state or a second LOD is unread.
+
+What is missing is the topology.  There is no display list in the packet, no index stream among
+the three, and the 182 bytes in range that happen to look like GX opcodes decode to nonsense
+counts (`op=0x9d count=38958`).  **The primitives are described outside the packet**, and
+finding where is the job.
+
+The other two streams share the count but not the shape: the second is not plausible `f32` at
+all and the third is small floats, so normals-and-UVs in some packed form is the obvious guess
+and is *only* a guess.
