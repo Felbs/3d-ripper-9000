@@ -20,7 +20,7 @@ Companion to [FORMATS.md](FORMATS.md), which lists what already works.
 
 | format | discs | state |
 |---|---|---|
-| Pokemon XD `FSYS` models | 1 (XD) | **Colosseum is done** (1,332 textures) and **XD's wrapper is now known**: `size, payload bytes, relocation count, 1`, payload at +32, then `count` u32 relocations - holds on 296 of 1,132 members.  Their payloads are `f32` model data behind that relocation table, not images, so this is a geometry job; the other 836 members are uncharacterised | see [formats/fsys.md](formats/fsys.md) |
+| Pokemon `FSYS` non-model members | 2 (Colosseum, XD) | **the models are done (2026-09-02)** - they are HAL sysdolphin archives behind a prefix, see [formats/fsys.md](formats/fsys.md).  What is left is the 836 members that are neither images nor sysdolphin archives; they do not declare an archive size in their first word, so the locator passes over them | see [formats/fsys.md](formats/fsys.md) |
 | High Voltage `GMS` | 3 (Billy & Mandy, Kids Next Door, Charlie and the Chocolate Factory) | header readable, size field exact; **payload entropy 7.73 behind a 2.39 header** - compressed, and not zlib / Yaz0 / Yay0.  Charlie's `JAM2` archives add **1,097 more `GMS`, 1,115 `GKA` and 1,204 `GGG`**, a third independent corpus to work the codec against |
 
 Both need bit-level reverse engineering of a private codec before any geometry exists to parse.

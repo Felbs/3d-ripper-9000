@@ -56,6 +56,8 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass
 
+from gcrip.identities import Identity
+
 MAGIC = b"FSYS"
 COUNT_AT = 12
 POINTERS_AT = 24
@@ -200,3 +202,87 @@ def members(data: bytes) -> list[Member]:
             )
         )
     return out
+
+
+# -- the models inside a member -------------------------------------------------------------
+#
+# ``docs/OPEN.md`` recorded XD's members as "f32 model data behind a relocation table" and left
+# it as a geometry job.  It is not a new format at all: **a member of kind 15 carries a whole
+# HAL sysdolphin archive** - the same ``.dat`` container Melee and Kirby Air Ride use, which
+# `gcrip/formats/hsd.py` has read all along.
+#
+# What hides it is that the archive does not start at the beginning of the member.  It sits
+# behind a prefix - 3,680 bytes on Pokemon XD, **64 on Colosseum** - so a reader that checks
+# offset zero sees nothing and a reader that assumes one constant offset gets one disc right.
+#
+# It does not have to be guessed at, because **the member's own first word is the archive's
+# file size**, and the sysdolphin header states four more numbers that have to reconcile with
+# it:  ``0x20 + data + relocations * 4 + roots * 8 <= file size``, the remainder being the
+# string table.  On `laplace` that is 32 + 207,636 + 7,055*4 + 2*8 = 235,904 against a declared
+# 235,925 - twenty-one bytes left, which is exactly ``scene_data\0bound_box\0``.
+#
+# Those two root names are the give-away and they are the same on every model member.
+
+#: the smallest sysdolphin archive worth looking at
+MIN_HSD = 0x40
+
+
+def hsd_offset(data: bytes) -> int | None:
+    """Where the embedded sysdolphin archive starts, or ``None``.
+
+    The member's first word states the archive's size; this finds where that size is repeated
+    as a header that reconciles, so neither the prefix length nor the disc has to be known.
+    """
+    if len(data) < HEADER_WORDS:
+        return None
+    want = struct.unpack_from(">I", data, 0)[0]
+    if not MIN_HSD < want <= len(data):
+        return None
+    key = struct.pack(">I", want)
+    at = data.find(key, 4)
+    while at >= 0:
+        if at % 4 == 0 and at + want <= len(data) and _hsd_reconciles(data, at, want):
+            return at
+        at = data.find(key, at + 1)
+    return None
+
+
+#: file size, data size, relocation count, root count, extern count
+HEADER_WORDS = 20
+
+
+def _hsd_reconciles(data: bytes, at: int, want: int) -> bool:
+    size, block, relocs, roots, externs = struct.unpack_from(">5I", data, at)
+    if size != want or not block or not roots + externs:
+        return False
+    return 0x20 + block + relocs * 4 + (roots + externs) * 8 <= size
+
+
+def _model_members_carry_an_archive(data: bytes):
+    """Every member that decompresses and declares a plausible size holds one."""
+    found = members(data)
+    if not found:
+        return None, "not an FSYS archive"
+    checked = held = 0
+    for m in found:
+        blob = data[m.offset : m.offset + m.size]
+        payload = decompress(blob[LZSS_HEADER:], m.unpacked) if m.compressed else blob[4:]
+        if payload is None or len(payload) < HEADER_WORDS:
+            continue
+        want = struct.unpack_from(">I", payload, 0)[0]
+        if not MIN_HSD < want <= len(payload):
+            continue  # not a model member
+        checked += 1
+        held += hsd_offset(payload) is not None
+    if not checked:
+        return None, "no member declares an archive size"
+    return held == checked, f"{held} of {checked} members hold a sysdolphin archive"
+
+
+IDENTITIES = [
+    Identity(
+        "a model member holds a sysdolphin archive",
+        "the member's first word is a file size a reconciling HSD header repeats",
+        _model_members_carry_an_archive,
+    ),
+]

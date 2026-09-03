@@ -126,3 +126,80 @@ def test_a_count_larger_than_the_file_is_refused():
 def test_two_members_sharing_a_name_do_not_collide():
     got = plugin.expand(build(entries=(("same", b"aaaa", False), ("same", b"bbbb", False))))
     assert [n for n, _ in got] == ["same.bin", "same_1.bin"]
+
+
+# -- the sysdolphin archive inside a model member --------------------------------------------
+
+
+def hsd_archive(block: bytes = b"geometry", relocs: int = 3, roots: int = 2) -> bytes:
+    """A minimal HAL sysdolphin file: header, data, relocations, roots, strings."""
+    strings = b"scene_data\x00bound_box\x00"
+    body = bytearray(block)
+    body += b"\x00" * (-len(body) % 4)
+    reloc = struct.pack(f">{relocs}I", *range(0, relocs * 4, 4))
+    root = b""
+    off = 0
+    for i in range(roots):
+        root += struct.pack(">2I", 0, off)
+        off = 11
+    size = 0x20 + len(body) + len(reloc) + len(root) + len(strings)
+    head = struct.pack(">5I", size, len(body), relocs, roots, 0) + b"\x00" * 12
+    return head + bytes(body) + reloc + root + strings
+
+
+def member_with_model(prefix: int) -> bytes:
+    """What a kind-15 member decompresses to: a prefix, then the archive, then padding."""
+    hsd = hsd_archive()
+    pad = 16
+    head = bytearray(struct.pack(">I", len(hsd)) + b"\x11" * (prefix - 4))
+    return bytes(head) + hsd + b"\x00" * pad
+
+
+def test_the_archive_is_found_behind_either_prefix():
+    """3,680 bytes on Pokemon XD and 64 on Colosseum - so the offset is searched for, not
+    assumed, using the size the member's own first word states."""
+    for prefix in (64, 3680):
+        payload = member_with_model(prefix)
+        assert fsys.hsd_offset(payload) == prefix, prefix
+
+
+def test_a_member_that_holds_no_archive_is_left_alone():
+    assert fsys.hsd_offset(b"\x00\x00\x01\x00" + b"\x33" * 4096) is None
+    assert fsys.hsd_offset(b"short") is None
+
+
+def test_a_header_that_does_not_reconcile_is_refused():
+    """The four numbers after the size have to add up to no more than it; a stray repeat of
+    the size word must not be taken for a header."""
+    payload = bytearray(member_with_model(64))
+    struct.pack_into(">I", payload, 64 + 4, 1 << 24)  # claim a data block bigger than the file
+    assert fsys.hsd_offset(bytes(payload)) is None
+
+
+def test_the_container_emits_the_archive_under_a_dat_name():
+    payload = member_with_model(64)
+    data = build((("pikachu", payload, False),))
+    names = dict(plugin.expand(data))
+    assert "pikachu.dat" in names, sorted(names)
+    assert names["pikachu.dat"][:4] == struct.pack(">I", len(names["pikachu.dat"]))
+    assert "pikachu_head.bin" in names and len(names["pikachu_head.bin"]) == 64
+
+
+def test_a_plain_member_still_comes_out_as_bin():
+    data = build()
+    names = dict(plugin.expand(data))
+    assert set(names) == {"sensei_b1.bin", "hunter_f_b2.bin"}
+
+
+def test_the_identity_holds_and_can_fail():
+    from gcrip import identities
+
+    payload = member_with_model(64)
+    data = build((("pikachu", payload, False),))
+    results = identities.check(fsys, data)
+    assert not identities.failures(results), "\n".join(str(r) for r in results)
+
+    hurt = bytearray(data)
+    at = hurt.find(payload)
+    struct.pack_into(">I", hurt, at + 64 + 4, 1 << 24)
+    assert identities.failures(identities.check(fsys, bytes(hurt)))

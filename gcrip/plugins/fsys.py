@@ -4,6 +4,8 @@ them."""
 
 from __future__ import annotations
 
+import struct
+
 from gcrip.formats import fsys
 
 NAME = "fsys"
@@ -40,5 +42,15 @@ def expand(data: bytes) -> list[tuple[str, bytes]]:
         seen[stem] = n + 1
         if n:
             stem = f"{stem}_{n}"
-        out.append((f"{stem}.bin", payload))
+        at = fsys.hsd_offset(payload)
+        if at is None:
+            out.append((f"{stem}.bin", payload))
+            continue
+        # a model member carries a whole HAL sysdolphin archive behind a prefix - 3,680 bytes
+        # on XD, 64 on Colosseum - so it comes out under a `.dat` name and the `hsd` plugin,
+        # which has read that container all along, takes it from there
+        size = struct.unpack_from(">I", payload, 0)[0]
+        out.append((f"{stem}.dat", payload[at : at + size]))
+        if at:
+            out.append((f"{stem}_head.bin", payload[:at]))
     return out
