@@ -493,3 +493,33 @@ finding where is the job.
 The other two streams share the count but not the shape: the second is not plausible `f32` at
 all and the third is small floats, so normals-and-UVs in some packed form is the obvious guess
 and is *only* a guess.
+
+
+## The 2004 generation reads (2026-09-03): Def Jam: Fight for NY, NBA Street V3
+
+Def Jam: Fight for NY carries 14,953 `.o` EAGL objects (239 MB) and NBA Street V3 2,555; the
+rip read 20.  They are the same ELF object with the same packet entry list and a different
+stream generation - the one the Fight Night Round 2 note called "no display list in the
+packet, three streams of equal count, all floats".  Measured on 55 objects from three FFNY
+archives:
+
+* positions are **f32 xyz** (stream element 12 bytes), normals **s16 with 14 fraction bits**
+  (6 bytes; `(-14034, 54, 8454) / 16384` is unit length), texcoords **f32 st** (8 bytes);
+* the display list is the count-1 stream after them, and its block opens on a **preamble**:
+  `ff ff 00 00`, sometimes a pair of `1.0f`, then zero padding - which is why "no stream
+  opens on a GX opcode";
+* it runs up to the packet struct, which follows the last vertex at whatever byte it ends
+  on, so the list is chained greedily instead of bounded;
+* records are two matrix bytes (one on the `PlanarShadow` skins, zero on crowd planes) and
+  then one index per attribute stream, a byte wide when the stream has 256 entries or fewer,
+  with the last one padded to two (`06 24 | 01 | 01 | 00 01`).  The stride is chosen by the
+  first layout whose every index stays inside its stream.
+
+`_decode_packet_v2` in `gcrip/formats/eagl.py`; the v1 path is untouched and tried first.
+On the sample: **40 of 55 objects with geometry, 8,524 triangles** - a jacket and a torso in
+T-pose for the create-a-fighter - with textures bound by `SHAPENAME`.  The 15 without are
+`.o` files that hold only a skeleton or animation (`icl_*`, `animcr*`, `share_hp`).
+
+Open: the v2 skeleton header (`3f 25 00 82` where v1 has `c0da 01fe`) is not read, so these
+export without joints; the `SHAPENAME` a packet binds can be a generic shape (`cm_m`) rather
+than the object's own `.gsh`.

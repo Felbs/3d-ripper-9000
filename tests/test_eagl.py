@@ -12,9 +12,13 @@ SHADER = "LitTextureEnvIrrad2x_Skin"
 TAR = "__EAGL::TAR:::RUNTIME_ALLOC::UID=1;SHAPENAME=Body,25;;"
 
 
-def build_object() -> tuple[bytes, bytes, int]:
+def build_object(v2: bool = False) -> tuple[bytes, bytes, int]:
     """One packet: 4 vertices (a quad as a strip), positions s16, normals s8, UVs s16,
-    stride-10 display list with matrix bytes; symbols for the model, a bone and a TAR."""
+    stride-10 display list with matrix bytes; symbols for the model, a bone and a TAR.
+
+    ``v2`` builds the 2004 generation instead (Def Jam: Fight for NY): f32 positions, s16/14
+    normals, f32 UVs, and a display list behind a ``ff ff 00 00`` preamble whose records are
+    two matrix bytes and byte-wide indices with the UV index padded to two."""
     data = bytearray(0x480)
     relocs: list[tuple[int, int]] = []  # (.data offset, symbol index)
     # symbol table: 0 null, 1 = .data section, 2 shader, 3 TAR, 4 anim buffer, 5 const matrix,
@@ -37,14 +41,24 @@ def build_object() -> tuple[bytes, bytes, int]:
     nrm = np.array([[0, 0, 127]] * 4, np.int8)
     uv = np.array([[0, 0], [256, 0], [0, 256], [256, 256]], ">i2")
     P_POS, P_NRM, P_UV, P_DL, P_PAL = 0x40, 0x60, 0x80, 0xA0, 0x100
-    data[P_POS : P_POS + 24] = pos.tobytes()
-    data[P_NRM : P_NRM + 12] = nrm.tobytes()
-    data[P_UV : P_UV + 16] = uv.tobytes()
-    dl = bytearray(b"\x98\x00\x04")
-    for i in range(4):
-        dl += bytes([3, 33]) + struct.pack(">HHH", i, i, i)
-    dl += b"\0" * (-len(dl) % 32)
-    data[P_DL : P_DL + len(dl)] = dl
+    if v2:
+        P_POS, P_NRM, P_UV, P_DL = 0x40, 0x70, 0x90, 0xB0
+        data[P_POS : P_POS + 48] = (pos.astype(np.float32) / 256.0).astype(">f4").tobytes()
+        data[P_NRM : P_NRM + 24] = np.array([[0, 0, 16384]] * 4, ">i2").tobytes()
+        data[P_UV : P_UV + 32] = (uv.astype(np.float32) / 256.0).astype(">f4").tobytes()
+        dl = bytearray(bytes((0xFF, 0xFF, 0, 0)) + bytes((0x3F, 0x80, 0, 0)) * 2 + bytes(4) + bytes((0x98, 0, 4)))
+        for i in range(4):
+            dl += bytes([3, 33, i, i, 0, i])
+        data[P_DL : P_DL + len(dl)] = dl
+    else:
+        data[P_POS : P_POS + 24] = pos.tobytes()
+        data[P_NRM : P_NRM + 12] = nrm.tobytes()
+        data[P_UV : P_UV + 16] = uv.tobytes()
+        dl = bytearray(b"\x98\x00\x04")
+        for i in range(4):
+            dl += bytes([3, 33]) + struct.pack(">HHH", i, i, i)
+        dl += b"\0" * (-len(dl) % 32)
+        data[P_DL : P_DL + len(dl)] = dl
     # skin table: two GX matrix slots; slot 1 = bone 1 at weight 1.0 (bone index lives in
     # the low mantissa byte of each weight float)
     w1 = struct.unpack(">I", struct.pack(">f", 1.0))[0]
@@ -79,7 +93,7 @@ def build_object() -> tuple[bytes, bytes, int]:
         (4, (P_POS, 1)),
         (4, (P_NRM, 1)),
         (4, (P_UV, 1)),
-        (len(dl), (P_DL, 1)),
+        (1 if v2 else len(dl), (P_DL, 1)),
         (1, (0, 3)),
         (1, (0, 6)),
         (1, (PK, 1)),
@@ -407,3 +421,17 @@ def test_an_object_with_no_models_reports_why():
         eagl.parse, eagl.join = saved_parse, saved_join
     assert "no models" in str(got.value)
     assert "no display list among 3 streams (x3)" in str(got.value)
+
+
+def test_the_2004_generation_reads_f32_streams_behind_a_preamble():
+    """Def Jam: Fight for NY / NBA Street V3 objects: f32 positions, s16/14 normals, f32 UVs,
+    a display list stream of count 1 whose block opens on ff ff 00 00 and 1.0f pairs, and
+    byte-wide indices with the UV index padded to two bytes."""
+    ord_, orp, tris = build_object(v2=True)
+    obj = eagl.parse(eagl.join(ord_, orp))
+    assert len(obj.models) == 1 and not [w for w in obj.warnings if "packet" in w]
+    (pk,) = obj.models[0].packets
+    assert pk.stride == 6 and len(pk.indices) // 3 == tris
+    assert pk.positions.max() == pytest.approx(1.0)
+    assert pk.normals is not None and pk.normals[0].tolist() == [0.0, 0.0, 1.0]
+    assert pk.uvs is not None and pk.uvs.max() == pytest.approx(1.0)

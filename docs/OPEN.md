@@ -22,6 +22,15 @@ decoder.  Score the DOL's functions for shifts + byte loads + loops - calls, fol
 zero-caller hits to their vtable, and the codec's *name* is usually sitting next to it.  The
 same route closed Tiger Woods `Rdat` the same day and closed Frogger `PRS1` too; High Voltage `GMS` turned out to be audio and the models (`GGG`) were readable without any codec.
 
+## Closed 2026-09-03: EAGL 2004 generation (Def Jam: Fight for NY, NBA Street V3)
+
+The `.o` objects the rip skipped are EAGL packets with f32 streams and a display list behind a
+`ff ff 00 00` preamble; `_decode_packet_v2` reads them (40 of 55 sampled objects, 8.5k
+triangles, T-posed clothing).  FFNY alone has 14,953 of them.  See the closing section of
+[formats/ea-eagl-gamecube.md](formats/ea-eagl-gamecube.md).  Also found: NBA Street, NBA
+Street V3, SSX 3 and Goblet of Fire were ripped before the EAGL `.orl` fix of 09-01 - stale
+rows, queued for wave 36.
+
 ## Closed 2026-09-03: Blitz Games `.gcp` actors - nine discs
 
 Bratz: Rock Angelz ships an ELF with full DWARF debug info, and the engine's own struct

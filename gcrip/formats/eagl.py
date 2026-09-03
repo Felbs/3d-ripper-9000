@@ -393,6 +393,8 @@ def _decode_packet(elf: _Elf, o_shader: int, shader: str, warn: list[str]) -> Pa
     # returns None with no warning.  Pick the stream that actually opens on a GX primitive
     # opcode - the same test that validated the choice before, applied as the choice.
     dl_idx = _display_list_index(streams, d)
+    if dl_idx is None and len(streams) >= 2 and _v2_preamble(d, streams[-1][1]):
+        return _decode_packet_v2(elf, o_shader, shader, ents, streams, slot_bones, slot_weights, warn)
     if dl_idx is None or dl_idx < 1:
         warn.append(
             f"packet @{o_shader:#x}: no display list among {len(streams)} streams"
@@ -471,6 +473,162 @@ def _decode_packet(elf: _Elf, o_shader: int, shader: str, warn: list[str]) -> Pa
             textures.append(m.group(1))
     joints = weights = None
     if has_mtx and slot_bones is not None:
+        slot = np.minimum(rows[:, 0] // 3, len(slot_bones) - 1)
+        joints = np.zeros((nv, 4), np.uint16)
+        weights = np.zeros((nv, 4), np.float32)
+        joints[idx] = slot_bones[slot]
+        weights[idx] = slot_weights[slot]
+    return Packet(shader, stride, pos, tri, uvs, normals, joints, weights, textures)
+
+
+# ---------------------------------------------------------------------------
+# the 2004 generation (Def Jam: Fight for NY, NBA Street V3, Fight Night Round 2 ...)
+# ---------------------------------------------------------------------------
+#
+# Same ELF object, same packet entry list, different streams.  Positions are f32 xyz, normals
+# s16 with 14 fraction bits, texcoords f32 st, and the display list stream is a single-count
+# pointer whose block opens on a preamble - ``ff ff 00 00``, sometimes a pair of 1.0f, then
+# zero padding to a 16-byte boundary - before the GX primitives.  It runs up to the packet
+# struct (0x20 before the shader pointer).  Vertex records carry two matrix bytes on models
+# (one on the planar-shadow skins), then one index per attribute stream: a byte when the
+# stream has 256 entries or fewer, two bytes big-endian otherwise, and the last attribute may
+# be padded to two bytes.
+
+V2_PREAMBLE = bytes((0xFF, 0xFF, 0, 0))
+V2_ONE = bytes((0x3F, 0x80, 0, 0))
+NRM_SCALE_V2 = 1.0 / 16384.0
+
+
+def _v2_preamble(d: bytes, ptr: int | None) -> bool:
+    return ptr is not None and d[ptr : ptr + 4] == V2_PREAMBLE
+
+
+def _v2_dl_start(d: bytes, p: int, end: int) -> int:
+    p += 4
+    while p + 4 <= end and d[p : p + 4] in (V2_ONE, bytes(4)):
+        p += 4
+    return p
+
+
+def _v2_chain(dl: bytes, stride: int) -> list[tuple[int, int, int]]:
+    """Primitives from the start of ``dl`` until the first byte that is neither a GX opcode
+    nor padding; the packet struct that follows the list is where the walk stops."""
+    p, n, prims = 0, len(dl), []
+    while p + 3 <= n:
+        op = dl[p]
+        if op == 0:
+            p += 1
+            continue
+        if (op & 0xF8) not in PRIM_OPS:
+            break
+        count = (dl[p + 1] << 8) | dl[p + 2]
+        end = p + 3 + count * stride
+        if end > n or count == 0:
+            break
+        prims.append((op & 0xF8, count, p + 3))
+        p = end
+    return prims
+
+
+def _v2_layouts(stride: int, matrix_bytes: int, counts: list[int]) -> list[list[int]]:
+    """Candidate index widths per attribute for a record of ``stride`` bytes."""
+    n = len(counts)
+    rest = stride - matrix_bytes
+    out = []
+    base = [2 if c > 256 else 1 for c in counts]
+    if sum(base) == rest:
+        out.append(base)
+    if sum(base) + 1 == rest:
+        out.append(base[:-1] + [base[-1] + 1])  # last attribute padded / u16
+        out.append(base + [0])  # or a trailing pad byte
+    if 2 * n == rest:
+        out.append([2] * n)
+    if n == rest:
+        out.append([1] * n)
+    return out
+
+
+def _decode_packet_v2(elf: _Elf, o_shader: int, shader: str, ents, streams, slot_bones, slot_weights, warn: list[str]):
+    d = elf.data
+    _size, dlp, _ = streams[-1]
+    attrs = streams[:-1]
+    counts = [c for c, _, _ in attrs]
+    # the packet struct follows the last primitive at whatever byte it ends on, so the list
+    # cannot be bounded from the far side: chain it greedily and take the stride that reads
+    # the most primitives without stepping past a non-opcode
+    start = _v2_dl_start(d, dlp, len(d))
+    dl = d[start : min(len(d), start + 1 << 20)]
+    candidates = []
+    for stride in range(1 + len(counts), 3 + 2 * len(counts) + 1):
+        prims = _v2_chain(dl, stride)
+        if prims:
+            candidates.append((sum(c for _, c, _ in prims), stride, prims))
+    if not candidates:
+        warn.append(f"packet @{o_shader:#x}: v2 display list chains at no stride")
+        return None
+    # several strides can read the same primitives (a one-strip list ends the walk whatever
+    # the stride), so the index layout decides: widest stride first, first layout whose every
+    # index stays inside its stream wins
+    candidates.sort(key=lambda c: (-c[0], -c[1]))
+    chosen = None
+    for _total, stride, prims in candidates:
+        rows = np.concatenate([np.frombuffer(dl, np.uint8, c * stride, off).reshape(c, stride) for _, c, off in prims])
+        for matrix_bytes in (2, 1, 0):
+            for widths in _v2_layouts(stride, matrix_bytes, counts):
+                cols = []
+                q = matrix_bytes
+                ok = True
+                for k, w in enumerate(widths[: len(counts)]):
+                    if w == 1:
+                        v = rows[:, q].astype(np.uint32)
+                    elif w == 2:
+                        v = (rows[:, q].astype(np.uint32) << 8) | rows[:, q + 1]
+                    else:
+                        ok = False
+                        break
+                    q += w
+                    if v.max() >= counts[k]:
+                        ok = False
+                        break
+                    cols.append(v)
+                if ok:
+                    chosen = (matrix_bytes, cols, rows, prims, stride)
+                    break
+            if chosen:
+                break
+        if chosen:
+            break
+    if chosen is None:
+        warn.append(f"packet @{o_shader:#x}: v2 records fit no index layout for {counts}")
+        return None
+    matrix_bytes, cols, rows, prims, stride = chosen
+    idx = cols[0]
+    nv, pos_ptr, _ = attrs[0]
+    if pos_ptr + nv * 12 > len(d):
+        warn.append(f"packet @{o_shader:#x}: v2 positions past the object")
+        return None
+    pos = np.frombuffer(d, ">f4", nv * 3, pos_ptr).reshape(nv, 3).astype(np.float32)
+    tri = _triangulate(prims, idx)
+    uvs = normals = None
+    if len(attrs) >= 3:
+        nn, n_ptr, _ = attrs[1]
+        if n_ptr + nn * 6 <= len(d):
+            n_all = np.frombuffer(d, ">i2", nn * 3, n_ptr).reshape(nn, 3).astype(np.float32) * NRM_SCALE_V2
+            normals = np.zeros((nv, 3), np.float32)
+            normals[idx] = n_all[cols[1]]
+    if len(attrs) >= 2:
+        nt, t_ptr, _ = attrs[-1]
+        if t_ptr + nt * 8 <= len(d):
+            uv_all = np.frombuffer(d, ">f4", nt * 2, t_ptr).reshape(nt, 2).astype(np.float32)
+            uvs = np.zeros((nv, 2), np.float32)
+            uvs[idx] = uv_all[cols[-1]]
+    textures = []
+    for _, _, x in ents:
+        m = _SHAPENAME.search(x) if x and "TAR" in x else None
+        if m:
+            textures.append(m.group(1))
+    joints = weights = None
+    if matrix_bytes == 2 and slot_bones is not None:
         slot = np.minimum(rows[:, 0] // 3, len(slot_bones) - 1)
         joints = np.zeros((nv, 4), np.uint16)
         weights = np.zeros((nv, 4), np.float32)
