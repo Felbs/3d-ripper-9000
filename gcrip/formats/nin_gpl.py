@@ -88,10 +88,11 @@ def _cstr(d: bytes, at: int) -> str:
 def _array(d: bytes, base: int, hdr: int, warn: list[str]):
     """(values (count, comps) as float / u8, count) of an array header, or None."""
     if hdr + 8 > len(d):
+        warn.append(f"array header at {hdr:#x} past the file")
         return None
     at, count, quant, comps = struct.unpack_from(">IHBB", d, hdr)
     if count == 0 or comps == 0:
-        return None
+        return None  # legitimate: an attribute the object does not carry
     at += base
     kind = quant >> 4
     frac = quant & 15
