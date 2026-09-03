@@ -38,6 +38,8 @@ Tiger Woods 2003-2005 (five discs, not in the table because they were counted un
 
 Mortal Kombat: Deception and Deadly Alliance (two singletons - the census saw `.ssf`) fell on 2026-09-03: Midway `SEC` archives of in-place RenderWare, read from Deception's mapped ELF - [mk-ssf-midway.md](mk-ssf-midway.md).
 
+Ultimate Spider-Man and Spider-Man 2 (two singletons - the census saw `amalga_gc.pak`) fell on 2026-09-03: Treyarch NGL, read from Ultimate Spider-Man's full symbol map - [treyarch-ngl-gamecube.md](treyarch-ngl-gamecube.md).
+
 ## Running total
 
 Library: **1,085,308 models / 479.4 M triangles over 637 discs** before wave 30.  Wave 30 is

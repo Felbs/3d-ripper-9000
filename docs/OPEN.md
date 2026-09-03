@@ -51,6 +51,17 @@ give 238 models / 16k triangles with every one of 436 textures bound.  See
 [formats/bolt-mass-media.md](formats/bolt-mass-media.md).  Left: Pac-Man Fever's real game
 data lives outside the FST (scan the image for `BOLT`), skinned meshes, animations.
 
+## Closed 2026-09-03: Treyarch NGL - Ultimate Spider-Man and Spider-Man 2
+
+Ultimate Spider-Man's `symbolgc-final.map` names every function in the DOL, so the one
+archive that holds the whole game (`amalga_gc.pak`) was read loader by loader: the
+amalgapak directory, each pack's "mashed" resource directory, the `GCNM` mesh files with
+their per-display-list VCDs and index rebasing, `GCNT` textures, `.IFL` frame lists and the
+`FastSkinS16` CPU-skinning bytecode (replayed to recover bones and weights; Spider-Man
+comes out in T-pose over 66 joints).  Spider-Man 2 is the same engine a generation earlier.
+See [formats/treyarch-ngl-gamecube.md](formats/treyarch-ngl-gamecube.md).  Left: the
+procedural city buildings (not meshes), morphs, animations, the skeleton hierarchy.
+
 ## Closed 2026-09-03: Mortal Kombat: Deception and Deadly Alliance (`SEC` `.ssf`)
 
 Deception's ELF has a linker map: `load_ssf` / `get_ssf_dir_entry` gave the directory, and

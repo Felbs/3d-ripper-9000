@@ -150,5 +150,8 @@ addresses to pair with the DOL disassembly.  **Read these before guessing at a f
 | The Legend of Zelda Twilight Princess | GZ2E01 |  | `frameworkF.map` 2087 KB |
 | THE LEGEND OF ZELDA The Wind Waker for USA | GZLE01 |  | `d_a_npc_md.map` 204 KB, `d_a_npc_people.map` 203 KB, `framework.map` 2007 KB |
 
-141 discs.  Used so far: Bratz (Blitz actors), and the DOLs of Madden 06, Tiger Woods 2005,
-Frogger and Billy & Mandy (no symbols - found by tag immediates and function shape).
+141 discs.  Used so far: Bratz (Blitz actors), Muppets Party Cruise (BOLT), The Sims 2 (Edge of
+Reality), Mortal Kombat: Deception (SEC), Ultimate Spider-Man (Treyarch NGL - its `symbolgc-final.map`
+is a binary `SYM1` table: 16-byte records of address, name start, name end, size, then the
+names), and the DOLs of Madden 06, Tiger Woods 2005, Frogger and Billy & Mandy (no symbols -
+found by tag immediates and function shape).
