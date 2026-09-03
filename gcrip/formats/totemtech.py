@@ -243,7 +243,12 @@ def records(dgc: bytes, entries: list[Entry]) -> list[Record]:
 # index lists after the strips, and the first of them reaches 356 where the file declares 354
 # texture coordinates, so the obvious reading is wrong.  This reads positions only.
 
-#: the vertex count sits at a fixed offset in every TMESH record
+#: the vertex count sits at a fixed offset in every TMESH record **on Spirits & Spells**.
+#: It does not on the other two TotemTech discs: on Jimmy Neutron's `LEVEL42.DGC` all 69 TMESH
+#: records fail with "a strip runs past the record", and sweeping the payload offset from 0 to
+#: 400 in four-byte steps finds **no** value at which the three streams and the strips parse.
+#: So those discs are a different vintage of the record, not a shifted one, and this reader
+#: refuses them loudly rather than reading them wrong.
 MESH_VERTEX_COUNT = 116
 #: u32 tag then u8 mode after each strip's indices
 STRIP_TRAILER = 5
