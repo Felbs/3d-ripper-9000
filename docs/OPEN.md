@@ -69,6 +69,17 @@ dictionary.  One level: 102 scenes, 77,715 triangles, 188 of 240 materials textu
 [formats/a2m-gcr.md](formats/a2m-gcr.md).  Scaler and Scooby-Doo! Unmasked (2004-05) are
 the next engine - closed the same day, below.
 
+## Closed 2026-09-03: the Nintendo SDK character pipeline (`.gpl`)
+
+Nine discs kept the Dolphin SDK's own `GeoPalette` / `DisplayObject` files: Harvest Moon
+A Wonderful Life and Another Wonderful Life, Zatch Bell! Mamodo Fury, Def Jam Vendetta (a
+disc that reported zero triangles), Doshin the Giant, Ultimate Muscle, Swingerz Golf,
+PoolEdge and Universal Studios Theme Parks Adventure.  Display-object-relative pointers,
+quantised arrays, the vertex descriptor in a display state (its id moved between SDK
+versions), GX lists under the states set so far.  See
+[formats/nintendo-gpl.md](formats/nintendo-gpl.md).  Left: `.act` actors placing the
+parts (Def Jam's wrestlers are one palette a limb), Lotus Challenge's Kuju layout.
+
 ## Closed 2026-09-03: Scooby-Doo! Unmasked, Scaler
 
 A2M's 2004-05 `HG` layer: the `.ghr` level archive's `EF3dObjRes` / `EFStatic3dObj` records
