@@ -29,14 +29,18 @@ The 2^-8 position scale is not a guess: decoding Blowout's ``WEAP_MACHINEGUN.SMF
 reproduces the bounding box stored beside the mesh to within 0.004 (quantisation), while
 2^-7 and 2^-9 are out by 1.2 and 2.3.
 
-A list is found by the eight-byte big-endian preamble ``00000008 00000001`` that sits in front
-of every one of them (version 7 puts ``00000007`` in front of that as well), followed by zero
-padding and then the opcode.  The preamble also turns up inside the ``F00DBAAD`` fill that
-version 4 pads with, so a candidate only counts once the opcode and vertex count check out.
-Walking with
-a 13-byte vertex lands exactly on the next preamble, which is what confirms the stride: over
-Blowout's ``GCB_11_CREDITS.PKG`` all 42 lists in 25 meshes walk clean, for 8,088 vertices and
-4,044 triangles.
+A list is found by the eight-byte big-endian preamble ``00000008 00000001`` that sits in front of
+every one of them (version 7 puts ``00000007`` in front of that as well), followed by zero padding
+and then the opcode. **The preamble is the tail of a 32-byte ``SGCPacketHeader``** (read from 4x4
+Evo 2's ``setVertexFormat``): ``u32 bytes, bytes + 4, 32, 0, position fraction bits, normal
+fraction bits, uv fraction bits (8), kind (1)`` - so the "preamble" is the uv scale and the vertex
+kind, and the scales below are what those words say on every sample (:func:`packet_header` reads
+them, and a mesh's own bits win over the version's defaults: BloodRayne writes 14 or 15 normal bits
+from one mesh to the next). The preamble also turns up inside the ``F00DBAAD`` fill that version 4
+pads with, so a candidate only counts once the opcode and vertex count check out. Walking with a
+13-byte vertex lands exactly on the next preamble, which is what confirms the stride: over
+Blowout's ``GCB_11_CREDITS.PKG`` all 42 lists in 25 meshes walk clean, for 8,088 vertices and 4,044
+triangles.
 
 Quads are also how this engine writes triangles - it repeats a vertex - and the quads are not
 consistently wound, so ~7% of the split triangles come out with zero area and ~10% inside out.
@@ -198,19 +202,56 @@ def _orient(pos: np.ndarray, nrm: np.ndarray, tris: np.ndarray) -> np.ndarray:
     return tris
 
 
-def _vertices(data: bytes, at: int, count: int, lay: Layout):
+PACKET_HEADER = (
+    32  # SGCPacketHeader: u32 bytes, bytes + 4, 32, 0, pos frac, nrm frac, uv frac, kind
+)
+MAX_FRAC = 31
+
+
+@dataclass(frozen=True)
+class Packet:
+    """The fraction bits a ``SGCPacketHeader`` declares (``setVertexFormat`` feeds them to
+    ``GXSetVtxAttrFmt``); every game of the engine writes the same 32 bytes in front of the
+    ``00000008 00000001`` preamble."""
+
+    pos_frac: int
+    nrm_frac: int
+    uv_frac: int
+    kind: int
+
+
+def packet_header(data: bytes, preamble: int) -> Packet | None:
+    """The header ending at ``preamble`` (the start of the signature), when it reads as one."""
+    at = preamble - (PACKET_HEADER - len(SIGNATURE))
+    if at < 0:
+        return None
+    size, size2, hdr, zero, pos_frac, nrm_frac, uv_frac, kind = struct.unpack_from(">8I", data, at)
+    if hdr != PACKET_HEADER or zero != 0 or size2 < size or kind > 4:
+        return None
+    if max(pos_frac, nrm_frac, uv_frac) > MAX_FRAC:
+        return None
+    return Packet(pos_frac, nrm_frac, uv_frac, kind)
+
+
+def _vertices(data: bytes, at: int, count: int, lay: Layout, packet: Packet | None = None):
     raw = np.frombuffer(data[at : at + count * lay.stride], np.uint8).reshape(count, lay.stride)
     pos = raw[:, 0:6].copy().view(">i2").reshape(count, 3).astype(np.float32)
-    # a zero scale means the version picks one per mesh; the caller applies it
-    pos = pos * lay.pos_scale if lay.pos_scale else pos
+    # the packet header's own fraction bits win; else the version's scale, and a zero scale
+    # means the version picks one per mesh (the caller applies it)
+    if packet is not None:
+        pos = pos * np.float32(2.0**-packet.pos_frac)
+    elif lay.pos_scale:
+        pos = pos * lay.pos_scale
     if lay.normal_16:
         nrm = raw[:, lay.normal_at : lay.normal_at + 6].copy().view(">i2")
-        nrm = nrm.reshape(count, 3).astype(np.float32) * NORMAL_SCALE_16
+        nrm = nrm.reshape(count, 3).astype(np.float32)
+        nrm = nrm * (np.float32(2.0**-packet.nrm_frac) if packet else NORMAL_SCALE_16)
     else:
         nrm = raw[:, lay.normal_at : lay.normal_at + 3].astype(np.int8).astype(np.float32)
-        nrm = nrm * NORMAL_SCALE_8
+        nrm = nrm * (np.float32(2.0**-packet.nrm_frac) if packet else NORMAL_SCALE_8)
     uv = raw[:, lay.uv_at : lay.uv_at + 4].copy().view(">i2")
-    uv = uv.reshape(count, 2).astype(np.float32) * lay.uv_scale
+    uv = uv.reshape(count, 2).astype(np.float32)
+    uv = uv * (np.float32(2.0**-packet.uv_frac) if packet else lay.uv_scale)
     return pos, nrm, uv
 
 
@@ -340,7 +381,7 @@ def parse(data: bytes) -> Smf | None:
         tris = _triangles(prim, count)
         if not len(tris):
             continue
-        pos, nrm, uv = _vertices(data, body, count, lay)
+        pos, nrm, uv = _vertices(data, body, count, lay, packet_header(data, q))
         tris = _orient(pos, nrm, tris)
         if not len(tris):
             continue

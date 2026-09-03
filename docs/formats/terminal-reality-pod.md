@@ -319,3 +319,27 @@ repeats its name in a second form.  **`HERO.SKL` is 99% animation by weight** - 
 154,976 bytes - which is worth knowing before anyone spends another session treating it as a
 skeleton file.  It also means Blowout's character animation is locatable even while `_dfm`
 geometry is not.
+
+
+## `.SMB` binary models (4x4 Evo 2) - CRACKED from `4x4.elf` (2026-09-03)
+
+`gcrip/formats/tr_smb.py` + `gcrip/plugins/tr_smb.py`.  4x4 Evo 2 keeps no `.PKG`: its 1,113
+models are `MODELS/*.SMB` in `GCMODEL.POD`, and the disc had yielded 11 models.  The shipped
+`4x4.elf` symtab names the loader: `C3DModel::loadBinary` reads `u32 1, parts, flag, f32 50.0`,
+then per part a 32-byte name (0xCD fill), `u32 flag`, `u32 vertices, frames, triangles`, 172
+bytes of material (the `.TIF` / `.RAW` name 32 bytes in), and either
+
+* `frames == 1`: a `CRenderPacket` - `u32 2, payload, kind, vertices, triangles, u32, u32` and
+  the payload: kind 1 is the **32-byte `SGCPacketHeader`** - `bytes, bytes + 4, 32, 0, position
+  fraction bits, normal fraction bits, uv fraction bits, kind` - followed by a GX `0x94`
+  triangle list of 16-byte vertices (s16 position / 2^10, s16 normal / 2^15, s16 uv / 2^8).
+  The `_smf` reader's "`00000008 00000001` preamble" is this header's last two words (uv bits
+  8, kind 1), which `setVertexFormat` feeds to `GXSetVtxAttrFmt`; the reader now takes the
+  bits from the header on every game (BloodRayne's `_smf` switch between 14 and 15 normal
+  bits per mesh).  A bounding box (6 f32) follows the payload.
+* `frames > 1`: `frames x vertices` 32-byte `SVertex` records (f32 position, normal, uv, all
+  little-endian) then `triangles x 3` u16 - keyframe-animated props; frame 0 ships.
+
+The Statue of Liberty (`!STATUE.SMB`) comes out at 1,167 triangles, torch and tablet, normal
+agreement 0.94; `1BFOOT.SMB` is 31 frames of 825 vertices, every index inside.  The `.RAW`
+textures are the `.TEX` layout and `tr_tex` now claims them.

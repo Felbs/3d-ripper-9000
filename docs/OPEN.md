@@ -18,7 +18,10 @@ indices, u16 uv / 1024.  The "0x0400" the statistics saw was weight 1.0.  Home p
 `setToHomePose`: identity rotations over the per-bone translations the mesh carries.  Blowout's
 version 5 lists its 36-byte headers first and its big-endian index lists inside the payloads.
 See [formats/terminal-reality-dfm.md](formats/terminal-reality-dfm.md).  RoadKill and 4x4 Evo
-2 carry no `_dfm` at all (their characters are elsewhere - `hero` / `car18` text defs, `.smb`).
+2 carry no `_dfm` at all.  **4x4 Evo 2's 1,113 `.SMB`** (a disc that yielded 11 models) are
+`C3DModel::loadBinary` from `4x4.elf`: GX packets behind the same `SGCPacketHeader` the `_smf`
+reader walks - whose "preamble" turned out to be the header's uv-fraction and kind words -
+or keyframed f32 arrays (`gcrip/formats/tr_smb.py`).
 
 ## Closed 2026-09-03: Smashing Drive (Point of View `PHM` / `TG_` layouts)
 
