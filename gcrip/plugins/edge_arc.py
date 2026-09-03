@@ -1,6 +1,6 @@
 """Edge of Reality ``.arc`` archives (gcrip.formats.edge_ind) - The Sims, Shark Tale, Over the
-Hedge.  A container only: the directory lives in the sibling ``index.ind``, and the members go
-to whichever plugin claims them.
+Hedge, The Sims 2 / Pets, The Urbz.  A container only: the directory lives in the sibling
+``index.ind``, and the members go to whichever plugin claims them (``edge_model``, ``edge_tex``).
 
 Audio and video categories are skipped rather than carried - ``Movies`` alone is 574 MB on Over
 the Hedge, and none of it is geometry.
@@ -16,7 +16,18 @@ NEEDS_SIBLING = True
 INDEX = "index.ind"
 # the archives these discs actually ship, so an unrelated .arc is never claimed
 STEMS = frozenset(
-    {"models", "levels", "samples", "movies", "audiostr", "datasets", "quickdat", "rletextu"}
+    {
+        "models",
+        "levels",
+        "samples",
+        "movies",
+        "audiostr",
+        "datasets",
+        "quickdat",
+        "rletextu",
+        "textures",
+        "shaders",
+    }
 )
 SKIP = frozenset({"movies", "audiostr", "samples"})
 

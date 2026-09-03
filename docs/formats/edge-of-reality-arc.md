@@ -182,3 +182,87 @@ the next attempt should start from the payload's own structure rather than from 
   this is now a question about one blob with known dimensions rather than about the container;
 * the RLE scheme for `rletextu`, whose dimensions can now be looked up by hash in the datasets;
 * the `models.arc` payload, which is not GX.
+
+## The Sims 2 and The Sims 2 Pets - models, textures and shaders read (2026-09-03)
+
+The Sims 2 GameCube (`G4ZE69`) is the same engine (its `eorwb.log` is the Edge of Reality
+WorkBench log) and ships `u2_ngc_release_dvd.elf` **with its linker map**, so every loader has a
+name: `ERModel::LoadModel`, `ESubModel::Read`, `ESubModelShader::Read` with `ReadPositions` ..
+`ReadIndices`, `ERTexture::LoadFromMemory` + `ENgcTexture::Create`, `ERShader::CopyShedData`,
+and `ENgcRenderer::InitGXVertexFormats` for the vertex attribute formats.  Read by
+`gcrip/formats/edge_model.py` with `plugins/edge_model.py` (models) and `plugins/edge_tex.py`
+(textures); `plugins/edge_arc.py` now also opens `textures.arc` and `shaders.arc`.
+
+On these two discs the index is flat: `Models` (3,631 / 5,475), `Textures` (11,443 / 16,049)
+and `Shaders` each in their own archive.  Pets writes the category tables with a 20-byte
+header (`u32 0, u32 count, u32 table bytes, u32 capacity, u32 0`) before the sorted hashes;
+`edge_ind` reads both.
+
+### Members
+
+Every member is an `EDataHeader`: `u32 version, char[4] tag, u32 -1, u32 n, name[n], u32 size,
+payload`.  Tags: `MODL` (version 0x3a on The Sims 2, 0x3e on Pets), `TXFL` (9), `SHDR` (0x16),
+`DTST` (10), `CHRC`.
+
+**Model** (`ERModel::LoadModel`, versions 0x39-0x3e):
+
+```
+u32, 48 bytes, u8
+u32 n, n x 64                         attachment vertices
+u32 n, n x BSplineVolume              u32 tag (non-zero: nothing else), 0x80, u32, u32 nx, ny, nz,
+                                      u32 sets, sets > 1: sets*nx*ny*nz x f32[3]
+u32 n, n x ENDummy                    u32 tag, name[64], u32, u32 k, k x 0x50
+u32 n, n x ENCamera                   u32 tag, name[64], u32, u32 k, k x 0x60
+u32 n, n x 28                         SimsLightInfo
+u8 flag, f32 scale, u32 nsubmodels
+submodel: u32, u32 nshaders, shaders
+shader:   u32 flags, u32 shader hash, u32 nstrips, nstrips x u8, u32, tokens until 6:
+          0  strip: u32 nverts; positions s16[4] (flags & 0x10) or f32[4]; UVs (flags & 2;
+             s16/4096 or f32, four components with 0x40); RGBA8 colours (flags & 4);
+             normals s8[4] (flags & 8; s8[3] up to version 0x39); u8[4] weights while skinned;
+             flags & 0x20: u32 corners, u8, u32 size, u32, a GX display list
+          1  u16, u8 (bone)   2/4  skinned on   3/5  skinned off
+f32[4] bound sphere, f32[6] bounds, f32[6] bounds, u8[4]
+```
+
+`flags & 0x10` is the packed vertex: `s16` positions with `scale` (2^-12 for characters,
+2^-16 for objects: the bounds are in the same units), `s16/4096` UVs from GX vertex format 6
+(`GXSetVtxAttrFmt(6, TEX0, S16, frac 12)`).  A strip with no display list is a **triangle strip
+over its vertex array in order** (`CreateRCPrimitive` returns `nverts - 2`); with one, each
+corner is a u16 index per attribute present (position, normal, colour, texcoords), and every
+attribute indexes the same vertex.  Verified on 11 members that parse to their last byte:
+NPC_catwoman (62 strips, 3,049 triangles, T-posed) and a double-basin sink drawn as wireframes
+look exactly like their names.
+
+**Texture** (`ETextureDef`, 32 bytes, then the mip chain, then the palette):
+
+```
+u32, u32, u32 flags, u32, u16 w, u16 h, u16 palette entries, u16 mips, u8 format, u8,
+u8 bpp, u8 palette bpp, u32
+```
+
+`ENgcTexture::Create` maps the format byte: 0x81 CMPR, 0x82 RGB5A3, 0x83 C4 / 0x84 C8 over a
+16-bit palette, 0x85 and 1 RGBA8, 0x89 C4 / 0x8a C8 over a 32-bit palette.  The pixels are
+GX-tiled on disc.  **The 32-bit palette on disc (flags bit 7) is two IA8 TLUTs**, not RGBA
+entries: `entries x (B, R)` words then `entries x (A, G)` - the C4_32 / C8_32 classes draw
+with two TEV stages, one per TLUT, and `UpdateEnd` shows the byte order when the split is
+done at load time.  Settled on colour-named textures (mohawk_red dark red, alien_green green,
+blouse2_pink pink) after the two obvious orders gave the wrong hues.
+
+**This answers the open question above.**  The old dataset `81 04` / `89 04` / `8a 08` flags
+are this same `format, bpp` pair (CMPR, C4_32, C8_32); the C8 reading scored badly because the
+palette was read as 4-byte entries.
+
+**Shader** (`EShaderDef`): `u8 textures, u8, u16, u32 x 3, 48 bytes, 9 x u32`, then 64-byte
+layers whose first u32 is a texture's name hash.  A model's strip names its shader by hash,
+the shader names its texture by hash, and the hash is of the *name*, so a shader and a texture
+of the same name share it (NPC_catwoman -> shader 992eeb73 -> texture `missingshader`: the
+Sims' skins are composited at runtime).
+
+### Still open on the older discs
+
+The Sims (2003), Bustin' Out, The Urbz, Shark Tale and Over the Hedge put their models inside
+`Datasets` members (Urbz and Bustin' Out have *only* `Datasets` and `QuickDatas` in their
+index) with per-game dataset headers and an older model header (The Sims: `u32 0, u16 0,
+name, u8, f32 scale, ...` with no node arrays and three-byte normals).  The strip grammar is
+the same.  Next: a `Datasets` container plugin per header variant.

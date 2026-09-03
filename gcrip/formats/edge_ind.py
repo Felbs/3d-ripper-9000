@@ -80,16 +80,25 @@ def is_index(data: bytes) -> bool:
     return _segments(data) is not None
 
 
+LATE_HEADER = 20  # The Sims 2 Pets: u32 0, u32 count, u32 table bytes, u32 capacity, u32 0
+
+
 def _table(seg: bytes) -> list[Entry] | None:
     if len(seg) < 4:
         return None
     count = struct.unpack_from(">I", seg, 0)[0]
-    if not (0 < count <= MAX_ENTRIES) or len(seg) - 4 != count * RECORD:
+    at = 4
+    if count == 0 and len(seg) >= LATE_HEADER:
+        count, table_bytes = struct.unpack_from(">II", seg, 4)
+        if table_bytes != len(seg):
+            return None
+        at = LATE_HEADER
+    if not (0 < count <= MAX_ENTRIES) or len(seg) - at != count * RECORD:
         return None
-    hashes = struct.unpack_from(f">{count}I", seg, 4)
+    hashes = struct.unpack_from(f">{count}I", seg, at)
     if any(a >= b for a, b in zip(hashes, hashes[1:], strict=False)):
         return None  # the sorted hash array is what distinguishes this from a record array
-    pairs = struct.unpack_from(f">{2 * count}I", seg, 4 + count * 4)
+    pairs = struct.unpack_from(f">{2 * count}I", seg, at + count * 4)
     return [Entry(hashes[i], pairs[2 * i], pairs[2 * i + 1]) for i in range(count)]
 
 
