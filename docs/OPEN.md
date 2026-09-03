@@ -6,6 +6,22 @@ textures through the plugin chain.
 
 Companion to [FORMATS.md](FORMATS.md), which lists what already works.
 
+## Closed 2026-09-03: EA Tiburon `comp5` - fourteen discs
+
+The largest cluster in the road-to-100 census fell by reading the game's own decompressor out
+of Madden 06's DOL: `comp5` is codec five of EA's `GCMP.LIB` (`NONE`, `RLE1`, `HUFF`, `LZM1`,
+**`LZH1`**), an MSB-first LZ+Huffman with deflate's tables and an Adler-32 trailer.  Behind it
+are `TMdl` (`.ea3`) models - stadiums, props, sky domes - and named `MMAP` texture packs, both
+read now.  Madden 06's `STADATA.DAT` alone goes from 0 to 194 models / 35,217 triangles / 251
+textures through the plugin chain.  [formats/ea-tiburon-comp5.md](formats/ea-tiburon-comp5.md),
+[formats/ea-tiburon-tmdl.md](formats/ea-tiburon-tmdl.md).  Still open on those discs: the
+stadium crowd-quad block, `Swap` chains, and whatever `PLADATA` / `PLYRFACE` turn out to be.
+
+**The lesson generalises**: a private bit-level codec is not a dead end when the disc ships the
+decoder.  Score the DOL's functions for shifts + byte loads + loops - calls, follow the
+zero-caller hits to their vtable, and the codec's *name* is usually sitting next to it.  The
+same route is open for High Voltage `GMS`, Frogger `PRS1` and Tiger Woods `Rdat` below.
+
 ## Close - one focused session each
 
 | format | discs | state | what is blocking |

@@ -4,8 +4,8 @@ TERF (big-endian): "TERF", u32 section offset, u8[4] version, u16 alignment, u16
 sections follow from the section offset, each "TAG_" + u32 size, aligned:
   HSH1  optional name-hash table
   DIR1  u32 offset, u32 size per member (offsets relative to the DATA tag)
-  COMP  u32 type, u32 unpacked size per member (type 0 = stored, 5 = Tiburon's own
-        bit-packed codec, not decoded here - members keep their packed bytes)
+  COMP  u32 type, u32 unpacked size per member (type 0 = stored, 5 = GCMP.LIB "LZH1",
+        decoded by ea_lzh1; other types keep their packed bytes as .compN)
   DATA  member bytes
 Members carry no names; they are numbered and get an extension from their magic.
 
@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from gcrip.formats import gx_texture
+from gcrip.formats import ea_lzh1, gx_texture
 
 
 @dataclass
@@ -82,8 +82,11 @@ def parse(data: bytes) -> Terf:
     return t
 
 
+LZH1 = 5  # GCMP.LIB codec index: NONE, RLE1, HUFF, LZM1, LZH1
+
 _EXT = {
     b"MMAP": "mmap",
+    b"TMdl": "tmdl",
     b"TERF": "terf",
     b"FAC\0": "fac",
     b"DB\0\x08": "db",
@@ -99,7 +102,13 @@ def expand(data: bytes) -> list[tuple[str, bytes]]:
     out = []
     for m in t.members:
         blob = data[m.offset : m.offset + m.size]
-        if m.comp_type not in (0, 0xFFFFFFFF) and m.size:
+        if m.comp_type == LZH1 and m.size:
+            try:
+                blob = ea_lzh1.unpack(blob, m.unpacked or None)
+            except ea_lzh1.Lzh1Error:
+                out.append((f"{m.index:04d}.comp{m.comp_type}", blob))
+                continue
+        if m.comp_type not in (0, LZH1, 0xFFFFFFFF) and m.size:
             ext = f"comp{m.comp_type}"
         elif blob[:1] == b"<":
             ext = "txt"
@@ -126,6 +135,38 @@ def is_mmap(head: bytes) -> bool:
     return len(head) >= 0x28 and head[:4] == b"MMAP"
 
 
+def _mmap_palette(data: bytes, pal_off: int, gx_fmt: int, warnings: list[str]) -> tuple[np.ndarray, int]:
+    """Palette for one paletted level from the record at ``pal_off``; returns it and the size
+    of the record so a pack can step to the next one."""
+    count = {8: 16, 9: 256, 10: 16384}[gx_fmt]
+    if pal_off and pal_off + 12 <= len(data):
+        _own, pfmt, psize, poff = struct.unpack_from(">HHII", data, pal_off)
+        count = min(count, max(1, psize // 2))
+        if pfmt not in (0, 1, 2):
+            warnings.append(f"MMAP palette format {pfmt} unknown, using RGB5A3")
+            pfmt = 2
+        return gx_texture.decode_palette(pfmt, data[poff : poff + count * 2], count), 12
+    warnings.append("paletted MMAP without a palette block")
+    palette = np.stack([np.arange(count) % 256] * 3 + [np.full(count, 255)], -1)
+    return palette.astype(np.uint8), 0
+
+
+def _mmap_level(data: bytes, level_off: int, pal_off: int, warnings: list[str]) -> tuple[np.ndarray, int]:
+    """Decode the level whose 16-byte descriptor is at ``level_off``; returns the image and
+    the number of palette bytes it consumed."""
+    w, h, fmt, _z, size, off = struct.unpack_from(">HHHHII", data, level_off)
+    gx_fmt = EA_FORMATS.get(fmt, fmt)
+    if gx_fmt not in gx_texture.TILE_DIMS:
+        raise ValueError(f"MMAP with unknown GX format {fmt}")
+    if w == 0 or h == 0:
+        raise ValueError("zero-sized MMAP")
+    palette = None
+    used = 0
+    if gx_fmt in (8, 9, 10):
+        palette, used = _mmap_palette(data, pal_off, gx_fmt, warnings)
+    return gx_texture.decode(gx_fmt, w, h, data[off : off + size], palette), used
+
+
 def decode_mmap(data: bytes) -> tuple[np.ndarray, list[str]]:
     """Level 0 of an MMAP as RGBA."""
     if not is_mmap(data):
@@ -134,26 +175,43 @@ def decode_mmap(data: bytes) -> tuple[np.ndarray, list[str]]:
     hdr_size, pal_off = struct.unpack_from(">II", data, 0x18)
     if levels < 1:
         raise ValueError("MMAP without levels")
-    w, h, fmt, _z, size, off = struct.unpack_from(">HHHHII", data, hdr_size)
-    gx_fmt = EA_FORMATS.get(fmt, fmt)
-    if gx_fmt not in gx_texture.TILE_DIMS:
-        raise ValueError(f"MMAP with unknown GX format {fmt}")
-    if w == 0 or h == 0:
-        raise ValueError("zero-sized MMAP")
     warnings: list[str] = []
-    palette = None
-    if gx_fmt in (8, 9, 10):
-        count = {8: 16, 9: 256, 10: 16384}[gx_fmt]
-        if pal_off and pal_off + 12 <= len(data):
-            _one, pfmt, psize, poff = struct.unpack_from(">HHII", data, pal_off)
-            count = min(count, max(1, psize // 2))
-            if pfmt not in (0, 1, 2):
-                warnings.append(f"MMAP palette format {pfmt} unknown, using RGB5A3")
-                pfmt = 2
-            palette = gx_texture.decode_palette(pfmt, data[poff : poff + count * 2], count)
-        else:
-            warnings.append("paletted MMAP without a palette block")
-            palette = np.stack([np.arange(count) % 256] * 3 + [np.full(count, 255)], -1)
-            palette = palette.astype(np.uint8)
-    rgba = gx_texture.decode(gx_fmt, w, h, data[off : off + size], palette)
+    rgba, _ = _mmap_level(data, hdr_size, pal_off, warnings)
     return rgba, warnings
+
+
+MMAP_NAME = 16
+
+
+def mmap_pack(data: bytes) -> list[tuple[str, np.ndarray, list[str]]]:
+    """Every texture of an MMAP that carries a name block - Tiburon model packs put one
+    texture per "level" (base level only, no mips) and name each in 16-byte slots (15
+    characters, ``~00`` suffixes for collisions; a per-texture record table after the names
+    keeps the source mip counts).  Without a name block the MMAP is one texture and only
+    level 0 is returned."""
+    if not is_mmap(data):
+        raise ValueError("not an MMAP texture")
+    levels = struct.unpack_from(">H", data, 0x0C)[0]
+    hdr_size, pal_off, name_off = struct.unpack_from(">III", data, 0x18)
+    if levels < 1:
+        raise ValueError("MMAP without levels")
+    if not name_off or name_off + levels * MMAP_NAME > len(data):
+        rgba, warnings = decode_mmap(data)
+        return [("", rgba, warnings)]
+    out = []
+    skipped: list[str] = []
+    pal = pal_off
+    for i in range(levels):
+        warnings: list[str] = []
+        name = data[name_off + i * MMAP_NAME : name_off + (i + 1) * MMAP_NAME].split(b"\0")[0].decode("latin-1")
+        try:
+            rgba, used = _mmap_level(data, hdr_size + 16 * i, pal, warnings)
+        except ValueError as exc:
+            # stadium packs declare 79 slots and fill 61; the rest are stale descriptors
+            skipped.append(f"{name or i}: {exc}")
+            continue
+        pal += used
+        out.append((name, rgba, warnings))
+    if skipped and out:
+        out[0][2].append(f"{len(skipped)} MMAP pack slots did not decode ({skipped[0]})")
+    return out

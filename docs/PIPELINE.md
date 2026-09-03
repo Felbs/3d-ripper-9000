@@ -174,6 +174,7 @@ The full ledger with byte-layout notes is [FORMATS.md](FORMATS.md).
 flowchart LR
     subgraph EA["Electronic Arts"]
         BIG["BIG / VIV / TERF / ZZDATA<br/>plugins.ea"] --> EAGL["EAGL .ord/.orp<br/>plugins.eagl"]
+        BIG --> LZH1["TERF comp5 = GCMP LZH1<br/>formats.ea_lzh1"] --> TMDL["Tiburon TMdl .ea3<br/>plugins.ea_tmdl"]
         NGC[".ngc index<br/>formats.totemtech"] --> DGC["TotemTech .dgc record chain<br/>plugins.totemtech"]
         BIG --> EBO["EBO .ebo<br/>plugins.ebo"]
     end
