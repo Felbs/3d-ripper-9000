@@ -99,3 +99,37 @@ def test_both_identities_hold_and_can_fail():
     struct.pack_into("<I", hurt, 4, len(hurt))  # a size that swallows the rest
     broken = {r.identity.name: r for r in identities.check(ea_rws, bytes(hurt))}
     assert broken["the chunk walk covers the file"].held is False
+
+
+# -- the Goblet of Fire variant, which writes a sentinel where a size belongs -----------------
+
+
+def test_a_chunk_with_no_declared_length_is_bounded_by_the_next_header():
+    """Goblet of Fire writes 0xFABB00B5 where Call of Duty writes a size - the same constant
+    in every file and every chunk that carries it, so it is a sentinel, not a length."""
+    body = b"\x44" * 40
+    sized = chunk(0x0704, b"\x55" * 32)
+    data = (
+        type_table(["RenderTrigger"])
+        + struct.pack("<3I", ea_rws.DESCRIPTOR, ea_rws.NO_SIZE, STAMP)
+        + body
+        + sized
+    )
+    got = ea_rws.chunks(data)
+    assert [c.ident for c in got] == [ea_rws.TYPE_TABLE, ea_rws.DESCRIPTOR, 0x0704]
+    assert got[1].size == len(body)
+    assert got[-1].end == len(data)
+
+
+def test_a_sentinel_chunk_at_the_end_takes_the_rest_of_the_file():
+    data = type_table(["X"]) + struct.pack("<3I", 0x0704, ea_rws.NO_SIZE, STAMP) + b"\x77" * 64
+    got = ea_rws.chunks(data)
+    assert len(got) == 2
+    assert got[-1].end == len(data)
+
+
+def test_a_walk_that_cannot_reach_the_end_still_returns_nothing():
+    """One Goblet of Fire member ends 24 bytes short on a chunk id that is not one; a partial
+    read of an archive is worse than none."""
+    data = type_table(["X"]) + chunk(0x0704, b"\x99" * 16) + b"\xbf" * 24
+    assert ea_rws.chunks(data) == []

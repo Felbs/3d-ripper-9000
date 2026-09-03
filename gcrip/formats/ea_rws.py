@@ -56,6 +56,10 @@ STAMPS = (0x1800, 0x1801, 0x1802, 0x1803)
 IDENT_BYTES = 16
 MAX_CHUNKS = 1 << 20
 MAX_NAME = 1 << 12
+#: Goblet of Fire writes this constant where Call of Duty writes a size.  It is the same value
+#: in every file and every chunk that carries it, so it is a sentinel, not a length: the
+#: chunk's extent has to be found by looking for the next stamped header.
+NO_SIZE = 0xFABB00B5
 
 
 @dataclass(frozen=True)
@@ -103,11 +107,32 @@ def chunks(data: bytes) -> list[Chunk]:
     n = len(data)
     while at + CHUNK <= n and len(out) < MAX_CHUNKS:
         ident, size, version = struct.unpack_from("<3I", data, at)
-        if size > n - at - CHUNK:
+        if (version >> 16) not in STAMPS:
             return []
+        if size > n - at - CHUNK and size != NO_SIZE:
+            return []  # an oversized length is a misread file, not the sentinel variant
+        if size == NO_SIZE:
+            nxt = _next_header(data, at + CHUNK)
+            if nxt is None:
+                out.append(Chunk(ident, at, n - at - CHUNK, version))
+                return out
+            out.append(Chunk(ident, at, nxt - at - CHUNK, version))
+            at = nxt
+            continue
         out.append(Chunk(ident, at, size, version))
         at += CHUNK + size
     return out if at == n else []
+
+
+def _next_header(data: bytes, at: int) -> int | None:
+    """Where the next stamped chunk header starts, for a chunk that declares no length."""
+    n = len(data)
+    while at + CHUNK <= n:
+        _ident, size, version = struct.unpack_from("<3I", data, at)
+        if (version >> 16) in STAMPS and size <= n - at - CHUNK:
+            return at
+        at += 1
+    return None
 
 
 def _string(data: bytes, at: int) -> tuple[str, int]:

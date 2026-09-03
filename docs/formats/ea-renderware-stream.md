@@ -64,3 +64,34 @@ Neither file carries a RenderWare chunk with a 3.x stamp inside it, and
 (118 MB) are level scripts and object databases.  Its **231 `.rws` (582 MB)** are the obvious
 next place; `docs/formats/rws-is-audio.md` measured `.rws` on Asterix, Madagascar and Piglet,
 not on this disc.
+
+
+## The Goblet of Fire variant: a sentinel where the size belongs (2026-09-03)
+
+Goblet of Fire's `.str` failed the walk at chunk 1 every time, always with the same reading:
+`0x0716` with a "size" of **4,206,559,413**.  The same value, in five different files, at five
+different offsets.  That is not a corrupt length - it is `0xFABB00B5`, a **sentinel** meaning
+the chunk does not declare one.
+
+Bounding such a chunk by the next stamped header instead closes the format on that disc:
+
+| member | bytes | chunks | ends | assets |
+|---|---|---|---|---|
+| `{146ED2C8-…}.str` | 7,157,408 | 1,602 | **exact** | 333 |
+| `{50F19F5E-…}.str` | 109,888 | 8 | **exact** | 4 |
+| `{6F15A79E-…}.str` | 6,720 | 7 | **exact** | 4 |
+| `{59969448-…}.str` | 1,120 | 4 | **exact** | 2 |
+| `{E72D47F7-…}.str` | 7,345,024 | - | 24 bytes short, on an id that is not one | - |
+
+and Call of Duty's `level.dff` is unchanged at 554 chunks.
+
+The recovery is deliberately narrow: **only** a size that equals the sentinel exactly is
+re-derived.  An arbitrary oversized length is still refused outright, because that is a misread
+file rather than this variant, and the member that ends 24 bytes short returns nothing rather
+than a partial archive.
+
+## What the assets are on that disc, so far
+
+The five members sampled declare `rwID_SEQUENCE` (26) and `rwID_HAVOK_HKX_DATA` (4) - scripts
+and physics.  **No geometry type has turned up yet**, and 147 of `data.big`'s 152 members are
+still unsampled.
