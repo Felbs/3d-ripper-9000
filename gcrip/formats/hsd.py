@@ -792,7 +792,19 @@ class AttrReader:
         self._cache: dict[tuple, np.ndarray] = {}
 
     def array(self, a: VtxAttr, n: int) -> np.ndarray:
-        """First n entries of an indexed attribute's array as (n,k) float32."""
+        """First n entries of an indexed attribute's array as (n,k) float32.
+
+        `n` is one past the largest index a display list used, and a mis-read display list can
+        make that enormous.  The array is padded to `n` so an out-of-range index still lands
+        somewhere, but the padding has to be bounded by what the file could hold: a `.dat`
+        whose header happens to reconcile can otherwise ask for gigabytes and the reader dies
+        with a bare `MemoryError` - or, worse, spends an hour in the allocator.  Seen live on
+        Dragon Drive's `sd12_000.dat`, where it stalled a whole shard of the library pass.
+        """
+        if n > self.dat.size:
+            raise HsdError(
+                f"a display list indexes {n} vertices in a {self.dat.size}-byte file"
+            )
         key = (a.data, a.stride, a.comp_type, a.comp_cnt, a.frac, a.attr, n)
         hit = self._cache.get(key)
         if hit is not None:

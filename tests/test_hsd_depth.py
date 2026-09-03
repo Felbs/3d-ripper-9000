@@ -8,6 +8,7 @@ One bad branch killed the whole file.
 
 from __future__ import annotations
 
+import struct
 import sys
 
 import numpy as np
@@ -45,3 +46,27 @@ def test_the_parse_depth_is_bounded():
     branch instead of raising and losing the file."""
     assert hsd.MAX_JOBJ_DEPTH >= 64
     assert hsd.MAX_JOBJ_DEPTH < sys.getrecursionlimit()
+
+
+# -- and they must not cost gigabytes either -------------------------------------------------
+
+
+def test_a_vertex_array_is_bounded_by_the_file():
+    """`hsd: MemoryError` on Dragon Drive's `sd12_000.dat` stalled a whole shard of the library
+    pass for twenty minutes.  The array is padded to one past the largest index a display list
+    used, and a mis-read display list makes that number arbitrary - so it has to be bounded by
+    what the file could possibly hold, and say so rather than dying in the allocator."""
+    import pytest
+
+    size = 0x40
+    block = size - hsd.HEADER - 8  # leave room for one root entry
+    raw = struct.pack(">5I", size, block, 0, 1, 0) + bytes(size - 20)
+    dat = hsd.DatFile(raw)
+    reader = hsd.AttrReader(dat)
+    attr = hsd.VtxAttr(
+        attr=hsd.VA_POS, attr_type=1, comp_cnt=1, comp_type=4, frac=0, stride=12, data=0
+    )
+    with pytest.raises(hsd.HsdError, match="indexes"):
+        reader.array(attr, 1 << 28)
+    # a request the file could actually satisfy still works
+    assert reader.array(attr, 4).shape == (4, 3)
