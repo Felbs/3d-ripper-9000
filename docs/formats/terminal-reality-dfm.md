@@ -181,3 +181,56 @@ columns are characterised - but which columns are position and what the scale is
 and the two obvious ways to decide it are the ones already recorded as discredited.  The next
 attempt should look for a **declared count** to match an array length against, since a size
 identity is the one oracle in this project that has never misled.
+
+
+## The geometry is a chain of sub-mesh blocks (2026-09-02)
+
+The previous section ended by saying the next attempt should look for a **declared count**,
+because a size identity is the one oracle here that has never misled.  There is one, and it is
+per sub-mesh rather than per file.
+
+After the part table and the material table the file is a flat run of blocks:
+
+    u32 a, b          two small indices - a part or bone pair
+    u32 2             constant
+    u32 payload       the vertex bytes, plus four
+    u32 4             constant
+    u32 vertices
+    u32 triangles
+    u32 bone count    the number the file header already carries, and the .SKL holds
+    u32 0
+    u32 0x0A000000    constant
+    ... vertices ...  `payload - 4` bytes
+    ... triangles ... three u16 an entry
+
+Two identities pin it, and neither can pass by accident:
+
+* **the blocks tile.**  `next block == this block + 36 + payload + 6 * triangles`, on
+  **106 of 106** blocks in `soldier.dfm` and **47 of 47** in `mentor.dfm`, with the last one
+  ending exactly at the end of the file.
+* **every triangle indexes its own block, and the largest index is exactly `vertices - 1`** -
+  106 of 106 and 47 of 47.  That is the oracle proven on PHM's quantised geometry, the one this
+  note recorded as finding *nothing* here.  It finds nothing when it is asked of the whole file,
+  because the file is not one array; asked of a block it is exact every time.
+
+| file | blocks | vertices | triangles | 20-byte blocks |
+|---|---|---|---|---|
+| `soldier.dfm` | 106 | 4,215 | 3,914 | 75 |
+| `mentor.dfm` | 47 | 3,241 | 3,760 | 11 |
+
+`payload == vertices * 20 + 4` on 75 of soldier's blocks - **the 20-byte stride the byte
+autocorrelation found, now stated by the file itself** - and the wider blocks are what a
+variable-length skinning list looks like.
+
+### What the vertex record still is not
+
+Inside a 20-byte record byte 3 is always `0x04`, byte 4 always `0x00` (the note's `0x0400`
+marker), byte 15 always `0x44` and bytes 16-17 always `0x01FE` - the 510 marker.  Read as
+little-endian `s16` the narrow columns are 1, 2 and 3; read big-endian they are 4, 8 and 9.
+
+**Neither triple is the position.**  Scored by how short a triangle's perimeter is against its
+own block's diagonal - a real surface scores near 0.1, and the indices needed for the test are
+now known to be right - the best of all 240 column triples across 29 blocks reaches only 0.44,
+with the field flat behind it.  Eleven of the twenty bytes carry about forty distinct values
+over 130 vertices, which is not what whole `s16` coordinate columns look like.  The reading that
+fits is **packed bit fields**, and that is where the next attempt should start.
