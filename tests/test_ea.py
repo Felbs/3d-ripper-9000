@@ -414,3 +414,102 @@ def test_a_format_gx_really_does_not_define_still_raises():
 
     with pytest.raises(ValueError, match="unknown GX format 7"):
         ea_terf.decode_mmap(_mmap_c8(8, 4, code=7))
+
+
+# ---------------------------------------------------------------- Underground (2003)
+
+
+def _underground_tpk(name: str, textures: dict[int, tuple[bytes, int, int, int, bytes]]) -> bytes:
+    """Underground's texture pack: 20-byte stream entries, 124-byte TextureInfo and 60-byte
+    platform records; `textures`: hash -> (tiles, fmt, w, h, palette)."""
+    info_name = struct.pack("<I", 5) + name.encode().ljust(0x1C, b"\0")
+    info_name += rb"CARS\TST\TEXTURES.BIN".ljust(0x40, b"\0") + b"\0" * 0x1C
+    hashes = b"".join(struct.pack("<II", h, 0) for h in textures)
+    info_len = 8 + len(info_name) + 8 + len(hashes) + 8 + 20 * len(textures)
+    info_len += 8 + 124 * len(textures) + 8 + 60 * len(textures)
+    data_start = 8 + 8 + info_len + 8
+    streams, rec3, rec4, rec5 = bytearray(), bytearray(), bytearray(), bytearray()
+    for h, (tiles, fmt, w, hgt, pal) in textures.items():
+        blob = _jdlz_literal(tiles + pal)
+        rec3 += struct.pack("<IIIII", h, data_start + len(streams), len(blob), 0x100, 0)
+        streams += blob
+        r = bytearray(124)
+        r[0x0C : 0x0C + 6] = b"UGTEX_"
+        struct.pack_into("<I", r, 0x24, h)
+        struct.pack_into(
+            "<IIII", r, 0x30, 0, len(tiles) if pal else 0xFFFFFFFF, len(tiles), len(pal)
+        )
+        struct.pack_into("<HH", r, 0x44, w, hgt)
+        rec4 += r
+        r5 = bytearray(60)
+        struct.pack_into(">I", r5, 0x38, fmt)
+        rec5 += r5
+    info = _chunk(0x33310001, info_name) + _chunk(0x33310002, hashes)
+    info += _chunk(0x33310003, bytes(rec3)) + _chunk(0x33310004, bytes(rec4))
+    info += _chunk(0x33310005, bytes(rec5))
+    root = _chunk(0xB3310000, info) + _chunk(0x33320001, bytes(streams))
+    return _chunk(0xB3300000, root)
+
+
+def _underground_geometry(wide: bool) -> bytes:
+    """One Underground part (plat info version 0x14): a quad strip whose corners are four
+    indices (position, normal, colour, uv), u16 when VertexDescription is 1; the colour
+    column runs past the one-entry colour array the way the game's files do."""
+    hdr = bytearray(176)
+    struct.pack_into("<I", hdr, 0x10, 0x1234)
+    struct.pack_into("<HH", hdr, 0x14, 2, 4)
+    struct.pack_into("<3f", hdr, 0x20, 0, 0, 0)
+    struct.pack_into("<3f", hdr, 0x30, 1, 1, 0)
+    struct.pack_into("<16f", hdr, 0x40, *np.eye(4, dtype=np.float32).flatten())
+    hdr[0x94:0x9A] = b"BODY_A"
+    fmtc = ">HHHH" if wide else "BBBB"
+    strip = b"".join(struct.pack(fmtc, i, i, i, i) for i in range(4))
+    strip += b"\0" * (-len(strip) % 16)
+    pos = struct.pack(">12f", 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 1, 0)
+    clr = b"\xff\xff\xff\xff"
+    uv = struct.pack(">8h", 0, 0, 4096, 0, 0, 4096, 4096, 4096)
+    nrm = struct.pack(">16b", *([0, 0, 64, 0] * 4))
+    body = strip + pos + clr + uv + nrm
+    body += b"\0" * (-len(body) % 16)
+    pos_off = len(strip)
+    clr_off = pos_off + len(pos)
+    uv_off = clr_off + len(clr)
+    nrm_off = uv_off + len(uv)
+    m800 = struct.pack(
+        ">HHHHIIIIII", 0x14, 0x4180, 1, 13, len(body), pos_off, nrm_off, clr_off, uv_off, 0
+    )
+    vd = 1 if wide else 2
+    m801 = struct.pack(">IHHBBBBBBH", 0, len(strip), 0x4180, 4, 0, 0, 0, vd, 0x16, len(strip))
+    mesh = _chunk(0x00134800, m800) + _chunk(0x00134801, m801) + _chunk(0x00134802, body)
+    part = _chunk(0x00134011, bytes(hdr)) + _chunk(0x00134012, struct.pack("<II", 0xABCD0002, 0))
+    part += _chunk(0x80134100, mesh)
+    info_hdr = bytearray(0x80)
+    info_hdr[0x10:0x48] = rb"..\GAMECUBE\CD\CARS\TST\GEOMETRY.BIN".ljust(0x38, b"\0")
+    info = _chunk(0x80134001, _chunk(0x00134002, bytes(info_hdr)))
+    return _chunk(0x80134000, info + _chunk(0x80134010, part))
+
+
+def test_underground_strips_are_four_indices_wide():
+    for wide in (False, True):
+        geos = ea_nfs.parse_geometry(_underground_geometry(wide))
+        assert geos[0].warnings == [], geos[0].warnings
+        (part,) = geos[0].parts
+        assert len(part.strips) == 1
+        verts = part.strips[0].verts
+        assert [v["pos"] for v in verts] == [0, 1, 2, 3]
+        assert [v["uv"] for v in verts] == [0, 1, 2, 3]
+        assert [v["clr"] for v in verts] == [0, 0, 0, 0]  # clamped to the one colour
+        assert part.positions[3].tolist() == [1.0, 1.0, 0.0]  # f32, no bbox scale
+
+
+def test_underground_texture_pack_records_describe_the_streams():
+    tiles = bytes([0x00, 0x1F, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00]) * 4  # 8x8 CMPR, blue
+    c4 = bytes([0x10] * 32)  # 8x8 C4: index 1 everywhere but the first texel
+    pal = struct.pack(">16H", 0x83E0, 0xFC00, *([0] * 14))
+    data = _underground_tpk("CARTEXTURES", {0xA1: (tiles, 14, 8, 8, b""), 0xA2: (c4, 8, 8, 8, pal)})
+    (tpk,) = ea_nfs.parse_tpks(data)
+    assert tpk.name == "CARTEXTURES" and set(tpk.textures) == {0xA1, 0xA2}
+    name, rgba = ea_nfs.decode_tpk_texture(data, tpk.textures[0xA1])
+    assert name == "UGTEX_" and rgba.shape == (8, 8, 4) and tuple(rgba[0, 0]) == (0, 0, 255, 255)
+    _name, rgba = ea_nfs.decode_tpk_texture(data, tpk.textures[0xA2])
+    assert tuple(rgba[0, 0]) == (255, 0, 0, 255) and tuple(rgba[0, 1]) == (0, 255, 0, 255)

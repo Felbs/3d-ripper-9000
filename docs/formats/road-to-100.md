@@ -40,6 +40,8 @@ Mortal Kombat: Deception and Deadly Alliance (two singletons - the census saw `.
 
 Ultimate Spider-Man and Spider-Man 2 (two singletons - the census saw `amalga_gc.pak`) fell on 2026-09-03: Treyarch NGL, read from Ultimate Spider-Man's full symbol map - [treyarch-ngl-gamecube.md](treyarch-ngl-gamecube.md).
 
+Need for Speed: Underground (a singleton at 962 triangles beside its 7-million-triangle sequel) fell the same day from `Speed.elf`'s DWARF - [ea-black-box-underground.md](ea-black-box-underground.md).
+
 ## Running total
 
 Library: **1,085,308 models / 479.4 M triangles over 637 discs** before wave 30.  Wave 30 is

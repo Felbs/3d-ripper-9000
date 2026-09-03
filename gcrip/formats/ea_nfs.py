@@ -258,6 +258,7 @@ class TpkTexture:
     pal_offset: int = -1
     pal_size: int = 0
     data_base: int = 0  # file offset of the data payload (after its 0x11 fill), raw only
+    described: bool = False  # the record, not a trailer, gives the stream's size and format
 
 
 @dataclass
@@ -284,13 +285,21 @@ def parse_tpks(data: bytes, start: int = 0, end: int | None = None) -> list[Tpk]
             name = _cstr(data, nm[0][1] + 4, 0x1C)
             path = _cstr(data, nm[0][1] + 0x20, 0x40)
         tpk = Tpk(name, path, off - 8)
+        nhash = sum(c[2] // 8 for c in _find(sub, 0x33310002))
+        rec4 = _find(sub, 0x33310004)
+        rec5 = _find(sub, 0x33310005)
         for rec in _find(sub, 0x33310003):
+            if nhash and rec[2] == 20 * nhash and rec4:
+                # Underground (2003): 20-byte stream entries (hash, offset, packed bytes,
+                # flags, 0) whose JDLZ streams hold the tiles and palette with no trailer -
+                # the 124-byte TextureInfo record describes them
+                _parse_stream_records(data, rec, rec4[0], rec5, tpk)
+                continue
             for i in range(rec[2] // 24):
                 h, o, packed, unpacked = struct.unpack_from("<IIII", data, rec[1] + i * 24)
                 tpk.textures[h] = TpkTexture(h, o, packed, unpacked)
-        rec4 = _find(sub, 0x33310004)
         if rec4 and not tpk.textures:
-            _parse_raw_records(data, rec4[0], _find(sub, 0x33310005), off, size, tpk)
+            _parse_raw_records(data, rec4[0], rec5, off, size, tpk)
         _rebase_packed(data, tpk)
         out.append(tpk)
     return out
@@ -310,6 +319,32 @@ def _rebase_packed(data: bytes, tpk: Tpk) -> None:
     if data[shifted : shifted + 4] in (b"JDLZ", b"HUFF"):
         for t in packed:
             t.offset += tpk.start
+
+
+def _parse_stream_records(data, rec3, rec4, rec5, tpk) -> None:
+    """Underground's texture packs: a stream entry a texture (its JDLZ at an absolute
+    offset) and the TextureInfo / platform records by hash for the size, format and
+    palette."""
+    info = {}
+    for i in range(rec4[2] // 124):
+        r = rec4[1] + i * 124
+        h = struct.unpack_from("<I", data, r + 0x24)[0]
+        fmt = -1
+        if rec5 and (i + 1) * 60 <= rec5[0][2]:
+            fmt = struct.unpack_from(">I", data, rec5[0][1] + i * 60 + 0x38)[0]
+        info[h] = (r, fmt)
+    for i in range(rec3[2] // 20):
+        h, o, packed, _flags, _z = struct.unpack_from("<IIIII", data, rec3[1] + i * 20)
+        r, fmt = info.get(h, (None, -1))
+        if r is None:
+            tpk.textures[h] = TpkTexture(h, o, packed, 0)
+            continue
+        dsize, psize = struct.unpack_from("<II", data, r + 0x38)
+        w, hgt = struct.unpack_from("<HH", data, r + 0x44)
+        tpk.textures[h] = TpkTexture(
+            h, o, packed, dsize + psize, name=_cstr(data, r + 0x0C, 24), fmt=fmt,
+            width=w, height=hgt, pal_size=psize, described=True,
+        )  # fmt: skip
 
 
 def _parse_raw_records(data, rec4, rec5, off, size, tpk) -> None:
@@ -343,6 +378,8 @@ def _parse_raw_records(data, rec4, rec5, off, size, tpk) -> None:
 
 def decode_tpk_texture(data: bytes, t: TpkTexture) -> tuple[str, np.ndarray]:
     """(name, RGBA) for one texture-pack record in `data`."""
+    if t.described:
+        return _decode_described(data[t.offset : t.offset + t.packed], t)
     if not t.raw:
         return decode_texture(data[t.offset : t.offset + t.packed])
     if t.fmt not in gx_texture.TILE_DIMS:
@@ -358,6 +395,24 @@ def decode_tpk_texture(data: bytes, t: TpkTexture) -> tuple[str, np.ndarray]:
         palette = gx_texture.decode_palette(2, data[po : po + count * 2], count)
     do = t.data_base + t.offset
     rgba = gx_texture.decode(t.fmt, t.width, t.height, data[do : do + t.packed], palette)
+    return t.name or f"tex_{t.hash:08x}", rgba
+
+
+def _decode_described(blob: bytes, t: TpkTexture) -> tuple[str, np.ndarray]:
+    """Underground: the stream unpacks to the tiles then the palette; the record has the rest."""
+    raw = jdlz_decompress(blob) if blob[:4] == b"JDLZ" else blob
+    if t.fmt not in gx_texture.TILE_DIMS:
+        raise ValueError(f"unknown GX format {t.fmt}")
+    if t.width == 0 or t.height == 0:
+        raise ValueError("zero-sized texture")
+    size = t.unpacked - t.pal_size
+    palette = None
+    if t.fmt in (8, 9, 10):
+        count = 16 if t.fmt == 8 else 256
+        if len(raw) < size + count * 2:
+            raise ValueError("paletted texture without a palette")
+        palette = gx_texture.decode_palette(2, raw[size : size + count * 2], count)
+    rgba = gx_texture.decode(t.fmt, t.width, t.height, raw[:size], palette)
     return t.name or f"tex_{t.hash:08x}", rgba
 
 
@@ -448,13 +503,28 @@ def _strip_layout(fmt: int, has_header: bool) -> list[tuple[str, int]] | None:
     return layout
 
 
-def _read_strip(data: bytes, p: int, count: int, fmt: int, size: int) -> list[dict]:
+# Underground (2003, eSolidPlatInfo version 0x14): read from Speed.elf's DWARF and
+# eDataRender::Render - a corner is always four indices (position, normal, colour, uv),
+# u16 each when the strip's VertexDescription is 1, u8 otherwise; VertexFormat picks the
+# GX vertex format (positions F32, normals S8, colours RGBA8, uvs S16 / 4096) and is not
+# a width mask
+UNDERGROUND_VERSION = 0x14
+_UNDERGROUND_ATTRS = ("pos", "nrm", "clr", "uv")
+
+
+def _read_strip(
+    data: bytes, p: int, count: int, fmt: int, size: int, underground: bool = False
+) -> list[dict]:
     """Per vertex {attribute: index} for one strip."""
     has_header = bool(fmt & 0x8000)
     if has_header:
         p += 3
         size -= 3
-    layout = _strip_layout(fmt, has_header)
+    if underground:
+        w = 2 if (fmt >> 8) == 1 else 1
+        layout = [(a, w) for a in _UNDERGROUND_ATTRS]
+    else:
+        layout = _strip_layout(fmt, has_header)
     if layout is None:
         raise ValueError(f"unknown vertex attribute set {fmt & 0xFF:#x}")
     stride = sum(w for _, w in layout)
@@ -522,6 +592,7 @@ def _parse_part(data: bytes, off: int, size: int) -> Part | None:
     _flags, _nstrips, _nverts, total, pos_off, nrm_off, clr_off, uv_off = struct.unpack_from(
         ">IHHIIIII", data, p
     )
+    underground = (_flags >> 16) == UNDERGROUND_VERSION
     base = _skip_fill(data, c802[0][1], c802[0][1] + c802[0][2])
     end = c802[0][1] + c802[0][2]
     total = min(total, end - base)
@@ -539,7 +610,7 @@ def _parse_part(data: bytes, off: int, size: int) -> Part | None:
         p += 16
     # attribute set 0x01 (VAT 1) parts - track sections, sky domes - keep float positions;
     # the s16 sets carry no shift, the bounding box gives it (1/4096 for cars)
-    float_pos = any((r[7] & 0xFF) == 0x01 for r in rows if r[3] >= 3 and r[8])
+    float_pos = underground or any((r[7] & 0xFF) == 0x01 for r in rows if r[3] >= 3 and r[8])
     npos = extent(pos_off) // (12 if float_pos else 6)
     nnrm = extent(nrm_off) // 4
     nuv = extent(uv_off) // 4
@@ -565,10 +636,16 @@ def _parse_part(data: bytes, off: int, size: int) -> Part | None:
         if count < 3 or nbytes == 0 or base + s_off + nbytes > end:
             continue
         try:
-            verts = _read_strip(data, base + s_off, count, fmt, nbytes)
+            verts = _read_strip(data, base + s_off, count, fmt, nbytes, underground)
         except ValueError as e:
             warnings.append(f"{name}: {e}")
             continue
+        if underground:
+            # Underground's colour column runs past a one-entry colour array (the game
+            # feeds it an index-colour table); the array's first colour stands in
+            for v in verts:
+                if v["clr"] >= nclr:
+                    v["clr"] = 0 if nclr else v.pop("clr")
         bad = [v for v in verts if any(v[a] >= limits[a] for a in limits if a in v)]
         if bad:
             warnings.append(f"{name}: strip fmt {fmt:04x} indexes past its arrays")

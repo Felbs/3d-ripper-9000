@@ -51,6 +51,14 @@ give 238 models / 16k triangles with every one of 436 textures bound.  See
 [formats/bolt-mass-media.md](formats/bolt-mass-media.md).  Left: Pac-Man Fever's real game
 data lives outside the FST (scan the image for `BOLT`), skinned meshes, animations.
 
+## Closed 2026-09-03: Need for Speed: Underground
+
+The 2003 Black Box build differs from Underground 2 in two places the existing reader
+guessed at: a strip corner is four indices (u8, or u16 when the entry's VertexDescription
+is 1) and the texture pack's stream entries are 20 bytes with record-described JDLZ streams.
+Both read out of `Speed.elf` (DWARF 1 + 17,000 symbols).  Supra: 76,109 triangles, 51 of 51
+textures.  See [formats/ea-black-box-underground.md](formats/ea-black-box-underground.md).
+
 ## Closed 2026-09-03: Treyarch NGL - Ultimate Spider-Man and Spider-Man 2
 
 Ultimate Spider-Man's `symbolgc-final.map` names every function in the DOL, so the one
