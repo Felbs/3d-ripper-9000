@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from gcrip.formats import dds, hip, konami_pac, mk_ssf, one, rw_pitxd, rwgc, tga
+from gcrip.formats import a2m_gcr, dds, hip, konami_pac, mk_ssf, one, rw_pitxd, rwgc, tga
 from gcrip.formats import rwstream as rw
 from ripcore.scene import Joint, MaterialDef, Primitive, Scene
 
@@ -60,7 +60,7 @@ def expand(data: bytes) -> list[tuple[str, bytes]]:
 def _archive_root(path: str) -> str | None:
     parts = path.split("/")
     for i, p in enumerate(parts[:-1]):
-        if p.lower().endswith((".one", ".hip", ".hop")):
+        if p.lower().endswith((".one", ".hip", ".hop", ".gcr")):
             return "/".join(parts[: i + 1])
     return None
 
@@ -109,6 +109,8 @@ class _TextureIndex:
                     names = rw_pitxd.names(blob)
                 elif path.lower().endswith(".mktex"):
                     names = [mk_ssf.texture_name(blob)]
+                elif a2m_gcr.is_texdic(blob[:40]):
+                    names = a2m_gcr.texdic_names(blob)
                 else:
                     names = rwgc.texture_names(blob)
                 keys = [self._key(path, n) for n in names]
@@ -137,6 +139,9 @@ class _TextureIndex:
                     t = mk_ssf.parse_texture(blob)
                     if t.image is not None:
                         table[self._key(path, t.name)] = t.image
+                elif a2m_gcr.is_texdic(blob[:40]):
+                    for name, img in a2m_gcr.texdic_images(blob).items():
+                        table[self._key(path, name)] = img
                 else:
                     rasters = rwgc.parse_txd(blob)
                     for t in rasters:
@@ -167,6 +172,11 @@ class _TextureIndex:
                 tl = twin.lower() + "/"
                 out += [p for p in self.paths if p.lower().startswith(tl)]
             base = root.rsplit("/", 1)[0]
+            if low.endswith(".gcr"):
+                # A2M keeps the level's TEXDIC_*.txd in a language folder beside the
+                # archive's `gen` folder: level/EP1/L01/gen/EP1L01.gcr <-> level/EP1/L01/EN/
+                level = base.rsplit("/", 1)[0] + "/"
+                out += [p for p in self.paths if p.startswith(level) and p not in out]
         else:
             base = model_path.rsplit("/", 1)[0]
         out += [p for p in self.paths if p.rsplit("/", 1)[0] == base and p not in out]

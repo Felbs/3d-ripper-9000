@@ -151,7 +151,7 @@ addresses to pair with the DOL disassembly.  **Read these before guessing at a f
 | THE LEGEND OF ZELDA The Wind Waker for USA | GZLE01 |  | `d_a_npc_md.map` 204 KB, `d_a_npc_people.map` 203 KB, `framework.map` 2007 KB |
 
 141 discs.  Used so far: Bratz (Blitz actors), Muppets Party Cruise (BOLT), The Sims 2 (Edge of
-Reality), Mortal Kombat: Deception (SEC), NFS Underground (`Speed.elf`, DWARF 1 + symtab), Super Mario Strikers (`MarioSoccerR.elf` + its map - the DOL matches none of the maps), Medal of Honor: Frontline (`Moh2RelGC.elf` symtab), Rising Sun and GoldenEye: Rogue Agent (`MOH3RDVD.ELF`, `GE2RDVD.ELF` - `TLT_GetRelocationTable`, `RenderMoh3_*` vertex formats), Ultimate Spider-Man (Treyarch NGL - its `symbolgc-final.map`
+Reality), Mortal Kombat: Deception (SEC), NFS Underground (`Speed.elf`, DWARF 1 + symtab), Super Mario Strikers (`MarioSoccerR.elf` + its map - the DOL matches none of the maps), Medal of Honor: Frontline (`Moh2RelGC.elf` symtab), Rising Sun and GoldenEye: Rogue Agent (`MOH3RDVD.ELF`, `GE2RDVD.ELF` - `TLT_GetRelocationTable`, `RenderMoh3_*` vertex formats), Scooby-Doo! Mystery Mayhem (`engine_ret.elf` + `.MAP` - `EFRessourcesMgr::LoadLevel`, the `RegisterDynamicClass` ids), Ultimate Spider-Man (Treyarch NGL - its `symbolgc-final.map`
 is a binary `SYM1` table: 16-byte records of address, name start, name end, size, then the
 names), and the DOLs of Madden 06, Tiger Woods 2005, Frogger and Billy & Mandy (no symbols -
 found by tag immediates and function shape).
