@@ -366,7 +366,15 @@ def parse(data: bytes) -> Smf | None:
     # a mesh often repeats one texture record per object, so judge by distinct names
     material = names[0] if len(set(names)) == 1 else ""
     if lay.indexed:
-        out.meshes.extend(_indexed(data, lay, material))
+        # RoadKill's version 6 is CModel::loadHeader / loadData - headers first, payloads
+        # after - which the search below only ever matched on single-object files
+        from gcrip.formats import tr_cmodel
+
+        if tr_cmodel.is_cmodel(data[:24], len(data)):
+            for o in tr_cmodel.parse(data).objects:
+                out.meshes.append(Mesh(o.positions, o.normals, o.uvs, o.indices, o.material))
+        if not out.meshes:
+            out.meshes.extend(_indexed(data, lay, material))
         return out
     p = 0
     while True:

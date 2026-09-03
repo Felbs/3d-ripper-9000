@@ -343,3 +343,19 @@ bytes of material (the `.TIF` / `.RAW` name 32 bytes in), and either
 The Statue of Liberty (`!STATUE.SMB`) comes out at 1,167 triangles, torch and tablet, normal
 agreement 0.94; `1BFOOT.SMB` is 31 frames of 825 vertices, every index inside.  The `.RAW`
 textures are the `.TEX` layout and `tr_tex` now claims them.
+
+## `CModel` version 6 (RoadKill `.smf` and `.smb`) - walked, not searched (2026-09-03)
+
+`gcrip/formats/tr_cmodel.py`, from `CModel::loadHeader` / `loadData` in `Hunter.elf`.  The
+`_smf` version-6 reader above found its arrays by scoring every candidate offset within 276
+bytes of an object tag - which worked on single-object files and found **nothing** in the
+28-object cars (`MODELS/CAR11.SMB`), because the file is every header first and every payload
+after: `u32 6, objects, collision meshes, materials, frames`; materials (`u32 6` + 228 bytes,
+the `.tif` 12 bytes in); collision meshes (`name[32]`, `u32 1, vertices, triangles`, f32
+positions, u16 triangles); the model box; per object `name[32]`, `u16 material`, `u32 2`, box,
+and the packet header `u32 2, payload, kind, vertices, triangles, u32`; the keyframe tables
+when `frames > 1`; then the payloads in object order, each the `SGCPacketHeader` (sizes left
+`0xCDCDCDCD`, word 1 = the index list offset, the fraction bits at +16), 13-byte vertices and
+the big-endian index list.  `CAR11.SMB` gives 28 objects and 5,487 triangles at 0.965 normal
+agreement; the 35 `.smf` of `GC_DM11.PKG` 3,208 triangles (3,122 by the search, `stwheel`
+among the ones it missed).

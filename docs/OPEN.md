@@ -21,7 +21,11 @@ See [formats/terminal-reality-dfm.md](formats/terminal-reality-dfm.md).  RoadKil
 2 carry no `_dfm` at all.  **4x4 Evo 2's 1,113 `.SMB`** (a disc that yielded 11 models) are
 `C3DModel::loadBinary` from `4x4.elf`: GX packets behind the same `SGCPacketHeader` the `_smf`
 reader walks - whose "preamble" turned out to be the header's uv-fraction and kind words -
-or keyframed f32 arrays (`gcrip/formats/tr_smb.py`).
+or keyframed f32 arrays (`gcrip/formats/tr_smb.py`).  RoadKill's 500 `.smb` and 734 `.smf` are
+`CModel` version 6 from `Hunter.elf` - headers first, payloads after - walked exactly now
+(`gcrip/formats/tr_cmodel.py`; the 28-part cars were invisible to the old search).  RoadKill's
+characters are `CDeformableModel` version 4 headers in the packages (`hero`, `wingman`, no
+extension) whose geometry streams from the level `.bvt` / `.bqs` - still open.
 
 ## Closed 2026-09-03: Smashing Drive (Point of View `PHM` / `TG_` layouts)
 

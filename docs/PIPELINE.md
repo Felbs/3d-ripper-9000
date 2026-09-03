@@ -280,7 +280,7 @@ flowchart LR
         TTPK["TT .fpk/.cpk packs<br/>plugins.ttdisp"] --> DISP["DISP programs .csc/.chg<br/>(LSW2, Narnia)<br/>formats.ttdisp"]
         UMD["Ubisoft .umd/.lin<br/>chunked zlib<br/>plugins.unreal"] --> UE2["UE2 packages .usx/.utx/.unr<br/>StaticMesh + Texture + level actors<br/>formats.unreal"]
         LVL["OpenSpace .lvl + .ptr<br/>(Rayman 3 / Arena)<br/>plugins.openspace"] --> CPA["super objects -> GeometricObjects<br/>+ TPL textures<br/>formats.openspace"]
-        POD["Terminal Reality POD2 / POD3<br/>index at 0x60 / at header[0x108]<br/>plugins.pod"] --> TRSMB["`.SMB` C3DModel v1 (4x4 Evo 2)<br/>SGCPacketHeader lists / SVertex frames<br/>plugins.tr_smb"]
+        POD["Terminal Reality POD2 / POD3<br/>index at 0x60 / at header[0x108]<br/>plugins.pod"] --> TRSMB["`.SMB` C3DModel v1 (4x4 Evo 2) / CModel v6 (RoadKill)<br/>SGCPacketHeader lists / SVertex frames<br/>plugins.tr_smb, formats.tr_cmodel"]
         POD --> TRPKG["`.PKG` named chunks<br/>1tex / _smf / _dfm / _skl<br/>plugins.tr_pkg"] --> TRSMF["`_smf` GX display lists<br/>inline vertices, quads<br/>v7/v4 inline, v6 indexed<br/>plugins.tr_smf"] & TRDFM["`_dfm` skinned meshes v2 / v5<br/>BE 1-4 bone records, home pose over .SKL<br/>plugins.tr_dfm"] & TRTEX["`.TEX` CMPR / C8+RGB5A3<br/>24-byte header in v2, 28 in v3<br/>plugins.tr_tex"] & GX
         DBL["Avalanche .dbl/.dbu/.mdb<br/>plugins.dbl"] --> DBLM["mesh records: GX arrays +<br/>FIFO display lists, texture tables<br/>formats.dbl_mesh"]
     end

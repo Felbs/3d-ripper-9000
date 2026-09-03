@@ -1,13 +1,14 @@
-"""4x4 Evo 2's ``.SMB`` models (gcrip.formats.tr_smb): one Scene a file, a primitive a part,
-textured by the material's ``.TIF`` / ``.RAW`` from the POD archives (``.TEX`` layout, read
-by gcrip.formats.tr_tex)."""
+"""Terminal Reality ``.SMB`` models: 4x4 Evo 2's ``C3DModel`` version 1 (gcrip.formats.tr_smb)
+and RoadKill's ``CModel`` version 6 (gcrip.formats.tr_cmodel, the layout its ``.smf`` share).
+One Scene a file, a primitive a part, textured by the material's ``.TIF`` / ``.RAW`` from the
+POD archives (``.TEX`` layout, read by gcrip.formats.tr_tex)."""
 
 from __future__ import annotations
 
 import contextlib
 import posixpath
 
-from gcrip.formats import tr_smb, tr_tex
+from gcrip.formats import tr_cmodel, tr_smb, tr_tex
 from ripcore.scene import MaterialDef, Primitive, Scene
 
 NAME = "tr_smb"
@@ -15,7 +16,9 @@ _INDEX_ATTR = "_tr_smb_textures"
 
 
 def detect(path: str, head: bytes, size: int) -> bool:
-    return path.lower().endswith(".smb") and tr_smb.is_smb(head, size)
+    return path.lower().endswith(".smb") and (
+        tr_smb.is_smb(head, size) or tr_cmodel.is_cmodel(head, size)
+    )
 
 
 def _index(src) -> dict[str, list[str]]:
@@ -49,12 +52,19 @@ def _texture(src, name: str, warnings: list[str]):
 
 
 def extract(data: bytes, path: str, src) -> list[Scene]:
-    model = tr_smb.parse(data)
+    if tr_cmodel.is_cmodel(data[:24], len(data)):
+        model = tr_cmodel.parse(data)
+        parts = model.objects
+        fmt = "tr_cmodel"
+    else:
+        model = tr_smb.parse(data)
+        parts = model.parts
+        fmt = "tr_smb"
     stem = posixpath.basename(path).rsplit(".", 1)[0]
     scene = Scene(name=stem)
     scene.warnings += model.warnings
     slots: dict[str, int] = {}
-    for part in model.parts:
+    for part in parts:
         key = part.material.lower()
         if key not in slots:
             tex = _texture(src, part.material, scene.warnings)
@@ -77,8 +87,8 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
     if not scene.primitives:
         return []  # legitimate: every part was refused, each with a warning above
     scene.extras = {
-        "format": "tr_smb",
-        "parts": [p.name for p in model.parts],
-        "frames": max(p.frames for p in model.parts),
+        "format": fmt,
+        "parts": [p.name for p in parts],
+        "frames": max(getattr(p, "frames", getattr(model, "frames", 1)) for p in parts),
     }
     return [scene]
