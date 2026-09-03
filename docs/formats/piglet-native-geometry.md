@@ -114,10 +114,34 @@ places is not something a wrong offset produces.  And 115,709 opens `c1 88 3f d3
 Positions at `normals - N * 12` = 37,661 give **garbage** (-7e+26), so the two arrays are not
 adjacent; the sixteen bytes between them are unread.
 
+### The rest of the group: colours and texture coordinates
+
+Continuing past the normals, each array is confirmed by its own identity and none of them
+needed a search:
+
+| | offset | count | evidence |
+|---|---|---|---|
+| positions `f32` x3 | 37,645 | 3,252 | triangle locality **0.0241** |
+| normals `f32` x3 | 76,685 | 3,252 | **unit length, 4.15e-08** |
+| colours `RGBA8` | 115,725 | 3,252 | **alpha byte 0xFF on 100%** of vertices |
+| texture coords `f32` x2 | 128,733 | 3,252 | range -0.425 .. 22.58, ends exactly at 154,749 |
+
+Four arrays, one count, four independent checks.  The vertex count comes from the display
+lists - the indices cover exactly 0..3,251 - so nothing here is fitted.
+
+**Sixteen bytes sit between each pair of arrays** (21 before the positions), and they hold
+floats: `(-17.03, -0.4898, -13.66, -17.03)` between normals and colours,
+`(-24.20, -0.4166)` between colours and texture coordinates.  Four floats is the size of a
+bounding box corner or a scale, but they are not read yet.
+
 ### What is left
 
 The group boundary.  Scanning forward from 115,709 for the next strip run finds a false one at
 130,440 claiming 65,536 vertices with only 7,703 distinct - which the containment identity
 rejects, so the test to reject it exists, but the rule that *finds* the next group's lists does
-not yet.  Until that is settled a reader would work on the first group of a clump and guess at
-the rest, and guessing here produces a plausible wrong mesh rather than an error.
+not yet.  After the texture coordinates end at 154,749 there is a run of floats and then the next `0x98`
+with a plausible count at **155,403** - 654 bytes on.  Whether that is the next group's lists,
+and what the 654 bytes are, is the last thing between this and a reader.
+
+Until that is settled a reader would work on the first group of a clump and guess at the rest,
+and guessing here produces a plausible wrong mesh rather than an error.
