@@ -71,3 +71,52 @@ RenderWare chunk ids; that oracle never fired.
 *back-reference before start*.  So the `PRS1` tag is not Sega's PRS, whatever it borrowed from
 it.  That codec is the remaining work, and it is a session of its own; the archive around it is
 solved.
+
+
+## The archive is closed (2026-09-03)
+
+Frogger: Ancient Shadow's ``gamedata.bin`` - an ``hfs\\n`` archive, whole.
+
+The whole game is one 197,959,680-byte file and the disc produces four models.  An earlier pass
+read the first directory block and left the rest open: *"this header describes one block of a
+198 MB file and there are more; whether they chain or are listed somewhere is not yet known."*
+
+They are a contiguous table at the front of the file, one block every 2,048 bytes.  Little-endian::
+
+    +0   char magic[4]     "hfs\\n"
+    +4   u32  span         bytes of member data this block covers
+    +8   u32  count        members in this block
+    +12  u32  data offset  absolute, where this block's members begin
+    +16  count x 8 bytes:
+             u32  sector | 0x01000000   member start, in 2,048-byte sectors from `data offset`
+             u32  size                  member length in bytes
+
+**Three numbers close the archive, and each is exact:**
+
+* the directory is **67 blocks**, and ``67 * 2048 = 137,216`` is exactly the data offset the
+  first block declares - so the table ends precisely where the data begins;
+* the blocks **chain by span**: block 0's data offset plus its span, ``137,216 + 106,496 =
+  243,712``, is block 1's data offset, and so on down all 67;
+* the spans sum to **197,822,464**, and ``137,216 + 197,822,464 = 197,959,680`` - the file
+  length, to the byte.
+
+That accounts for **4,195 members**.
+
+Every one of them is ``PRS1`` and compressed: measuring 355 of them gives entropy 6.13 to 8.0,
+with none stored, so there is no plaintext on this disc to decode the codec against.  ``PRS1``
+is not Sega's PRS - ``gcrip.formats.prs`` rejects it at every plausible offset with
+*back-reference before start* - and 48 LZSS variants have already failed against it.  That codec
+is the remaining work; the archive around it is finished.
+
+## No container plugin, and why
+
+Every one of the 4,195 members is `PRS1`-compressed and nothing reads that yet, so emitting them
+would add 198 MB of undecodable data to the dump for zero models.  The reader ships with its
+identities and its tests; the plugin follows the codec.
+
+## And there is no plaintext on this disc
+
+Measuring 355 members across the first 8.4 MB gives entropy 6.13 to 8.0 - the low end is small
+files, not stored ones - and every single one opens `PRS1`.  So the known-plaintext technique
+that broke the Tiger Woods codec has nothing to work with *within* this disc.  If it is to be
+used here the pair has to come from another Frogger title.
