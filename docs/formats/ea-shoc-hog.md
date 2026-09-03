@@ -50,3 +50,24 @@ The backlog listed a single seven-disc `.hog` cluster.  It is two: **101 Warthog
 archives** on three discs (see [warthog-hog.md](warthog-hog.md)) and **872 of these** on four.
 They share an extension and nothing else - these open `CTRL`, those open `WART3.00`.  Sizing a
 cluster by extension put 872 archives behind the wrong crack.
+
+
+## Two things measured on 2026-09-02, so the next attempt does not repeat them
+
+**06's terrain plaintext is already in hand, through the reader that ships.**
+`shoc.members()` on 06's `hole.hog` returns `ter` #1 as **5,173,392 bytes** - exactly the size
+its `SHDR` declares - opening `OBG  01 04 00 00 ARRA`.  It is a single zlib stream spanning 95
+data chunks, and the member reader concatenates them before inflating, which is why it works.
+
+That also means a **block-level** inflate of a `Zdat` block can never work, and its failure is
+not evidence of anything: a block starts 44 bytes into its chunk payload, where the stream does
+not.  266 of 278 `Zdat` blocks refuse to inflate at any offset from 0 to 47 under any window
+setting - and the codec is still zlib.  This was nearly written up as "`Zdat` is not zlib"; the
+member reader decoding 162 members including `ter`, `txfh` (967,808) and 134 `sfx` at their
+exact declared sizes is what says otherwise.  **Test the layer the format actually uses.**
+
+**2004 Disc 1 is the wrong disc for the known-plaintext pair.**  `hole01.hog` there holds a
+`ter` of 3,922,304 bytes in 276 `Rdat` blocks, and **not one 16-byte window of 06's terrain
+appears in it** - 0 runs, 0.00% coverage.  It is a different course, not a differently packed
+one.  The pairing the note records is 06 against **2005 Disc 1**, which share 58 `.hog` paths;
+that is the pair to carry the plaintext, and 2004 will waste the attempt.

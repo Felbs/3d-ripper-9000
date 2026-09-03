@@ -155,3 +155,36 @@ quantised coordinates or texture coordinates rather than floats.
 pipeline under their real names, which is what the container was in the way of; the three
 discs export 5,239, 4,526 and 2,809 scenes today but only 38,653, 141 and 2,890 triangles
 between them, because almost all of that is textures.
+
+
+## `gcr` reconnaissance, 2026-09-02
+
+Not solved; recorded so the next attempt starts further along.
+
+The header is **big-endian**, and the note's "s16 triples that read as coordinates" were being
+read the wrong way round.
+
+    +0    u32 12
+    +4    u32 file length less 52
+    +8    u32 0
+    +12   a table of 16-byte records - twelve zero bytes then a u32
+    +156  u32 0xFFFFFFFF, ending the table
+
+On `ob__chrs__chr128.gcr` that table holds **nine consecutive values, 775 to 783**.  `chr.pak`
+carries 981 `.gct`, so these are texture ids, not offsets - a material table naming its images
+by index into the archive.
+
+Deeper in, at byte 30,032, are **8-byte vertex records of four little-endian `u16`**:
+
+    (0, 0, 1, 1), (0, 1, 2, 2), (0, 2, 3, 3), (0, 3, 4, 4), (0, 4, 5, 5),
+    (0, 1, 6, 6), (0, 2, 7, 7), (0, 5, 8, 8), (0, 0, 9, 9), (0, 1, 0, 0)
+
+The third column increments, so it is a position index and the array is ten vertices long; the
+second ranges over six values and is a texture-coordinate index.  **The note's reading of this
+region as "s16 multiples of 256 - 0 256 256 0, 256 512 512 0" was the same bytes big-endian**;
+little-endian they are small indices, which is what they are.
+
+So a `gcr` is a scene bundle of many small indexed primitives, each with its own vertex table
+addressing shared position, normal and texture-coordinate arrays - not one mesh with one index
+buffer, which is why whole-file statistics and `gxscan` both find nothing.  What is still needed
+is the record that heads each primitive and names the arrays it indexes.
