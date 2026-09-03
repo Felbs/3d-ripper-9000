@@ -6,6 +6,20 @@ textures through the plugin chain.
 
 Companion to [FORMATS.md](FORMATS.md), which lists what already works.
 
+## Closed 2026-09-03: Terminal Reality `_dfm` (BloodRayne, Blowout)
+
+Four sessions of statistics on the 20-byte record; the DOL route settled it in one:
+`bloodrayne.elf` and `Blowout.elf` keep their symbol tables, `CDeformableModel::loadStreamBinary`
+reads the header and per-bone tables, `CRenderPacket::loadData` byte-swaps the index list and
+**leaves the vertex payload alone**, and `APIDLLpolyListGCBoneVertex` feeds it to paired-single
+quantised loads - so the record is big-endian inside a little-endian file, 1-4 bones wide, s16
+positions per bone / 2^scale (the payload word's low byte, 10), s16 weights, s16 normal, u8 bone
+indices, u16 uv / 1024.  The "0x0400" the statistics saw was weight 1.0.  Home pose from
+`setToHomePose`: identity rotations over the per-bone translations the mesh carries.  Blowout's
+version 5 lists its 36-byte headers first and its big-endian index lists inside the payloads.
+See [formats/terminal-reality-dfm.md](formats/terminal-reality-dfm.md).  RoadKill and 4x4 Evo
+2 carry no `_dfm` at all (their characters are elsewhere - `hero` / `car18` text defs, `.smb`).
+
 ## Closed 2026-09-03: Smashing Drive (Point of View `PHM` / `TG_` layouts)
 
 A zero-triangle disc with a DWARF `smash.elf`: `s_model` is the file, so the reader is a
@@ -169,7 +183,6 @@ without the DOL.  Seven discs on one engine.
 | Pac-Man Fever data outside the FST | 1 | the FST lists three `.BLT` (two of them 1.3 leftovers the DOL cannot read); the DOL opens `BoardGam`, `DataHUD` ... by name from the raw disc - 300 MB the manifest never sees | scan the image for `BOLT` headers when the drive is idle, hand the hits to `plugins.bolt` (see [formats/bolt-mass-media.md](formats/bolt-mass-media.md)) |
 | Yuke's `YOBJ` models (`.ymg`, behind a 16-byte `DUMY` stamp) | 3 (WWE Day of Reckoning 1-2, WrestleMania XIX) | **packs opened 2026-09-03** (`plugins.yukes_pac`: the `.tex` TPL textures rip); the model: `"YOBJ", u32 size, u16 4, u16 3, u32 0x40`, then (count, offset) pairs - bones (64-byte records, 16-char names, parent at +0x18), textures (16 B: name + extension), materials (variable, RGBA colours), hair/accessory records (0x68), a `POF0` pointer-offset table at the end; mesh records of 0x30 bytes from +0x4c (`u16, u8 groups, u8, 0x0a000000, data, 0, table A (16 B rows), table B (8 B rows: u8 index, u8 count, u16 count, u32 offset), bbox centre + radius, 4 x u16`); the group data are runs of u16 triangle indices behind a short header, not GX lists; no 12/16/8-byte stride of the "data" block puts the points inside the record's bounding sphere, so the positions are elsewhere (quantised, or in the 16-byte rows) | no symbols on any of the three discs; work from the `.ycg` (skeleton?) and `POF0` pointers, or gxscan-style brute force on the 16-byte rows |
 | Blitz texture format 17 | 9 discs, ~13% of textures | 8 bits a pixel behind a 512-byte block; not C8 over an RGB5A3 / RGB565 / IA8 palette in tiled or linear order (2026-09-03).  Everything else on the engine now reads | see the closing section of [formats/blitz-gcp-gamecube.md](formats/blitz-gcp-gamecube.md) |
-| Terminal Reality `_dfm` **vertex record** | 3 (BloodRayne, 4x4 Evo 2, Blowout, RoadKill) | **the block layer is solved (2026-09-02)**: blocks tile on 106/106 and 47/47 and every triangle indexes 0..vertices-1 exactly, giving 4,215 vertices and 3,914 triangles on `soldier.dfm`.  What is left is only the 20-byte vertex record.  Byte 3 is always 0x04, byte 4 0x00, byte 15 0x44, bytes 16-17 0x01FE; the best of all 240 s16 column triples scores 0.44 on triangle locality where a real surface scores 0.1, and eleven bytes carry ~40 distinct values over 130 vertices - so read it as **packed bit fields**, not s16 columns | see [formats/terminal-reality-dfm.md](formats/terminal-reality-dfm.md)  **2026-09-03: the normal is found** - bytes 8-13, LE `s16`/32767, unit length on 12 of 12 blocks - and the vertices are in **bone space**, which is why no box test could ever work.  Bytes 2-7 as three `s16` score 0.68-0.73 normal agreement against 0.51 shuffled: partly right, not decoded.  Twelve bytes left, with a working oracle |
 | FSTA `GKA` / `GGG` | 3 (Billy & Mandy, Kids Next Door, Charlie and the Chocolate Factory) | **`GGG` read 2026-09-03** (models; `GKA` is animation) - **not compressed** - body entropy 5.28 (`GGG`) and 6.82 (`GKA`) against 7.73 for `GMS`.  Magic is `ISVH` (`HVSI` reversed) but the fields are big-endian: the `u32` at +12 is the exact file size on both | what they hold.  Neither shows f32 runs, so any geometry is quantised.  Note the models are in `GMS`, which is compressed - these may be animation or collision |
 
 ## Mapped but blocked on a codec

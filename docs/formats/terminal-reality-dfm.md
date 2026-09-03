@@ -278,3 +278,49 @@ Two things are now known that were not:
 
 What is left is bytes 2-7 and 14-19 - twelve bytes for a position and, presumably, a texture
 coordinate - with a working oracle (the normal agreement) to test any reading against.
+
+
+## Settled from the ELF: the record is big-endian, 1-4 bones wide (2026-09-03)
+
+Both discs ship their symbol tables (`bloodrayne.elf`, `Blowout.elf`).  The reader is a
+transcription now, not a fit:
+
+* `CDeformableModel::loadStreamBinary` reads: `u32 version`, `u32 LODs`, `u32 parts`, `u32
+  bones` (version 5 adds `u32 materials`), `(u32, u32)` a LOD, the 80-byte skeleton name, the
+  parts (58 bytes; 60 in version 5, a `u16` after the box), the material block (version 2: 248
+  bytes, the `.TIF` 36 bytes in; version 5: `u32 7` + 356-byte `CMaterial` records, the `.TIF`
+  16 bytes in), then per bone **a 12-byte home translation**, a 24-byte box, a child count and
+  a first-child index, 12 bytes, and the packets.
+* `CRenderPacket::loadHeader` is the block header: `u32 2, payload, type 4, vertices,
+  triangles, bones` (version 2 writes two words before it and a zero after; version 5 lists
+  every 36-byte header first and the payloads after them).  `loadData` **byte-swaps the u16
+  index list and nothing else** - the vertex payload stays as written, because it is fed to
+  `APIDLLpolyListGCBoneVertex`'s `psq_l` loads.  So the record is **big-endian inside a
+  little-endian file**, which is why every little-endian column reading scored like noise.
+* `APIDLLpolyListGCBoneVertex` sets `GQR1` from the payload's first word (low byte = scale, 10
+  on every sample, so 2^-10), `GQR2` to u16 / 1024 and `GQR3` to s16 / 32768, then switches on
+  the record's first byte:
+
+```
+u8  bones                      1..4 - records of 20 / 29 / 38 / 47 bytes
+s16 position[bones][3]         in each bone's space, / 2^scale
+s16 weight[bones]              / 2^scale, summing to 1.0
+s16 normal[3]                  / 32768
+u8  bone[bones]
+u16 uv[2]                      / 1024
+```
+
+The "0x0400" constant the statistics found was the weight 1.0; the "0x01FE" the top bytes of
+the first coordinate; the "unit normal at bytes 8-13 LE" an alias of the big-endian one.
+Each bone's own position is transformed by that bone's 3x4 matrix and the results summed by
+weight (`ps_mul` / `ps_sum0` over rows at 0, 16, 32).  `setToHomePose` builds the pose as
+**identity rotations over the per-bone translations**, so model space is the position plus
+the bone's accumulated translation.
+
+Identities: the bone tables end exactly on the packet count; the records tile to every index
+list (106/106, 47/47, Blowout's Kane 46/46); every vertex's weights sum to 1.0 (4,215 / 3,241 /
+2,410 of them); the index lists still index `0..vertices-1`.  Rendered: the soldier is a
+soldier in a T-pose with helmet, pouches and hands; Kane stands with a gun.
+
+Version 5 index lists are big-endian and sit inside the payload at the offset its second word
+gives; the payloads are padded to 32.  RoadKill and 4x4 Evo 2 have **no** `_dfm`.

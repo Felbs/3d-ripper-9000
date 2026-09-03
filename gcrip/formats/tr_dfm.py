@@ -40,12 +40,19 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass
 
+import numpy as np
+
 from gcrip.identities import Identity
 
-HEADER = 104
+HEADER = 104  # version 2 with one LOD: 16 + 8 + the 80-byte skeleton name
 NAME = 30
 STRIDE = 58
 MAX_PARTS = 1 << 12
+VERSIONS = (2, 5)  # BloodRayne; Blowout (a material count, a u16 after each part's box)
+SKELETON_NAME = 80
+LOD_PAIR = 8
+STRIDE_V5 = 60
+MATERIAL_V5 = 4 + 0x164  # u32 version 7, then CMaterial's 356 bytes
 
 
 @dataclass
@@ -62,26 +69,35 @@ class Mesh:
     bone_count: int
     skeleton: str
     parts: list[Part]
+    lods: int = 1
+    materials: int = 0  # version 5 counts its CMaterial records
+    parts_end: int = 0  # file offset just past the part table
 
 
 def is_dfm(head: bytes) -> bool:
-    if len(head) < 16:
+    if len(head) < 20:
         return False
-    version, _one, parts, bones = struct.unpack_from("<4I", head, 0)
-    return version == 2 and 0 < parts <= MAX_PARTS and 0 < bones <= MAX_PARTS
+    version, lods, parts, bones, extra = struct.unpack_from("<5I", head, 0)
+    if version not in VERSIONS or not 0 < parts <= MAX_PARTS or not 0 < bones <= MAX_PARTS:
+        return False
+    return 0 < lods <= 8 and (version == 2 or 0 < extra <= MAX_PARTS)
 
 
 def mesh(data: bytes) -> Mesh | None:
     """The header and part table, or ``None`` when the table does not check out."""
-    if not is_dfm(data[:16]):
+    if not is_dfm(data[:20]):
         return None
-    version, _one, count, bones = struct.unpack_from("<4I", data, 0)
-    if HEADER + count * STRIDE > len(data):
+    version, lods, count, bones, extra = struct.unpack_from("<5I", data, 0)
+    materials = extra if version == 5 else 0
+    name_at = (20 if version == 5 else 16) + LOD_PAIR * lods
+    stride = STRIDE_V5 if version == 5 else STRIDE
+    first = name_at + SKELETON_NAME
+    if first + count * stride > len(data):
         return None
-    skel = data[24:HEADER].split(b"\0", 1)[0].decode("latin-1", "replace")
+    skel = data[name_at:first].split(b"\0", 1)[0].decode("latin-1", "replace")
     parts: list[Part] = []
     for i in range(count):
-        at = HEADER + i * STRIDE
+        at = first + i * stride
         raw = data[at : at + NAME].split(b"\0", 1)[0]
         bone = struct.unpack_from("<I", data, at + NAME)[0]
         box = struct.unpack_from("<6f", data, at + NAME + 4)
@@ -89,7 +105,8 @@ def mesh(data: bytes) -> Mesh | None:
         if bone >= bones or any(box[k] > box[k + 3] for k in range(3)):
             return None
         parts.append(Part(raw.decode("latin-1", "replace"), bone, box[:3], box[3:]))
-    return Mesh(version, bones, skel, parts)
+    return Mesh(version, bones, skel, parts, lods, materials, first + count * stride)
+
 
 # -- identities ---------------------------------------------------------------------------
 
@@ -100,7 +117,7 @@ def _boxes_are_boxes(data: bytes) -> tuple[bool | None, str]:
     if m is None:
         return None, "not a readable _dfm"
     bad = sum(
-        1 for p in m.parts if any(lo > hi for lo, hi in zip(p.box_min, p.box_max))
+        1 for p in m.parts if any(lo > hi for lo, hi in zip(p.box_min, p.box_max, strict=True))
     )
     return bad == 0, f"{len(m.parts) - bad} of {len(m.parts)} boxes have min <= max"
 
@@ -185,7 +202,12 @@ MAX_BLOCKS = 1 << 16
 
 @dataclass(frozen=True)
 class Block:
-    """One sub-mesh: its own vertices and its own triangle list."""
+    """One sub-mesh: its own vertices and its own triangle list.
+
+    Version 2 keeps header, vertex bytes and a little-endian index list together; version 5
+    (Blowout) writes every 36-byte header first and the payloads after, each payload holding
+    its scale word, the offset of its big-endian index list, the records and the list.
+    """
 
     offset: int
     a: int
@@ -193,18 +215,30 @@ class Block:
     payload: int
     vertices: int
     triangles: int
+    scale_at: int = -1  # version 5: where the payload starts
+    index_offset: int = 0  # version 5: the index list, from the payload start
 
     @property
     def vertex_at(self) -> int:
+        if self.scale_at >= 0:
+            return self.scale_at + 8
         return self.offset + BLOCK_HEADER
 
     @property
     def vertex_bytes(self) -> int:
+        if self.scale_at >= 0:
+            return self.index_offset - 8
         return self.payload - PAYLOAD_BIAS
 
     @property
     def index_at(self) -> int:
+        if self.scale_at >= 0:
+            return self.scale_at + self.index_offset
         return self.offset + BLOCK_HEADER + self.vertex_bytes
+
+    @property
+    def big_endian_indices(self) -> bool:
+        return self.scale_at >= 0
 
     @property
     def size(self) -> int:
@@ -220,15 +254,22 @@ class Block:
         return self.vertices and self.payload == self.vertices * RIGID_STRIDE + PAYLOAD_BIAS
 
 
-def blocks(data: bytes) -> list[Block]:
-    """Every sub-mesh block, found by the constant that ends each header.
+BLOCK_HEADER_V5 = 36  # u32 2, a, b, 2, payload, type, vertices, triangles, bones
 
-    A block is not searched for by guessing at strides: the last ten header words end with a
-    bone count the file already states and two constants, and the blocks then have to tile.
+
+def blocks(data: bytes) -> list[Block]:
+    """Every sub-mesh block.
+
+    Version 2 blocks are found by the constant that ends each header - not by guessing at
+    strides: the last header words end with a bone count the file already states and two
+    constants, and the blocks then have to tile.  Version 5 lists its headers behind the bone
+    tables and lays the payloads out after them in order.
     """
     head = mesh(data)
     if head is None:
         return []
+    if head.version == 5:
+        return _blocks_v5(data, head)
     tail = struct.pack("<3I", head.bone_count, 0, BLOCK_TAIL)
     out: list[Block] = []
     at = data.find(tail)
@@ -242,31 +283,63 @@ def blocks(data: bytes) -> list[Block]:
     return out
 
 
+def _blocks_v5(data: bytes, head: Mesh) -> list[Block]:
+    s = skin(data)
+    if s is None:
+        return []
+    at = s.packets_at
+    out: list[Block] = []
+    for _lod in range(head.lods):
+        if at + 4 > len(data):
+            return []
+        count = struct.unpack_from("<I", data, at)[0]
+        at += 4
+        heads = []
+        for _ in range(min(count, MAX_BLOCKS)):
+            if at + BLOCK_HEADER_V5 > len(data):
+                return []
+            w = struct.unpack_from("<9I", data, at)
+            if w[0] != 2 or w[3] != 2:
+                return []
+            heads.append((at, w))
+            at += BLOCK_HEADER_V5
+        for offset, w in heads:
+            if at + 8 > len(data) or at + w[4] > len(data):
+                return []
+            index_offset = struct.unpack_from(">I", data, at + 4)[0]
+            out.append(Block(offset, w[1], w[2], w[4], w[6], w[7], at, index_offset))
+            at += w[4]
+    return out
+
+
 def tiles(data: bytes, found: list[Block]) -> bool:
     """Do the blocks account for every byte from the first one to the end of the file?"""
     if not found:
         return False
-    return all(a.end == b.offset for a, b in zip(found, found[1:])) and found[-1].end == len(data)
+    return all(a.end == b.offset for a, b in zip(found, found[1:], strict=False)) and found[
+        -1
+    ].end == len(data)
 
 
-def indices(data: bytes, block: Block) -> "object":
-    import numpy as np
-
-    return np.frombuffer(data, "<u2", block.triangles * 3, block.index_at).reshape(-1, 3)
+def indices(data: bytes, block: Block) -> np.ndarray:
+    kind = ">u2" if block.big_endian_indices else "<u2"
+    return np.frombuffer(data, kind, block.triangles * 3, block.index_at).reshape(-1, 3)
 
 
 def _blocks_tile(data: bytes):
     found = blocks(data)
     if not found:
         return None, "no blocks"
-    good = sum(1 for a, b in zip(found, found[1:]) if a.end == b.offset)
+    if found[0].big_endian_indices:
+        last = found[-1]
+        ok = last.scale_at + last.payload == len(data)
+        return ok, f"{len(found)} payloads end {'exactly' if ok else 'short of'} the file"
+    good = sum(1 for a, b in zip(found, found[1:], strict=False) if a.end == b.offset)
     good += 1 if found[-1].end == len(data) else 0
     return good == len(found), f"{good} of {len(found)} blocks reach the next one exactly"
 
 
 def _indices_inside(data: bytes):
-    import numpy as np
-
     found = blocks(data)
     if not found:
         return None, "no blocks"
@@ -274,7 +347,7 @@ def _indices_inside(data: bytes):
     for b in found:
         if b.index_at + b.triangles * INDEX_BYTES > len(data) or not b.triangles:
             continue
-        top = int(np.frombuffer(data, "<u2", b.triangles * 3, b.index_at).max())
+        top = int(indices(data, b).max())
         exact += top == b.vertices - 1
     return exact == len(found), f"{exact} of {len(found)} blocks index exactly 0..vertices-1"
 
@@ -289,5 +362,168 @@ IDENTITIES += [
         "every triangle indexes its own block",
         "the largest index in a block is exactly its vertex count minus one",
         _indices_inside,
+    ),
+]
+
+
+# -- the vertex record and the bone tables, from the shipped ELF (2026-09-03) ----------------
+#
+# ``bloodrayne.elf`` keeps its symbol table.  ``CDeformableModel::loadStreamBinary`` reads the
+# header above, then per bone a 12-byte home translation, a 24-byte box, a child count and a
+# first-child index, and then the packets: ``CRenderPacket::loadHeader`` is the 40-byte block
+# header (``a`` and ``b`` are the two words the model reads before it) and ``loadData`` takes
+# the vertex bytes **raw** - it byte-swaps the u16 index list and nothing else, because the
+# vertex payload is what ``APIDLLpolyListGCBoneVertex`` feeds the paired-single quantised
+# loads from.  So the record is **big-endian** inside a little-endian file, and variable:
+#
+#     u8  bones                       1..4
+#     s16 position[bones][3]          in that bone's space, / 2^scale (the payload word's byte)
+#     s16 weight[bones]               / 2^scale, summing to one
+#     s16 normal[3]                   / 32768
+#     u8  bone[bones]                 indices into the skeleton
+#     u16 uv[2]                       / 1024
+#
+# 20, 29, 38 and 47 bytes - the "0x0400" the byte statistics saw was the weight 1.0, the
+# "0x01FE" the top of the first coordinate.  The home pose (``setToHomePose``) is identity
+# rotations over the per-bone translations, so model space is the position plus the bone's
+# accumulated translation, weighted.
+
+SCALE_WORD = 36  # in the block header: the quantisation scale sits in its top byte (LE)
+RECORD_SIZES = {1: 20, 2: 29, 3: 38, 4: 47}
+MATERIAL_BLOCK = 0xF8
+BONE_TRANSLATION = 12
+BONE_BOX = 24
+
+
+@dataclass
+class BlockVertices:
+    positions: np.ndarray  # (N, 4, 3) f32 per-bone positions, unused slots zero
+    weights: np.ndarray  # (N, 4) f32
+    bones: np.ndarray  # (N, 4) u16
+    normals: np.ndarray  # (N, 3) f32
+    uvs: np.ndarray  # (N, 2) f32
+
+
+@dataclass
+class Skin:
+    translations: np.ndarray  # (bones, 3) f32 home translation to the parent
+    boxes: np.ndarray  # (bones, 6) f32
+    material: str  # the .TIF the material block names
+    packets_at: int  # file offset of the packet count word
+
+
+def scale_of(data: bytes, block: Block) -> float:
+    at = block.scale_at + 3 if block.scale_at >= 0 else block.offset + SCALE_WORD + 3
+    return 2.0 ** -(data[at] & 0x3F)
+
+
+def vertices(data: bytes, block: Block) -> BlockVertices | None:
+    """The block's vertex records decoded, or ``None`` when they do not tile to the index list."""
+    scale = scale_of(data, block)
+    n = block.vertices
+    pos = np.zeros((n, 4, 3), np.float32)
+    wgt = np.zeros((n, 4), np.float32)
+    bon = np.zeros((n, 4), np.uint16)
+    nrm = np.zeros((n, 3), np.float32)
+    uv = np.zeros((n, 2), np.float32)
+    p = block.vertex_at
+    for i in range(n):
+        if p >= len(data):
+            return None
+        k = data[p]
+        size = RECORD_SIZES.get(k)
+        if size is None or p + size > len(data):
+            return None
+        pos[i, :k] = np.frombuffer(data, ">i2", 3 * k, p + 1).reshape(k, 3) * scale
+        wgt[i, :k] = np.frombuffer(data, ">i2", k, p + 1 + 6 * k) * scale
+        nrm[i] = np.frombuffer(data, ">i2", 3, p + 1 + 8 * k) / 32768.0
+        bon[i, :k] = np.frombuffer(data, np.uint8, k, p + 7 + 8 * k)
+        uv[i] = np.frombuffer(data, ">u2", 2, p + 7 + 9 * k) / 1024.0
+        p += size
+    if p != block.index_at:
+        return None
+    return BlockVertices(pos, wgt, bon, nrm, uv)
+
+
+def skin(data: bytes) -> Skin | None:
+    """The per-bone tables between the material block and the packets."""
+    m = mesh(data)
+    if m is None:
+        return None
+    nb = m.bone_count
+    at = m.parts_end
+    if m.version == 5:
+        # CMaterial records: u32 version 7, then 356 bytes with the .TIF name 12 bytes in
+        if at + m.materials * MATERIAL_V5 > len(data):
+            return None
+        material = data[at + 16 : at + MATERIAL_V5].split(b"\0", 1)[0].decode("latin-1", "replace")
+        at += m.materials * MATERIAL_V5
+    else:
+        if at + MATERIAL_BLOCK > len(data):
+            return None
+        material = data[at + 36 : at + 100].split(b"\0", 1)[0].decode("latin-1", "replace")
+        at += MATERIAL_BLOCK
+    need = nb * (BONE_TRANSLATION + BONE_BOX + 8) + 12
+    if at + need + 4 > len(data):
+        return None
+    translations = np.frombuffer(data, "<f4", 3 * nb, at).reshape(nb, 3).copy()
+    boxes = np.frombuffer(data, "<f4", 6 * nb, at + nb * BONE_TRANSLATION).reshape(nb, 6).copy()
+    return Skin(translations, boxes, material, at + need)
+
+
+def home_pose(translations, parents: list[int]):
+    """World translation of every bone with identity rotations (``setToHomePose``)."""
+    world = np.zeros_like(translations)
+    for i, parent in enumerate(parents):
+        world[i] = translations[i] + (world[parent] if 0 <= parent < i else 0)
+    return world
+
+
+def _packets_start_matches(data: bytes):
+    s = skin(data)
+    found = blocks(data)
+    if s is None or not found:
+        return None, "no skin tables or no blocks"
+    count = struct.unpack_from("<I", data, s.packets_at)[0]
+    ok = s.packets_at + 4 == found[0].offset and (count == len(found) or found[0].scale_at >= 0)
+    return ok, f"packet count word at {s.packets_at} says {count}, {len(found)} blocks follow"
+
+
+def _records_tile(data: bytes):
+    found = blocks(data)
+    if not found:
+        return None, "no blocks"
+    good = sum(1 for b in found if vertices(data, b) is not None)
+    return good == len(found), f"{good} of {len(found)} blocks' records end on the index list"
+
+
+def _weights_sum_to_one(data: bytes):
+    found = blocks(data)
+    if not found:
+        return None, "no blocks"
+    total = ok = 0
+    for b in found:
+        v = vertices(data, b)
+        if v is None:
+            continue
+        s = v.weights.sum(1)
+        total += len(s)
+        ok += int(np.sum(np.abs(s - 1) < 0.01))
+    return ok == total, f"{ok} of {total} vertices weigh 1.0"
+
+
+IDENTITIES += [
+    Identity(
+        "the bone tables end on the packets",
+        "bone tables + 4-byte packet count == the first block, count == blocks",
+        _packets_start_matches,
+    ),
+    Identity(
+        "vertex records tile",
+        "1..4-bone records of 20/29/38/47 bytes end exactly on each block's index list",
+        _records_tile,
+    ),
+    Identity(
+        "weights sum to one", "the s16 / 2^scale weights of a vertex sum to 1", _weights_sum_to_one
     ),
 ]

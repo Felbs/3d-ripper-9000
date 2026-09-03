@@ -9,8 +9,9 @@ from gcrip.formats import tr_dfm
 BAADF00D = bytes.fromhex("0df0adba") * 24
 
 
-def make_dfm(parts: list[tuple[str, int, tuple]], bones: int = 82,
-             skeleton: str = "SOLDIER_DEFAULT.SKL") -> bytes:
+def make_dfm(
+    parts: list[tuple[str, int, tuple]], bones: int = 82, skeleton: str = "SOLDIER_DEFAULT.SKL"
+) -> bytes:
     out = bytearray(struct.pack("<6I", 2, 1, len(parts), bones, 1, 0))
     raw = skeleton.encode("latin-1")
     field = raw + b"\0" + BAADF00D[: tr_dfm.HEADER - 24 - len(raw) - 1]
@@ -44,7 +45,7 @@ def test_every_box_is_a_box():
     """min <= max on all three axes, on every record - the check that pins the 58-byte stride."""
     m = tr_dfm.mesh(make_dfm(PARTS))
     for p in m.parts:
-        for lo, hi in zip(p.box_min, p.box_max):
+        for lo, hi in zip(p.box_min, p.box_max, strict=True):
             assert lo <= hi
 
 
@@ -62,7 +63,7 @@ def test_a_bone_outside_the_skeleton_is_rejected():
 
 def test_detection_and_truncation():
     data = make_dfm(PARTS)
-    assert tr_dfm.is_dfm(data[:16])
+    assert tr_dfm.is_dfm(data[:20])
     assert not tr_dfm.is_dfm(struct.pack("<4I", 7, 1, 3, 82))
     assert tr_dfm.mesh(data[:-10]) is None
 
@@ -164,3 +165,178 @@ def test_a_block_whose_payload_lies_breaks_the_tiling():
     struct.pack_into("<I", hurt, at + 12, 12 * tr_dfm.RIGID_STRIDE + 8)
     found = tr_dfm.blocks(bytes(hurt))
     assert not tr_dfm.tiles(bytes(hurt), found)
+
+
+# -- the vertex record and the bone tables (from bloodrayne.elf) ----------------------------
+
+
+def record(bones: list[tuple[int, tuple, float]], normal=(0, 1, 0), uv=(0.5, 0.25)) -> bytes:
+    """One big-endian vertex record: (bone, position, weight) per influence, / 1024."""
+    out = bytearray([len(bones)])
+    for _b, pos, _w in bones:
+        out += struct.pack(">3h", *(round(v * 1024) for v in pos))
+    for _b, _pos, w in bones:
+        out += struct.pack(">h", round(w * 1024))
+    out += struct.pack(">3h", *(round(v * 32767) for v in normal))
+    out += bytes(b for b, _pos, _w in bones)
+    out += struct.pack(">2H", *(round(v * 1024) for v in uv))
+    return bytes(out)
+
+
+def make_skinned(parts, bones: int, translations, blocks_) -> bytes:
+    """Header, parts, the 0xf8 material block naming SOLDIER.TIF, the bone tables, then
+    blocks of the given records (a, b, [records], triangles)."""
+    body = bytearray(make_dfm(parts, bones=bones))
+    mat = bytearray(tr_dfm.MATERIAL_BLOCK)
+    struct.pack_into("<3f", mat, 0, 1.0, 1.0, 32.0)
+    mat[36:47] = b"SOLDIER.TIF"
+    body += mat
+    for t in translations:
+        body += struct.pack("<3f", *t)
+    body += bytes(tr_dfm.BONE_BOX * bones) + bytes(8 * bones) + bytes(12)
+    body += struct.pack("<I", len(blocks_))
+    for a, b, recs, tris in blocks_:
+        verts = b"".join(recs)
+        n = len(recs)
+        head = struct.pack(
+            "<10I", a, b, 2, len(verts) + 4, 4, n, len(tris), bones, 0, tr_dfm.BLOCK_TAIL
+        )
+        body += head + verts
+        for t in tris:
+            body += struct.pack("<3H", *t)
+    return bytes(body)
+
+
+def test_the_vertex_record_is_big_endian_and_variable_length():
+    assert tr_dfm.RECORD_SIZES == {1: 20, 2: 29, 3: 38, 4: 47}
+    recs = [
+        record([(3, (0.5, 0.0, 0.0), 1.0)]),
+        record([(3, (1.0, 0.0, 0.0), 0.25), (5, (0.0, 1.0, 0.0), 0.75)]),
+        record([(3, (0.0, 0.0, 1.0), 1.0)]),
+    ]
+    assert [len(r) for r in recs] == [20, 29, 20]
+    data = make_skinned(PARTS, 82, [(0.0, 0.0, 0.0)] * 82, [(0, 0xFFFFFFFF, recs, [(0, 1, 2)])])
+    (block,) = tr_dfm.blocks(data)
+    v = tr_dfm.vertices(data, block)
+    assert v is not None
+    assert v.positions[1, 0].tolist() == [1.0, 0.0, 0.0]
+    assert v.positions[1, 1].tolist() == [0.0, 1.0, 0.0]
+    assert v.weights[1].tolist() == [0.25, 0.75, 0.0, 0.0]
+    assert v.bones[1].tolist() == [3, 5, 0, 0]
+    assert abs(v.normals[0, 1] - 1.0) < 1e-3
+    assert v.uvs[0].tolist() == [0.5, 0.25]
+
+
+def test_the_scale_comes_from_the_block_header_word():
+    data = make_skinned(
+        PARTS,
+        82,
+        [(0.0, 0.0, 0.0)] * 82,
+        [(0, 0, [record([(0, (0.5, 0, 0), 1.0)])] * 3, [(0, 1, 2)])],
+    )
+    (block,) = tr_dfm.blocks(data)
+    assert tr_dfm.scale_of(data, block) == 1 / 1024
+
+
+def test_the_bone_tables_end_on_the_packet_count():
+    translations = [(0.0, 3.0, 0.0)] + [(0.0, 0.5, 0.0)] * 81
+    recs = [record([(1, (0.0, 0.0, 0.0), 1.0)])] * 3
+    data = make_skinned(PARTS, 82, translations, [(0, 0, recs, [(0, 1, 2)])])
+    s = tr_dfm.skin(data)
+    assert s is not None and s.material == "SOLDIER.TIF"
+    assert s.translations[0].tolist() == [0.0, 3.0, 0.0]
+    assert struct.unpack_from("<I", data, s.packets_at)[0] == 1
+    assert s.packets_at + 4 == tr_dfm.blocks(data)[0].offset
+    world = tr_dfm.home_pose(s.translations, [-1, 0] + [1] * 80)
+    assert world[1].tolist() == [0.0, 3.5, 0.0]
+    assert world[2].tolist() == [0.0, 4.0, 0.0]
+
+
+def test_the_plugin_assembles_the_home_pose_and_binds_the_texture():
+    from gcrip.plugins import tr_dfm as plugin
+
+    translations = [(0.0, 3.0, 0.0), (0.0, 0.5, 0.0)] + [(0.0, 0.0, 0.0)] * 80
+    recs = [
+        record([(1, (0.5, 0.0, 0.0), 1.0)]),
+        record([(0, (0.0, 0.0, 0.0), 0.5), (1, (0.0, 0.0, 0.0), 0.5)]),
+        record([(1, (0.0, 0.0, 1.0), 1.0)]),
+    ]
+    data = make_skinned(PARTS, 82, translations, [(0, 0, recs, [(0, 1, 2)])])
+    skl = struct.pack("<2I", 2, 82)
+    for i in range(82):
+        skl += (f"bone{i}".encode().ljust(32, b"\0")) + struct.pack("<i", -1 if i == 0 else 0)
+    from tests.test_tr_tex import build_cmpr
+
+    files = {
+        "files/a.PKG/soldier.dfm": data,
+        "files/a.PKG/SOLDIER_DEFAULT.SKL": skl,
+        "files/a.PKG/SOLDIER.TIF": build_cmpr(),
+    }
+
+    class Src:
+        by_path = dict.fromkeys(files)
+
+        def get(self, p):
+            return files[p]
+
+    (scene,) = plugin.extract(data, "files/a.PKG/soldier.dfm", Src())
+    pos = scene.primitives[0].positions.tolist()
+    assert pos[0] == [0.5, 3.5, 0.0]  # bone 1 sits 3.5 up: pelvis 3.0 + its own 0.5
+    assert pos[1] == [0.0, 3.25, 0.0]  # half-way between bones 0 and 1
+    assert scene.joints[1].parent == 0 and scene.joints[1].name == "bone1"
+    assert scene.materials[0].texture == "SOLDIER" and "SOLDIER" in scene.textures
+    assert scene.extras["parts"] == {"binoculars2": 1}
+
+
+def make_v5(parts, bones: int, translations, blocks_) -> bytes:
+    """Blowout's version 5: a material count in the header, 60-byte parts, CMaterial
+    records, the bone tables, then every 36-byte packet header and the payloads after them
+    (scale word, big-endian index offset, records, big-endian indices)."""
+    body = bytearray(struct.pack("<7I", 5, 1, len(parts), bones, 1, 1, 0))
+    body += b"HERO.SKL".ljust(tr_dfm.SKELETON_NAME, b"\0")
+    for name, bone, box in parts:
+        nm = name.encode("latin-1")
+        body += (nm + b"\0" * (tr_dfm.NAME - len(nm)))[: tr_dfm.NAME]
+        body += struct.pack("<I", bone) + struct.pack("<6f", *box) + bytes(2)
+    mat = bytearray(tr_dfm.MATERIAL_V5)
+    struct.pack_into("<I", mat, 0, 7)
+    mat[16:24] = b"kane.TIF"
+    body += mat
+    for t in translations:
+        body += struct.pack("<3f", *t)
+    body += bytes(tr_dfm.BONE_BOX * bones) + bytes(8 * bones) + bytes(12)
+    body += struct.pack("<I", len(blocks_))
+    payloads = []
+    for a, b, recs, tris in blocks_:
+        verts = b"".join(recs)
+        idx = b"".join(struct.pack(">3H", *t) for t in tris)
+        payload = struct.pack(">2I", 10, 8 + len(verts)) + verts + idx
+        payload += bytes(-len(payload) % 32)
+        body += struct.pack("<9I", 2, a, b, 2, len(payload), 4, len(recs), len(tris), bones)
+        payloads.append(payload)
+    for p in payloads:
+        body += p
+    return bytes(body)
+
+
+def test_version_five_lists_its_headers_first_and_reads_big_endian_indices():
+    recs = [record([(1, (0.5, 0.0, 0.0), 1.0)])] * 3
+    data = make_v5(
+        PARTS, 82, [(0.0, 0.0, 0.0)] * 82, [(0, 0, recs, [(0, 1, 2)]), (1, 0, recs, [(2, 1, 0)])]
+    )
+    assert tr_dfm.is_dfm(data[:64])
+    m = tr_dfm.mesh(data)
+    assert m.version == 5 and m.materials == 1 and [p.name for p in m.parts][0] == "binoculars2"
+    s = tr_dfm.skin(data)
+    assert s.material == "kane.TIF"
+    found = tr_dfm.blocks(data)
+    assert [b.vertices for b in found] == [3, 3] and all(b.big_endian_indices for b in found)
+    assert tr_dfm.indices(data, found[1]).tolist() == [[2, 1, 0]]
+    assert tr_dfm.scale_of(data, found[0]) == 1 / 1024
+    v = tr_dfm.vertices(data, found[0])
+    assert v is not None and v.positions[0, 0].tolist() == [0.5, 0.0, 0.0]
+    from gcrip import identities
+
+    assert all("[hold]" in str(r) for r in identities.check(tr_dfm, data)), identities.check(
+        tr_dfm, data
+    )
