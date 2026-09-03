@@ -107,3 +107,26 @@ Spirits & Spells was 0 before and is now half a million triangles.  The other tw
 models with almost no geometry - 87 and 34 triangles across ~200 models - so whatever they hold
 is being read as `TMESH` records that are nearly empty.  Either those discs really are mostly
 sprites and triggers, or their `.dgc` are a different vintage of the format.  Not yet looked at.
+
+### Both of the above were written before the second vintage was cracked
+
+**It is one number.**  The record is laid out identically on all three discs - the
+`00 06 00 04` marker and the vertex count sit at `+112` and `+116` - and Jimmy Neutron's
+`P_JIMMY_MESH_MESH.TMESH` reads 606 positions in a
+(-0.505, 0, -0.278) .. (0.505, 1.473, 0.272) box, 827 texture coordinates and 609 normals
+**unit to 6.86e-07**.  What differs is the **strip trailer**: five bytes on Spirits & Spells,
+**eight** on Jimmy Neutron and SpongeBob.
+
+The two never both work, so nothing is guessed:
+
+| disc | trailer 5 | trailer 8 |
+|---|---|---|
+| Spirits & Spells (52 TMESH) | **52 of 52**, 21,145 triangles | 1 of 52 |
+| Jimmy Neutron `LEVEL42` (69 TMESH) | 0 of 69 | **69 of 69**, 12,561 triangles |
+
+`strip_trailer()` asks each file which one reads more of its meshes.  End to end the plugin now
+gives 52 scenes / 21,142 triangles on Spirits & Spells and **69 scenes / 12,550 triangles on
+Jimmy Neutron**, where it gave nothing before.
+
+A single strip cannot tell the trailers apart - it takes a few before a wrong one
+desynchronises - which is why the tests use four.
