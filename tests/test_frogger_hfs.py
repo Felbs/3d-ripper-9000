@@ -31,8 +31,9 @@ def build(counts, spans, first_size=64):
     body = bytearray(data_at - n * hfs.BLOCK)
     for off in offsets:
         at = off - n * hfs.BLOCK
-        if at + 4 <= len(body):
+        if at + hfs.MEMBER_HEADER <= len(body):
             body[at : at + 4] = hfs.MEMBER_MAGIC
+            struct.pack_into("<2I", body, at + 4, first_size * 2, first_size)
     return bytes(directory + body), offsets
 
 
@@ -85,3 +86,19 @@ def test_the_walk_stops_at_the_first_block_without_the_magic():
 def test_a_file_that_is_not_an_archive_is_declined():
     assert hfs.blocks(b"not an archive at all") == []
     assert not hfs.is_hfs(b"nope")
+
+
+def test_a_member_declares_its_unpacked_size():
+    """The word at +4, read as a u16 'tag' by the first pass, is the unpacked size: on
+    Ancient Shadow 365 of 368 members have +8 equal to the directory's size and +4 above it,
+    at ratios 0.14 to 0.92.  That is the length oracle the codec was missing."""
+    data, _ = build([2, 2], [8192, 8192])
+    m = hfs.members(data)[0]
+    assert hfs.member_sizes(data, m) == (128, 64)
+    held, detail = hfs._members_declare_their_sizes(data)
+    assert held is True, detail
+
+    hurt = bytearray(data)
+    struct.pack_into("<I", hurt, m.offset + hfs.MEMBER_UNPACKED_AT, 8)  # smaller than packed
+    held, _ = hfs._members_declare_their_sizes(bytes(hurt))
+    assert held is False

@@ -52,6 +52,34 @@ MAX_BLOCKS = 1 << 16
 MAX_COUNT = 1 << 16
 #: what a member opens with
 MEMBER_MAGIC = b"PRS1"
+#: and its header: magic, u32 unpacked size, u32 packed size (== the directory's), payload
+MEMBER_HEADER = 12
+MEMBER_UNPACKED_AT = 4
+MEMBER_PACKED_AT = 8
+
+
+def member_sizes(data: bytes, m: Member) -> tuple[int, int] | None:
+    """(unpacked, packed) from the member's own header, or None if it is not PRS1."""
+    if m.offset + MEMBER_HEADER > len(data) or data[m.offset : m.offset + 4] != MEMBER_MAGIC:
+        return None
+    return struct.unpack_from("<2I", data, m.offset + MEMBER_UNPACKED_AT)
+
+
+def _members_declare_their_sizes(data: bytes):
+    found = members(data)
+    checked = held = 0
+    for m in found:
+        if m.offset + m.size > len(data):
+            continue
+        got = member_sizes(data, m)
+        if got is None:
+            continue
+        checked += 1
+        unpacked, packed = got
+        held += packed == m.size and unpacked >= packed
+    if not checked:
+        return None, "no PRS1 member inside the data"
+    return held == checked, f"{held} of {checked} members: +8 == directory size and +4 >= +8"
 
 
 @dataclass(frozen=True)
@@ -136,6 +164,11 @@ def _spans_and_table_account_for_the_file(data: bytes, total: int | None = None)
 
 
 IDENTITIES = [
+    Identity(
+        "a member's header repeats its size and declares the unpacked one",
+        "u32 at +8 == the directory's size, and u32 at +4 >= it",
+        _members_declare_their_sizes,
+    ),
     Identity(
         "the directory ends where the data begins",
         "blocks * 2048 == the data offset the first block declares",

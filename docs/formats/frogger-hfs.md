@@ -120,3 +120,30 @@ Measuring 355 members across the first 8.4 MB gives entropy 6.13 to 8.0 - the lo
 files, not stored ones - and every single one opens `PRS1`.  So the known-plaintext technique
 that broke the Tiger Woods codec has nothing to work with *within* this disc.  If it is to be
 used here the pair has to come from another Frogger title.
+
+
+## Two things the codec attempt was missing (2026-09-03)
+
+**The member header holds the unpacked size.**  The earlier pass read the word at +4 as a u16
+"tag" (`'jp'`, `'ir'`, `0x8c26`) because it varied per member.  It is a `u32`, and it is the
+**unpacked length**: on Ancient Shadow **365 of 368** members have `+8` equal to the directory's
+size and `+4` above it, at packed/unpacked ratios of 0.14 to 0.92.  Every one of the 4,195
+members carries its own length oracle.
+
+**Frogger's Adventures: The Rescue uses the same archive and the same codec.**  Its 18 `.hfs`
+open `hfs` where Ancient Shadow's is `hfs
+` - a version byte - with the same 16-byte block
+header and 8-byte entries, and every one of its **1,552** sampled members is `PRS1` with the
+same 12-byte header.  Twice the corpus, and a second game to cross-check any decoder against.
+No stored members there either (entropy 5.0 to 8.0, nothing under 5), so the plaintext will
+have to come from the decoder's own output confirming a RenderWare chunk shape.
+
+That shape is visible.  The least-compressed members open, after the header::
+
+    fd 23 eb f0 | 78 14 00 00 ff ff ef 03 18 01 00 fa | f1 00 00 18 3a | eb f0 1c f3 f6 00 00 10 | eb f0 ...
+
+`78 14 00 00 ff ff ef 03` is a RenderWare chunk size and a 3.x version stamp - eight literal
+bytes in a row - and **`eb f0` recurs at +14 in every member and every few bytes after**, so it
+is part of the control grammar, not data.  What `fd 23` and `eb f0` encode is the codec, and
+with a length oracle on every member and a chunk-shaped plaintext to hit, that is now a
+tractable search rather than a blind one.
