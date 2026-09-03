@@ -12,7 +12,7 @@ are singletons.  The ones worth attacking as a group, in return-on-effort order:
 | 4 | Baten Kaitos (Monolith) | 5 | 6.1 | biggest files are THP video; game data is in unnamed files | survey the non-video files |
 | 5 | EA `BIGF` (SSX 3, SSX On Tour, Goblet of Fire, ...) | 5 | 5.5 | container reads; members are EA RenderWare streams | `ea_rws` reads them; find which members hold CLUMP / native geometry |
 | 6 | EA `SCHl` audio banks as biggest file (MVP 2004/2005, FIFA Street) | 4 | 3.6 | biggest file is audio | models are in the `.big`/`.viv` beside them - EAGL, already handled on siblings |
-| 7 | `BOLT` archives (Muppets Party Cruise, Namco Museum, Shrek Super Party) | 3 | 0.8 | unread container | new container plugin |
+| 7 | `BOLT` archives (Muppets Party Cruise, Namco Museum, Shrek Super Party) | 3 | 0.8 | **cracked 2026-09-03** - archive, LZ codec, node tree, meshes and material lists read from Muppets' DWARF ELF; Pac-Man Fever joins (its FST archives are the older 1.3 exporter); Namco Museum is 2D | re-rip (wave 37) - [bolt-mass-media.md](bolt-mass-media.md) |
 | 8 | Visual Concepts `DAT` | 3 | 3.7 | codec cracked tonight; census still shows 0 triangles because the members are textures | the `TMdl`-equivalent for VC is unlocated |
 | 9 | `ZSND` (Aggressive Inline, Dave Mirra BMX 2, BMX XXX) | 3 | 1.6 | biggest file is sound | Z-Axis engine; models elsewhere on disc |
 | 10 | `MPQ` (WWE Day of Reckoning 1/2, WrestleMania XIX) | 3 | 4.0 | unread container (Blizzard MPQ, used by Yuke's) | MPQ reader - documented format, listfile likely absent |
