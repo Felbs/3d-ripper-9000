@@ -60,3 +60,30 @@ places are the rest of `data.big`'s 152 members and the **277 MB `gof_f.elf`**.
 The disc is 956 MB of content behind a container gcrip already opens, and the inner format is
 RenderWare - the family `plugins/renderware.py` and now `plugins/rw_native.py` both read.  It is
 much closer to reachable than "0 models" suggests.
+
+
+## What the 153 members actually are (2026-09-03)
+
+Reading the first 8 KB of every member of `data.big` - 1.2 MB in total - and parsing each
+member's `0x071C` type table gives the vocabulary of the disc:
+
+| class | members registering it |
+|---|---|
+| `cModelBehaviour` | **88** |
+| `cLightModulatorBehaviour` | 27 |
+| `GUIListener_Behaviour`, `AudioAnimManager_Behaviour`, `CFXColorLight`, `AudioCamera` | 22 each |
+| `TriggerBox`, `TriggerListenerAndOr`, `cLionEffect` | 20 each |
+| `PhysicsWorldCollision`, `EntityPool`, `Camera_Animated` | 19 each |
+| `StaticSceneProp`, `IGCSequence` | 18 |
+| `NavigationMesh`, `Player`, `CharmConfigObject` | 17 |
+
+So `data.big` is the **level and entity database**: behaviours, triggers, cameras, audio
+objects, navigation meshes.  `cModelBehaviour` appears in 88 of the 153, which says the members
+*reference* models rather than contain them.
+
+**No geometry asset type has turned up.**  Searching the first 96 KB of all 153 members - 14.8 MB
+- finds **zero** `rwID_` names; the only ones seen anywhere are `rwID_SEQUENCE` and
+`rwID_HAVOK_HKX_DATA`, deep inside the two largest members, and those are scripts and physics.
+
+That leaves `music.big` unsampled and the 277 MB `gof_f.elf` untouched, and it makes the
+possibility worth stating plainly: the models may not be in `data.big` at all.
