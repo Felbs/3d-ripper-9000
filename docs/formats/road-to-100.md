@@ -44,6 +44,8 @@ Need for Speed: Underground (a singleton at 962 triangles beside its 7-million-t
 
 Super Mario Strikers (376 triangles; an ELF with DWARF and three maps) fell the same day - [nlg-strikers-gl.md](nlg-strikers-gl.md).
 
+Medal of Honor: Frontline (2,347 triangles; a 5,005-symbol ELF) fell the same day - [ea-la-frontline.md](ea-la-frontline.md); Rising Sun and GoldenEye: Rogue Agent share the file names but wrap a newer EAGL, still open.
+
 ## Running total
 
 Library: **1,085,308 models / 479.4 M triangles over 637 discs** before wave 30.  Wave 30 is

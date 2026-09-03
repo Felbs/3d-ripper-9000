@@ -51,6 +51,15 @@ give 238 models / 16k triangles with every one of 436 textures bound.  See
 [formats/bolt-mass-media.md](formats/bolt-mass-media.md).  Left: Pac-Man Fever's real game
 data lives outside the FST (scan the image for `BOLT`), skinned meshes, animations.
 
+## Closed 2026-09-03: Medal of Honor: Frontline
+
+EA LA's 2002 engine, read from the shipped ELF's symbols: `.msh` static meshes and `.cpt`
+level compartments over GX arrays with the display-list headers filled in at load, materials
+as embedded `SHPG` shapes, compartments sharing the level's art file.  One level: 132k
+triangles, 1,172 of 1,289 materials textured.  See
+[formats/ea-la-frontline.md](formats/ea-la-frontline.md).  Left: `.dmf` skinned characters;
+Rising Sun / GoldenEye wrap EAGL objects of a 2003-04 packet layout (open row below).
+
 ## Closed 2026-09-03: Super Mario Strikers
 
 Next Level Games' GL layer, read from the shipped `MarioSoccerR.elf` (the DOL matches none
@@ -107,6 +116,7 @@ without the DOL.  Seven discs on one engine.
 | EA content on Tiger Woods 2003 / 2004 / 2005 | 6 | **closed 2026-09-03** - `Rdat` is EA's `rcmp` LZ, read out of the 2005 DOL (`gcrip/formats/ea_rcmp.py`); one 2005 hole yields 428k triangles + 95 textures through `shoc` -> `ea_obg` / `ea_txg`.  See the closing section of [formats/ea-shoc-hog.md](formats/ea-shoc-hog.md) | re-rip the five discs (wave 32) |
 | `.adb` | 11 | **low value, do not size it by file count.**  14 large `Sounds.adb` on the Acclaim discs (200-660 MB, ascending `u32` offset table, no recognised magic in the first member) whose discs are already served by `asb_tex`; and 411 tiny ones elsewhere - Shadow the Hedgehog's 364 total 0.1 MB, about 300 bytes each | see [formats/dgc-adb-survey.md](formats/dgc-adb-survey.md) |
 | Pac-Man Fever data outside the FST | 1 | the FST lists three `.BLT` (two of them 1.3 leftovers the DOL cannot read); the DOL opens `BoardGam`, `DataHUD` ... by name from the raw disc - 300 MB the manifest never sees | scan the image for `BOLT` headers when the drive is idle, hand the hits to `plugins.bolt` (see [formats/bolt-mass-media.md](formats/bolt-mass-media.md)) |
+| EA LA 2003-04 EAGL packets (Medal of Honor: Rising Sun, GoldenEye: Rogue Agent) | 2 | `level.viv` `.o` objects and the `.msh` / `.cpt` wrappers: packets found, streams not read - externs threaded between streams, S16 positions, u32 primitive count ahead of the display list, `u8 slot, u8 pos, u16 nrm, u8 uv` corners (2026-09-03) | an EAGL packet path for that layout - [formats/ea-la-frontline.md](formats/ea-la-frontline.md) |
 | Blitz texture format 17 | 9 discs, ~13% of textures | 8 bits a pixel behind a 512-byte block; not C8 over an RGB5A3 / RGB565 / IA8 palette in tiled or linear order (2026-09-03).  Everything else on the engine now reads | see the closing section of [formats/blitz-gcp-gamecube.md](formats/blitz-gcp-gamecube.md) |
 | Terminal Reality `_dfm` **vertex record** | 3 (BloodRayne, 4x4 Evo 2, Blowout, RoadKill) | **the block layer is solved (2026-09-02)**: blocks tile on 106/106 and 47/47 and every triangle indexes 0..vertices-1 exactly, giving 4,215 vertices and 3,914 triangles on `soldier.dfm`.  What is left is only the 20-byte vertex record.  Byte 3 is always 0x04, byte 4 0x00, byte 15 0x44, bytes 16-17 0x01FE; the best of all 240 s16 column triples scores 0.44 on triangle locality where a real surface scores 0.1, and eleven bytes carry ~40 distinct values over 130 vertices - so read it as **packed bit fields**, not s16 columns | see [formats/terminal-reality-dfm.md](formats/terminal-reality-dfm.md)  **2026-09-03: the normal is found** - bytes 8-13, LE `s16`/32767, unit length on 12 of 12 blocks - and the vertices are in **bone space**, which is why no box test could ever work.  Bytes 2-7 as three `s16` score 0.68-0.73 normal agreement against 0.51 shuffled: partly right, not decoded.  Twelve bytes left, with a working oracle |
 | FSTA `GKA` / `GGG` | 3 (Billy & Mandy, Kids Next Door, Charlie and the Chocolate Factory) | **`GGG` read 2026-09-03** (models; `GKA` is animation) - **not compressed** - body entropy 5.28 (`GGG`) and 6.82 (`GKA`) against 7.73 for `GMS`.  Magic is `ISVH` (`HVSI` reversed) but the fields are big-endian: the `u32` at +12 is the exact file size on both | what they hold.  Neither shows f32 runs, so any geometry is quantised.  Note the models are in `GMS`, which is compressed - these may be animation or collision |
