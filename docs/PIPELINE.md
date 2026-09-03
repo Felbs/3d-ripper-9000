@@ -202,7 +202,11 @@ flowchart LR
         AMALGA --> GCMAT["material files .gcmat"] -.-> GCNM
     end
     subgraph EALA["EA Los Angeles"]
-        MSH[".msh / .cpt<br/>plugins.ea_la"] -.->|"SHPG in the material tables"| MSH
+        MSH[".msh / .cpt 2002<br/>plugins.ea_la"] -.->|"SHPG in the material tables"| MSH
+        MSH2[".msh / .cpt 2003-04 wrappers<br/>plugins.ea_la"] --> LAPK["EAGL objects, EA LA packets<br/>formats.eagl._decode_packet_la"]
+        RTC["symbols.rtc / name.rtc<br/>formats.ea_la.rtc_tables"] -.->|"ELF tails by hash / index"| MSH2
+        LVO[".o objects in level.viv<br/>plugins.eagl"] --> LAPK
+        GSH[".gsh / .csf / _Art.cpt SHPG"] -.->|"by SHAPENAME"| LAPK
     end
     subgraph NLG["Next Level Games"]
         GLG[".glg chunk units<br/>plugins.nlg_glg"]

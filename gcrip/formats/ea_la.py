@@ -31,6 +31,21 @@ The ``_Art.cpt`` of a level holds the materials with no chunks; the geometry sit
 ``_c<n>.cpt`` compartments beside it, whose materials point back into the art file's
 tables (+0x64 bit 1, index at +0x6c).  Positions are in level space already.  Both
 material tables carry an embedded ``SHPG`` (``gcrip.formats.ea_shape``) at +0x60.
+
+The 2003 / 2004 engine (Medal of Honor: Rising Sun, GoldenEye: Rogue Agent) keeps the file
+names but wraps **EAGL** objects (``gcrip.formats.eagl``, the EA LA packet layout)::
+
+    .msh (0x12)   u32 0x12, u32 file bytes, u32, u32, u32 ELF offset, u32 ELF bytes, ...,
+                  +0x34 u32 hash: the ELF is ``.ord``-style (header + .data, no tables) and
+                  its symbol / relocation tail is the entry of that hash in the level's
+                  ``symbols.rtc`` (``TLT_GetRelocationTable`` -> ``CRtcFile``)
+    .cpt (0x25)   u32 0x25, u32 file bytes, u32 SHPG offset, u32 SHPG bytes, ...; the
+                  compartment's models are the ELFs embedded in the file, their tails the
+                  entries 0, 1, ... of the ``<name>.rtc`` beside it
+    .rtc          "RTC\0", u32, u32 2, u32 bytes, u32 count, u32 count, then count x
+                  (u32 id, u32 offset, u32 bytes) sorted by id
+
+Rising Sun's 5,141 ``.msh`` / 1,286 ``.cpt`` and GoldenEye's 1,264 / 172 are this shape.
 """
 
 from __future__ import annotations
@@ -203,3 +218,95 @@ def material_texture(d: bytes, m: Material) -> np.ndarray | None:
         if img.rgba is not None:
             return img.rgba
     return None
+
+
+# ---------------------------------------------------------------------------
+# 2003-04: EAGL objects wrapped in .msh (0x12) / .cpt (0x25), tails in .rtc files
+# ---------------------------------------------------------------------------
+
+MSH_EAGL_VERSION = 0x12
+CPT_EAGL_VERSION = 0x25
+RTC_MAGIC = b"RTC\0"
+ELF_MAGIC = b"\x7fELF"
+
+
+def is_eagl_msh(head: bytes, size: int) -> bool:
+    if len(head) < 0x38 or size < 0x38:
+        return False
+    w = struct.unpack_from(">6I", head, 0)
+    return (
+        w[0] == MSH_EAGL_VERSION
+        and w[1] == size
+        and 0x40 <= w[4] < size
+        and w[5] >= 0x34
+        and w[4] + w[5] <= size
+    )
+
+
+def is_eagl_cpt(head: bytes, size: int) -> bool:
+    if len(head) < 16 or size < 16:
+        return False
+    w = struct.unpack_from(">4I", head, 0)
+    return w[0] == CPT_EAGL_VERSION and w[1] == size and w[2] + w[3] <= size
+
+
+def is_rtc(head: bytes) -> bool:
+    return head[:4] == RTC_MAGIC
+
+
+def rtc_tables(data: bytes) -> dict[int, bytes]:
+    """id -> ELF tail (section-name / symbol / relocation tables plus section headers)."""
+    if not is_rtc(data) or len(data) < 0x18:
+        return {}
+    count = _u32(data, 0x10)
+    out: dict[int, bytes] = {}
+    for i in range(min(count, MAX_COUNT)):
+        at = 0x18 + 12 * i
+        if at + 12 > len(data):
+            break
+        ident, off, size = struct.unpack_from(">3I", data, at)
+        if off + size <= len(data) and size:
+            out[ident] = data[off : off + size]
+    return out
+
+
+def _with_tail(elf: bytes, tail: bytes | None) -> bytes:
+    """The wrapped ELF is the front of the object; its tables follow in the .rtc entry and
+    the section headers sit at the very end, so the join is a plain append."""
+    return elf + tail if tail else elf
+
+
+def eagl_msh_object(data: bytes, tables: dict[int, bytes]) -> bytes:
+    w = struct.unpack_from(">6I", data, 0)
+    ident = _u32(data, 0x34)
+    return _with_tail(data[w[4] : w[4] + w[5]], tables.get(ident))
+
+
+def eagl_cpt_objects(data: bytes, tables: dict[int, bytes]) -> list[bytes]:
+    """Every ELF embedded in a version-0x25 compartment, joined with the tail of the same
+    index; the ELF's length is what the section-header offset leaves after the tail."""
+    out: list[bytes] = []
+    p = 0
+    while True:
+        p = data.find(ELF_MAGIC, p)
+        if p < 0 or p + 0x34 > len(data):
+            break
+        e_shoff = struct.unpack_from("<I", data, p + 0x20)[0]
+        e_shentsize, e_shnum = struct.unpack_from("<HH", data, p + 0x2E)
+        tail = tables.get(len(out))
+        n = e_shoff + e_shnum * e_shentsize - (len(tail) if tail else 0)
+        if n < 0x34 or p + n > len(data):
+            break
+        out.append(_with_tail(data[p : p + n], tail))
+        p += n
+    return out
+
+
+def cpt_shapes(data: bytes) -> bytes | None:
+    """The SHPG bundle embedded in a version-0x25 file (a level's ``_Art.cpt`` carries the
+    level textures), or None."""
+    w = struct.unpack_from(">4I", data, 0)
+    if w[0] != CPT_EAGL_VERSION or not w[3] or w[2] + w[3] > len(data):
+        return None
+    blob = data[w[2] : w[2] + w[3]]
+    return blob if ea_shape.is_shape(blob[:16]) else None

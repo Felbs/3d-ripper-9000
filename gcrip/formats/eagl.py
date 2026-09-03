@@ -25,6 +25,7 @@ skinning slots (multiples of 3 = GX position-matrix indices).
 
 from __future__ import annotations
 
+import itertools
 import re
 import struct
 from dataclasses import dataclass, field
@@ -35,7 +36,7 @@ ELF_MAGIC = b"\x7fELF"
 PRIM_OPS = (0x80, 0x90, 0x98, 0xA0)
 POS_SCALE = 1.0 / 256.0
 UV_SCALE = 1.0 / 256.0
-_SHAPENAME = re.compile(r"SHAPENAME=([A-Za-z0-9_]+),(\d+)")
+_SHAPENAME = re.compile(r"SHAPENAME=([^,;\s]+),(\d+)")
 
 
 class EaglError(ValueError):
@@ -53,6 +54,7 @@ class Packet:
     joints: np.ndarray | None  # (N,4) u16 bone record indices (skinned packets)
     weights: np.ndarray | None  # (N,4) f32
     textures: list[str]  # SHAPENAME shape ids (4-char names) referenced, in order
+    colors: np.ndarray | None = None  # (N,4) u8 RGBA (EA LA static meshes)
 
 
 @dataclass
@@ -383,6 +385,8 @@ def _decode_packet(elf: _Elf, o_shader: int, shader: str, warn: list[str]) -> Pa
                 slot_bones = slot_weights = None
             else:
                 slot_weights /= tot
+    if shader.startswith(LA_SHADER_PREFIX):
+        return _decode_packet_la(elf, o_shader, shader, ents, slot_bones, slot_weights, warn)
     streams = _streams_after_anchor(ents, i_m)
     if len(streams) < 2:
         warn.append(f"packet @{o_shader:#x}: {len(streams)} attribute streams, need at least 2")
@@ -394,7 +398,9 @@ def _decode_packet(elf: _Elf, o_shader: int, shader: str, warn: list[str]) -> Pa
     # opcode - the same test that validated the choice before, applied as the choice.
     dl_idx = _display_list_index(streams, d)
     if dl_idx is None and len(streams) >= 2 and _v2_preamble(d, streams[-1][1]):
-        return _decode_packet_v2(elf, o_shader, shader, ents, streams, slot_bones, slot_weights, warn)
+        return _decode_packet_v2(
+            elf, o_shader, shader, ents, streams, slot_bones, slot_weights, warn
+        )
     if dl_idx is None or dl_idx < 1:
         warn.append(
             f"packet @{o_shader:#x}: no display list among {len(streams)} streams"
@@ -548,7 +554,9 @@ def _v2_layouts(stride: int, matrix_bytes: int, counts: list[int]) -> list[list[
     return out
 
 
-def _decode_packet_v2(elf: _Elf, o_shader: int, shader: str, ents, streams, slot_bones, slot_weights, warn: list[str]):
+def _decode_packet_v2(
+    elf: _Elf, o_shader: int, shader: str, ents, streams, slot_bones, slot_weights, warn: list[str]
+):
     d = elf.data
     _size, dlp, _ = streams[-1]
     attrs = streams[:-1]
@@ -572,7 +580,9 @@ def _decode_packet_v2(elf: _Elf, o_shader: int, shader: str, ents, streams, slot
     candidates.sort(key=lambda c: (-c[0], -c[1]))
     chosen = None
     for _total, stride, prims in candidates:
-        rows = np.concatenate([np.frombuffer(dl, np.uint8, c * stride, off).reshape(c, stride) for _, c, off in prims])
+        rows = np.concatenate(
+            [np.frombuffer(dl, np.uint8, c * stride, off).reshape(c, stride) for _, c, off in prims]
+        )
         for matrix_bytes in (2, 1, 0):
             for widths in _v2_layouts(stride, matrix_bytes, counts):
                 cols = []
@@ -613,7 +623,10 @@ def _decode_packet_v2(elf: _Elf, o_shader: int, shader: str, ents, streams, slot
     if len(attrs) >= 3:
         nn, n_ptr, _ = attrs[1]
         if n_ptr + nn * 6 <= len(d):
-            n_all = np.frombuffer(d, ">i2", nn * 3, n_ptr).reshape(nn, 3).astype(np.float32) * NRM_SCALE_V2
+            n_all = (
+                np.frombuffer(d, ">i2", nn * 3, n_ptr).reshape(nn, 3).astype(np.float32)
+                * NRM_SCALE_V2
+            )
             normals = np.zeros((nv, 3), np.float32)
             normals[idx] = n_all[cols[1]]
     if len(attrs) >= 2:
@@ -635,6 +648,254 @@ def _decode_packet_v2(elf: _Elf, o_shader: int, shader: str, ents, streams, slot
         joints[idx] = slot_bones[slot]
         weights[idx] = slot_weights[slot]
     return Packet(shader, stride, pos, tri, uvs, normals, joints, weights, textures)
+
+
+# ---------------------------------------------------------------------------
+# EA Los Angeles 2003-04 (Medal of Honor: Rising Sun, GoldenEye: Rogue Agent)
+# ---------------------------------------------------------------------------
+#
+# Same ELF object again, with the packet entries threaded through light-block / COORD4
+# externs and the streams indexed **separately** (a packet's positions, normals and texcoords
+# have different counts).  The first section pointer of a packet is a 16-byte header whose
+# first word is the display-list vertex count (Rising Sun: the corners as written; GoldenEye:
+# the corners of one merged strip, i.e. corners + primitives - 1) and, on GoldenEye, whose
+# second is the normal count.  The attribute streams follow the matrix tags; their element
+# sizes come from the gap to the next pointer of the packet: 6 = s16 positions, 3 = s8
+# normals, 4 = RGBA8 colours or s16 texcoords (a colour stream first, unless the shader is a
+# skin), 16 = f32 x4 normals (GoldenEye, lit on the CPU), 1 = the per-normal matrix slots.
+# The display list is not pointed at: it starts after the last stream / constant of the
+# packet, and every corner is [posmtx slot u8 (skins)] [pos] [nrm] [clr] [uv0] [uv1 ...] on
+# Rising Sun (u16 where a stream has more than 256 entries) and [slot] [pos] [clr] [nrm u16]
+# [uv ...] on GoldenEye (its env-map / specular skins repeat the normal index).
+#
+# Vertex formats from the shipped ELFs' ``RenderMoh3_*`` (``GXSetVtxAttrFmt`` /
+# ``SetAttributeFormat``): positions s16 with 8 fraction bits on ``Msh_`` shaders, u16 / 8 on
+# ``Cpt_`` compartments (offset by the packet's first COORD4 constant behind the
+# GeoPrimState), s16 / 10 on ``Skin_``; texcoords s16 / 10; s8 normals / 64.
+
+LA_SHADER_PREFIX = "Moh3_"
+LA_UV_SCALE = 1.0 / 1024.0
+_LA_ELEMENT_SIZES = (16, 6, 4, 3, 1)
+
+
+def _la_streams(ents, header_ptr: int, skin_ptr: int | None) -> list[list[tuple[int, int, int]]]:
+    """Per stream, the (count, pointer, element size) candidates - best fit first - for the
+    counted section pointers of an EA LA packet: every one before the GeoPrimState / TAR
+    externs, only counted (>1) ones behind them (the rest are the packet's constants)."""
+    streams = []
+    state = False
+    for count, ptr, ext in ents:
+        if ext and (ext.startswith("__EAGL::GeoPrimState") or ext.startswith("__EAGL::TAR")):
+            state = True
+        counted = ext is None and ptr is not None and ptr not in (header_ptr, skin_ptr)
+        if counted and (count > 1 or not state):
+            streams.append((count, ptr))
+    ptrs = sorted({ptr for _, ptr, ext in ents if ext is None and ptr is not None})
+    out = []
+    for count, ptr in streams:
+        after = [q for q in ptrs if q > ptr]
+        if not after:
+            out.append([(count, ptr, es) for es in (6, 3, 4, 16, 1)])
+            continue
+        gap = after[0] - ptr
+        # streams are packed on 4-byte boundaries: the fit leaves at most 3 bytes
+        fits = sorted(
+            (gap - count * es, es)
+            for es in _LA_ELEMENT_SIZES
+            if count * es <= gap and gap - count * es < 4
+        )
+        out.append([(count, ptr, es) for _, es in fits])
+    return out
+
+
+def _la_columns(kinds, shader: str):
+    """Corner columns (role, (count, ptr, element size)) for one element-size assignment, or
+    None when it names no single position stream."""
+    pos = [k for k in kinds if k[2] == 6]
+    nrm8 = [k for k in kinds if k[2] == 3]
+    nrm16 = [k for k in kinds if k[2] == 16]
+    four = [k for k in kinds if k[2] == 4]
+    if len(pos) != 1 or len(nrm8) + len(nrm16) > 1:
+        return None
+    if not nrm8 and not nrm16 and "Color" not in shader:
+        # every RenderMoh3_* shader but the flat-colour ones binds GX_VA_NRM, and a tiny
+        # normal stream (2 x 3 bytes padded to 8) fits the 4-byte size just as well
+        return None
+    cols = [("pos", pos[0])]
+    if nrm8:
+        cols.append(("nrm", nrm8[0]))
+    if four and "Skin" not in shader:
+        cols.append(("clr", four[0]))
+        four = four[1:]
+    if nrm16:
+        cols.append(("nrm", nrm16[0]))
+    cols += [(f"uv{i}", k) for i, k in enumerate(four)]
+    return cols
+
+
+def _la_prims(d: bytes, start: int, stride: int) -> list[tuple[int, int, int]]:
+    """(opcode, count, data offset) primitives from ``start`` at ``stride`` bytes a corner,
+    up to the first byte that is neither an opcode nor padding."""
+    p, prims = start, []
+    while p + 3 <= len(d):
+        op = d[p]
+        if op == 0:
+            p += 1
+            continue
+        if (op & 0xF8) not in PRIM_OPS:
+            break
+        count = (d[p + 1] << 8) | d[p + 2]
+        if count == 0 or p + 3 + count * stride > len(d):
+            break
+        prims.append((op & 0xF8, count, p + 3))
+        p += 3 + count * stride
+    return prims
+
+
+def _la_display_list(d: bytes, kinds, cols, want: int):
+    """Find the display list behind the streams: the first primitive opcode after the last
+    stream whose chain, at some stride, reads exactly the header's corner count and whose
+    corner indices all fall inside their streams.  Returns (matrix bytes, index columns,
+    rows, prims) or None."""
+    lo = max(ptr + count * es for count, ptr, es in kinds)
+    counts = [k[0] for _, k in cols]
+    nrm16 = any(role == "nrm" and k[2] == 16 for role, k in cols)
+    ncol = len(cols)
+    for start in range(lo, min(len(d) - 3, lo + 0x200)):
+        if (d[start] & 0xF8) not in PRIM_OPS:
+            continue
+        for stride in range(ncol, 2 * ncol + 4):
+            prims = _la_prims(d, start, stride)
+            if not prims:
+                continue
+            total = sum(c for _, c, _ in prims)
+            if total != want and total + len(prims) - 1 != want:
+                continue
+            rows = np.concatenate(
+                [
+                    np.frombuffer(d, np.uint8, c * stride, off).reshape(c, stride)
+                    for _, c, off in prims
+                ]
+            )
+            for matrix_bytes in (0, 1):
+                for dup in (0, 1) if nrm16 else (0,):
+                    for widths in itertools.product((1, 2), repeat=ncol):
+                        if matrix_bytes + sum(widths) + 2 * dup != stride:
+                            continue
+                        if nrm16 and any(
+                            w != 2 for (r, _), w in zip(cols, widths, strict=True) if r == "nrm"
+                        ):
+                            continue
+                        idx = _la_indices(rows, cols, widths, counts, matrix_bytes, dup)
+                        if idx is not None:
+                            return matrix_bytes, idx, rows, prims
+    return None
+
+
+def _la_indices(rows, cols, widths, counts, matrix_bytes: int, dup: int):
+    q, idx = matrix_bytes, []
+    for k, (w, count) in enumerate(zip(widths, counts, strict=True)):
+        if w == 1:
+            v = rows[:, q].astype(np.uint32)
+        else:
+            v = (rows[:, q].astype(np.uint32) << 8) | rows[:, q + 1]
+        q += w
+        if v.max() >= count:
+            return None
+        idx.append(v)
+        if dup and cols[k][0] == "nrm":
+            v2 = (rows[:, q].astype(np.uint32) << 8) | rows[:, q + 1]
+            q += 2
+            if not np.array_equal(v, v2):
+                return None
+    return idx
+
+
+def _decode_packet_la(
+    elf: _Elf, o_shader: int, shader: str, ents, slot_bones, slot_weights, warn: list[str]
+):
+    d = elf.data
+    section = [(c, p) for c, p, x in ents if x is None and p is not None]
+    if not section:
+        warn.append(f"packet @{o_shader:#x}: EA LA packet with no section pointers")
+        return None
+    header_ptr = section[0][1]
+    want = elf.u32(header_ptr)
+    if want < 3:
+        return None  # legitimate: nothing to draw
+    i_m = next((i for i, e in enumerate(ents) if e[2] and e[2].startswith("__const MATRIX4")), None)
+    skin_ptr = None
+    if i_m is not None and i_m >= 1 and ents[i_m - 1][2] is None:
+        skin_ptr = ents[i_m - 1][1] if ents[i_m - 1][1] != header_ptr else None
+    candidates = _la_streams(ents, header_ptr, skin_ptr)
+    if not candidates or any(not c for c in candidates):
+        warn.append(f"packet @{o_shader:#x}: EA LA streams fit no element size")
+        return None
+    found = None
+    # the assignment with the least padding overall first
+    combos = sorted(
+        itertools.islice(itertools.product(*candidates), 64),
+        key=lambda ks: sum(cands.index(k) for k, cands in zip(ks, candidates, strict=True)),
+    )
+    for kinds in combos:
+        cols = _la_columns(kinds, shader)
+        if cols is None:
+            continue
+        found = _la_display_list(d, kinds, cols, want)
+        if found:
+            break
+    if found is None:
+        warn.append(
+            f"packet @{o_shader:#x}: no EA LA display list of {want} corners behind "
+            f"{len(candidates)} streams"
+        )
+        return None
+    matrix_bytes, idx, rows, prims = found
+    n = len(rows)
+    compartment = "Cpt_" in shader
+    pos_scale = 1.0 / 1024.0 if "Skin" in shader else 1.0 / 256.0
+    pos = None
+    uvs = normals = colors = None
+    for (role, (count, ptr, es)), v in zip(cols, idx, strict=True):
+        if role == "pos":
+            raw = np.frombuffer(d, ">u2" if compartment else ">i2", count * 3, ptr).reshape(
+                count, 3
+            )
+            pos = raw[v].astype(np.float32) * pos_scale
+        elif role == "nrm" and es == 3:
+            raw = np.frombuffer(d, np.int8, count * 3, ptr).reshape(count, 3)
+            normals = raw[v].astype(np.float32) / 64.0
+        elif role == "nrm":
+            normals = (
+                np.frombuffer(d, ">f4", count * 4, ptr).reshape(count, 4)[v, :3].astype(np.float32)
+            )
+        elif role == "clr":
+            colors = np.frombuffer(d, np.uint8, count * 4, ptr).reshape(count, 4)[v].copy()
+        elif role == "uv0":
+            raw = np.frombuffer(d, ">i2", count * 2, ptr).reshape(count, 2)
+            uvs = raw[v].astype(np.float32) * LA_UV_SCALE
+    if compartment:
+        # the compartment's u16 positions count from the packet's origin, the first COORD4
+        # constant behind the GeoPrimState
+        behind = False
+        for count, ptr, ext in ents:
+            if ext and ext.startswith("__EAGL::GeoPrimState"):
+                behind = True
+            elif behind and ext is None and ptr is not None and count == 1 and ptr + 12 <= len(d):
+                pos = pos + np.frombuffer(d, ">f4", 3, ptr)
+                break
+    tri = _triangulate(prims, np.arange(n, dtype=np.uint32))
+    textures = []
+    for _, _, x in ents:
+        m = _SHAPENAME.search(x) if x and "TAR" in x else None
+        if m:
+            textures.append(m.group(1))
+    joints = weights = None
+    if matrix_bytes and slot_bones is not None:
+        slot = np.minimum(rows[:, 0] // 3, len(slot_bones) - 1)
+        joints = slot_bones[slot]
+        weights = slot_weights[slot]
+    return Packet(shader, rows.shape[1], pos, tri, uvs, normals, joints, weights, textures, colors)
 
 
 # ---------------------------------------------------------------------------

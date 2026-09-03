@@ -17,7 +17,9 @@ NAME = "eagl"
 
 
 def detect(path: str, head: bytes, size: int) -> bool:
-    return path.lower().endswith(".ord") and eagl.is_ord(head)
+    low = path.lower()
+    # `.o`: the complete objects EA LA ships in its level.viv (Rising Sun, GoldenEye RA)
+    return low.endswith((".ord", ".o")) and eagl.is_ord(head)
 
 
 _BASENAME_ATTR = "_eagl_basename_index"
@@ -67,8 +69,8 @@ _INDEX_ATTR = "_eagl_shape_index"
 
 
 def _shape_index(src, path: str) -> dict[str, str]:
-    """shape name -> .gsh manifest path, for every shape file in the same folder (header
-    reads only; cached on the source per folder)."""
+    """shape name -> .gsh / .csf manifest path, for every shape file in the same folder
+    (header reads only; cached on the source per folder)."""
     cache = getattr(src, _INDEX_ATTR, None)
     if cache is None:
         cache = {}
@@ -80,7 +82,7 @@ def _shape_index(src, path: str) -> dict[str, str]:
     index: dict[str, str] = {}
     by_path = getattr(src, "by_path", {}) or {}
     for p in by_path:
-        if posixpath.dirname(p) == folder and p.lower().endswith(".gsh"):
+        if posixpath.dirname(p) == folder and p.lower().endswith((".gsh", ".csf")):
             try:
                 for name in ea_shape.shape_names(src.get(p)[:0x4010]):
                     index.setdefault(name, p)
@@ -95,11 +97,34 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
     # .orp on the FIFA titles, .orl on MVP Baseball, NHL, FIFA Street, Def Jam and Fight Night;
     # a disc carries one or the other, never both
     orp = next(
-        (blob for ext in (".orp", ".orl", ".ORP", ".ORL") if (blob := _sibling(src, path, stem + ext))),
+        (
+            blob
+            for ext in (".orp", ".orl", ".ORP", ".ORL")
+            if (blob := _sibling(src, path, stem + ext))
+        ),
         None,
     )
     obj = eagl.parse(eagl.join(data, orp))
     lookup = _shape_index(src, path)
+
+    def resolve(name: str, warnings: list[str]) -> np.ndarray | None:
+        gsh = lookup.get(name)
+        if not gsh:
+            return None
+        try:
+            for s in ea_shape.parse(src.get(gsh)):
+                if s.name == name and s.rgba is not None:
+                    return s.rgba
+        except Exception as e:  # noqa: BLE001
+            warnings.append(f"{gsh}: {e}")
+        return None
+
+    return build_scenes(obj, resolve)
+
+
+def build_scenes(obj: eagl.EaglObject, resolve) -> list[Scene]:
+    """One Scene per model of a parsed object; ``resolve(shape name, warnings)`` returns the
+    RGBA image of a SHAPENAME reference or None (called once per name)."""
     decoded: dict[str, np.ndarray | None] = {}
     scenes = []
     for model in obj.models:
@@ -113,16 +138,7 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
             tex_key = None
             for n in pk.textures:
                 if n not in decoded:
-                    decoded[n] = None
-                    gsh = lookup.get(n)
-                    if gsh:
-                        try:
-                            for s in ea_shape.parse(src.get(gsh)):
-                                if s.name == n and s.rgba is not None:
-                                    decoded[n] = s.rgba
-                                    break
-                        except Exception as e:  # noqa: BLE001
-                            scene.warnings.append(f"{gsh}: {e}")
+                    decoded[n] = resolve(n, scene.warnings)
                 if decoded.get(n) is not None:
                     tex_key = n
                     scene.textures.setdefault(n, decoded[n])
@@ -140,6 +156,7 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
                     indices=pk.indices,
                     normals=pk.normals,
                     uvs=pk.uvs,
+                    colors=pk.colors,
                     joints=pk.joints if scene.joints else None,
                     weights=pk.weights if scene.joints else None,
                 )
@@ -164,7 +181,5 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
             key = w.split(": ", 1)[-1]
             counts[key] = counts.get(key, 0) + 1
         top = sorted(counts.items(), key=lambda kv: -kv[1])[:3]
-        raise eagl.EaglError(
-            "no models; " + ", ".join(f"{k} (x{n})" for k, n in top)
-        )
+        raise eagl.EaglError("no models; " + ", ".join(f"{k} (x{n})" for k, n in top))
     return scenes
