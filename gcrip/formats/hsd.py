@@ -268,14 +268,26 @@ class Jobj:
         return bool(self.flags & JOBJ_HIDDEN)
 
     def walk(self):
-        """Depth-first, children before siblings.
+        """Depth-first, children before siblings, **each joint once**.
 
         Iterative on purpose: recursing here costs one Python frame per joint, and these trees
         come from disc data that may be damaged or simply not be a skeleton at all.
+
+        And a joint is yielded once however many paths reach it.  The parser rejects a joint
+        that is its own ancestor, so there are no cycles - but nothing stops two children
+        pointing at the *same* subtree, and a tree read out of arbitrary bytes does that
+        freely.  Without this set the walk enumerates paths rather than nodes, which is
+        exponential in the sharing depth: One Piece's `l_result_back.dat` hangs a whole library
+        shard here, forever, with no error and no output.  Both callers - the `handled` set in
+        `models()` and the joint list a Scene gets - want distinct joints anyway.
         """
         stack = [self]
+        seen: set[int] = set()
         while stack:
             j = stack.pop()
+            if j.offset in seen:
+                continue
+            seen.add(j.offset)
             yield j
             stack.extend(reversed(j.children))
 
@@ -644,21 +656,29 @@ def local_matrix(j: Jobj, parent: Jobj | None) -> np.ndarray:
 
 def world_matrices(trees: list[Jobj]) -> tuple[list[Jobj], list[np.ndarray]]:
     """Number joints in HSD traversal order (depth first, children before siblings) and
-    return their world matrices."""
+    return their world matrices.
+
+    Iterative and de-duplicating for the same reason :meth:`Jobj.walk` is: two children can
+    point at one subtree, and recursing into it once per path is exponential.  This was the
+    second half of the One Piece hang - fixing only the walk moved the freeze here and turned
+    it into an IndexError, because a joint visited twice had its index reassigned underneath
+    the child that had already recorded it.
+    """
     order: list[Jobj] = []
     world: list[np.ndarray] = []
-
-    def visit(j: Jobj, parent: Jobj | None) -> None:
+    seen: set[int] = set()
+    stack: list[tuple[Jobj, Jobj | None]] = [(t, None) for t in reversed(trees)]
+    while stack:
+        j, parent = stack.pop()
+        if j.offset in seen:
+            continue  # a shared subtree, not a second joint - see Jobj.walk
+        seen.add(j.offset)
         j.index = len(order)
         j.parent = parent.index if parent is not None else None
         order.append(j)
         lm = local_matrix(j, parent)
         world.append((world[parent.index] @ lm) if parent is not None else lm)
-        for c in j.children:
-            visit(c, j)
-
-    for t in trees:
-        visit(t, None)
+        stack.extend((c, j) for c in reversed(j.children))
     return order, world
 
 

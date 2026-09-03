@@ -70,3 +70,49 @@ def test_a_vertex_array_is_bounded_by_the_file():
         reader.array(attr, 1 << 28)
     # a request the file could actually satisfy still works
     assert reader.array(attr, 4).shape == (4, 3)
+
+
+# -- and a shared subtree must not be walked once per path -----------------------------------
+
+
+def _diamond(levels: int) -> Jobj:
+    """A DAG: at every level both children point at the same subtree.
+
+    The parser rejects a joint that is its own ancestor, so this is not a cycle - and nothing
+    stops a file doing it.  Walking paths rather than nodes here is 2**levels.
+    """
+    node = Jobj(levels, 0, (0, 0, 0), (1, 1, 1), (0, 0, 0), None, [], [])
+    for i in range(levels - 1, -1, -1):
+        node = Jobj(i, 0, (0, 0, 0), (1, 1, 1), (0, 0, 0), None, [], [node, node])
+    return node
+
+
+def test_a_shared_subtree_is_walked_once_not_once_per_path():
+    """One Piece's `l_result_back.dat` hung a library shard here - no error, no output, for
+    as long as it was left running."""
+    root = _diamond(40)  # 2**40 paths, 41 joints
+    seen = [j.offset for j in root.walk()]
+    assert len(seen) == 41
+    assert len(set(seen)) == 41
+
+
+def test_world_matrices_terminates_on_a_shared_subtree():
+    """Fixing only the walk moved the freeze into world_matrices and turned it into an
+    IndexError, because a joint visited twice had its index reassigned underneath a child
+    that had already recorded it."""
+    root = _diamond(40)
+    order, world = hsd.world_matrices([root])
+    assert len(order) == len(world) == 41
+    assert [j.index for j in order] == list(range(41))
+    assert order[0].parent is None
+    assert all(j.parent == i - 1 for i, j in enumerate(order) if i)
+
+
+def test_world_matrices_keeps_depth_first_order_on_an_ordinary_tree():
+    a = Jobj(1, 0, (0, 0, 0), (1, 1, 1), (0, 0, 0), None, [], [])
+    b = Jobj(2, 0, (0, 0, 0), (1, 1, 1), (0, 0, 0), None, [], [])
+    child = Jobj(3, 0, (0, 0, 0), (1, 1, 1), (0, 0, 0), None, [], [])
+    a.children.append(child)
+    root = Jobj(0, 0, (0, 0, 0), (1, 1, 1), (0, 0, 0), None, [], [a, b])
+    order, _ = hsd.world_matrices([root])
+    assert [j.offset for j in order] == [0, 1, 3, 2]
