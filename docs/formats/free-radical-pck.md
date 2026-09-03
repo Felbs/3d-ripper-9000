@@ -188,3 +188,46 @@ So a `gcr` is a scene bundle of many small indexed primitives, each with its own
 addressing shared position, normal and texture-coordinate arrays - not one mesh with one index
 buffer, which is why whole-file statistics and `gxscan` both find nothing.  What is still needed
 is the record that heads each primitive and names the arrays it indexes.
+
+
+## `gcr` **is** GX display lists - and why the scanner cannot see them (2026-09-02)
+
+The note above says "**Not GX display lists** - `gxscan` finds nothing in any of them".  That is
+wrong twice over: they are GX display lists, and the scanner's silence is a defect in the
+scanner, not evidence about the format.
+
+`ob__chrs__chr128.gcr` holds **562 primitives, opcode `0x9B`** - `GX_DRAW_TRIANGLE_STRIP` with
+vertex format 3 - and 3,396 vertices, chained with zero padding between them, 21% of the file.
+A vertex is **8 bytes, four big-endian `u16`**:
+
+| column | meaning | range |
+|---|---|---|
+| 0 | position index | 0 .. 1045 |
+| 1 | normal index - **equal to column 0 on 100% of vertices** | 0 .. 1045 |
+| 2 | always 0 | - |
+| 3 | texture-coordinate index | 0 .. 467 |
+
+So the file holds **1,046 positions and 468 texture coordinates**, and the positions are
+**big-endian `f32` triples**: read at offset ~31,240 the strips score **0.036** on triangle
+locality (perimeter against the mesh's own diagonal), where a real surface is under 0.05 and the
+rest of the field is flat, and the values are ordinary coordinates - `(0.058, 1.658, 0.069)`.
+
+### The scanner defect
+
+`gxscan._Blob` marks offset 29,922 as a header correctly - it masks the opcode with `0xF8`, so
+`0x9B` reads as `0x98` - and `_chain` walks three primitives from there at stride 8.
+`candidate_lists` never asks, because the walk is **greedy**: an accepted chain sets
+`skip_to` to its end and every start inside is skipped.  A spurious chain at offset **254**,
+stride 25, 1,397 vertices, covers 35 KB and buries the lot.  The file yields **5 candidate
+starts** where disabling the skip yields **1,453**, and the real chain is only in the second set.
+
+Measured, with the skip disabled and the rejected chains re-walked: the same file gives
+**43 meshes and 4,063 triangles** where it gives 0 today.
+
+**Not shipped, deliberately.**  Enumeration is cheap (0.08 s here, 0.66 s on a 388 KB file) but
+scoring those candidates costs **30 to 46 seconds on 136 KB**, and `plugins/gx.py` spends a
+whole-disc budget across every file it scans.  A salvage pass that only runs when the first pass
+came back empty is the right shape - it cannot make a successful scan slower - but which
+candidates to score, and how many, needs a benchmark over the library rather than one file.
+Capping it at 32 or 128 groups in offset order drops the yield back to one mesh, because the
+real lists sit behind the spurious span, so the cap has to be smarter than a prefix.
