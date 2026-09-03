@@ -256,3 +256,25 @@ than producing nothing, so nothing is shipped.  What would settle it: a second c
 to test whether the array sits at a fixed distance from the display lists, or the record that
 heads each primitive group - the 10-byte entries at 30,113, whose last column runs 40, 112, 184,
 208, 276 and is the obvious place for an array pointer, are still unread.
+
+
+## The RenderWare native reader does not transfer to `gcr` (2026-09-03)
+
+`gcrip/formats/rw_native.py` cracked Piglet's native geometry with two identities - indices
+covering exactly `0..N-1`, and a unit-length normal array that anchors the positions.  Both
+were tried here and neither carries.
+
+**Containment does not hold per strip run.**  On Piglet a group is a few long strips that
+between them use every index; on `gcr` a group is *hundreds of tiny strips*, so chaining breaks
+it into runs of a few dozen vertices.  Applying the test per run leaves **7 groups and 415
+vertices** out of the 562 strips and 3,396 vertices the file actually has.  Taken globally the
+file is close - max index 1,045 over **1,041** distinct - but close is not the identity.
+
+**There is no unit-length normal array.**  Searched over the whole file for 1,046 triples at
+`f32`, `s16/32768`, `s16/16384`, `s8/64` and `s8/128`: **none**, at any offset.  Column 1 of the
+vertex record equals column 0 on 100% of vertices, so if it is a normal index the array is the
+same length as the positions - and no array of that length is unit length in any encoding.
+
+So `gcr` shares the *vertex shape* with RenderWare native geometry - 8-byte vertices of four
+big-endian `u16` behind GX strips - and not the array layout.  Whatever anchors its arrays is
+something else, and the position search still has nothing to stand on.
