@@ -47,7 +47,7 @@ NAME = 16
 TYPE = 4
 MAX_ENTRIES = 262144
 WRAPPER = 28  # the inline variant: name[16] | type[4] | u32 size | u32
-KINDS = {b"TIM", b"SFX", b"PHM", b"PAT", b"PHA", b"SPR", b"GAM", b"GRP", b"SOB"}
+KINDS = {b"TIM", b"SFX", b"PHM", b"PAT", b"PHA", b"SPR", b"GAM", b"GRP", b"SOB", b"BIN"}
 MAX_MEMBER = 1 << 27
 MIN_INLINE = 2
 
@@ -58,6 +58,7 @@ class Member:
     kind: str
     offset: int
     size: int
+    user: int = 0  # the wrapper's fourth word: Smashing Drive keys its PHM table by it
 
 
 def is_toc_wad(head: bytes) -> bool:
@@ -99,7 +100,7 @@ def _inline(data: bytes) -> list[Member]:
     while p + WRAPPER <= len(data) and len(out) < MAX_ENTRIES:
         raw = data[p : p + NAME].split(b"\0")[0]
         kind = data[p + NAME : p + NAME + TYPE].split(b"\0")[0]
-        size = struct.unpack_from(">I", data, p + NAME + TYPE)[0]
+        size, user = struct.unpack_from(">2I", data, p + NAME + TYPE)
         if not raw or not all(32 <= c < 127 for c in raw):
             break
         if not size or p + WRAPPER + size > len(data):
@@ -110,6 +111,7 @@ def _inline(data: bytes) -> list[Member]:
                 kind.decode("latin-1", "replace"),
                 p + WRAPPER,
                 size,
+                user,
             )
         )
         p += WRAPPER + size
@@ -127,15 +129,16 @@ def members(data: bytes) -> list[Member]:
         p = HEADER + i * ENTRY
         name = data[p : p + NAME].split(b"\0")[0].decode("latin-1", "replace")
         kind = data[p + NAME : p + NAME + TYPE].split(b"\0")[0].decode("latin-1", "replace")
-        offset, size, _extra = struct.unpack_from(">3I", data, p + NAME + TYPE)
+        offset, size, user = struct.unpack_from(">3I", data, p + NAME + TYPE)
         if not size or offset < HEADER + table or offset + size > len(data):
             continue
-        out.append(Member(name or f"member{i:05d}", kind, offset, size))
+        out.append(Member(name or f"member{i:05d}", kind, offset, size, user))
     return out
 
 
-def expand(data: bytes) -> list[tuple[str, bytes]]:
-    out: list[tuple[str, bytes]] = []
+def named(data: bytes) -> list[tuple[str, Member]]:
+    """Members with the names :func:`expand` hands out (duplicates get ``_001`` ...)."""
+    out: list[tuple[str, Member]] = []
     seen: dict[str, int] = {}
     for m in members(data):
         name = f"{m.name}.{m.kind}" if m.kind else m.name
@@ -144,5 +147,9 @@ def expand(data: bytes) -> list[tuple[str, bytes]]:
         if n:
             stem, _dot, ext = name.rpartition(".")
             name = f"{stem}_{n:03d}.{ext}" if stem else f"{name}_{n:03d}"
-        out.append((name, data[m.offset : m.offset + m.size]))
+        out.append((name, m))
     return out
+
+
+def expand(data: bytes) -> list[tuple[str, bytes]]:
+    return [(name, data[m.offset : m.offset + m.size]) for name, m in named(data)]

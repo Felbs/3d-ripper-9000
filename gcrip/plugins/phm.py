@@ -1,4 +1,5 @@
-"""Neversoft ``PHM`` models (gcrip.formats.phm) - Spawn: Armageddon, The Scorpion King.
+"""Point of View ``PHM`` models, the earlier ``s_model`` versions (gcrip.formats.phm) - Spawn:
+Armageddon, The Scorpion King; Smashing Drive's later layout is ``gcrip.plugins.pov_model``.
 
 The file names its own textures inline, so a model comes out with its material named after the
 ``TIM`` the disc ships rather than as an anonymous slot.

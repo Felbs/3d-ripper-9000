@@ -6,6 +6,16 @@ textures through the plugin chain.
 
 Companion to [FORMATS.md](FORMATS.md), which lists what already works.
 
+## Closed 2026-09-03: Smashing Drive (Point of View `PHM` / `TG_` layouts)
+
+A zero-triangle disc with a DWARF `smash.elf`: `s_model` is the file, so the reader is a
+transcription - 44-byte f32 vertices, u32 index lists (u16 was the trap: every triangle
+touched vertex 0), 8-byte strip commands, materials mapping texture defs to the `TIM`
+records.  The `TG_<phase>` layout (no symbols) places props and traffic by the wad record
+id; the buildings sit in world space unplaced.  Ten phases, 63k-196k triangles each.  See
+[formats/pov-smashing-drive.md](formats/pov-smashing-drive.md).  Left: Spawn / Scorpion
+King's older `s_model` versions could take the same header table.
+
 ## Closed 2026-09-03: EA Tiburon `comp5` - fourteen discs
 
 The largest cluster in the road-to-100 census fell by reading the game's own decompressor out
