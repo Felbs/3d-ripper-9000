@@ -85,3 +85,39 @@ The repair is to require a vertex's three components to differ, since index data
 nearly equal.  A *mean* over the array is not enough: with that filter in place the top hit was
 still `(331,331,331)`, `(719,719,719)`, because triples straddling a boundary lift the average.
 It has to be the **fraction** of vertices whose components agree, and that is where this stands.
+
+
+## The layout, on the first group, with two independent identities (2026-09-02)
+
+Walking `0x98` strips from tail offset 77 with stride 8, skipping up to 64 bytes of zero
+padding between them, gives **4 strips, 4,688 vertices, 4,054 triangles**, and:
+
+* all four index columns hold the **same** value on 100% of vertices - one index addresses every
+  attribute, as in Acclaim's `.GDF`;
+* the indices are **exactly 0..3,251**: 3,252 distinct values with a maximum of 3,251.  That is
+  the containment identity, and it both fixes the vertex count and gives a test for whether a
+  candidate strip run is real.
+
+The arrays then follow the lists:
+
+| | offset in the tail | bytes | evidence |
+|---|---|---|---|
+| display lists | 77 .. 37,624 | 37,547 | GX opcodes, indices exactly 0..N-1 |
+| **positions**, `f32` x 3 BE | **37,645** .. 76,669 | 39,024 | triangle locality **0.0241**, bounding box (-24.67, -1.03, -1.43) .. (0.95, 6.09, 1.44) |
+| (16 bytes unread) | 76,669 .. 76,685 | 16 | |
+| **normals**, `f32` x 3 BE | **76,685** .. 115,709 | 39,024 | **unit length, worst `|n| - 1` = 4.15e-08** |
+
+The normals are the strong one: 3,252 consecutive `f32` triples of length 1.0 to eight decimal
+places is not something a wrong offset produces.  And 115,709 opens `c1 88 3f d3 be fa c4 26`
+= (-17.03, -0.4898, -13.66), so the next group's positions start there.
+
+Positions at `normals - N * 12` = 37,661 give **garbage** (-7e+26), so the two arrays are not
+adjacent; the sixteen bytes between them are unread.
+
+### What is left
+
+The group boundary.  Scanning forward from 115,709 for the next strip run finds a false one at
+130,440 claiming 65,536 vertices with only 7,703 distinct - which the containment identity
+rejects, so the test to reject it exists, but the rule that *finds* the next group's lists does
+not yet.  Until that is settled a reader would work on the first group of a clump and guess at
+the rest, and guessing here produces a plausible wrong mesh rather than an error.
