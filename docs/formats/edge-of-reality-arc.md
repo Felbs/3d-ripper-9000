@@ -297,10 +297,35 @@ wrapped per game:
 Sampled results: The Sims 6 models / 1,083 triangles, 6 of 6 textures bound; Bustin' Out
 3 / 1,066; The Urbz 2 / 271 (its textures sit in other datasets, resolved at rip time).
 
+### Shark Tale and Over the Hedge - the other strip record (same day)
+
+The same datasets (twelve zero bytes and a section-count byte in front, and the third word of
+an entry is padding - Over the Hedge pads its samples), the same 20-byte texture header, and a
+model header that opens the shader record with the name hash instead of a flags word.  The
+record is self-describing GX:
+
+```
+u32 name hash
+u32 flags, u32 vertices, u32 strips, u32 block bytes, u32 offsets x 5 (position 0, normal,
+    colour, colour 1, texcoord)
+block                       the attribute arrays at their offsets, each running to the next
+u32 n, n bytes              a display-list chunk of CP loads: array pointers (0xa0..) and
+                            strides (0xb0..) - the strides say what the arrays hold
+u8 k, k x (u8, u32)         an attribute table (constant across the discs)
+u32 n, u32 corners, n bytes the primitive chunk: VCD lo/hi, an XF load, then the primitives
+                            whose corners are index8 / index16 per attribute in VCD order
+strips x u8, tokens, 6      0x45 carries two words, 0x46 three, 0x51 / 0x52 none
+```
+
+Strides seen: positions 6 (s16, frac 0 in every VAT the DOL registers) or 12 (f32); normals
+4 (s8 + pad); colours 2 (RGB565) or 3 (RGB8); texcoords 4 (s16/4096).  The non-position arrays
+are deduplicated and indexed separately.  Read by `parse_hedge_payload`; eight Shark Tale
+models / 498 triangles, the kelp textured.  The Over the Hedge datasets sampled held no
+models (its 1,647 sit in the level packs) - the wave will tell.
+
 ### Still open
 
-* **Shark Tale and Over the Hedge** parse as datasets and their textures read, but the model
-  shader record differs (`hash, 49 00 00 34, ...`, six-byte positions) - a newer exporter that
-  needs its DOL read.
+* Over the Hedge texture format 0x88 (4 bpp, no palette, twice the bytes of a 64x64 4-bpp
+  image; neither I4 nor IA4 nor two I4 frames) - 3 of 38 sampled textures.
 * The Sims (2003) `rletextu.arc` (377 RLE textures) and every disc's `Characters` (skeletons)
   and `Animations`.

@@ -8,7 +8,7 @@ Three layouts of the same idea::
   Sims / Bustin' Out    name\\0, u32 sections, sections x (name\\0, u32 count, entries)
   Shark Tale / Hedge    12 zero bytes, u8 sections, name\\0, sections as above
   The Urbz              u32 9, name[64], u32 count, count x (category[32], entry)
-  entry                 u32 name hash, u32 size, u32 0, size bytes
+  entry                 u32 name hash, u32 size, u32 padding, size + padding bytes
 
 The entry payload is wrapped per game (``wrapper`` below), and the reader in
 ``gcrip.formats.edge_model`` takes the wrapper apart:
@@ -92,12 +92,12 @@ def _sectioned(data: bytes, p: int, sections: int) -> list[Entry]:
         for _ in range(count):
             if p + 12 > len(data):
                 raise DatasetError("entry header past the end")
-            h, size, _zero = struct.unpack_from(">III", data, p)
+            h, size, pad = struct.unpack_from(">III", data, p)
             p += 12
-            if p + size > len(data):
+            if p + size + pad > len(data):
                 raise DatasetError(f"entry {h:08x} of {size} bytes past the end")
             out.append(Entry(name.decode("latin-1"), h, data[p : p + size]))
-            p += size
+            p += size + pad  # Over the Hedge pads its samples: the third word is the padding
     if p != len(data):
         raise DatasetError(f"{len(data) - p} bytes after the last section")
     return out
@@ -119,12 +119,12 @@ def entries(data: bytes) -> tuple[str, str, list[Entry]]:
             if p + CATEGORY + 12 > len(data):
                 raise DatasetError("entry header past the end")
             category = data[p : p + CATEGORY].split(b"\0")[0].decode("latin-1")
-            h, size, _zero = struct.unpack_from(">III", data, p + CATEGORY)
+            h, size, pad = struct.unpack_from(">III", data, p + CATEGORY)
             p += CATEGORY + 12
-            if p + size > len(data):
+            if p + size + pad > len(data):
                 raise DatasetError(f"entry {h:08x} of {size} bytes past the end")
             out.append(Entry(category, h, data[p : p + size]))
-            p += size
+            p += size + pad
         if p != len(data):
             raise DatasetError(f"{len(data) - p} bytes after the last entry")
         return kind, name, out

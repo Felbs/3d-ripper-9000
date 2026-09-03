@@ -18,11 +18,10 @@ def detect(path: str, head: bytes, size: int) -> bool:
     lower = path.lower()
     if lower.endswith(".eorm"):
         return size > 64
-    return (
-        lower.endswith(".bin")
-        and size > 64
-        and (edge_model.is_model(head[:8]) or edge_model.is_old_model(head))
-    )
+    if not lower.endswith(".bin") or size <= 64:
+        return False
+    # the bare older-disc member has no tag, so it is only believed under a Models folder
+    return edge_model.is_model(head[:8]) or ("/models/" in lower and edge_model.is_old_model(head))
 
 
 def _parse(data: bytes, path: str) -> edge_model.Model:

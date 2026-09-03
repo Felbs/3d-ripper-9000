@@ -303,3 +303,39 @@ def test_bustin_out_wrapper_and_urbz_layout():
     )
     assert edge_dataset.style(hedge[:96]) == edge_dataset.HEDGE
     assert edge_dataset.entries(hedge)[2][0].category == "Occluders"
+
+
+def test_shark_tale_record_with_cp_display_lists():
+    """Shark Tale / Over the Hedge: a name hash, nine words, the arrays, a CP chunk, an
+    attribute table, a primitive chunk, a byte a strip and the 6."""
+    pos = b"".join(struct.pack(">3h", x, y, z) for x, y, z in QUAD)  # 24 bytes, stride 6
+    clr = struct.pack(">HH", 0xF800, 0x07E0)  # two RGB565 entries
+    block = pos + bytes(8) + clr + bytes(4)  # colours at 0x20, block of 0x28
+    chunk1 = b"".join(
+        struct.pack(">BBI", 8, reg, val)
+        for reg, val in ((0xA0, 0), (0xB0, 6), (0xA2, 0), (0xB2, 2))
+    )
+    chunk1 += bytes(-len(chunk1) % 32)
+    corners = bytes([0, 0, 1, 0, 2, 1, 3, 1])  # (pos, colour) index8 pairs
+    chunk2 = struct.pack(">BBI", 8, 0x50, 0x4400) + bytes([0x9A]) + struct.pack(">H", 4) + corners
+    chunk2 += bytes(-len(chunk2) % 32)
+    rec = struct.pack(">I", 0xCAFEBABE) + struct.pack(
+        ">9I", 0x49000034, 4, 1, len(block), 0, 0, 0x20, 0, 0
+    )
+    rec += block + struct.pack(">I", len(chunk1)) + chunk1 + bytes([0])
+    rec += (
+        struct.pack(">II", len(chunk2), 4)
+        + chunk2
+        + bytes(1)
+        + bytes([0x45])
+        + bytes(8)
+        + bytes([6])
+    )
+    body = bytes(4) + bytes(2) + b"hud01\0" + bytes([0]) + struct.pack(">fI", 0.5, 1)
+    body += struct.pack(">II", 0xFFFFFFFF, 1) + rec + bytes(4) + bytes(16 + 24 + 24 + 4)
+    m = edge_model.parse_entry_model(body)
+    assert m.name == "hud01" and not m.warnings and len(m.strips) == 1
+    s = m.strips[0]
+    assert s.shader == 0xCAFEBABE and s.indices.size == 6
+    assert s.positions.max() == 2048.0 and tuple(s.colors[0]) == (255, 0, 0, 255)
+    assert tuple(s.colors[2]) == (0, 255, 0, 255)

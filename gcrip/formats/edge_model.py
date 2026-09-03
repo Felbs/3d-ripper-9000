@@ -510,6 +510,8 @@ def _scale_at(data: bytes, start: int, limit: int = 48) -> int | None:
         if not (2.0**-20 <= scale <= 16.0) or scale != 2.0 ** round(math.log2(scale)):
             continue
         nsub, ident, nsh = struct.unpack_from(">III", data, q + 4)
+        if nsub == 0 and q == start + 1:
+            return q  # an empty model: nothing but its bounds follow
         if 1 <= nsub <= 64 and (ident == 0xFFFFFFFF or ident < 0x10000) and 1 <= nsh <= 256:
             return q
     return None
@@ -529,6 +531,11 @@ def parse_entry_model(payload: bytes) -> Model:
     q = _scale_at(payload, at)
     if q is None:
         raise EdgeError(f"{name}: no scale / submodel count after the name")
+    # Shark Tale / Over the Hedge open the shader record with the name hash, The Sims with
+    # a small flags word
+    first = struct.unpack_from(">I", payload, q + 16)[0] if q + 20 <= len(payload) else 0
+    if first >= 0x10000:
+        return parse_hedge_payload(payload, name, q - 1)
     # the older exporters: no node arrays, the flag byte right before the scale, and Bustin'
     # Out (first word 0x00010000) writes the u32 after the strip count that The Sims lacks
     extra = payload[:4] != bytes(4)
@@ -554,3 +561,203 @@ def parse_entry_texture(payload: bytes) -> Texture:
     hdr = struct.pack(">IIII", 0, 0, flags, 0) + struct.pack(">HHHH", width, height, entries, mips)
     hdr += bytes([fmt, 0, bpp, bpe]) + bytes(4)
     return _texture(name, hdr + payload[at + OLD_TEXTURE_HEADER :])
+
+
+# ---------------------------------------------------------------- Shark Tale / Over the Hedge
+
+HEDGE_ARRAY_REG = {"nrm": 0xA1, "clr": 0xA2, "clr1": 0xA3, "tex": 0xA4}
+HEDGE_SLOTS = ((1, "nrm"), (2, "clr"), (3, "clr1"), (4, "tex"))
+
+
+def _hedge_array(key: str, seg: bytes, stride: int) -> np.ndarray:
+    if key == "pos":
+        if stride == 6:
+            return np.frombuffer(seg, dtype=">i2").reshape(-1, 3).astype(np.float32)
+        if stride == 12:
+            return np.frombuffer(seg, dtype=">f4").reshape(-1, 3).astype(np.float32)
+        raise EdgeError(f"position stride {stride}")
+    if key == "nrm":
+        if stride in (3, 4):
+            v = np.frombuffer(seg, dtype=np.int8).reshape(-1, stride)[:, :3]
+            return v.astype(np.float32) / 64.0
+        if stride == 6:
+            return np.frombuffer(seg, dtype=">i2").reshape(-1, 3).astype(np.float32) / 16384.0
+        if stride == 12:
+            return np.frombuffer(seg, dtype=">f4").reshape(-1, 3).astype(np.float32)
+        raise EdgeError(f"normal stride {stride}")
+    if key in ("clr", "clr1"):
+        if stride == 2:
+            return gx_texture._rgb565_to_rgba(np.frombuffer(seg, dtype=">u2").astype(np.uint16))
+        if stride == 3:
+            rgb = np.frombuffer(seg, dtype=np.uint8).reshape(-1, 3)
+            return np.concatenate([rgb, np.full((len(rgb), 1), 255, np.uint8)], axis=1)
+        if stride == 4:
+            return np.frombuffer(seg, dtype=np.uint8).reshape(-1, 4).copy()
+        raise EdgeError(f"colour stride {stride}")
+    if stride == 4:
+        return np.frombuffer(seg, dtype=">i2").reshape(-1, 2).astype(np.float32) * UV_SCALE
+    if stride == 8:
+        return np.frombuffer(seg, dtype=">f4").reshape(-1, 2).astype(np.float32)
+    raise EdgeError(f"texcoord stride {stride}")
+
+
+def _hedge_arrays(
+    block: bytes, offsets: tuple[int, ...], strides: dict[int, int], nverts: int
+) -> dict[str, np.ndarray]:
+    """The attribute arrays of a strip: positions at 0, the rest at their offsets, each
+    running to the next offset (or the block's end), decoded by the CP stride register."""
+    order = [("pos", 0, strides.get(0xA0, 6))]
+    for slot, key in HEDGE_SLOTS:
+        if offsets[slot]:
+            order.append((key, offsets[slot], strides.get(HEDGE_ARRAY_REG[key], 0)))
+    order.sort(key=lambda t: t[1])
+    arrays: dict[str, np.ndarray] = {}
+    for i, (key, at, stride) in enumerate(order):
+        end = order[i + 1][1] if i + 1 < len(order) else len(block)
+        if not stride:
+            continue
+        n = len(block[at:end]) // stride
+        if key == "pos":
+            n = min(n, nverts)
+        arrays[key] = _hedge_array(key, block[at : at + n * stride], stride)
+    return arrays
+
+
+def _hedge_display_list(dl: bytes):
+    """(CP registers, VCD lo, VCD hi, [(opcode, corner records)]) of one display-list chunk."""
+    regs: dict[int, int] = {}
+    lo = hi = 0
+    prims = []
+    p = 0
+    while p < len(dl):
+        op = dl[p]
+        if op == 0:
+            p += 1
+        elif op == 0x08 and p + 6 <= len(dl):
+            reg = dl[p + 1]
+            val = struct.unpack_from(">I", dl, p + 2)[0]
+            regs[reg] = val
+            if reg == 0x50:
+                lo = val
+            elif reg == 0x60:
+                hi = val
+            p += 6
+        elif op == 0x10 and p + 5 <= len(dl):
+            n = struct.unpack_from(">H", dl, p + 1)[0] + 1
+            p += 5 + 4 * n
+        elif (op & 0xF8) in (0x80, 0x90, 0x98, 0xA0) and p + 3 <= len(dl):
+            count = struct.unpack_from(">H", dl, p + 1)[0]
+            kinds = [(lo >> s) & 3 for s in (9, 11, 13, 15)] + [
+                (hi >> s) & 3 for s in range(0, 16, 2)
+            ]
+            width = sum(1 if k == 2 else 2 if k == 3 else 0 for k in kinds)
+            if width == 0 or p + 3 + count * width > len(dl):
+                break
+            rec = np.frombuffer(dl[p + 3 : p + 3 + count * width], dtype=np.uint8)
+            prims.append((op & 0xF8, rec.reshape(count, width)))
+            p += 3 + count * width
+        else:
+            break
+    return regs, lo, hi, prims
+
+
+def _hedge_columns(lo: int, hi: int, rec: np.ndarray) -> dict[str, np.ndarray]:
+    """Corner columns in VCD order: position, normal, colour 0, colour 1, texcoords 0..7."""
+    keys = []
+    for key, s in (("pos", 9), ("nrm", 11), ("clr", 13), ("clr1", 15)):
+        keys.append((key, (lo >> s) & 3))
+    for t in range(8):
+        keys.append((f"tex{t}", (hi >> (2 * t)) & 3))
+    cols: dict[str, np.ndarray] = {}
+    at = 0
+    for key, kind in keys:
+        if kind == 3:
+            cols[key] = rec[:, at].astype(np.int64) << 8 | rec[:, at + 1]
+            at += 2
+        elif kind == 2:
+            cols[key] = rec[:, at].astype(np.int64)
+            at += 1
+    return cols
+
+
+def parse_hedge_payload(payload: bytes, name: str, start: int) -> Model:
+    """Shark Tale / Over the Hedge: each shader record is a name hash, nine words (flags,
+    vertices, strips, block size, five array offsets), the arrays, a display-list chunk that
+    sets the CP array pointers, an attribute table, a second chunk with the primitives, 6."""
+    r = _Reader(payload)
+    r.p = start
+    r.u8()
+    scale = r.f32() or 1.0
+    model = Model(name, 0, scale)
+    for _ in range(r.u32()):
+        r.u32()
+        for _ in range(r.u32()):
+            shader = r.u32()
+            words = struct.unpack(">9I", r.raw(36))
+            nverts, block_size = words[1], words[3]
+            block = r.raw(block_size)
+            chunk1 = r.raw(r.u32())
+            for _ in range(r.u8()):
+                r.raw(5)
+            n2 = r.u32()
+            r.u32()  # corners in total
+            chunk2 = r.raw(n2)
+            r.raw(words[2])  # a byte a strip
+            # then tokens to the 6: 0x45 (two words), 0x46 (three), 0x51 / 0x52 (none)
+            while True:
+                token = r.u8()
+                if token == 6:
+                    break
+                if token == 0x45:
+                    r.raw(8)
+                elif token == 0x46:
+                    r.raw(12)
+                elif token not in (0x51, 0x52):
+                    raise EdgeError(f"{name}: token {token:#x} after a shader record")
+            regs, _lo, _hi, _prims = _hedge_display_list(chunk1)
+            _regs, lo, hi, prims = _hedge_display_list(chunk2)
+            if not prims:
+                model.warnings.append(f"{name}: display list holds no primitive")
+                continue
+            strides = {0xA0 + (reg - 0xB0): val for reg, val in regs.items() if 0xB0 <= reg <= 0xBF}
+            arrays = _hedge_arrays(block, words[4:9], strides, nverts)
+            cols = _hedge_columns(lo, hi, np.concatenate([rec for _, rec in prims]))
+            pidx = cols.get("pos")
+            if pidx is None or pidx.max(initial=0) >= len(arrays.get("pos", ())):
+                model.warnings.append(f"{name}: position index past the array")
+                continue
+            tris = []
+            base = 0
+            for op, prim in prims:
+                tris.append(_triangles(op, len(prim)) + base)
+                base += len(prim)
+            tri = np.concatenate(tris)
+            pos = arrays["pos"][pidx] * scale
+            a, b, c = pos[tri[:, 0]], pos[tri[:, 1]], pos[tri[:, 2]]
+            good = ~(np.all(a == b, axis=1) | np.all(b == c, axis=1) | np.all(a == c, axis=1))
+            tri = tri[good]
+            if not len(tri):
+                model.warnings.append(f"{name}: every triangle is degenerate")
+                continue
+
+            def gather(key: str, col: str, arrays=arrays, cols=cols) -> np.ndarray | None:
+                arr = arrays.get(key)
+                idx = cols.get(col)
+                if arr is None or idx is None or idx.max(initial=0) >= len(arr):
+                    return None
+                return arr[idx]
+
+            clr = gather("clr", "clr")
+            model.strips.append(
+                Strip(
+                    shader,
+                    words[0],
+                    pos.astype(np.float32),
+                    gather("nrm", "nrm"),
+                    None if clr is None else clr.astype(np.uint8),
+                    gather("tex", "tex0"),
+                    tri.reshape(-1).astype(np.uint32),
+                    False,
+                )
+            )
+    return model
