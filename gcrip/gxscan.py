@@ -31,6 +31,12 @@ import numpy as np
 PRIM_OPS = {0x80: "quads", 0x90: "tris", 0x98: "strip", 0xA0: "fan"}
 MAX_COUNT = 0x1000
 MIN_STRIDE, MAX_STRIDE = 2, 64
+#: the salvage pass: a rejected chain has to have claimed this much to be worth re-walking,
+#: a re-walked chain needs this many primitives to be scored, and only this many chains are
+#: scored - ranked first, because scoring is the cost
+SALVAGE_MIN_SPAN = 1 << 10
+SALVAGE_MIN_PRIMS = 4
+SALVAGE_LISTS = 24
 
 
 @dataclass
@@ -173,18 +179,35 @@ def find_display_lists(
 
 
 def candidate_lists(
-    data: bytes, min_prims: int = 2, min_verts: int = 12, blob: _Blob | None = None
+    data: bytes,
+    min_prims: int = 2,
+    min_verts: int = 12,
+    blob: _Blob | None = None,
+    within: list[tuple[int, int]] | None = None,
 ) -> list[list[DisplayList]]:
     """For every start offset that chains at some stride, the chains for each viable
     stride (longest first).  Which stride is right is decided by the geometry score in
-    `scan_blob`, not here - a wrong stride can chain by accident but yields spaghetti."""
+    `scan_blob`, not here - a wrong stride can chain by accident but yields spaghetti.
+
+    The walk is greedy: an accepted chain claims the bytes it covers and later starts inside
+    them are skipped, which is what keeps a whole-archive blob affordable.  The cost is that
+    **one accidental chain can bury every real list behind it** - on TimeSplitters 2's
+    `ob__chrs__chr128.gcr` a spurious 1,397-vertex chain at offset 254 covers 35 KB and hides
+    562 genuine strips.  With `within`, the walk is confined to those spans and the skip is
+    off: that is the salvage pass `scan_blob` runs over the spans a rejected chain claimed.
+    """
     blob = blob or _Blob(data)
     out: list[list[DisplayList]] = []
     starts = np.flatnonzero(blob.hdr)
+    if within is not None:
+        keep = np.zeros(len(starts), bool)
+        for a, b in within:
+            keep |= (starts >= a) & (starts < b)
+        starts = starts[keep]
     skip_to = 0
     for p in starts:
         p = int(p)
-        if p < skip_to:
+        if within is None and p < skip_to:
             continue
         h = blob.op_at(p)
         if h is None:
@@ -369,6 +392,21 @@ def best_mesh(blob: _Blob, dl: DisplayList, max_score: float = 2.5) -> Mesh | No
     return best
 
 
+def _salvage_rank(blob: _Blob, dl: DisplayList) -> float:
+    """How much a chain looks like real display lists, before any geometry is scored.
+
+    Real lists chain many primitives at one stride, and their index bytes stay small because
+    they address an array; an accidental chain has few primitives and index words that are
+    whatever bytes happened to be there.  Primitive count carries most of the signal; the
+    index spread is the tie-break.
+    """
+    vb = _vertex_bytes(blob.data, dl)
+    if vb.size == 0:
+        return 0.0
+    hi = float(np.mean(vb[:, 0] > 0x0F)) if vb.shape[1] else 1.0  # top byte of the first field
+    return len(dl.prims) * (1.0 + (1.0 - hi))
+
+
 def _accept(m: Mesh) -> bool:
     """Tiny meshes and s16 arrays are where noise can pass the score: any bytes read as
     plausible s16, so an *indexed* s16 mesh must be big, multi-primitive and tight (the
@@ -387,18 +425,43 @@ def scan_blob(data: bytes, max_lists: int = 2000, budget: float | None = None) -
     deadline = time.monotonic() + budget if budget else None
     blob = _Blob(data)
     meshes = []
-    for cands in candidate_lists(data, blob=blob)[:max_lists]:
-        if deadline and time.monotonic() > deadline:
-            break
-        best: Mesh | None = None
-        for dl in cands:
-            m = best_mesh(blob, dl)
-            if m is None or not _accept(m):
-                continue
-            if best is None or (m.compactness, -m.triangles) < (best.compactness, -best.triangles):
-                best = m
-        if best is not None:
-            meshes.append(best)
+    wasted: list[tuple[int, int]] = []
+
+    def sweep(groups) -> None:
+        for cands in groups:
+            if deadline and time.monotonic() > deadline:
+                return
+            best: Mesh | None = None
+            for dl in cands:
+                m = best_mesh(blob, dl)
+                if m is None or not _accept(m):
+                    continue
+                if best is None or (m.compactness, -m.triangles) < (
+                    best.compactness,
+                    -best.triangles,
+                ):
+                    best = m
+            if best is not None:
+                meshes.append(best)
+            else:
+                span = max(d.end for d in cands)
+                if span - cands[0].offset >= SALVAGE_MIN_SPAN:
+                    wasted.append((cands[0].offset, span))
+
+    sweep(candidate_lists(data, blob=blob)[:max_lists])
+    if meshes and wasted and (not deadline or time.monotonic() < deadline):
+        # Only when the first pass found *something*: that is the evidence the blob holds GX
+        # geometry at all.  Benchmarked over 22 files from zero-model discs, the files that
+        # gained from salvage (TimeSplitters 36 -> 16,897 triangles, Conflict 93 -> 877) had
+        # all produced at least one mesh already, and the sixteen that produced none gained
+        # nothing while paying 50-100% more time.  This gate keeps the gain and drops the cost.
+        # A rejected chain claimed bytes and gave nothing back.  Re-walk what it covered with
+        # the greedy skip off, and score only the chains that look most like real lists -
+        # many primitives, one stride, indices that stay small - because scoring is what
+        # costs: 30-46 s a file when every candidate is scored, 1-2 s when the best few are.
+        salvage = candidate_lists(data, min_prims=SALVAGE_MIN_PRIMS, blob=blob, within=wasted)
+        salvage.sort(key=lambda g: -_salvage_rank(blob, g[0]))
+        sweep([g[:2] for g in salvage[:SALVAGE_LISTS]])
     if not deadline or time.monotonic() < deadline:
         meshes += find_neutral_meshes(blob)
     return meshes
