@@ -99,3 +99,30 @@ guessing which would only bury it; recorded so the next attempt starts from the 
 
 A full `gxscan` of the 2.4 MB `z_hunt.mpk.ngc` finds **3 meshes and 168 triangles** in 23
 seconds.  As on Asterix, the fallback scanner is not the route in on this disc.
+
+
+## The map pack's regions (2026-09-03)
+
+`z_hunt.mpk.ngc` (2,434,464 bytes) with the salvage scanner: **still 3 meshes and 168
+triangles**, so the geometry is not GX display lists in any shape the scanner recognises, with
+or without the greedy skip.  What the file holds, mapped by entropy and float plausibility:
+
+| region | bytes | what |
+|---|---|---|
+| 0 .. 2,080 | 2 KB | one `04 20 00 00` image: 64x64 CMPR, the chain's only entry |
+| 36,256 .. 1,057,824 | 1 MB | **32-byte records**, 31,924 of them - see below |
+| 1,056,768 .. 1,441,792 | 385 KB | **floats**, byte autocorrelation peaking at stride 24 and 12 |
+| interleaved | ~250 KB | high-entropy blocks of 8-32 KB - textures or packed |
+| 1,769,472 .. end | 665 KB | mid-entropy, unread |
+
+The 32-byte records carry a constant 16-byte tail `00 00 30 00 30 00 41 00 00 01 00 00 00 00
+00 00` on 241 of them (spaced 32, 64, 96 apart - so most records differ in that tail) and a
+head that ends `ff ff 00 00 80 80 80 ff` - an RGBA colour, (128, 128, 128, 255).  Byte 3 of the
+head takes 76 distinct values and bytes 12-14 take 36 each: an index and three more.  These
+are per-primitive or per-material descriptors, not vertices - 31,924 of them is far more than
+one level's materials, and far fewer than its vertices.
+
+The float region at stride 24 is the obvious vertex array - 385 KB / 24 = 16,000 vertices - and
+it sits between the records and the high-entropy blocks.  Nothing found yet says which record
+field points into it; that pointer is the next thing to look for, and the record's 76-valued
+byte 3 is where to start.
