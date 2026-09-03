@@ -90,3 +90,20 @@ Which stream indexes the texture coordinates and the normals.  Further index lis
 strips, but the first of them reaches 356 where the file declares 354 texture coordinates, so
 the obvious reading is wrong and the reader ships positions only.  The `T3DNODE` transforms
 that would place each mesh in the level are also unread - meshes come out in local space.
+
+
+## In the census (wave 24, 2026-09-03)
+
+The three discs were re-ripped with the reader and the result is uneven, which is worth
+recording rather than averaging away:
+
+| disc | models | triangles |
+|---|---|---|
+| Spirits & Spells | **2,167** | **528,859** |
+| SpongeBob: Revenge of the Flying Dutchman | 105 | 87 |
+| Jimmy Neutron: Boy Genius | 93 | 34 |
+
+Spirits & Spells was 0 before and is now half a million triangles.  The other two produce
+models with almost no geometry - 87 and 34 triangles across ~200 models - so whatever they hold
+is being read as `TMESH` records that are nearly empty.  Either those discs really are mostly
+sprites and triggers, or their `.dgc` are a different vintage of the format.  Not yet looked at.
