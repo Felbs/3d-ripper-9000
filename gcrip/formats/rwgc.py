@@ -61,7 +61,7 @@ class NativeMesh:
 def _read_array(data: bytes, off: int, end: int, attr: int, stride: int, frac: int) -> np.ndarray:
     """One attribute array (big-endian) -> float rows; count from the padded extent."""
     ncomp = _ATTR_COMPS.get(attr, stride // 4 or 1)
-    count = max(0, (end - off) // stride)
+    count = max(0, (min(end, len(data)) - off) // stride)
     if attr in (GX_CLR0, GX_CLR1):
         if stride == 4:
             arr = (
@@ -96,6 +96,20 @@ def _read_array(data: bytes, off: int, end: int, attr: int, stride: int, frac: i
     raise rw.RwError(f"native attribute {attr} with stride {stride} not understood")
 
 
+PAD_TEXT = frozenset(b"PAD0123456789")
+
+
+def skip_pad(data: bytes, at: int) -> int:
+    """Past a run of ``PAD32`` / ``PAD128`` filler - Midway's file-alignment text, which
+    stops mid-word at the alignment boundary (``PAD32PAD32PA``)."""
+    if data[at : at + 2] != b"PA":
+        return at
+    end = at
+    while end < len(data) and data[end] in PAD_TEXT:
+        end += 1
+    return end
+
+
 def _take(arrays: dict[int, np.ndarray], v: np.ndarray, attr: int) -> np.ndarray | None:
     """De-index one attribute for the display-list corners `v`."""
     if attr not in arrays or f"a{attr}" not in v.dtype.names:
@@ -107,7 +121,14 @@ def _take(arrays: dict[int, np.ndarray], v: np.ndarray, attr: int) -> np.ndarray
     return a[np.minimum(idx, len(a) - 1)]
 
 
-def decode_native(body: bytes, direct_matrix: bool) -> list[NativeMesh]:
+NORMAL_FRAC = {3: 6, 6: 14}  # GX fixes the normal fraction by type: S8 -> 6 bits, S16 -> 14
+
+
+def decode_native(
+    body: bytes, direct_matrix: bool, fracs: dict[int, int] | None = None
+) -> list[NativeMesh]:
+    """``fracs``: attribute -> fraction bits to use when the table gives none (Midway's
+    quantised streams carry theirs in code, not in the data)."""
     if len(body) < 24:
         raise rw.RwError("native data too short")
     platform, hsz, dsz = struct.unpack_from("<3I", body, 0)
@@ -122,7 +143,9 @@ def decode_native(body: bytes, direct_matrix: bool) -> list[NativeMesh]:
     attrs = [struct.unpack_from(">IBBBB", body, h + 12 + 8 * i) for i in range(nattr)]
     nmesh = (hsz - 12 - 8 * nattr) // 8
     meshes = [struct.unpack_from(">II", body, h + 12 + 8 * nattr + 8 * i) for i in range(nmesh)]
-    data_off = h + hsz
+    # Midway (Mortal Kombat) pads the data to a 32-byte file position with "PAD32" text; the
+    # display-list and array offsets count from the padded start
+    data_off = skip_pad(body, h + hsz)
     data_end = min(len(body), data_off + dsz)
     # attribute arrays: extent runs to the next array (arrays follow the display lists in order)
     starts = sorted(a[0] for a in attrs)
@@ -130,6 +153,10 @@ def decode_native(body: bytes, direct_matrix: bool) -> list[NativeMesh]:
     fields: list[tuple[int, str]] = []
     for off, attr, stride, itype, frac in attrs:
         nxt = min([s for s in starts if s > off] + [dsz])
+        if not frac and attr == GX_NRM and stride in NORMAL_FRAC:
+            frac = NORMAL_FRAC[stride]
+        elif not frac and fracs:
+            frac = fracs.get(attr, 0)
         arrays[attr] = _read_array(body, data_off + off, data_off + nxt, attr, stride, frac)
         if itype == 2:
             fields.append((attr, "u1"))
@@ -269,6 +296,10 @@ def _decode_one(data: bytes, st: rw.Chunk, old: bool) -> tuple[int, int, int, in
                 2 if (rf & 0xF00) in (0x100, 0x300) else 1, data[p : p + 2 * n], n
             )
             p += 2 * n
+        need = gx_texture.encoded_size(fmt, w, h) if fmt in gx_texture.TILE_DIMS else size
+        if data[p : p + 2] == b"PA" and 0 < size - need < 128:
+            p += size - need  # Midway's alignment filler, counted in the size
+            size = need
         raw = data[p : min(st.end, p + size)]
     else:
         p = st.off + 88
@@ -285,6 +316,11 @@ def _decode_one(data: bytes, st: rw.Chunk, old: bool) -> tuple[int, int, int, in
             raise rw.RwError("C14X2 texture")
         _has_alpha, size = struct.unpack_from(">II", data, p)
         p += 8
+        # Midway counts its alignment filler in the size: the pixels are the tail of it
+        need = gx_texture.encoded_size(fmt, w, h) if fmt in gx_texture.TILE_DIMS else size
+        if data[p : p + 2] == b"PA" and 0 < size - need < 128:
+            p += size - need
+            size = need
         raw = data[p : min(st.end, p + size)]
     if w == 0 or h == 0 or w > 4096 or h > 4096:
         raise rw.RwError(f"texture size {w}x{h}")
@@ -341,7 +377,11 @@ def looks_like_piglet_native(body: bytes) -> bool:
     if len(body) < 12 + PIGLET_HEADER_BASE:
         return False
     platform, hsz, dsz = struct.unpack_from("<3I", body, 0)
-    if platform != rw.PLATFORM_GAMECUBE or hsz < PIGLET_HEADER_BASE or (hsz - PIGLET_HEADER_BASE) % 8:
+    if (
+        platform != rw.PLATFORM_GAMECUBE
+        or hsz < PIGLET_HEADER_BASE
+        or (hsz - PIGLET_HEADER_BASE) % 8
+    ):
         return False
     return 12 + hsz + dsz <= len(body) + 64
 
@@ -381,9 +421,7 @@ def decode_native_piglet(body: bytes, nverts: int) -> list[NativeMesh]:
 
     positions = arr(offs[0], ">f4", 3, nverts).astype(np.float32)
     normals = arr(offs[1], ">f4", 3, nverts).astype(np.float32)
-    colors = (
-        arr(offs[2], np.uint8, 4, nverts).astype(np.float32) / 255.0 if has_colours else None
-    )
+    colors = arr(offs[2], np.uint8, 4, nverts).astype(np.float32) / 255.0 if has_colours else None
     uvs = arr(offs[3], ">f4", 2, nverts).astype(np.float32) if has_uvs else None
     attrs = 2 + int(has_colours) + int(has_uvs)
     width = 1 if nverts <= 256 else 2
@@ -405,7 +443,11 @@ def decode_native_piglet(body: bytes, nverts: int) -> list[NativeMesh]:
             span = count * attrs * width
             if p + span > end:
                 break
-            idx = np.frombuffer(body, idt, count * attrs, p).reshape(count, attrs)[:, 0].astype(np.int64)
+            idx = (
+                np.frombuffer(body, idt, count * attrs, p)
+                .reshape(count, attrs)[:, 0]
+                .astype(np.int64)
+            )
             p += span
             if count >= 3:
                 a, b, c = idx[:-2], idx[1:-1], idx[2:]

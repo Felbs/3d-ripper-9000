@@ -22,13 +22,16 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from gcrip.formats import dds, hip, konami_pac, one, rw_pitxd, rwgc, tga
+from gcrip.formats import dds, hip, konami_pac, mk_ssf, one, rw_pitxd, rwgc, tga
 from gcrip.formats import rwstream as rw
 from ripcore.scene import Joint, MaterialDef, Primitive, Scene
 
 NAME = "renderware"
 
-_TXD_HINTS = (".txd", ".rw3", ".pac")
+_TXD_HINTS = (".txd", ".rw3", ".pac", ".mktex")
+# Mortal Kombat's SEC members: clumps quantised with S16 texcoords of 11 fraction bits
+MK_CLUMP = ".mkdff"
+MK_FRACS = {rwgc.GX_TEX0: 11}
 # Some RenderWare discs ship no dictionaries at all and keep the textures as loose images
 # next to the models (MLB SlugFest, Outlaw Golf): material name == image file stem.  SlugFest
 # writes palettised TGAs with a ``.tgx`` extension.
@@ -104,6 +107,8 @@ class _TextureIndex:
                     names = konami_pac.names(blob)
                 elif rw_pitxd.is_pitxd(blob[:64], len(blob)):
                     names = rw_pitxd.names(blob)
+                elif path.lower().endswith(".mktex"):
+                    names = [mk_ssf.texture_name(blob)]
                 else:
                     names = rwgc.texture_names(blob)
                 keys = [self._key(path, n) for n in names]
@@ -128,6 +133,10 @@ class _TextureIndex:
                     for pt in rw_pitxd.parse(blob):
                         if pt.image is not None:
                             table[self._key(path, pt.name)] = pt.image
+                elif path.lower().endswith(".mktex"):
+                    t = mk_ssf.parse_texture(blob)
+                    if t.image is not None:
+                        table[self._key(path, t.name)] = t.image
                 else:
                     rasters = rwgc.parse_txd(blob)
                     for t in rasters:
@@ -394,6 +403,7 @@ def _add_geometry(
     world: np.ndarray,
     frame_joint: int,
     bone_joint: list[int],
+    fracs: dict[int, int] | None = None,
 ) -> None:
     rot = world[:3, :3]
     skin = g.skin
@@ -434,7 +444,7 @@ def _add_geometry(
 
     if g.is_native:
         try:
-            meshes = rwgc.decode_native(g.native, direct)
+            meshes = rwgc.decode_native(g.native, direct, fracs)
         except rw.RwError:
             # Piglet's BIG GAME writes a different native header - array offsets declared,
             # meshes tabled - and the attribute-table reader refuses it as "attribute table
@@ -488,7 +498,11 @@ def _add_geometry(
 
 
 def clump_scene(
-    data: bytes, name: str, path: str = "", textures: _TextureIndex | None = None
+    data: bytes,
+    name: str,
+    path: str = "",
+    textures: _TextureIndex | None = None,
+    fracs: dict[int, int] | None = None,
 ) -> Scene:
     clump = rw.parse_clump(data)
     scene = Scene(name=name)
@@ -519,7 +533,7 @@ def clump_scene(
         if g.skin is not None and not bone_joint:
             bone_joint = list(range(1, min(g.skin.num_bones + 1, len(clump.frames))))
         try:
-            _add_geometry(b, g, world[at.frame], at.frame, bone_joint)
+            _add_geometry(b, g, world[at.frame], at.frame, bone_joint, fracs)
         except (rw.RwError, ValueError) as e:
             scene.warnings.append(f"atomic {ai}: {e}")
     b.finish()
@@ -567,7 +581,8 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
     name = path.rsplit("/", 1)[-1].rsplit(".", 1)[0]
     textures = _textures_for(src) if src is not None and hasattr(src, "by_path") else None
     if c.type == rw.CLUMP:
-        scene = clump_scene(data, name, path, textures)
+        fracs = MK_FRACS if path.lower().endswith(MK_CLUMP) else None
+        scene = clump_scene(data, name, path, textures, fracs)
     elif c.type == rw.WORLD:
         scene = world_scene(data, name, path, textures)
     else:

@@ -67,6 +67,7 @@ GEOM_TEXTURED = 0x04
 GEOM_PRELIT = 0x08
 GEOM_NORMALS = 0x10
 GEOM_TEXTURED2 = 0x80
+INPLACE_STRUCT = 40  # geometry header (16) + one morph target (24)
 GEOM_NATIVE = 0x01000000
 
 PLATFORM_GAMECUBE = 6
@@ -378,6 +379,32 @@ def _parse_binmesh(data: bytes, c: Chunk, native: bool) -> BinMesh | None:
     return BinMesh(tristrip=bool(flags & 1), meshes=meshes)
 
 
+def _parse_skin_gc(data: bytes, body: int, end: int, nverts: int) -> Skin:
+    """The GameCube skin struct body: u32 platform, u8 numBones, numUsed, maxWeights, pad,
+    u8 used[numUsed], per-vertex u8 indices and 1/128 weights unless maxWeights == 1, then the
+    big-endian inverse bind matrices."""
+    nb, nu, mw, _pad = struct.unpack_from("<4B", data, body + 4)
+    p = body + 8
+    used = list(data[p : p + nu])
+    p += nu
+    indices = weights = None
+    per_vertex = mw >= 2 and p + 2 * nverts * mw + nb * 64 <= end
+    if per_vertex:
+        indices = (
+            np.frombuffer(data, np.uint8, nverts * mw, p).reshape(nverts, mw).astype(np.uint16)
+        )
+        p += nverts * mw
+        weights = (
+            np.frombuffer(data, np.uint8, nverts * mw, p).reshape(nverts, mw).astype(np.float32)
+            / 128.0
+        )
+        p += nverts * mw
+    if p + nb * 64 > end:
+        raise RwError("skin: truncated bone matrices")
+    mats = np.frombuffer(data, ">f4", nb * 16, p).reshape(nb, 4, 4).astype(np.float32)
+    return Skin(nb, mw, used, indices, weights, mats, True)
+
+
 def _parse_skin(data: bytes, c: Chunk, nverts: int, version: int) -> Skin | None:
     """Skin PLG. GameCube RW >= 3.5 wraps it in a Struct: u32 platform (6), u8 numBones,
     numUsed, maxWeights, pad, u8 used[numUsed], then unless maxWeights == 1 (display list carries
@@ -392,28 +419,7 @@ def _parse_skin(data: bytes, c: Chunk, nverts: int, version: int) -> Skin | None
         and struct.unpack_from("<I", data, st.off)[0] == PLATFORM_GAMECUBE
     )
     if gc:
-        body = st.off
-        end = st.end
-        nb, nu, mw, _pad = struct.unpack_from("<4B", data, body + 4)
-        p = body + 8
-        used = list(data[p : p + nu])
-        p += nu
-        indices = weights = None
-        per_vertex = mw >= 2 and p + 2 * nverts * mw + nb * 64 <= end
-        if per_vertex:
-            indices = (
-                np.frombuffer(data, np.uint8, nverts * mw, p).reshape(nverts, mw).astype(np.uint16)
-            )
-            p += nverts * mw
-            weights = (
-                np.frombuffer(data, np.uint8, nverts * mw, p).reshape(nverts, mw).astype(np.float32)
-                / 128.0
-            )
-            p += nverts * mw
-        if p + nb * 64 > end:
-            raise RwError("skin: truncated bone matrices")
-        mats = np.frombuffer(data, ">f4", nb * 16, p).reshape(nb, 4, 4).astype(np.float32)
-        return Skin(nb, mw, used, indices, weights, mats, True)
+        return _parse_skin_gc(data, st.off, st.end, nverts)
     body, end = c.off, c.end
     if st is not None and st.size >= 4:  # non-GameCube packaging with a struct: use it
         body, end = st.off, st.end
@@ -470,25 +476,43 @@ def _parse_geometry(data: bytes, c: Chunk) -> Geometry:
         if flags & GEOM_PRELIT:
             g.colors = np.frombuffer(data, np.uint8, nvert * 4, p).reshape(nvert, 4).copy()
             p += nvert * 4
+        # Midway's RenderWare 3.2 clumps (Mortal Kombat: Deadly Alliance) write the vertex
+        # payload big-endian; the triangle indices say which way round a stream is
+        tri_at = p + nvert * 8 * ntex
+        endian = "<"
+        if tri_at + ntri * 8 <= st.end and ntri and nvert:
+            le = np.frombuffer(data, "<u2", ntri * 4, tri_at).reshape(ntri, 4)
+            be = np.frombuffer(data, ">u2", ntri * 4, tri_at).reshape(ntri, 4)
+            if le[:, [0, 1, 3]].max() >= nvert > be[:, :3].max():
+                endian = ">"
         for _ in range(ntex):
             g.uvs.append(
-                np.frombuffer(data, "<f4", nvert * 2, p).reshape(nvert, 2).astype(np.float32)
+                np.frombuffer(data, endian + "f4", nvert * 2, p)
+                .reshape(nvert, 2)
+                .astype(np.float32)
             )
             p += nvert * 8
-        tri = np.frombuffer(data, "<u2", ntri * 4, p).reshape(ntri, 4).astype(np.uint32)
-        g.triangles = np.stack([tri[:, 1], tri[:, 0], tri[:, 3], tri[:, 2]], axis=1)
+        tri = np.frombuffer(data, endian + "u2", ntri * 4, p).reshape(ntri, 4).astype(np.uint32)
+        if endian == ">":
+            g.triangles = tri.copy()  # Midway writes (v0, v1, v2, material)
+        else:
+            g.triangles = np.stack([tri[:, 1], tri[:, 0], tri[:, 3], tri[:, 2]], axis=1)
         p += ntri * 8
         if nmorph >= 1 and p + 24 <= st.end:
-            has_v, has_n = struct.unpack_from("<2I", data, p + 16)
+            has_v, has_n = struct.unpack_from(endian + "2I", data, p + 16)
             p += 24
             if has_v:
                 g.positions = (
-                    np.frombuffer(data, "<f4", nvert * 3, p).reshape(nvert, 3).astype(np.float32)
+                    np.frombuffer(data, endian + "f4", nvert * 3, p)
+                    .reshape(nvert, 3)
+                    .astype(np.float32)
                 )
                 p += nvert * 12
             if has_n:
                 g.normals = (
-                    np.frombuffer(data, "<f4", nvert * 3, p).reshape(nvert, 3).astype(np.float32)
+                    np.frombuffer(data, endian + "f4", nvert * 3, p)
+                    .reshape(nvert, 3)
+                    .astype(np.float32)
                 )
                 p += nvert * 12
     ext = child(data, c, EXTENSION)
@@ -496,6 +520,34 @@ def _parse_geometry(data: bytes, c: Chunk) -> Geometry:
     # children of GEOMETRY behind a 9-byte EXTENSION stub, not inside it.  Read both places.
     plugins = list(chunks(data, ext.off, ext.end)) if ext is not None else []
     plugins += [k for k in chunks(data, c.off, c.end) if k.type in (NATIVEDATA, BINMESH, SKIN)]
+    if (
+        native
+        and not g.materials
+        and st.size > INPLACE_STRUCT
+        and _is_header(data, st.off + INPLACE_STRUCT, st.end)
+    ):
+        # Midway's in-place clumps (Mortal Kombat) declare the STRUCT as the whole geometry:
+        # the material list, the extension and a bare STRUCT holding the GameCube native
+        # data follow the 40-byte header inside it
+        inner = list(chunks(data, st.off + INPLACE_STRUCT, c.end))
+        ml = next((k for k in inner if k.type == MATLIST), None)
+        if ml is not None:
+            g.materials = _parse_matlist(data, ml)
+        for k in inner:
+            if k.type == EXTENSION:
+                plugins += list(chunks(data, k.off, k.end))
+        for k in inner:
+            if k.type != STRUCT or k.size < 12:
+                continue
+            platform, hsz, dsz = struct.unpack_from("<3I", data, k.off)
+            if platform == PLATFORM_GAMECUBE and 12 + hsz + dsz == k.size:
+                g.native = data[k.off : k.end]
+            elif platform == PLATFORM_GAMECUBE and g.native is not None and g.skin is None:
+                # the skin's own native block follows the geometry's
+                try:
+                    g.skin = _parse_skin_gc(data, k.off, k.end, nvert)
+                except (RwError, ValueError, struct.error) as e:
+                    g.warnings.append(f"skin: {e}")
     if plugins:
         for k in plugins:
             try:

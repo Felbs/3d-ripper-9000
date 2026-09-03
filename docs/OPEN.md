@@ -51,6 +51,16 @@ give 238 models / 16k triangles with every one of 436 textures bound.  See
 [formats/bolt-mass-media.md](formats/bolt-mass-media.md).  Left: Pac-Man Fever's real game
 data lives outside the FST (scan the image for `BOLT`), skinned meshes, animations.
 
+## Closed 2026-09-03: Mortal Kombat: Deception and Deadly Alliance (`SEC` `.ssf`)
+
+Deception's ELF has a linker map: `load_ssf` / `get_ssf_dir_entry` gave the directory, and
+`RpGameCubeVtxFmtSetTexCoord(S16, 11)` the texcoord fraction the streams leave at 0.  The
+members are RenderWare, written Midway's way - the geometry struct declared around its own
+material list and native data, `PAD32` text inside the counted sizes, and on Deadly Alliance a
+big-endian RW 3.2 payload.  The shared RenderWare reader now takes all three.  Sampled: The
+Pit 17,868 triangles / 28 of 28 textures, Scorpion's costume skinned over 56 joints, Deadly
+Alliance's grasslands 14,806 / 9 of 9.  See [formats/mk-ssf-midway.md](formats/mk-ssf-midway.md).
+
 ## Closed 2026-09-03: Edge of Reality models on The Sims 2 and Pets
 
 The Sims 2 ships its ELF with a linker map.  `ERModel::LoadModel`, the strip readers, the

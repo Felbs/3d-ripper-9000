@@ -36,6 +36,8 @@ that ranks files by "looks like geometry" rather than by size.
 
 Tiger Woods 2003-2005 (five discs, not in the table because they were counted under `.hog`) fell the same day: `Rdat` is EA's `rcmp`, also read out of a DOL.
 
+Mortal Kombat: Deception and Deadly Alliance (two singletons - the census saw `.ssf`) fell on 2026-09-03: Midway `SEC` archives of in-place RenderWare, read from Deception's mapped ELF - [mk-ssf-midway.md](mk-ssf-midway.md).
+
 ## Running total
 
 Library: **1,085,308 models / 479.4 M triangles over 637 discs** before wave 30.  Wave 30 is
