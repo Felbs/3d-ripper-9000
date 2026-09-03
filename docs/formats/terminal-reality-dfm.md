@@ -234,3 +234,47 @@ now known to be right - the best of all 240 column triples across 29 blocks reac
 with the field flat behind it.  Eleven of the twenty bytes carry about forty distinct values
 over 130 vertices, which is not what whole `s16` coordinate columns look like.  The reading that
 fits is **packed bit fields**, and that is where the next attempt should start.
+
+
+## The vertex record: the normal is found, the position is not (2026-09-03)
+
+The lesson from Piglet applied here: search for the **normal**, which has an identity, rather
+than for the position, which does not.  Over the 20-byte rigid record, every `(offset,
+encoding)` was tried for a triple of unit length across the block:
+
+| bytes | encoding | result |
+|---|---|---|
+| **8-13** | **little-endian `s16` / 32767** | **unit length on 12 of 12 blocks**, worst `|n| - 1` = 6.8e-03 |
+| 9-14 | big-endian `s16` / 32767 | the same bytes read one byte over - an alias, not a second hit |
+
+So the record's frame is fixed: bytes 8-13 are the vertex normal.  Around it:
+
+    +0   01 fe          constant
+    +2   s16 LE         44 distinct, -705 .. 427
+    +4   s16 LE         41 distinct, -255 .. 427
+    +6   u8             38 distinct, 25 .. 163
+    +7   04             constant
+    +8   normal         s16 x3 / 32767
+    +14  u8             42 distinct
+    +15  44             constant
+    +16  02 | 03
+    +17  u8             51 distinct
+    +18  01 | 02
+    +19  u8             38 distinct
+
+**The position is not settled.**  Reading bytes 2-7 as three `s16` and scoring face normals
+against the stored vertex normals gives **0.68-0.73** against a shuffled-normal baseline of
+0.51: a real signal, but not a decoded mesh, which scores above 0.9.  Sweeping per-axis scales
+to maximise that agreement gives *different* optima on different blocks (6.3/5.0 on one,
+0.25/0.13 on the next), which says the reading is incomplete rather than merely unscaled.
+
+Two things are now known that were not:
+
+* the ranges do not match the part's bounding box because **the vertices are in bone space**
+  - part 0 (`binoculars2`) hangs off `Bip01 L Hand`, and its box is in model space.  That is
+  why box containment could never work here, independent of the vacuousness recorded above;
+* the index data is a plain triangle list, not strips: adjacent triangles share 2.13 indices,
+  which is what a list of a connected mesh does, and reading it as a strip scores no better.
+
+What is left is bytes 2-7 and 14-19 - twelve bytes for a position and, presumably, a texture
+coordinate - with a working oracle (the normal agreement) to test any reading against.
