@@ -301,3 +301,133 @@ def parse_txd(data: bytes) -> list[TextureNative]:
         except (rw.RwError, ValueError, struct.error) as e:
             out.append(TextureNative(name, mask, 0, 0, 0, 0, None, error=str(e)))
     return out
+
+
+# -- the Piglet header: array offsets declared, meshes tabled -------------------------------
+#
+# Piglet's BIG GAME (and, to be checked, the other RenderWare 3.6 GameCube titles) writes a
+# native block whose header is not the attribute table `decode_native` reads, but this::
+#
+#     +0   u32 LE  platform 6
+#     +4   u32 LE  header size   76 + 8 * meshes
+#     +8   u32 LE  data size
+#     +12  header, big-endian from here:
+#            +8   u8  flags      bit 2 = colours present
+#            +24  u32 x4         data offsets of the position, normal, colour, texcoord arrays
+#                                (0 = absent)
+#            +68  meshes x { u32 size; u32 offset }   one display-list run per material
+#     +12+header   data:  the display lists first, then the arrays at the offsets above
+#
+# A vertex in a display list is one index per present attribute - all holding the same value,
+# so the arrays are interleaved and one index addresses them all - **one byte wide when the
+# geometry has 255 vertices or fewer, two otherwise**.  Lists are padded to 32.
+#
+# What pins it: the position array's declared offset plus `vertices * 12` is the normal
+# array's offset, and that plus `vertices * 12` is the colour array's, on every geometry read;
+# the normals are unit length; and the mesh table's sizes sum to the first array offset.
+# Measured over ten header shapes (76 to 116 bytes, 1 to 6 meshes, both index widths) with the
+# largest index never exceeding vertices - 1.
+
+PIGLET_HEADER_BASE = 76
+PIGLET_ARRAYS_AT = 24
+PIGLET_MESHES_AT = 68
+PIGLET_FLAGS_AT = 8
+PIGLET_HAS_COLOURS = 0x04
+#: arrays and display lists are padded to this
+PIGLET_ALIGN = 32
+
+
+def looks_like_piglet_native(body: bytes) -> bool:
+    if len(body) < 12 + PIGLET_HEADER_BASE:
+        return False
+    platform, hsz, dsz = struct.unpack_from("<3I", body, 0)
+    if platform != rw.PLATFORM_GAMECUBE or hsz < PIGLET_HEADER_BASE or (hsz - PIGLET_HEADER_BASE) % 8:
+        return False
+    return 12 + hsz + dsz <= len(body) + 64
+
+
+def decode_native_piglet(body: bytes, nverts: int) -> list[NativeMesh]:
+    platform, hsz, dsz = struct.unpack_from("<3I", body, 0)
+    if platform != rw.PLATFORM_GAMECUBE:
+        raise rw.RwError(f"native data for platform {platform}, not GameCube")
+    h = 12
+    if hsz < PIGLET_HEADER_BASE or (hsz - PIGLET_HEADER_BASE) % 8 or h + hsz > len(body):
+        raise rw.RwError("not a Piglet-style native header")
+    data = h + hsz
+    offs = struct.unpack_from(">4I", body, h + PIGLET_ARRAYS_AT)
+    nmesh = (hsz - PIGLET_MESHES_AT) // 8
+    table = [struct.unpack_from(">2I", body, h + PIGLET_MESHES_AT + 8 * i) for i in range(nmesh)]
+    has_colours = bool(body[h + PIGLET_FLAGS_AT] & PIGLET_HAS_COLOURS) and offs[2] != 0
+    has_uvs = offs[3] != 0
+    if nverts <= 0 or offs[0] == 0 or offs[1] == 0:
+        raise rw.RwError("Piglet native header names no position or normal array")
+    # every array is padded to 32 bytes, so the gap to the next array is the exact size
+    # rounded up - measured on 120 geometries the over-run is 0 to 28 bytes and never more
+    span = offs[1] - offs[0]
+    if not nverts * 12 <= span < nverts * 12 + PIGLET_ALIGN:
+        raise rw.RwError(
+            f"position array is {span} bytes for {nverts} vertices (want {nverts * 12}, padded)"
+        )
+    lists = sum(s for s, _ in table)
+    if not lists <= offs[0] < lists + PIGLET_ALIGN:
+        raise rw.RwError("mesh table does not account for the display lists")
+
+    def arr(off: int, dtype: str, comps: int, count: int):
+        at = data + off
+        need = count * comps * np.dtype(dtype).itemsize
+        if at + need > len(body):
+            raise rw.RwError("native array runs past the block")
+        return np.frombuffer(body, dtype, count * comps, at).reshape(count, comps)
+
+    positions = arr(offs[0], ">f4", 3, nverts).astype(np.float32)
+    normals = arr(offs[1], ">f4", 3, nverts).astype(np.float32)
+    colors = (
+        arr(offs[2], np.uint8, 4, nverts).astype(np.float32) / 255.0 if has_colours else None
+    )
+    uvs = arr(offs[3], ">f4", 2, nverts).astype(np.float32) if has_uvs else None
+    attrs = 2 + int(has_colours) + int(has_uvs)
+    width = 1 if nverts <= 256 else 2
+    idt = np.uint8 if width == 1 else ">u2"
+    out: list[NativeMesh] = []
+    for mi, (size, off) in enumerate(table):
+        p = data + off
+        end = min(p + size, data + offs[0])
+        tris: list[np.ndarray] = []
+        while p + 3 <= end:
+            op = body[p]
+            if op == 0:
+                p += 1
+                continue
+            if (op & 0xF8) != 0x98:
+                break
+            count = struct.unpack_from(">H", body, p + 1)[0]
+            p += 3
+            span = count * attrs * width
+            if p + span > end:
+                break
+            idx = np.frombuffer(body, idt, count * attrs, p).reshape(count, attrs)[:, 0].astype(np.int64)
+            p += span
+            if count >= 3:
+                a, b, c = idx[:-2], idx[1:-1], idx[2:]
+                even = np.arange(count - 2) % 2 == 0
+                t = np.where(even[:, None], np.stack([a, b, c], 1), np.stack([b, a, c], 1))
+                keep = (t[:, 0] != t[:, 1]) & (t[:, 1] != t[:, 2]) & (t[:, 0] != t[:, 2])
+                tris.append(t[keep])
+        if not tris:
+            continue
+        tri = np.concatenate(tris)
+        if int(tri.max()) >= nverts:
+            raise rw.RwError(f"mesh {mi} indexes vertex {int(tri.max())} of {nverts}")
+        out.append(
+            NativeMesh(
+                mesh=mi,
+                triangles=tri.astype(np.uint32),
+                positions=positions,
+                normals=normals,
+                colors=colors,
+                uvs=uvs,
+                vertex_index=np.arange(nverts, dtype=np.uint32),
+                matrix_slot=None,
+            )
+        )
+    return out

@@ -33,6 +33,12 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
         return []
     tail = data[at:]
     groups = rw_native.groups(tail)
+    owned = rw_native.owned_spans(data)
+    # a group whose lists sit inside a GEOMETRY chunk is that chunk's native data, and
+    # renderware.py reads it; only the groups outside every GEOMETRY are this plugin's
+    groups = [
+        g for g in groups if not any(a <= at + g.lists_at < b for a, b in owned)
+    ]
     resolved = [g for g in groups if g.resolved]
     if not resolved:
         return []

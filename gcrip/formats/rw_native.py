@@ -257,6 +257,10 @@ def tail_of(data: bytes) -> int | None:
     The walk covers STRUCT and FRAMELIST and then meets bytes that are not a chunk header - on
     the sample a zero-size chunk id 0, then display-list data.  Everything from there to the end
     of the clump is native.
+
+    Native data that sits inside a GEOMETRY chunk belongs to `plugins/renderware.py`, which
+    reads it through `rwgc.decode_native_piglet`; see :func:`owned_spans` for how a group in
+    one of those is left to it rather than read twice.
     """
     if len(data) < CHUNK:
         return None
@@ -274,3 +278,30 @@ def tail_of(data: bytes) -> int | None:
             break
         at += CHUNK + ksize
     return at if end - at >= MIN_TAIL else None
+
+
+def owned_spans(data: bytes) -> list[tuple[int, int]]:
+    """Byte ranges of every GEOMETRY chunk in the clump - native data `renderware.py` reads.
+
+    The biggest sampled clump holds both: 26 small geometries as GEOMETRY chunks, and a
+    154,856-byte STRUCT that is a 4,054-triangle native group with no GEOMETRY around it at
+    all.  Declining the whole clump when any GEOMETRY exists lost the second; reading everything
+    counted the first twice.  So a group is left to `renderware.py` only when its display lists
+    fall inside one of these.
+    """
+    from gcrip.formats import rwstream
+
+    if len(data) < CHUNK:
+        return []
+    cid, size, _ = struct.unpack_from("<3I", data, 0)
+    if cid != CLUMP or size > len(data) - CHUNK:
+        return []
+    out = []
+    for k in rwstream.chunks(data, CHUNK, CHUNK + size):
+        if k.type == rwstream.GEOMETRY:
+            out.append((k.off - CHUNK, k.end))
+        elif k.type == rwstream.GEOMLIST:
+            for g in rwstream.chunks(data, k.off, k.end):
+                if g.type == rwstream.GEOMETRY:
+                    out.append((g.off - CHUNK, g.end))
+    return out

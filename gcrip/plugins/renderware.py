@@ -427,7 +427,15 @@ def _add_geometry(
         return (n / np.maximum(ln, 1e-8)).astype(np.float32)
 
     if g.is_native:
-        meshes = rwgc.decode_native(g.native, direct)
+        try:
+            meshes = rwgc.decode_native(g.native, direct)
+        except rw.RwError:
+            # Piglet's BIG GAME writes a different native header - array offsets declared,
+            # meshes tabled - and the attribute-table reader refuses it as "attribute table
+            # out of range" on 139 of 139 geometries.  Try the other shape before giving up.
+            if not rwgc.looks_like_piglet_native(g.native):
+                raise
+            meshes = rwgc.decode_native_piglet(g.native, g.num_vertices)
         for nm in meshes:
             mat_slot = nm.mesh
             if g.binmesh is not None and nm.mesh < len(g.binmesh.meshes):

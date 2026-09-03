@@ -125,13 +125,54 @@ class Chunk:
 
 
 def chunks(data: bytes, off: int, end: int):
-    """Iterate sibling chunks in data[off:end]; a truncated tail ends the iteration."""
+    """Iterate sibling chunks in data[off:end]; a truncated tail ends the iteration.
+
+    A chunk's declared size is trusted unless the bytes say otherwise.  On Piglet's BIG GAME
+    28 of 146 sampled clumps declare a FRAMELIST 21 bytes longer than it is, so the walk lands
+    inside the GEOMETRYLIST that follows and reads garbage as a chunk id - which is why
+    `renderware.py` returned scenes for 68 of 1,001 geometry assets.  The library-id stamp
+    (`ff ff 03 10`) is unmistakable, so when the declared end does not sit on a header but a
+    header sits just before it, step back to the header.
+    """
     while off + 12 <= end:
         t, sz, lib = struct.unpack_from("<3I", data, off)
         if off + 12 + sz > end:
             sz = end - off - 12
         yield Chunk(t, sz, lib, off + 12)
-        off += 12 + sz
+        nxt = off + 12 + sz
+        if not _is_header(data, nxt, end):
+            back = _header_before(data, nxt, off + 12, lib, end)
+            if back is not None:
+                nxt = back
+        off = nxt
+
+
+def _is_header(data: bytes, at: int, end: int) -> bool:
+    if at + 12 > end:
+        return False
+    t, sz, lib = struct.unpack_from("<3I", data, at)
+    return t <= 0xFFFF and sz <= end - at - 12 and (lib >> 16) == (lib >> 16) and lib > 0xFFFF
+
+
+def _header_before(data: bytes, at: int, floor: int, lib: int, end: int) -> int | None:
+    """The nearest chunk header starting within OVERSHOOT bytes before `at`, carrying the same
+    library stamp as its siblings and fitting the region - or None."""
+    stamp = struct.pack("<I", lib)
+    for back in range(1, OVERSHOOT + 1):
+        h = at - back
+        if h < floor or h + 12 > end:
+            continue
+        if data[h + 8 : h + 12] == stamp:
+            t, sz = struct.unpack_from("<2I", data, h)
+            if t <= 0xFFFF and 0 < sz <= end - h - 12:
+                return h
+    return None
+
+
+#: how far a declared chunk size has been seen to overshoot the real one - 21 bytes on a
+#: FRAMELIST, 70 on a MATLIST; the search runs back to the nearest header carrying the same
+#: library stamp, and the tests pin that a correct size is never second-guessed
+OVERSHOOT = 256
 
 
 def children(data: bytes, c: Chunk) -> list[Chunk]:
@@ -441,8 +482,12 @@ def _parse_geometry(data: bytes, c: Chunk) -> Geometry:
                 )
                 p += nvert * 12
     ext = child(data, c, EXTENSION)
-    if ext is not None:
-        for k in chunks(data, ext.off, ext.end):
+    # Piglet's BIG GAME writes the geometry's plugin chunks - BINMESH, NATIVEDATA - as direct
+    # children of GEOMETRY behind a 9-byte EXTENSION stub, not inside it.  Read both places.
+    plugins = list(chunks(data, ext.off, ext.end)) if ext is not None else []
+    plugins += [k for k in chunks(data, c.off, c.end) if k.type in (NATIVEDATA, BINMESH, SKIN)]
+    if plugins:
+        for k in plugins:
             try:
                 if k.type == NATIVEDATA:
                     nst = child(data, k, STRUCT)

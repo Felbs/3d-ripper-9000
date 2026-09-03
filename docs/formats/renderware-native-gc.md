@@ -68,3 +68,37 @@ group whose normals sit beyond the next group's start is still found.
 
 Measured leading gaps between the lists and the positions are 1, 5, 13 and 21 bytes, so
 `LEAD_SCAN = 64` covers them with room to spare.
+
+
+## Across every clump in the slice, and the three things that were in `renderware.py`'s way (2026-09-03)
+
+Running both readers over all **146 clumps** in the first 40 MB of `PIGGCN.pkd`:
+
+| reader | clumps | triangles |
+|---|---|---|
+| `renderware.py` before | 3 | 1,198 |
+| `renderware.py` after | **120** | **107,040** |
+| `rw_native.py` | 15 | **182,771** |
+| **total** | | **289,811** |
+
+in 0.2 s.  The two readers overlap on 11 clumps and never on a triangle: a group is left to
+`renderware.py` when its display lists fall inside a GEOMETRY chunk, and read here otherwise
+(`owned_spans`).  The biggest clump needs both - 26 small geometries as GEOMETRY chunks, and a
+154,856-byte STRUCT that is a 4,054-triangle native group with no GEOMETRY around it.
+
+`renderware.py` was returning scenes for 68 of Piglet's 1,001 geometry assets because of three
+things, each fixed in `rwstream.py` / `rwgc.py` and each with a test:
+
+1. **A chunk's declared size can overshoot the next header** - FRAMELIST by 21 bytes, MATLIST
+   by 70 - so the walk landed inside the next chunk and read garbage as an id.  The library-id
+   stamp is unmistakable, so when the declared end is not on a header but one sits within 256
+   bytes before it, the walk steps back.  A correct size is never second-guessed.
+2. The EXTENSION under GEOMETRY was being read 9 bytes long - an artifact of (1).  With the walk
+   right, BINMESH and NATIVEDATA are where RenderWare puts them.
+3. **The native header is a different shape.**  Not the attribute table `decode_native` reads
+   (it refused 139 of 139 with *attribute table out of range*) but array offsets declared at
+   +24 and a mesh table at +68, arrays padded to 32, one index per attribute a byte wide up to
+   256 vertices and two above.  `rwgc.decode_native_piglet` reads it; the identity is that the
+   position array's declared span is `vertices * 12` rounded up to 32, and the mesh table's
+   sizes sum to the first array offset.  Ten header shapes from 76 to 116 bytes, 1 to 6 meshes,
+   both index widths, and the largest index never exceeded `vertices - 1`.
