@@ -175,7 +175,6 @@ flowchart LR
     subgraph EA["Electronic Arts"]
         BIG["BIG / VIV / TERF / ZZDATA<br/>plugins.ea"] --> EAGL["EAGL .ord/.orp<br/>plugins.eagl"]
         BIG --> LZH1["TERF comp5 = GCMP LZH1<br/>formats.ea_lzh1"] --> TMDL["Tiburon TMdl .ea3<br/>plugins.ea_tmdl"]
-        HFS["Hudson hfs + PRS1 LZSS<br/>plugins.frogger_hfs"] --> RWDFF["RenderWare clump / world<br/>plugins.renderware"]
         SHOC["SHOC .hog<br/>plugins.shoc"] --> RCMP["Rdat = rcmp LZ<br/>formats.ea_rcmp"] --> OBG["OBG terrain / TXG textures<br/>plugins.ea_obg, ea_txg"]
         NGC[".ngc index<br/>formats.totemtech"] --> DGC["TotemTech .dgc record chain<br/>plugins.totemtech"]
         BIG --> EBO["EBO .ebo<br/>plugins.ebo"]
@@ -187,6 +186,10 @@ flowchart LR
         GVM["GVM / GVR<br/>plugins.gvm"]
         REL[".rel modules + SA Tools tables<br/>plugins.sadx"] --> SADX["Basic / Ginja land tables<br/>formats.sadx"]
         PRD["Billy Hatcher .prd (PRS + U:8-)<br/>plugins.billy"] --> BILLY[".arc Ginja trees + skins,<br/>.lnd terrain<br/>formats.billy, billy_lnd"]
+    end
+    subgraph HVS["High Voltage / Hudson"]
+        FSTA["FSTA .jam<br/>plugins.fsta"] --> GGG["High Voltage GGG<br/>plugins.hvs_ggg"]
+        HFS["Hudson hfs + PRS1 LZSS<br/>plugins.frogger_hfs"] --> RW
     end
     subgraph KROME["Krome (Merkury)"]
         RKV["RKV v1 / RKV2<br/>plugins.rkv"] --> MDL2["MDL2 .gmd<br/>plugins.mdl2"]

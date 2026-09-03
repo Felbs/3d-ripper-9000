@@ -181,3 +181,51 @@ from the bit level.
 the eight bytes are not a plain record array either.  What is established is the negative (not a
 strong compressor) and the framing (a constrained byte every eighth), which together say the
 door has a handle on it.
+
+
+## Closed 2026-09-03: the models were `GGG` all along - `GMS` is sound
+
+Two corrections and a reader.
+
+**`GMS` is DSP-ADPCM audio, not a model.**  Billy & Mandy's DOL lists `GmsFormat` beside
+`MsaFormat`, `RwfFormat`, `WbaFormat`, `SbaFormat` and `GmdFormat` in its *sound* format
+table, the header's two floats (100.0 and 500.0, or 5.0 and 20.0) are 3D-sound min/max
+distances, and the "8-byte framing with a constrained first byte" is the DSP-ADPCM frame:
+one predictor/scale byte (predictor 0..7 in the high nibble, scale 0..12 in the low - exactly
+the runs 0-12, 19-28, 36-44, 52-60 the note measured) and seven bytes of nibbles.  **99.8% of
+frames validate at phase 0 and 46-48% at every other phase.**  Entropy 7.7 was ADPCM.  There
+was never a codec to crack.
+
+**`GGG` is the model** (`ISVHGGG\0`, big-endian, "uncompressed and quantised" - entropy 5-6
+because s16 positions and RGBA8 colours are exactly that).  `gcrip/formats/hvs_ggg.py`:
+
+* header: material names (16 bytes each), then a flat node tree - `u32 mesh count, u32, u32,
+  char name[12]` followed by that many 48-byte mesh records - then a geometry header whose
+  word at +0x34 carries the **position fraction bits** in its top half and whose seven words
+  at +0x44 are the array starts (normals, texcoords, bone index, colours, -, display lists);
+* arrays after the header (and after a leading node/instance block of the size at +0x44 in
+  the file header - the cars have one, and its bytes were being read as the car body's
+  positions before that was found): positions s16 xyz / 2^frac, normals s8 / 64, texcoords
+  s16 / 16384, bone index u8, colours RGBA8;
+* one GX strip per mesh at a 32-byte boundary, u16 big-endian indices local to the mesh, one
+  per attribute in GX order; skinned meshes (attribute word 0x02xx) lead each vertex with a
+  u8 matrix index.  The strips are not back to back on multi-node or skinned models, so the
+  reader walks to the next boundary whose strip has the record's vertex count.
+
+Textures come through the archive's text databases: `.AGM` binds `Material "X" {
+SimpleTextureShader n }` to the n-th name of its `StagedShaderTexture` list, and that name
+upper-cased is a `.TPL` member (`gcrip/formats/hvs_agm.py`, `gcrip/plugins/hvs_ggg.py`,
+which reads them through the rip's source like the RenderWare plugin does).
+
+**House4.JAM, one level archive: 57 of 69 `GGG` read - 39,022 triangles, 72 textures
+bound.**  The level (`MAIN1`, 44 meshes) is a house with a red roof and sky dome; the toy car
+is a car with wheels and a grille.
+
+Open on this format: skinned characters (Cerberus, the clowns) export in bone-local space
+with some meshes skipped because their strips index past the arrays - the skeleton is in the
+`GKA` files (`loop0`, `idle` clips) and the binding is not read; `VISTEST` / `DGATEO` style
+files (attribute mask 0x80, position only) are visibility / collision volumes and are
+declined; the 0x120-byte stub `GGG`s are not models.
+
+Discs: Billy & Mandy and Kids Next Door (`FSTA` archives).  Charlie and the Chocolate
+Factory's `JAM2` archives are a different container and were not checked for `GGG`.
