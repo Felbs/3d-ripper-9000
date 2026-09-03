@@ -141,3 +141,43 @@ plausible f32 in either byte order, so whatever geometry they carry is quantised
 Worth keeping in perspective: the models are in `GMS`, which is the compressed one.  `GKA` and
 `GGG` are more likely animation or collision, so they are lower value than their readability
 suggests.
+
+
+## Correction: "entropy 7.73, therefore compressed" does not hold (2026-09-02)
+
+The section above puts `GMS` "in the same box as the `.hog` WART3.00 codec: a private LZ that
+has to be reverse engineered bit by bit before any geometry is reachable", on the strength of
+the payload's entropy.  Entropy alone cannot carry that, and measured properly the payload does
+not behave like compressed output.
+
+**The byte histogram is nowhere near flat.**  Over the 13,240 bytes after `0x60`:
+
+| | chi-square (255 df) | max / mean | top autocorrelation |
+|---|---|---|---|
+| the payload | **5,282** | 4.78 | 0.024 |
+| zlib of those same bytes, as a control | **310** | - | 0.005 |
+
+A strong general-purpose compressor produces the control's numbers.  The payload is seventeen
+times further from flat than that, so whatever it is, it is not a good compressor's output.
+
+**And there is an 8-byte framing.**  Read at stride 8, **one column in eight holds 79 distinct
+values where the other seven hold 238 to 248** - and a shuffled copy of the same bytes gives
+248, 244, 245, 246, 252, 252, 247, 249, so the asymmetry is real and not an artifact of the
+alphabet.  The phase is fixed: the low-variety column is byte 0 counting from the payload start.
+
+That column is constrained in a specific way:
+
+* its **top bit is clear on 99.8% of records**, where every other column's top bit is set about
+  half the time;
+* the values it takes come in runs - 0-12, 19-28, 36-44, 52-60, 67- - with regular gaps.
+
+A byte under 128, recurring every eight bytes, taking a restricted set of values, is what a
+**flag byte** looks like, or a record tag.  Either way this is a framed private scheme rather
+than an opaque blob, and the next attempt should start from that group of eight rather than
+from the bit level.
+
+**Not claimed:** that the framing is solved.  The windowed stride-8 agreement is only 0.006 to
+0.027 against a 0.011 file mean - far from the 0.363 that settled Terminal Reality's stride - so
+the eight bytes are not a plain record array either.  What is established is the negative (not a
+strong compressor) and the framing (a constrained byte every eighth), which together say the
+door has a handle on it.
