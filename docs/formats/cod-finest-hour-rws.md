@@ -35,7 +35,26 @@ so the two kinds cannot be confused.
 | `NGC_2s1.rws` | 298,950,656 | declined - streamed audio | - |
 
 The three WORLDs read straight through `plugins/renderware.py`: 11,839, 265 and 2,853 triangles.
-The disc has **231 `.rws`** and reports 21 models today.
+
+Sampling twelve files across the size range - 6.4 MB in total - gives **193,875 triangles**:
+
+| file | bytes | sections | triangles |
+|---|---|---|---|
+| `s_2.rws` | 198,184 | 4 | 8,023 |
+| `s_8.rws` | 340,614 | 4 | 12,857 |
+| `s_13.rws` | 460,120 | 4 | 19,001 |
+| `s_4.rws` | 509,820 | 4 | 20,560 |
+| `s_9.rws` | 548,662 | 4 | 23,812 |
+| `s_1.rws` | 633,192 | 4 | 26,023 |
+| `s_5.rws` | 740,268 | 4 | 25,340 |
+
+**228 of the disc's 231 `.rws` are under 6 MB**, and the disc reports 21 models today.
+
+Two files in the sample yield nothing and are worth naming: `s_6.rws` at 52 bytes is a lone
+texture dictionary, and `level.rws` at 1.5 MB is claimed by `is_container` - 64 bytes cannot
+show otherwise - but `sections()` refuses it, so `expand` returns nothing.  That is safe:
+`rip.py` already treats a container that claims and yields nothing as not having claimed at
+all, so the file falls through to whatever reads it next.
 
 ## The correction this makes
 
