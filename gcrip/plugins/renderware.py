@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from gcrip.formats import dds, hip, konami_pac, one, rwgc, tga
+from gcrip.formats import dds, hip, konami_pac, one, rw_pitxd, rwgc, tga
 from gcrip.formats import rwstream as rw
 from ripcore.scene import Joint, MaterialDef, Primitive, Scene
 
@@ -102,6 +102,8 @@ class _TextureIndex:
                 blob = self.src.get(path)
                 if konami_pac.is_pack(blob[:16]):
                     names = konami_pac.names(blob)
+                elif rw_pitxd.is_pitxd(blob[:64], len(blob)):
+                    names = rw_pitxd.names(blob)
                 else:
                     names = rwgc.texture_names(blob)
                 keys = [self._key(path, n) for n in names]
@@ -122,6 +124,10 @@ class _TextureIndex:
                     for kt in konami_pac.parse(blob):
                         if kt.rgba is not None:
                             table[self._key(path, kt.name)] = kt.rgba
+                elif rw_pitxd.is_pitxd(blob[:64], len(blob)):
+                    for pt in rw_pitxd.parse(blob):
+                        if pt.image is not None:
+                            table[self._key(path, pt.name)] = pt.image
                 else:
                     rasters = rwgc.parse_txd(blob)
                     for t in rasters:

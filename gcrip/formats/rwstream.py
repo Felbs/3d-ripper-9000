@@ -124,6 +124,16 @@ class Chunk:
         return rw_version(self.libid)
 
 
+def read_chunk(data: bytes, off: int, end: int) -> Chunk | None:
+    """The one chunk whose header is at ``off``, its size clipped to ``end``; None past the end."""
+    if off + 12 > end:
+        return None
+    t, sz, lib = struct.unpack_from("<3I", data, off)
+    if off + 12 + sz > end:
+        sz = end - off - 12
+    return Chunk(t, sz, lib, off + 12)
+
+
 def chunks(data: bytes, off: int, end: int):
     """Iterate sibling chunks in data[off:end]; a truncated tail ends the iteration.
 

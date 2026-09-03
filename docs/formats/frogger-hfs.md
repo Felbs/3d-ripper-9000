@@ -147,3 +147,50 @@ bytes in a row - and **`eb f0` recurs at +14 in every member and every few bytes
 is part of the control grammar, not data.  What `fd 23` and `eb f0` encode is the codec, and
 with a length oracle on every member and a chunk-shaped plaintext to hit, that is now a
 tractable search rather than a blind one.
+
+
+## Closed 2026-09-03: `PRS1` is Okumura LZSS, read out of the DOL
+
+The DOL route again.  Ancient Shadow's executable names its archives (`GAMEDATA.BIN`,
+`AREA00.HFS` ...) and the loader that owns those strings (`0x80008dd4`) ends in a
+state that byte-swaps the member's first three words, compares the first with `0x31535250`
+(`PRS1` little-endian), allocates the second and calls `0x800094a8(src + 12, dst, packed,
+unpacked)`.  That routine is 84 instructions of the LZSS everyone learned from `LZSS.C`:
+
+* 4,096-byte ring, zeroed (`memset(ring, 0, 0xfee)`), write position starting at **0xFEE**;
+* flag byte consumed LSB-first with the `| 0xff00` refill; **1 = literal, 0 = copy**;
+* a copy is two bytes: `pos = b1 | ((b2 & 0xf0) << 4)` - an **absolute ring position** -
+  and `length = (b2 & 0x0f) + 3`.
+
+That absolute position is the whole reason 48 variants failed: every one of them measured
+distances backwards from the output.  `fd 23 eb f0` was never a control word; `fd` is a flag
+byte (literals, literals, copy...) and `eb f0` a copy from ring position 0xfeb - the last bytes
+written - which is why it "recurred every few bytes".
+
+`gcrip/formats/prs1.py` is the port.  Members that do not open `PRS1` are **stored**: the
+loader's other branch is a plain copy, and those members are RenderWare audio dictionaries
+(`0x0809`, vendor 8 = RWA).  Both games use it: The Rescue's `.hfs` differ only in the
+version byte (`hfs\x07` against `hfs\n`), and `frogger_hfs.is_hfs` now takes both.
+
+## What the members are
+
+RenderWare 3.6 streams (`ff ff 03 18`), little-endian, one member = one chunk sequence:
+
+| top-level chunk | count in 350 sampled | what |
+|---|---|---|
+| `0x23` PITEXDICTIONARY | 154 | platform-independent texture dictionaries: `rwImage` (0x18) rasters, 8-bit paletted, with a TEXTURE chunk naming each - `gcrip/formats/rw_pitxd.py` |
+| `0x29` CHUNKGROUPSTART ... `0x2A` | 125 groups | named groups ("locator1") of **CLUMPs** (175 in the sample, 256 geometries), HANIM animations, UV animations |
+| `0x0B` WORLD | 2 | level sectors |
+| `0x24` TOC | 7 | tables of contents |
+| `0x0809` (stored) | 12 | RenderWare Audio wave dictionaries - skipped |
+| `01 00 01 00` ... | 45 | not RenderWare; Hudson's own, unread |
+
+`gcrip/plugins/frogger_hfs.py` expands an archive to `<block>_<index>_<k>[_<group>].dff / .bsp /
+.txd`, and `plugins.renderware` reads the clumps and worlds and binds their textures through
+the PI dictionaries (added to its texture index).  On the first 8 MB of `gamedata.bin`:
+**186 models, 110,947 triangles, 175 textures bound** - from a disc that produced four models.
+The whole archive is 198 MB; the re-rip (wave 33) will say what the game holds.
+
+Tests: `tests/test_prs1.py` carries an LZSS encoder that mirrors the ring and round-trips
+literals and absolute-position copies (including a copy from the untouched zero ring), decodes
+a two-texture PI dictionary, and walks a synthetic archive through the container plugin.

@@ -20,7 +20,7 @@ stadium crowd-quad block, `Swap` chains, and whatever `PLADATA` / `PLYRFACE` tur
 **The lesson generalises**: a private bit-level codec is not a dead end when the disc ships the
 decoder.  Score the DOL's functions for shifts + byte loads + loops - calls, follow the
 zero-caller hits to their vtable, and the codec's *name* is usually sitting next to it.  The
-same route closed Tiger Woods `Rdat` the same day and is open for High Voltage `GMS` and Frogger `PRS1`.
+same route closed Tiger Woods `Rdat` the same day and closed Frogger `PRS1` too, and is open for High Voltage `GMS`.
 
 ## Close - one focused session each
 
@@ -424,4 +424,4 @@ thumbnail is a convenience and must not be able to fail an export.
 
 | Harry Potter: Goblet of Fire | 1 | **not a `.hog` disc**: eight files, four of them EA `BIGF` totalling 956 MB, which `plugins/ea` already claims.  `data.big` holds 153 members, 152 of them `.str` RenderWare streams stamped `0x1802FFFF` (RW 3.6) with EA's own chunk ids (`0x071C` names, `0x0716` build paths).  The three smallest members carry no stock geometry chunks and no native groups, but so are the two **largest** members (7.3 MB and 7.2 MB), which are gameplay scripts - `CharmConfigObject`, `RicochetShot`, `BubotuberPusShot`.  A `0x98` strip scan on them gives 261 runs and 6,016 vertices and it is **noise**: the four index columns agree on 1-2% where a real group agrees on 100%.  **All 153 members' type tables have now been read** (1.2 MB of heads): the vocabulary is `cModelBehaviour` (88 members), `cLightModulatorBehaviour`, `TriggerBox`, `PhysicsWorldCollision`, `StaticSceneProp`, `NavigationMesh` - a level and entity database that *references* models.  Zero `rwID_` names in the first 96 KB of any member (14.8 MB searched).  Untested: `music.big` and the 277 MB `gof_f.elf` | see [formats/harry-potter-gof.md](formats/harry-potter-gof.md) |
 
-| Frogger `PRS1` codec | 2 (Ancient Shadow, Frogger's Adventures: The Rescue) | archive closed on both discs (`formats/frogger_hfs.py`; The Rescue is `hfs` with 18 `.hfs` and 1,552 `PRS1` members sampled).  **The word at +4 is the unpacked size** - 365 of 368 members have +8 == directory size and +4 >= it - so every member carries a length oracle.  `eb f0` recurs at +14 in every member and is control grammar; `78 14 00 00 ff ff ef 03` shows a RenderWare chunk size + stamp as eight literals.  Not Sega PRS, not 48 LZSS variants.  The codec is the remaining work | see [formats/frogger-hfs.md](formats/frogger-hfs.md) |
+| Frogger `PRS1` codec | 2 (Ancient Shadow, The Rescue) | **closed 2026-09-03** - Okumura LZSS with absolute ring positions, read out of the DOL (`gcrip/formats/prs1.py`); members are RenderWare 3.6 streams with CLUMPs and PI texture dictionaries; 186 models / 111k triangles from the first 8 MB.  [formats/frogger-hfs.md](formats/frogger-hfs.md) | re-rip both discs (wave 33) |

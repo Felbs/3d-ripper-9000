@@ -40,6 +40,8 @@ from dataclasses import dataclass
 from gcrip.identities import Identity
 
 MAGIC = b"hfs\n"
+#: The Rescue writes version byte 7 where Ancient Shadow writes 10; same layout
+MAGICS = (MAGIC, bytes((0x68, 0x66, 0x73, 7)))
 #: the directory is a run of these, one every 2,048 bytes
 BLOCK = 2048
 HEADER = 16
@@ -99,7 +101,7 @@ class Block:
 
 
 def is_hfs(head: bytes) -> bool:
-    return head[:4] == MAGIC and len(head) >= HEADER
+    return head[:4] in MAGICS and len(head) >= HEADER
 
 
 def blocks(data: bytes) -> list[Block]:
@@ -108,7 +110,7 @@ def blocks(data: bytes) -> list[Block]:
     at = 0
     n = len(data)
     while at + HEADER <= n and len(out) < MAX_BLOCKS:
-        if data[at : at + 4] != MAGIC:
+        if data[at : at + 4] not in MAGICS:
             break
         _m, span, count, data_at = struct.unpack_from("<4s3I", data, at)
         if count > MAX_COUNT or at + HEADER + count * ENTRY > at + BLOCK:
