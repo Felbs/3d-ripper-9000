@@ -231,3 +231,28 @@ came back empty is the right shape - it cannot make a successful scan slower - b
 candidates to score, and how many, needs a benchmark over the library rather than one file.
 Capping it at 32 or 128 groups in offset order drops the yield back to one mesh, because the
 real lists sit behind the spurious span, so the cap has to be smarter than a prefix.
+
+
+### The one thing still missing: where the position array starts
+
+Everything above is exact - the opcode, the stride, the vertex fields, the counts.  A reader
+still cannot ship, because **nothing found so far states where the position array begins**, and
+the geometric tests are not sharp enough to pin it.
+
+* Triangle locality over 966 plausible offsets takes 2.3 s and puts the minimum at **31,296**
+  (0.0318), with the whole band 31,236 to 31,308 inside 0.003 of it.  A one-vertex shift is
+  12 bytes, so that band is 50 vertices wide.
+* Strip smoothness - the mean dot between adjacent face normals, which settled TotemTech's
+  strip-versus-fan question - is **flat at 0.42 to 0.45 across the whole band** and does not
+  discriminate.
+* There is no declared count: the values 1046, 468, 562 and 3396 appear nowhere in the file as
+  a `u32`, and no `u32` anywhere points into the 30,900-31,600 range.
+* The texture coordinates are not adjacent to the positions (the block at `P + 1046 * 12` is
+  garbage), and searching for 468 `f32` pairs inside a sane UV range matches **5,010 offsets** -
+  the file is full of small floats, so that test carries no information here.
+
+**A reader that is fifty vertices out produces a plausible-looking wrong mesh**, which is worse
+than producing nothing, so nothing is shipped.  What would settle it: a second character `.gcr`
+to test whether the array sits at a fixed distance from the display lists, or the record that
+heads each primitive group - the 10-byte entries at 30,113, whose last column runs 40, 112, 184,
+208, 276 and is the obvious place for an array pointer, are still unread.
