@@ -51,6 +51,14 @@ give 238 models / 16k triangles with every one of 436 textures bound.  See
 [formats/bolt-mass-media.md](formats/bolt-mass-media.md).  Left: Pac-Man Fever's real game
 data lives outside the FST (scan the image for `BOLT`), skinned meshes, animations.
 
+## Closed 2026-09-03: Super Mario Strikers
+
+Next Level Games' GL layer, read from the shipped `MarioSoccerR.elf` (the DOL matches none
+of the three maps, so the ELF was disassembled directly): `.glg` chunk units of packets
+over shared-index streams, `.glt` `PTLG` bundles.  Mario 4,909 triangles, Mario Stadium
+45,366 with 75 of 75 textures.  See [formats/nlg-strikers-gl.md](formats/nlg-strikers-gl.md).
+Left: skinning (bind pose ships), lightmap slot.
+
 ## Closed 2026-09-03: Need for Speed: Underground
 
 The 2003 Black Box build differs from Underground 2 in two places the existing reader

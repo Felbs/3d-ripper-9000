@@ -42,6 +42,8 @@ Ultimate Spider-Man and Spider-Man 2 (two singletons - the census saw `amalga_gc
 
 Need for Speed: Underground (a singleton at 962 triangles beside its 7-million-triangle sequel) fell the same day from `Speed.elf`'s DWARF - [ea-black-box-underground.md](ea-black-box-underground.md).
 
+Super Mario Strikers (376 triangles; an ELF with DWARF and three maps) fell the same day - [nlg-strikers-gl.md](nlg-strikers-gl.md).
+
 ## Running total
 
 Library: **1,085,308 models / 479.4 M triangles over 637 discs** before wave 30.  Wave 30 is
