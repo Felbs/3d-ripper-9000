@@ -126,3 +126,30 @@ The float region at stride 24 is the obvious vertex array - 385 KB / 24 = 16,000
 it sits between the records and the high-entropy blocks.  Nothing found yet says which record
 field points into it; that pointer is the next thing to look for, and the record's 76-valued
 byte 3 is where to start.
+
+
+### The table is not uniform: descriptors, then index pairs
+
+Looking at consecutive 32-byte rows rather than at the records the constant tail selects:
+
+    00 00 00 00 00 81 00 00 ff ff 00 00 80 80 80 ff 00 00 30 00 30 00 41 00 00 01 00 00 00 00 00 00
+    02 72 00 07 02 0a 01 1a 01 96 00 08 01 85 01 1b 01 01 01 1c 00 bc 00 08 00 82 01 1d 00 2d 00 08
+    00 08 01 1d 02 88 01 19 03 01 00 07 03 01 01 19 03 7b 01 19 03 92 00 07 03 fa 01 1a 03 9f 02 56
+    ...
+    03 b9 02 40 03 d6 02 45 03 f5 02 4f 03 f4 01 7d 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+
+The first row is a **descriptor** - an RGBA colour `80 80 80 ff` and the constant tail.  What
+follows is **big-endian `u16` pairs**: `(626, 7)`, `(522, 282)`, `(406, 8)`, `(389, 283)` ...
+with the first value under 1,024 and the second either a small number (7, 8) or in the 280s.
+That is an **indexed vertex stream without display-list opcodes** - a position index and a
+second attribute index - and it is why `gxscan` sees nothing: there is no `0x98` to find.
+
+The run ends in zeros and the next descriptor follows.  Between the first ten descriptors the
+runs are 1,287, 903, 903, 22,416, 0, 0, 48,264, 0, 0 and 178,895 pairs - **253,416 pairs in
+all** - and no descriptor field predicts the run length (every header byte correlates at under
+0.11 with it), so the runs are terminated, not counted, and the zero-length ones are
+descriptors with no geometry of their own.
+
+What is still not known is how a pair addresses the float array: 253,416 pairs against about
+16,000 stride-24 vertices means either the first value indexes a per-run window, or the
+attributes are split across arrays.  The stride-24 float region is the place to test that.
