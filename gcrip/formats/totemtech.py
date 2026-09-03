@@ -250,8 +250,13 @@ def records(dgc: bytes, entries: list[Entry]) -> list[Record]:
 #: So those discs are a different vintage of the record, not a shifted one, and this reader
 #: refuses them loudly rather than reading them wrong.
 MESH_VERTEX_COUNT = 116
-#: u32 tag then u8 mode after each strip's indices
+#: bytes after each strip's indices.  Spirits & Spells spends 5 - a u32 tag then a u8 mode -
+#: and Jimmy Neutron and SpongeBob spend 8.  Which is which is not guessed: the trailer that
+#: parses the most TMESH records in a file wins, and the two never both work.  Measured, 52
+#: TMESH on Spirits & Spells parse 52 of 52 at five and 1 of 52 at eight; 69 on Jimmy Neutron's
+#: LEVEL42 parse 0 of 69 at five and 69 of 69 at eight.
 STRIP_TRAILER = 5
+STRIP_TRAILERS = (5, 8)
 #: a strip longer than this means the parse has come off the rails
 STRIP_MAX = 4096
 
@@ -286,7 +291,31 @@ class Mesh:
         return out
 
 
-def mesh(dgc: bytes, rec: Record) -> Mesh:
+def strip_trailer(dgc: bytes, entries: list, found: list | None = None) -> int:
+    """Which trailer this file uses, decided by which one reads more of its meshes."""
+    byhash = {e.hash: e for e in entries if e.hash}
+    recs = [
+        r
+        for r in (found if found is not None else records(dgc, entries))
+        if byhash.get(r.ident) is not None and byhash[r.ident].kind == "TMESH"
+    ]
+    if not recs:
+        return STRIP_TRAILER
+    best = (0, STRIP_TRAILER)
+    for trailer in STRIP_TRAILERS:
+        ok = 0
+        for r in recs:
+            try:
+                mesh(dgc, r, trailer)
+                ok += 1
+            except (TotemError, struct.error, ValueError):
+                pass
+        if ok > best[0]:
+            best = (ok, trailer)
+    return best[1]
+
+
+def mesh(dgc: bytes, rec: Record, trailer: int = STRIP_TRAILER) -> Mesh:
     import numpy as np
 
     end = rec.end
@@ -314,12 +343,12 @@ def mesh(dgc: bytes, rec: Record) -> Mesh:
             raise TotemError("the strip list runs past the record")
         count = struct.unpack_from(">I", dgc, o)[0]
         o += 4
-        if count > STRIP_MAX or o + 2 * count + STRIP_TRAILER > end:
+        if count > STRIP_MAX or o + 2 * count + trailer > end:
             raise TotemError(f"a strip of {count} indices runs past the record")
         idx = struct.unpack_from(f">{count}H", dgc, o)
         o += 2 * count
         strips.append(Strip(idx, struct.unpack_from(">I", dgc, o)[0], dgc[o + 4]))
-        o += STRIP_TRAILER
+        o += trailer
     worst = max((max(s.indices) for s in strips if s.indices), default=-1)
     if worst >= len(positions):
         raise TotemError(f"index {worst} outside {len(positions)} positions")

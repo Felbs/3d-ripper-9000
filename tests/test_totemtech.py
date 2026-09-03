@@ -217,3 +217,57 @@ def test_the_plugin_says_so_when_the_index_is_missing():
     dgc, _ = make_dgc([("DB:>A>ONE.TMESH", make_mesh_payload(CUBE, [((0, 1, 2), 2)]))])
     with pytest.raises(totemtech.TotemError, match="no sibling"):
         plugin.extract(dgc, "lvl/A.dgc", _Src({"lvl/A.dgc": dgc}))
+
+
+# -- the second vintage: an 8-byte strip trailer ---------------------------------------------
+
+
+def make_mesh_payload_t8(positions, strips, *, uvs=(), normals=()) -> bytes:
+    """The Jimmy Neutron / SpongeBob vintage: eight bytes after each strip, not five."""
+    out = bytearray(b"\x00" * (totemtech.MESH_VERTEX_COUNT - totemtech.REC_HEADER))
+    out += struct.pack(">I", len(positions))
+    for p in positions:
+        out += struct.pack(">3f", *p)
+    out += struct.pack(">I", len(uvs))
+    for u in uvs:
+        out += struct.pack(">2f", *u)
+    out += struct.pack(">I", len(normals))
+    for n in normals:
+        out += struct.pack(">3f", *n)
+    out += struct.pack(">I", len(strips))
+    for idx, mode in strips:
+        out += struct.pack(">I", len(idx)) + struct.pack(f">{len(idx)}H", *idx)
+        out += struct.pack(">I", 6) + bytes([mode]) + b"\x00\x00\x00"
+    return bytes(out)
+
+
+#: one strip cannot tell the trailers apart - it takes a few for a wrong one to desynchronise,
+#: which is exactly how the real files behave
+MANY = [((0, 1, 2, 3), 2), ((1, 2, 3, 4), 2), ((2, 3, 4, 5), 1), ((0, 2, 4), 2)]
+
+
+def test_the_eight_byte_trailer_reads_where_five_does_not():
+    dgc, ngc = make_dgc([("DB:>A>ONE.TMESH", make_mesh_payload_t8(CUBE, MANY))])
+    entries = totemtech.index(ngc)
+    rec = totemtech.records(dgc, entries)[0]
+    with pytest.raises(totemtech.TotemError):
+        totemtech.mesh(dgc, rec, 5)
+    mesh = totemtech.mesh(dgc, rec, 8)
+    assert len(mesh.triangles()) == 7
+
+
+def test_the_file_is_asked_which_trailer_it_uses():
+    """Measured, the two never both work: 52 of 52 against 1 of 52 on one disc, 0 of 69
+    against 69 of 69 on the other."""
+    five, ngc5 = make_dgc([("DB:>A>ONE.TMESH", make_mesh_payload(CUBE, MANY))])
+    eight, ngc8 = make_dgc([("DB:>A>ONE.TMESH", make_mesh_payload_t8(CUBE, MANY))])
+    assert totemtech.strip_trailer(five, totemtech.index(ngc5)) == 5
+    assert totemtech.strip_trailer(eight, totemtech.index(ngc8)) == 8
+
+
+def test_the_plugin_reads_a_second_vintage_file_end_to_end():
+    from gcrip.plugins import totemtech as plugin
+
+    dgc, ngc = make_dgc([("DB:>A>ONE.TMESH", make_mesh_payload_t8(CUBE, MANY))])
+    scenes = plugin.extract(dgc, "lvl/A.dgc", _Src({"lvl/A.dgc": dgc, "lvl/A.ngc": ngc}))
+    assert len(scenes) == 1 and scenes[0].triangles == 7

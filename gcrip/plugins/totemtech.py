@@ -44,12 +44,16 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
     byhash = {e.hash: e for e in entries if e.hash}
     scenes: list[Scene] = []
     dropped: list[str] = []
-    for rec in totemtech.records(data, entries):
+    found = totemtech.records(data, entries)
+    # the strip trailer differs by disc - 5 bytes on Spirits & Spells, 8 on the other two -
+    # so ask the file which one reads its meshes rather than assuming
+    trailer = totemtech.strip_trailer(data, entries, found)
+    for rec in found:
         entry = byhash.get(rec.ident)
         if entry is None or entry.kind != "TMESH":
             continue
         try:
-            mesh = totemtech.mesh(data, rec)
+            mesh = totemtech.mesh(data, rec, trailer)
         except totemtech.TotemError as exc:
             dropped.append(f"{entry.name}: {exc}")
             continue
