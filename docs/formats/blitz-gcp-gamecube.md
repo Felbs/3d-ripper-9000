@@ -306,3 +306,58 @@ A planar reading - the first `w*h` bytes one 8-bit plane, the rest another - is 
 tried that produces anything: the *second* plane scores 31.8 tiled at 8x4, against 115 for the
 first and 76-94 for every interleaved reading.  That is still far above a real image and rests
 on a single sample, so it is a lead and not a finding.
+
+
+## CLOSED 2026-09-03: the actors were in the packs all along - read with the engine's own names
+
+Bratz: Rock Angelz ships **`Bratz_NGC_M.elf`** - 10 MB, with `.symtab`, `.strtab` and full
+DWARF 1 `.debug` sections.  A 60-line DWARF 1 reader (`scratchpad/dwarf1.py`) gives every
+struct with member names and offsets: `_TBPackageIndex`, `_TBActor`, `_TBActorNode`,
+`_TBMesh`, `_TBSoftSkin`, `_TBMeshBatch`, `_TBMeshPrim`, `_TBPrimVertex`, `_TBTexture`.
+Every number below is a field name from the engine, not a guess.
+
+**The packs have a resource index** (`gcrip/formats/blitz_pack.py`): `_TBPackageIndex` is the
+pack header, offsets in 32-byte units; the index is 32 bytes a file (`offset, crc, size, name
+offset, 1, tags, owner, flags`) and the filename table names them - `t_office_corr_poster`,
+`o_npc_kirstee`, `bo 1 shop.lmp`, `m_character_g_dressingroom_animations`.  Every resource
+opens with `_TBResourceInfo`, whose byte at +6 is the type: 0 texture, 1 actor, 15
+simulation.  The "texture packs" of the earlier note were packs whose first resource was a
+texture; `common_BP Hair_Hat 01 Sector.gcp` holds two textures, a 47 KB actor
+(`o_g_hathair_birthday_cl`), a `.sim` and a shadow-volume actor.
+
+**Actors** (`gcrip/formats/blitz_actor.py`): a serialised `_TBActor` with every pointer an
+offset from the resource start.  The node tree (`_TBActorNode`, 308 bytes: position / scale /
+orientation animation tracks whose bases are the rest pose, `next` / `children`, type, name)
+hangs off `rootNode`; a type-2 node embeds a `_TBMesh` at +112.  Two geometry encodings:
+
+* **display list** (vertexType 16 / 17 / 24, and the `_TBSoftSkin` at actor +32 for 17 / 21 /
+  22): GX strips over indexed arrays - positions f32, normals s8/64, texcoords f32, colours
+  RGBA8 - with the per-vertex layout by type: 16 / 24 are four u16 indices (pos, nrm, clr,
+  tex), 17 is `u16 pos, u16 nrm, RGBA8, RGBA8, u16 tex` (colours written into the list), and
+  the soft-skin types lead with a u8 matrix index.  Batches take the primitives in order and
+  name their textures by CRC.
+* **prim-vertex stream** (vertexType 1 / 2, the lightmapped `.lmp` level props): a run of
+  `_TBPrimVertex` records (`x y z nx ny nz rgba u v`, 36 bytes; type 2 adds a lightmap `u v`,
+  44 bytes) consumed in order by `_TBMeshPrim` records (`primType, flags, noofVertices,
+  noofDrawPrims`).
+
+**Textures** (`_TBTexture`, 160 bytes: `xDim, yDim, format` at +32, `palette` at +108, `frames`
+at +112 pointing at the pixels): format 21 is CMPR, 15 RGB5A3, **18 is C8 behind a 256-entry
+RGB5A3 palette** (the compact mirror decodes).  Format 17 (63 of 500 sampled) is 8 bits a
+pixel behind a 512-byte block that is not an RGB5A3 palette in either tile order - still open.
+
+`plugins.blitz` now expands a bare pack into `<name>.<crc>.tba` actors and `<name>.<crc>.tbt`
+textures (the stamped `.pkg` object streams stay); `plugins.blitz_actor` reads an actor and
+binds its textures by CRC across every pack the rip can reach; `plugins.blitz_tbt` exports
+textures on their own.
+
+**Measured on 27 Bratz packs: 107 actors, 107,191 triangles, 458 textures bound, no
+warnings.**  `o_npc_kirstee` is a textured Bratz NPC in T-pose with a 30-joint skeleton
+(`J_Root`, `J_Spine_1_Lower`, `J_Leg_L2_Knee` ...); `bo 1 shop.lmp` is a shop interior with
+its lightmap textures named.  Nine discs use this engine here: Bratz x2, Fairly OddParents
+x2, SpongeBob: Creature from the Krusty Krab, Pac-Man World 3, Zapper, Bad Boys, Cubix,
+Chicken Little.
+
+Open on this engine: texture format 17; skinned characters export in bind pose without
+weights (the `_TBSoftSkin` matrix indices are read but not the palette); `.sim` and the
+animation (`m_*`) resources.

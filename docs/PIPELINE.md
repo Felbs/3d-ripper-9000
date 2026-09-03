@@ -187,6 +187,10 @@ flowchart LR
         REL[".rel modules + SA Tools tables<br/>plugins.sadx"] --> SADX["Basic / Ginja land tables<br/>formats.sadx"]
         PRD["Billy Hatcher .prd (PRS + U:8-)<br/>plugins.billy"] --> BILLY[".arc Ginja trees + skins,<br/>.lnd terrain<br/>formats.billy, billy_lnd"]
     end
+    subgraph BLITZ["Blitz Games"]
+        GCP[".gcp pack index<br/>plugins.blitz"] --> TBA["actors .tba<br/>plugins.blitz_actor"]
+        GCP --> TBT["textures .tbt<br/>plugins.blitz_tbt"]
+    end
     subgraph HVS["High Voltage / Hudson"]
         FSTA["FSTA .jam<br/>plugins.fsta"] --> GGG["High Voltage GGG<br/>plugins.hvs_ggg"]
         HFS["Hudson hfs + PRS1 LZSS<br/>plugins.frogger_hfs"] --> RW
