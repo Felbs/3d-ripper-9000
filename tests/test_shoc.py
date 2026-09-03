@@ -55,8 +55,9 @@ def test_raw_members_carry_a_forty_byte_prefix():
 
 
 def test_a_member_spanning_several_data_chunks_is_joined():
-    """txf members reach 1.3 MB across many Rdat continuations - one chunk each would
-    truncate every one of them."""
+    """txf members reach 1.3 MB across many continuation chunks - one chunk each would
+    truncate every one of them.  (06 continues a zlib stream with more Zdat chunks; an Rdat
+    chunk is a separately packed block, see test_ea_rcmp.)"""
     body = b"abcdefgh" * 64
     packed = zlib.compress(body)
     half = len(packed) // 2
@@ -66,7 +67,7 @@ def test_a_member_spanning_several_data_chunks_is_joined():
         + bytes(8)
         + shdr(b"txf ", 3, len(body))
         + wrap(chunk(shoc.ZDAT, packed[:half]))
-        + wrap(chunk(b"Rdat", packed[half:]))
+        + wrap(chunk(shoc.ZDAT, packed[half:]))
     )
     (m,) = shoc.members(data)
     assert m.data == body

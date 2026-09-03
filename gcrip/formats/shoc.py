@@ -9,7 +9,8 @@ out as pairs::
 
     SHOC  wrapper, 8 bytes of zeros, then one inner chunk
       SHDR   u32 version | char type[4] | u32 index | u32 unpacked size
-      Zdat   a zlib stream
+      Zdat   a zlib stream (06)
+      Rdat   u32 unpacked size + EA's rcmp LZ (2003/2004/2005) - ea_rcmp
 
 so a member is an ``SHDR`` naming it and the data chunks that follow.  Members are typed rather
 than named - ``sfx``, ``ter``, ``tgd``, ``Cact``, ``txf``, ``SONO``, ``CAMC``.
@@ -27,6 +28,7 @@ import struct
 import zlib
 from dataclasses import dataclass
 
+from gcrip.formats import ea_rcmp
 from gcrip.identities import Identity
 
 HEADER = 8
@@ -88,13 +90,32 @@ def members(data: bytes) -> list[Member]:
         return []
     out: list[Member] = []
     head: tuple[str, int, int] | None = None
-    parts: list[bytes] = []
+    parts: list[tuple[bytes, bytes]] = []
 
     def flush() -> None:
         if head is None or not parts:
             return
         kind, index, unpacked = head
-        blob = b"".join(parts)
+        if any(inner == EALZ for inner, _ in parts):
+            pieces = []
+            for inner, payload in parts:
+                if inner == EALZ:
+                    # the 44-byte chunk header ends 40 bytes into the payload; then the
+                    # block's unpacked size and the rcmp stream
+                    if len(payload) < RAW_PREFIX + 4:
+                        return
+                    size = struct.unpack_from(">I", payload, RAW_PREFIX)[0]
+                    try:
+                        pieces.append(ea_rcmp.unpack(payload[RAW_PREFIX + 4 :], size))
+                    except ea_rcmp.RcmpError:
+                        return
+                else:
+                    pieces.append(payload[RAW_PREFIX:])
+            blob = b"".join(pieces)
+            if len(blob) == unpacked and unpacked:
+                out.append(Member(kind, index, blob))
+            return
+        blob = b"".join(payload for _, payload in parts)
         if blob[:1] == ZLIB_CMF:
             try:
                 blob = zlib.decompressobj().decompress(blob)
@@ -117,7 +138,7 @@ def members(data: bytes) -> list[Member]:
                 _version, kind, index, unpacked = struct.unpack(">I4s2I", body)
                 head = (kind.decode("latin-1").strip() or "data", index, unpacked)
         elif inner in DATA and head is not None:
-            parts.append(data[at + WRAPPER + HEADER : at + span])
+            parts.append((inner, data[at + WRAPPER + HEADER : at + span]))
     flush()
     return out
 

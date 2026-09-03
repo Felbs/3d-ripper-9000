@@ -34,6 +34,8 @@ Discs whose biggest file is video or audio are not dead ends - they are discs wh
 were not in the census's biggest file.  Rows 3, 4, 6 and 9 are that.  They need a second pass
 that ranks files by "looks like geometry" rather than by size.
 
+Tiger Woods 2003-2005 (five discs, not in the table because they were counted under `.hog`) fell the same day: `Rdat` is EA's `rcmp`, also read out of a DOL.
+
 ## Running total
 
 Library: **1,085,308 models / 479.4 M triangles over 637 discs** before wave 30.  Wave 30 is
