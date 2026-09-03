@@ -7,6 +7,11 @@ Madagascar and Piglet's BIG GAME.  Five of those six produce nothing today.
 **The premise is wrong.**  On the three discs whose `.rws` are not opened at all, every one of
 them is streamed audio, and there is no geometry in them to find.
 
+**Scope, added 2026-09-03:** that was measured on Asterix, Madagascar and Piglet and holds
+there.  It does **not** extend to Call of Duty: Finest Hour, whose 231 `.rws` are two different
+things under one extension - the big ones are this audio, and the `s_*` are RenderWare levels
+behind an 8-byte header.  See [cod-finest-hour-rws.md](cod-finest-hour-rws.md).
+
 ## What a `.rws` actually is on these discs
 
 A single RenderWare chunk that wraps the whole file exactly:
