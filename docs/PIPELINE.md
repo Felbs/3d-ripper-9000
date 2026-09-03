@@ -207,6 +207,8 @@ flowchart LR
         RTC["symbols.rtc / name.rtc<br/>formats.ea_la.rtc_tables"] -.->|"ELF tails by hash / index"| MSH2
         LVO[".o objects in level.viv<br/>plugins.eagl"] --> LAPK
         GSH[".gsh / .csf / _Art.cpt SHPG"] -.->|"by SHAPENAME"| LAPK
+        DMF[".dmf clusters over .skl<br/>plugins.ea_la"]
+        TPK[".tpk TPAC packs"] -.->|"by texture name"| DMF
     end
     subgraph NLG["Next Level Games"]
         GLG[".glg chunk units<br/>plugins.nlg_glg"]

@@ -46,6 +46,10 @@ names but wraps **EAGL** objects (``gcrip.formats.eagl``, the EA LA packet layou
                   (u32 id, u32 offset, u32 bytes) sorted by id
 
 Rising Sun's 5,141 ``.msh`` / 1,286 ``.cpt`` and GoldenEye's 1,264 / 172 are this shape.
+
+Frontline's characters are ``.dmf`` cluster-skinned meshes drawn over a ``.skl`` skeleton
+(``CDMesh::Init`` / ``BindSkeleton`` / ``DMClusterSynthesizeMatrices``), textured from the
+level's ``.tpk`` (``TPAC``) packs - see the ``dmf`` section below.
 """
 
 from __future__ import annotations
@@ -310,3 +314,275 @@ def cpt_shapes(data: bytes) -> bytes | None:
         return None
     blob = data[w[2] : w[2] + w[3]]
     return blob if ea_shape.is_shape(blob[:16]) else None
+
+
+# ---------------------------------------------------------------------------
+# Frontline characters: .dmf cluster-skinned meshes, .skl skeletons, .tpk texture packs
+# ---------------------------------------------------------------------------
+#
+# ``.dmf`` (``"DMF\0"``, version 0x06010003 big-endian; the 0x05010000 files are the PS2
+# layout the disc still carries) is a fixed header of offsets from the file start
+# (``CDMesh::Init`` relocates every one by adding the base)::
+#
+#     +0x0c name (16)     +0x20 clusters count, +0x24 table of u8 bone, u8 parent bone,
+#     u16 weight / 4096   +0x28 render objects count, +0x2c table (0x38 each: +0x28 texture
+#     index, +0x2c part count, +0x30 parts, +0x34 display lists)
+#     +0x30 texture names count, +0x34 table (16 each)   +0x48 bone names count, +0x4c
+#     table (16 each)   +0x50 bone rest angles (s16 xyz, 65536 a turn)
+#     +0x5c/+0x60 positions s16 xyz (14 fraction bits)   +0x64/+0x68 normals s16 xyz
+#     +0x6c/+0x70 texcoords s16 st (14 fraction bits)
+#     part (18): u32 display list, u16 size / 32, u16 bone count, u8 cluster x 10
+#     display list: GX strips of 7-byte corners: u8 matrix slot (3 x the part's cluster
+#     index), u16 position, u16 normal, u16 texcoord
+#
+# A cluster is a frame between a bone and its parent (``DMClusterSynthesizeMatrices``: the
+# parent's world matrix, rotated by the bone's angles blended towards the pose by the
+# weight, at the parent's position); at rest the pose equals the rest angles, so a cluster
+# is ``world[parent] x rot_yzx(rest[bone])`` at ``world[parent]``'s origin.  The skeleton
+# (``.skl``, ``"1LKS"``, little-endian: u16 bones at +6, u32 name table at +0xc; records at
+# +0x20 of f32 xyz + i32 depth) is walked depth-first (``DMClusterSkelTraverseHeirarchy``)
+# with the same rotation, angles taken from the mesh's rest table by bone name.
+# ``_matrix_rot_yzx`` rotates a right / front / up row matrix about its own front (y), up
+# (z), then right (x) axes; angles are s16 turns / 65536 (the ELF converts with 2 pi / 65536).
+#
+# ``.tpk`` (``"TPAC"``, u32 count, u32 name width 16, u32 table offset; names, then u32
+# entry offsets, each entry's first word the offset of its ``SHPG``) supplies the textures
+# by name.
+
+DMF_MAGIC = b"DMF\0"
+DMF_VERSION = 0x06010003
+DMF_VERSION_PS2 = 0x05010000
+SKL_MAGIC = b"1LKS"
+TPK_MAGIC = b"TPAC"
+DMF_POS_SCALE = 1.0 / 16384.0
+DMF_UV_SCALE = 1.0 / 16384.0
+DMF_PART = 18
+DMF_OBJECT = 0x38
+DMF_CORNER = 7
+
+
+def is_dmf(head: bytes) -> bool:
+    return (
+        len(head) >= 8 and head[:4] == DMF_MAGIC and _u32(head, 4) in (DMF_VERSION, DMF_VERSION_PS2)
+    )
+
+
+def is_skl(head: bytes) -> bool:
+    return len(head) >= 8 and head[:4] == SKL_MAGIC
+
+
+def is_tpk(head: bytes) -> bool:
+    return len(head) >= 16 and head[:4] == TPK_MAGIC and _u32(head, 8) == 16
+
+
+def rot_yzx(m: np.ndarray, ax: float, ay: float, az: float) -> np.ndarray:
+    """``_matrix_rot_yzx``: the row matrix (right, front, up) rotated about its own axes -
+    front (y) by ``ay``, then up (z) by ``az``, then right (x) by ``ax``; angles in turns /
+    65536."""
+    k = 2.0 * np.pi / 65536.0
+    sx, cx = np.sin(ax * k), np.cos(ax * k)
+    sy, cy = np.sin(ay * k), np.cos(ay * k)
+    sz, cz = np.sin(az * k), np.cos(az * k)
+    right, front, up = m[0], m[1], m[2]
+    a = cy * right - sy * up
+    c = cy * up + sy * right
+    b = cz * front - sz * a
+    a2 = cz * a + sz * front
+    return np.array([a2, cx * b + sx * c, cx * c - sx * b], np.float32)
+
+
+@dataclass
+class Skeleton:
+    names: list[str]
+    records: list[tuple[float, float, float, int]]  # local translation, depth
+
+    def world(self, angles: np.ndarray) -> list[tuple[np.ndarray, np.ndarray]]:
+        """(rotation rows, position) per joint, walked depth-first with a matrix stack."""
+        out: list[tuple[np.ndarray, np.ndarray]] = []
+        stack: list[tuple[np.ndarray, np.ndarray]] = []
+        for j, (x, y, z, depth) in enumerate(self.records):
+            while len(stack) > depth + 1:
+                stack.pop()
+            rot, pos = (
+                stack[-1] if stack else (np.eye(3, dtype=np.float32), np.zeros(3, np.float32))
+            )
+            p = np.array([x, y, z], np.float32) @ rot + pos
+            rot2 = rot_yzx(rot, *angles[j])
+            stack.append((rot2, p))
+            out.append((rot2, p))
+        return out
+
+
+def parse_skl(d: bytes) -> Skeleton:
+    if not is_skl(d[:8]):
+        raise EalaError("not a skeleton")
+    n = struct.unpack_from("<H", d, 6)[0]
+    names_at = struct.unpack_from("<I", d, 0xC)[0]
+    if n > MAX_COUNT or 0x20 + 16 * n > len(d) or names_at + 20 * n > len(d):
+        raise EalaError("skeleton tables past the file")
+    records = [struct.unpack_from("<3fi", d, 0x20 + 16 * i) for i in range(n)]
+    names = [
+        d[names_at + 20 * i + 4 : names_at + 20 * i + 20].split(b"\0")[0].decode("latin-1")
+        for i in range(n)
+    ]
+    return Skeleton(names, records)
+
+
+@dataclass
+class DmfPart:
+    texture: str
+    positions: np.ndarray
+    triangles: np.ndarray
+    normals: np.ndarray
+    uvs: np.ndarray
+
+
+@dataclass
+class DmfModel:
+    name: str
+    bones: list[str]
+    parts: list[DmfPart]
+    warnings: list[str] = field(default_factory=list)
+
+
+def _names(d: bytes, at: int, count: int) -> list[str]:
+    return [
+        d[at + 16 * i : at + 16 * i + 16].split(b"\0")[0].decode("latin-1") for i in range(count)
+    ]
+
+
+def _dmf_corners(d: bytes, dl: int, end: int) -> tuple[np.ndarray, list[tuple[int, int, int]]]:
+    p, rows, prims = dl, [], []
+    while p + 3 <= end:
+        op = d[p]
+        if op == 0:
+            p += 1
+            continue
+        if (op & 0xF8) not in (0x80, 0x90, 0x98, 0xA0):
+            break
+        count = (d[p + 1] << 8) | d[p + 2]
+        if count == 0 or p + 3 + count * DMF_CORNER > len(d):
+            break
+        prims.append((op & 0xF8, count, len(rows)))
+        rows += [struct.unpack_from(">BHHH", d, p + 3 + DMF_CORNER * i) for i in range(count)]
+        p += 3 + count * DMF_CORNER
+    return np.array(rows, np.int64).reshape(-1, 4), prims
+
+
+def parse_dmf(d: bytes, skeleton: Skeleton | None) -> DmfModel:
+    """The mesh in its rest pose over ``skeleton`` (bone space with the skeleton's clusters
+    at the origin when None)."""
+    if not is_dmf(d[:8]):
+        raise EalaError("not a DMF")
+    if _u32(d, 4) != DMF_VERSION:
+        raise EalaError("PS2 layout (version 0x05010000)")
+    w = struct.unpack_from(">32I", d, 0)
+    model = DmfModel(d[0xC:0x1C].split(b"\0")[0].decode("latin-1"), [], [])
+    n_cl, p_cl = w[0x20 // 4], w[0x24 // 4]
+    n_obj, p_obj = w[0x28 // 4], w[0x2C // 4]
+    n_tex, p_tex = w[0x30 // 4], w[0x34 // 4]
+    n_bone, p_bone, p_rest = w[0x48 // 4], w[0x4C // 4], w[0x50 // 4]
+    n_pos, p_pos, n_nrm, p_nrm, n_uv, p_uv = w[0x5C // 4 : 0x74 // 4]
+    for count, at, size in (
+        (n_cl, p_cl, 4), (n_obj, p_obj, DMF_OBJECT), (n_tex, p_tex, 16), (n_bone, p_bone, 16),
+        (n_bone, p_rest, 6), (n_pos, p_pos, 6), (n_nrm, p_nrm, 6), (n_uv, p_uv, 4),
+    ):  # fmt: skip
+        if count > MAX_COUNT or at + count * size > len(d):
+            raise EalaError("DMF tables past the file")
+    model.bones = _names(d, p_bone, n_bone)
+    textures = _names(d, p_tex, n_tex)
+    rest = np.frombuffer(d, ">i2", n_bone * 3, p_rest).reshape(n_bone, 3).astype(np.int32)
+    pos = np.frombuffer(d, ">i2", n_pos * 3, p_pos).reshape(n_pos, 3).astype(np.float32)
+    pos *= DMF_POS_SCALE
+    nrm = np.frombuffer(d, ">i2", n_nrm * 3, p_nrm).reshape(n_nrm, 3).astype(np.float32) / 32767.0
+    uv = np.frombuffer(d, ">i2", n_uv * 2, p_uv).reshape(n_uv, 2).astype(np.float32) * DMF_UV_SCALE
+    # cluster frames at rest: the parent joint's world frame turned by the bone's rest angles
+    joint = [-1] * n_bone
+    world: list[tuple[np.ndarray, np.ndarray]] = []
+    if skeleton is not None:
+        joint = [skeleton.names.index(n) if n in skeleton.names else -1 for n in model.bones]
+        angles = np.zeros((len(skeleton.records), 3), np.int32)
+        for i, j in enumerate(joint):
+            if j >= 0:
+                angles[j] = rest[i]
+        world = skeleton.world(angles)
+        missing = [n for n, j in zip(model.bones, joint, strict=True) if j < 0]
+        if missing:
+            model.warnings.append(f"{len(missing)} bones not in the skeleton: {missing[:4]}")
+    identity = (np.eye(3, dtype=np.float32), np.zeros(3, np.float32))
+    clusters = []
+    for i in range(n_cl):
+        bone, parent, _weight = struct.unpack_from(">BBH", d, p_cl + 4 * i)
+        rot, at = identity
+        j = joint[parent] if parent < n_bone else -1
+        if j >= 0:
+            rot, at = world[j]
+        if bone < n_bone:
+            rot = rot_yzx(rot, *rest[bone])
+        clusters.append((rot, at))
+    morphs = 0
+    for k in range(n_obj):
+        o = p_obj + DMF_OBJECT * k
+        tex, n_part, p_part, _ = struct.unpack_from(">4I", d, o + 0x28)
+        if n_part > MAX_COUNT or p_part + n_part * DMF_PART > len(d):
+            model.warnings.append(f"object {k}: parts past the file")
+            continue
+        for r in range(n_part):
+            rec = d[p_part + DMF_PART * r : p_part + DMF_PART * (r + 1)]
+            dl, size, n_b = struct.unpack_from(">IHH", rec, 0)
+            part_clusters = list(rec[8 : 8 + min(n_b, 10)])
+            if dl >= len(d):
+                model.warnings.append(f"object {k} part {r}: display list past the file")
+                continue
+            rows, prims = _dmf_corners(d, dl, min(len(d), dl + size * 32))
+            if not len(rows):
+                # the heads' morph targets (DMMorphObject: u16 index, s16 delta pairs) sit in
+                # objects of the same shape; they are not geometry
+                morphs += 1
+                continue
+            if rows[:, 1].max() >= n_pos or rows[:, 2].max() >= n_nrm or rows[:, 3].max() >= n_uv:
+                model.warnings.append(f"object {k} part {r}: corner index outside the arrays")
+                continue
+            p = pos[rows[:, 1]].copy()
+            n = nrm[rows[:, 2]].copy()
+            slots = rows[:, 0] // 3
+            for c in np.unique(slots):
+                if c >= len(part_clusters) or part_clusters[c] >= len(clusters):
+                    continue
+                rot, at = clusters[part_clusters[c]]
+                sel = slots == c
+                p[sel] = p[sel] @ rot + at
+                n[sel] = n[sel] @ rot
+            tri = j3d_triangles(prims)
+            name = textures[tex] if tex < n_tex else f"texture_{tex}"
+            model.parts.append(DmfPart(name, p, tri, n, uv[rows[:, 3]]))
+    if morphs:
+        model.warnings.append(f"{morphs} morph-target objects skipped")
+    return model
+
+
+def j3d_triangles(prims: list[tuple[int, int, int]]) -> np.ndarray:
+    tris = []
+    for op, count, start in prims:
+        t = j3d.triangulate(op, count)
+        if len(t):
+            tris.append(t + start)
+    return np.concatenate(tris) if tris else np.zeros((0, 3), np.int64)
+
+
+def tpk_shapes(d: bytes) -> dict[str, bytes]:
+    """upper-case texture name -> SHPG bytes of a TPAC pack."""
+    if not is_tpk(d[:16]):
+        return {}
+    count, _width, table = struct.unpack_from(">3I", d, 4)
+    if count > MAX_COUNT or table + 4 * count > len(d) or 16 + 16 * count > table:
+        return {}
+    out: dict[str, bytes] = {}
+    for i, name in enumerate(_names(d, 16, count)):
+        entry = _u32(d, table + 4 * i)
+        if entry + 4 > len(d):
+            continue
+        at = _u32(d, entry)
+        if at + 16 <= len(d) and ea_shape.is_shape(d[at : at + 16]):
+            out.setdefault(name.upper(), d[at:])
+    return out

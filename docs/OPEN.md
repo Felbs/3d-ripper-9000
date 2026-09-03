@@ -57,7 +57,7 @@ EA LA's 2002 engine, read from the shipped ELF's symbols: `.msh` static meshes a
 level compartments over GX arrays with the display-list headers filled in at load, materials
 as embedded `SHPG` shapes, compartments sharing the level's art file.  One level: 132k
 triangles, 1,172 of 1,289 materials textured.  See
-[formats/ea-la-frontline.md](formats/ea-la-frontline.md).  Left: `.dmf` skinned characters.
+[formats/ea-la-frontline.md](formats/ea-la-frontline.md).  The `.dmf` characters followed the same day: cluster frames rebuilt from the `.skl` and the mesh's rest angles (`DMClusterSynthesizeMatrices`), textures from the `TPAC` packs - a 1.48 m soldier in a T-pose.  Left: joints for the skin.
 
 ## Closed 2026-09-03: Medal of Honor: Rising Sun, GoldenEye: Rogue Agent
 

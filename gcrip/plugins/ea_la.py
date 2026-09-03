@@ -9,7 +9,11 @@ Rising Sun / GoldenEye (2003-04): the files wrap EAGL objects whose symbol table
 the level's ``symbols.rtc`` (``.msh``) or the ``<name>.rtc`` beside a compartment; one Scene
 per embedded model, textures from the ``.gsh`` / ``.csf`` shape files and the ``_Art.cpt``
 shape bundle of the level - in the same container first, then the containers beside it
-(``comp.viv`` compartments draw on ``level.viv``)."""
+(``comp.viv`` compartments draw on ``level.viv``).
+
+Frontline's ``.dmf`` characters (cluster-skinned, rest pose over the ``.skl`` skeleton of the
+same stem or the level's skeleton whose joint names match best; textures from the level's
+``.tpk`` packs) - one Scene a file, in bind pose without joints."""
 
 from __future__ import annotations
 
@@ -30,7 +34,118 @@ def detect(path: str, head: bytes, size: int) -> bool:
     low = path.lower()
     if low.endswith(".msh"):
         return ea_la.is_msh(head, size) or ea_la.is_eagl_msh(head, size)
+    if low.endswith(".dmf"):
+        # the 0x05010000 files beside them are the PS2 layout the disc still carries
+        return ea_la.is_dmf(head) and struct.unpack_from(">I", head, 4)[0] == ea_la.DMF_VERSION
     return low.endswith(".cpt") and (ea_la.is_cpt(head, size) or ea_la.is_eagl_cpt(head, size))
+
+
+# ---------------------------------------------------------------------------
+# Frontline .dmf characters
+# ---------------------------------------------------------------------------
+
+_SKELETON_ATTR = "_ea_la_skeletons"
+_TPK_ATTR = "_ea_la_tpk_index"
+
+
+def _skeletons(src, path: str) -> list[tuple[str, ea_la.Skeleton]]:
+    """Every .skl of the level (parsed once per level folder, cached on the source)."""
+    cache = getattr(src, _SKELETON_ATTR, None)
+    if cache is None:
+        cache = {}
+        with contextlib.suppress(Exception):
+            setattr(src, _SKELETON_ATTR, cache)
+    key = posixpath.dirname(posixpath.dirname(path))
+    if key not in cache:
+        found = []
+        for p in _level_paths(src, path):
+            if p.lower().endswith(".skl"):
+                with contextlib.suppress(Exception):
+                    found.append((p, ea_la.parse_skl(src.get(p))))
+        cache[key] = found
+    return cache[key]
+
+
+def _skeleton_for(src, path: str, bones: list[str]) -> ea_la.Skeleton | None:
+    """The .skl of the same stem, else the level skeleton naming the most of ``bones``."""
+    if src is None or not hasattr(src, "by_path"):
+        return None
+    stem = posixpath.basename(path).rsplit(".", 1)[0].lower()
+    folder = posixpath.dirname(path)
+    best: tuple[int, int, ea_la.Skeleton] | None = None
+    for p, sk in _skeletons(src, path):
+        same = posixpath.basename(p).rsplit(".", 1)[0].lower() == stem
+        near = posixpath.dirname(p) == folder
+        hits = sum(1 for b in bones if b in sk.names)
+        score = (2 if same else 0) + (1 if near else 0), hits
+        if hits and (best is None or score > best[:2]):
+            best = (*score, sk)
+    return best[2] if best else None
+
+
+def _tpk_index(src, path: str) -> dict[str, bytes]:
+    """upper-case texture name -> SHPG over the level's .tpk packs (cached per level)."""
+    cache = getattr(src, _TPK_ATTR, None)
+    if cache is None:
+        cache = {}
+        with contextlib.suppress(Exception):
+            setattr(src, _TPK_ATTR, cache)
+    key = posixpath.dirname(posixpath.dirname(path))
+    if key not in cache:
+        index: dict[str, bytes] = {}
+        folder = posixpath.dirname(path)
+        paths = [p for p in _level_paths(src, path) if p.lower().endswith(".tpk")]
+        paths.sort(key=lambda p: (posixpath.dirname(p) != folder, len(p)))
+        for p in paths:
+            with contextlib.suppress(Exception):
+                for name, blob in ea_la.tpk_shapes(src.get(p)).items():
+                    index.setdefault(name, blob)
+        cache[key] = index
+    return cache[key]
+
+
+def _extract_dmf(data: bytes, path: str, src) -> list[Scene]:
+    head = struct.unpack_from(">32I", data, 0)
+    bones = ea_la._names(data, head[0x4C // 4], min(head[0x48 // 4], ea_la.MAX_COUNT))
+    skeleton = _skeleton_for(src, path, bones)
+    model = ea_la.parse_dmf(data, skeleton)
+    scene = Scene(name=model.name or posixpath.basename(path).rsplit(".", 1)[0])
+    scene.warnings += model.warnings
+    if skeleton is None:
+        scene.warnings.append("no skeleton: parts left in cluster space")
+    shapes = _tpk_index(src, path) if src is not None and hasattr(src, "by_path") else {}
+    materials: dict[str, int] = {}
+    for part in model.parts:
+        if part.texture not in materials:
+            key = None
+            blob = shapes.get(part.texture.upper())
+            if blob is not None:
+                try:
+                    img = next((s.rgba for s in ea_shape.parse(blob) if s.rgba is not None), None)
+                except Exception as e:  # noqa: BLE001 - one bad shape, the rest bind
+                    img = None
+                    scene.warnings.append(f"{part.texture}: {e}")
+                if img is not None:
+                    key = part.texture
+                    scene.textures[key] = img
+            materials[part.texture] = len(scene.materials)
+            scene.materials.append(MaterialDef(name=part.texture, texture=key, double_sided=True))
+        scene.primitives.append(
+            Primitive(
+                material=materials[part.texture],
+                positions=np.ascontiguousarray(part.positions, dtype=np.float32),
+                indices=part.triangles.reshape(-1).astype(np.uint32),
+                normals=np.ascontiguousarray(part.normals, dtype=np.float32),
+                uvs=part.uvs,
+            )
+        )
+    if scene.primitives:
+        scene.extras = {
+            "format": "ea_la_dmf",
+            "bones": len(model.bones),
+            "skeleton": skeleton is not None,
+        }
+    return [scene] if scene.primitives else []  # legitimate: warnings name every dropped part
 
 
 # ---------------------------------------------------------------------------
@@ -167,6 +282,8 @@ def _art_materials(src, path: str) -> tuple[bytes, list[ea_la.Material]] | None:
 
 
 def extract(data: bytes, path: str, src) -> list[Scene]:
+    if data[:4] == ea_la.DMF_MAGIC:
+        return _extract_dmf(data, path, src)
     version = struct.unpack_from(">I", data, 0)[0]
     if version in (ea_la.MSH_EAGL_VERSION, ea_la.CPT_EAGL_VERSION):
         return _extract_eagl(data, path, src)
