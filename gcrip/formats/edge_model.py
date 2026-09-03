@@ -48,6 +48,7 @@ layers whose first u32 is the texture's name hash - the same hash the index file
 
 from __future__ import annotations
 
+import math
 import struct
 from dataclasses import dataclass, field
 
@@ -107,6 +108,21 @@ def is_texture(head: bytes) -> bool:
 
 def is_shader(head: bytes) -> bool:
     return len(head) >= 8 and head[4:8] == SHADER
+
+
+def is_old_model(head: bytes) -> bool:
+    """The Sims (2003) ``models.arc`` member: ``u32 0, u16 0`` then the name."""
+    if len(head) < 12 or head[:4] not in (bytes(4), bytes((0, 1, 0, 0))) or head[4:6] != bytes(2):
+        return False
+    end = head.find(bytes(1), 6, 64)
+    return end > 6 and all(32 <= c < 127 for c in head[6:end])
+
+
+def any_texture(data: bytes) -> Texture:
+    """A ``TXFL`` member or a dataset ``LFXT`` entry, whichever this is."""
+    if is_texture(data[:8]):
+        return parse_texture(data)
+    return parse_entry_texture(data)
 
 
 class _Reader:
@@ -320,19 +336,44 @@ def _read_strip(
 
 
 def parse_model(data: bytes) -> Model:
+    """A ``MODL`` member with its EDataHeader (The Sims 2, Pets)."""
     h = header(data)
     if h is None or h.tag != MODEL:
         raise EdgeError("not an Edge of Reality model")
     if h.version not in MODEL_VERSIONS:
         raise EdgeError(f"{h.name}: model version {h.version:#x}")
-    r = _Reader(h.payload)
-    r.u32()
-    r.raw(0x30)
-    r.u8()
-    _skip_nodes(r)
+    return parse_payload(h.payload, h.version, h.name)
+
+
+def parse_payload(
+    payload: bytes,
+    version: int,
+    name: str = "",
+    leading_name: bool = False,
+    node_arrays: bool = True,
+    extra_word: bool = True,
+) -> Model:
+    """The model data behind a header.
+
+    ``leading_name``: The Urbz writes the model's name as a NUL-terminated string in front
+    (its dataset entries have an empty header name).  ``node_arrays``: The Sims (2003) has no
+    attachment / spline / dummy / camera / light arrays and no 48-byte block, only the flag and
+    the scale.  ``extra_word``: the u32 after the strip count that The Sims (2003) lacks."""
+    r = _Reader(payload)
+    if leading_name:
+        end = payload.find(b"\0")
+        if end < 0:
+            raise EdgeError("model name runs off the payload")
+        name = payload[:end].decode("latin-1")
+        r.p = end + 1
+    if node_arrays:
+        r.u32()
+        r.raw(0x30)
+        r.u8()
+        _skip_nodes(r)
     r.u8()
     scale = r.f32() or 1.0
-    model = Model(h.name, h.version, scale)
+    model = Model(name, version, scale)
     for _ in range(r.u32()):
         r.u32()
         for _ in range(r.u32()):
@@ -340,7 +381,8 @@ def parse_model(data: bytes) -> Model:
             shader = r.u32()
             nstrips = r.u32()
             r.raw(nstrips)
-            r.u32()
+            if extra_word:
+                r.u32()
             skinned = False
             while True:
                 op = r.u8()
@@ -348,7 +390,7 @@ def parse_model(data: bytes) -> Model:
                     break
                 if op == 0:
                     strip = _read_strip(
-                        r, flags, shader, skinned, scale, h.version, h.name, model.warnings
+                        r, flags, shader, skinned, scale, version, name, model.warnings
                     )
                     if strip is not None:
                         model.strips.append(strip)
@@ -360,10 +402,10 @@ def parse_model(data: bytes) -> Model:
                 elif op in (3, 5):
                     skinned = False
                 else:
-                    raise EdgeError(f"{h.name}: token {op} at {r.p - 1}")
+                    raise EdgeError(f"{name}: token {op} at {r.p - 1}")
     r.raw(16 + 24 + 24 + 4)
-    if r.p != len(h.payload):
-        model.warnings.append(f"{h.name}: {len(h.payload) - r.p} bytes after the bounds")
+    if len(payload) - r.p > 8:
+        model.warnings.append(f"{name}: {len(payload) - r.p} bytes after the bounds")
     return model
 
 
@@ -395,14 +437,18 @@ def parse_texture(data: bytes) -> Texture:
     h = header(data)
     if h is None or h.tag != TEXTURE:
         raise EdgeError("not an Edge of Reality texture")
-    d = h.payload
+    return _texture(h.name, h.payload)
+
+
+def _texture(name: str, d: bytes) -> Texture:
+    """A 32-byte ETextureDef, the mip chain and the palette."""
     if len(d) < 32:
-        raise EdgeError(f"{h.name}: texture header short")
+        raise EdgeError(f"{name}: texture header short")
     flags = struct.unpack_from(">I", d, 8)[0]
     w, h_, entries, _mips = struct.unpack_from(">HHHH", d, 0x10)
     fmt, _f19, bpp, bpe = d[0x18:0x1C]
     if fmt not in TEX_FORMATS:
-        raise EdgeError(f"{h.name}: texture format {fmt:#x}")
+        raise EdgeError(f"{name}: texture format {fmt:#x}")
     if fmt == 0 and bpp in (4, 8):
         fmt = 0x89 if bpp == 4 else 0x8A
     gx = TEX_FORMATS[fmt]
@@ -411,25 +457,35 @@ def parse_texture(data: bytes) -> Texture:
     if entries:
         pal_bytes = entries * bpe // 8
         if pal_bytes > len(pixels):
-            raise EdgeError(f"{h.name}: palette past the payload")
+            raise EdgeError(f"{name}: palette past the payload")
         palette = _palette(
             pixels[len(pixels) - pal_bytes :], entries, bpe, bool(flags & PRE_SPLIT_PALETTE)
         )
         pixels = pixels[: len(pixels) - pal_bytes]
     elif gx in (8, 9):
-        raise EdgeError(f"{h.name}: palette texture without a palette")
+        raise EdgeError(f"{name}: palette texture without a palette")
     need = gx_texture.encoded_size(gx, w, h_)
     if len(pixels) * 8 < w * h_ * gx_texture.BITS_PER_PIXEL[gx]:
-        raise EdgeError(f"{h.name}: {len(pixels)} bytes for a {w}x{h_} level")
-    return Texture(h.name, w, h_, fmt, gx_texture.decode(gx, w, h_, pixels[:need], palette))
+        raise EdgeError(f"{name}: {len(pixels)} bytes for a {w}x{h_} level")
+    return Texture(name, w, h_, fmt, gx_texture.decode(gx, w, h_, pixels[:need], palette))
 
 
 def shader_textures(data: bytes) -> list[int]:
-    """Name hashes of the textures a shader layers, first layer first."""
+    """Name hashes of the textures a shader layers, first layer first.
+
+    Takes a ``SHDR`` member or an Urbz dataset entry (a header with an empty name, then the
+    shader's name as a string, then the same ``EShaderDef``)."""
     h = header(data)
-    if h is None or h.tag != SHADER:
+    if h is not None and h.tag == SHADER:
+        d = h.payload
+    elif len(data) > 20 and data[4:16] == bytes(12) and data[:4] != bytes(4):
+        size = struct.unpack_from(">I", data, 16)[0]
+        end = data.find(bytes(1), 20)
+        if end < 0 or 20 + size > len(data):
+            raise EdgeError("shader name runs off the entry")
+        d = data[end + 1 : 20 + size]
+    else:
         raise EdgeError("not an Edge of Reality shader")
-    d = h.payload
     count = d[0] if d else 0
     out = []
     for i in range(min(count, 2)):
@@ -440,3 +496,61 @@ def shader_textures(data: bytes) -> list[int]:
         if ref:
             out.append(ref)
     return out
+
+
+# ---------------------------------------------------------------- dataset entries
+
+OLD_TEXTURE_HEADER = 20
+
+
+def _scale_at(data: bytes, start: int, limit: int = 48) -> int | None:
+    """Offset of the ``f32 scale, u32 submodels, u32 id, u32 shaders`` run that opens the body."""
+    for q in range(start, min(len(data) - 12, start + limit)):
+        scale = struct.unpack_from(">f", data, q)[0]
+        if not (2.0**-20 <= scale <= 16.0) or scale != 2.0 ** round(math.log2(scale)):
+            continue
+        nsub, ident, nsh = struct.unpack_from(">III", data, q + 4)
+        if 1 <= nsub <= 64 and (ident == 0xFFFFFFFF or ident < 0x10000) and 1 <= nsh <= 256:
+            return q
+    return None
+
+
+def parse_entry_model(payload: bytes) -> Model:
+    """A ``Models`` entry of a dataset (gcrip.formats.edge_dataset)."""
+    from gcrip.formats import edge_dataset
+
+    w = edge_dataset.model_wrapper(payload)
+    if w is None:
+        raise EdgeError("not a dataset model entry")
+    name, at, version = w
+    if version:
+        size = struct.unpack_from(">I", payload, 16)[0]
+        return parse_payload(payload[20 : 20 + size], version, leading_name=True)
+    q = _scale_at(payload, at)
+    if q is None:
+        raise EdgeError(f"{name}: no scale / submodel count after the name")
+    # the older exporters: no node arrays, the flag byte right before the scale, and Bustin'
+    # Out (first word 0x00010000) writes the u32 after the strip count that The Sims lacks
+    extra = payload[:4] != bytes(4)
+    return parse_payload(payload[q - 1 :], version, name, node_arrays=False, extra_word=extra)
+
+
+def parse_entry_texture(payload: bytes) -> Texture:
+    """A ``Textures`` entry of a dataset: ``LFXT``, a name, the header and the pixels."""
+    from gcrip.formats import edge_dataset
+
+    w = edge_dataset.texture_wrapper(payload)
+    if w is None:
+        raise EdgeError("not a dataset texture entry")
+    name, at = w
+    if payload[4:8] == edge_dataset.URBZ_TEXTURE:
+        return _texture(name, payload[at:])
+    if at + OLD_TEXTURE_HEADER > len(payload):
+        raise EdgeError(f"{name}: texture header short")
+    fmt, bpp, width, height, _f19, bpe, entries, flags, _x, mips = struct.unpack_from(
+        ">BBHHBBHIIH", payload, at
+    )
+    # rebuild the 32-byte header the newer discs write and share the decoder
+    hdr = struct.pack(">IIII", 0, 0, flags, 0) + struct.pack(">HHHH", width, height, entries, mips)
+    hdr += bytes([fmt, 0, bpp, bpe]) + bytes(4)
+    return _texture(name, hdr + payload[at + OLD_TEXTURE_HEADER :])

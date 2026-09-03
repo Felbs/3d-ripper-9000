@@ -1,5 +1,6 @@
-"""Edge of Reality ``MODL`` members (``Models/<hash>.bin`` out of ``models.arc``) - one Scene
-a model, textures bound through the disc's ``Shaders`` and ``Textures`` categories by name hash."""
+"""Edge of Reality models - ``MODL`` members (``Models/<hash>.bin`` out of ``models.arc``), the
+older discs' bare ``models.arc`` members and dataset entries (``.eorm``) - one Scene a model,
+textures bound through the disc's ``Shaders`` and ``Textures`` categories by name hash."""
 
 from __future__ import annotations
 
@@ -14,7 +15,20 @@ NAME = "edge_model"
 
 
 def detect(path: str, head: bytes, size: int) -> bool:
-    return path.lower().endswith(".bin") and size > 64 and edge_model.is_model(head[:8])
+    lower = path.lower()
+    if lower.endswith(".eorm"):
+        return size > 64
+    return (
+        lower.endswith(".bin")
+        and size > 64
+        and (edge_model.is_model(head[:8]) or edge_model.is_old_model(head))
+    )
+
+
+def _parse(data: bytes, path: str) -> edge_model.Model:
+    if path.lower().endswith(".eorm") or not edge_model.is_model(data[:8]):
+        return edge_model.parse_entry_model(data)
+    return edge_model.parse_model(data)
 
 
 class _Resources:
@@ -33,10 +47,10 @@ class _Resources:
         self.shaders = {}
         for p in self.src.by_path:
             parts = p.rsplit("/", 2)
-            if len(parts) < 3 or not parts[2].lower().endswith(".bin"):
+            if len(parts) < 3 or parts[1] not in ("Shaders", "Textures"):
                 continue
             try:
-                h = int(parts[2][:-4], 16)
+                h = int(parts[2].split(".")[0].split("_")[0], 16)
             except ValueError:
                 continue
             if parts[1] == "Shaders":
@@ -70,7 +84,7 @@ class _Resources:
         path = self.textures.get(ref)
         if path is not None:
             try:
-                out = edge_model.parse_texture(self.src.get(path))
+                out = edge_model.any_texture(self.src.get(path))
             except Exception:  # noqa: BLE001 - one bad texture must not stop the model
                 out = None
         if len(self.cache) > 256:
@@ -94,7 +108,7 @@ def _resources(src) -> _Resources | None:
 
 
 def extract(data: bytes, path: str, src) -> list[Scene]:
-    model = edge_model.parse_model(data)
+    model = _parse(data, path)
     stem = posixpath.basename(path).split(".")[0]
     scene = Scene(name=model.name or stem)
     scene.warnings += model.warnings

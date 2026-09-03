@@ -193,3 +193,113 @@ def test_index_with_the_pets_table_header():
     )
     cats = edge_ind.categories(data)
     assert [(e.hash, e.offset, e.size) for e in cats["Models"]] == entries
+
+
+# ------------------------------------------------------------ dataset members
+
+
+def _old_model(name: str, first: bytes, strips: list[bytes], extra: bool) -> bytes:
+    body = first + bytes(2) + name.encode() + bytes(1)
+    if extra:
+        body += bytes(16)  # Bustin' Out's version word and zeros
+    body += bytes([0]) + struct.pack(">fI", 1.0 / 4096.0, 1)
+    body += struct.pack(">II", 0xFFFFFFFF, 1)
+    body += struct.pack(">III", 0x1A, 0x1234, len(strips)) + bytes(len(strips))
+    if extra:
+        body += struct.pack(">I", 0)
+    body += b"".join(strips) + bytes([6]) + bytes(16 + 24 + 24 + 4) + bytes(5)
+    return body
+
+
+def _old_texture(name: str, fmt: int, w: int, h: int, pixels: bytes, wrapper: bytes = b"") -> bytes:
+    hdr = struct.pack(">BBHHBBHIIH", fmt, 4, w, h, 0, 0, 0, 0x493, 0, 0)
+    return b"LFXT" + wrapper + name.encode() + bytes(1) + hdr + pixels
+
+
+def _dataset_sims(name: str, sections: list[tuple[str, list[tuple[int, bytes]]]]) -> bytes:
+    out = name.encode() + bytes(1) + struct.pack(">I", len(sections))
+    for sname, entries in sections:
+        out += sname.encode() + bytes(1) + struct.pack(">I", len(entries))
+        for h, payload in entries:
+            out += struct.pack(">III", h, len(payload), 0) + payload
+    return out
+
+
+def test_sims_2003_dataset_models_and_textures_bind_by_hash():
+    from gcrip.formats import edge_dataset
+    from gcrip.plugins import edge_dataset as container
+
+    px = bytearray(gx_texture.encoded_size(0xE, 8, 8))
+    struct.pack_into(">HHI", px, 0, 0xF800, 0xF800, 0)
+    strip = _strip_tokens(0x1A, QUAD, version=0)  # three-byte normals, no colours
+    model = _old_model("prop_test", bytes(4), [strip], extra=False)
+    data = _dataset_sims(
+        "RF_TEST",
+        [
+            ("Textures", [(0x1234, _old_texture("prop_test", 0x81, 8, 8, bytes(px)))]),
+            ("Shaders", [(0x1234, b"Prop_Test\0\x01" + bytes(20))]),
+            ("Models", [(0x1234, model)]),
+        ],
+    )
+    assert edge_dataset.style(data[:96]) == edge_dataset.SIMS
+    kind, name, entries = edge_dataset.entries(data)
+    assert name == "RF_TEST" and [e.category for e in entries] == ["Textures", "Shaders", "Models"]
+    m = edge_model.parse_entry_model(entries[2].payload)
+    assert m.name == "prop_test" and m.strips[0].indices.size == 6 and not m.warnings
+    assert m.strips[0].normals.shape == (4, 3)
+    t = edge_model.parse_entry_texture(entries[0].payload)
+    assert t.name == "prop_test" and tuple(t.rgba[0, 0]) == (255, 0, 0, 255)
+
+    assert container.is_container("0000abcd.bin", data[:64])
+    members = dict(container.expand(data))
+    assert sorted(members) == [
+        "Models/00001234.eorm",
+        "Shaders/00001234.eors",
+        "Textures/00001234.eort",
+    ]
+    paths = {f"files/datasets.arc/Datasets/0000abcd.bin/{k}": v for k, v in members.items()}
+
+    class Src:
+        by_path = {k: None for k in paths}
+
+        def get(self, p):
+            return paths[p]
+
+    mpath = "files/datasets.arc/Datasets/0000abcd.bin/Models/00001234.eorm"
+    assert plugin.detect(mpath, paths[mpath][:64], len(paths[mpath]))
+    (scene,) = plugin.extract(paths[mpath], mpath, Src())
+    assert scene.name == "prop_test" and scene.materials[0].texture == "prop_test"
+
+
+def test_bustin_out_wrapper_and_urbz_layout():
+    from gcrip.formats import edge_dataset
+
+    strip = _strip_tokens(0x1A, QUAD, version=0)
+    bo = _old_model("Prop_BBQ", bytes((0, 1, 0, 0)), [strip], extra=True)
+    m = edge_model.parse_entry_model(bo)
+    assert m.name == "Prop_BBQ" and m.strips[0].indices.size == 6 and not m.warnings
+    # The Urbz: an EDataHeader with an empty name, the name as a string, then the full model
+    inner = _model("efx_burn", [_strip_tokens(0x1E, QUAD, version=0x35)], version=0x35)
+    payload = edge_model.header(inner).payload
+    urbz_entry = struct.pack(">IIIII", 0x35, 0, 0, 0, len(payload) + 9) + b"efx_burn\0" + payload
+    m = edge_model.parse_entry_model(urbz_entry)
+    assert m.name == "efx_burn" and m.version == 0x35 and m.strips[0].indices.size == 6
+    data = struct.pack(">I", 9) + b"RD_test".ljust(64, b"\0") + struct.pack(">I", 1)
+    data += (
+        b"Models".ljust(32, b"\0") + struct.pack(">III", 0x5555, len(urbz_entry), 0) + urbz_entry
+    )
+    assert edge_dataset.style(data[:96]) == edge_dataset.URBZ
+    kind, name, entries = edge_dataset.entries(data)
+    assert name == "RD_test" and entries[0].category == "Models" and entries[0].hash == 0x5555
+    # Shark Tale / Over the Hedge: twelve zero bytes and a section count byte in front
+    hedge = (
+        bytes(12)
+        + bytes([1])
+        + b"lvl\0"
+        + b"Occluders\0"
+        + struct.pack(">I", 1)
+        + struct.pack(">III", 1, 4, 0)
+        + b"OCCL"
+    )
+    assert edge_dataset.style(hedge[:96]) == edge_dataset.HEDGE
+    assert edge_dataset.entries(hedge)[2][0].category == "Occluders"

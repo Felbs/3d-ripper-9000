@@ -259,10 +259,48 @@ the shader names its texture by hash, and the hash is of the *name*, so a shader
 of the same name share it (NPC_catwoman -> shader 992eeb73 -> texture `missingshader`: the
 Sims' skins are composited at runtime).
 
-### Still open on the older discs
+### The datasets - The Sims, Bustin' Out and The Urbz (same day)
 
-The Sims (2003), Bustin' Out, The Urbz, Shark Tale and Over the Hedge put their models inside
-`Datasets` members (Urbz and Bustin' Out have *only* `Datasets` and `QuickDatas` in their
-index) with per-game dataset headers and an older model header (The Sims: `u32 0, u16 0,
-name, u8, f32 scale, ...` with no node arrays and three-byte normals).  The strip grammar is
-the same.  Next: a `Datasets` container plugin per header variant.
+The three older Sims discs keep their models inside `Datasets` members (Urbz and Bustin' Out
+have *only* `Datasets` and `QuickDatas` in their index).  `gcrip/formats/edge_dataset.py` +
+`plugins/edge_dataset.py` open them as a container, `<Category>/<hash>.eorm` / `.eort` /
+`.eors`, and `edge_model` / `edge_tex` read the entries:
+
+```
+Sims / Bustin' Out    name\0, u32 sections, sections x (name\0, u32 count, entries)
+Shark Tale / Hedge    12 zero bytes, u8 sections, name\0, sections as above
+The Urbz              u32 9, name[64], u32 count, count x (category[32], entry)
+entry                 u32 name hash, u32 size, u32 0, size bytes
+```
+
+Every dataset sampled on the five discs walks to its last byte.  The entry payloads are
+wrapped per game:
+
+* **textures** `LFXT` (Bustin' Out: `u32 7` + 12 zero bytes; Urbz: `u32 8, u32 size`), the
+  name, then the header and the pixels.  The Urbz writes the 32-byte `ETextureDef`; the others
+  a 20-byte `u8 fmt, u8 bpp, u16 w, u16 h, u8, u8 palette bpp, u16 palette entries, u32 flags,
+  u32, u16 mips` - the same formats and the same split palette (`flags` has bit 7).  Sizes
+  close on 20 of 20 sampled textures across the five discs, and the parrot sculpture is a
+  parrot.
+* **models** The Sims / Shark Tale / Hedge: `u32 0, u16 0, name\0` then the model *without*
+  the node arrays (`u8 flag, f32 scale, u32 submodels, ...`), three-byte normals, no u32 after
+  the strip count, five bytes after the bounds.  Bustin' Out: first word `0x00010000`, 16
+  bytes after the name, and the u32 after the strip count is back.  The Urbz: an
+  `EDataHeader` with an empty name (`u32 0x35, 0, 0, 0, u32 size`), the name as a string, then
+  the whole Sims 2 layout.  The reader locates the body by its `f32 scale, u32 submodels,
+  u32 id, u32 shaders` run rather than trusting the per-game zero fields.
+* **shaders** The Urbz wraps the same `EShaderDef` behind its name (`shader_textures` reads
+  it); the older discs' shader records are not decoded, and a strip's shader hash is then
+  matched to the texture of the same name, which is how those discs are laid out (the spoon's
+  texture, shader and model all hash to `01774b03`).
+
+Sampled results: The Sims 6 models / 1,083 triangles, 6 of 6 textures bound; Bustin' Out
+3 / 1,066; The Urbz 2 / 271 (its textures sit in other datasets, resolved at rip time).
+
+### Still open
+
+* **Shark Tale and Over the Hedge** parse as datasets and their textures read, but the model
+  shader record differs (`hash, 49 00 00 34, ...`, six-byte positions) - a newer exporter that
+  needs its DOL read.
+* The Sims (2003) `rletextu.arc` (377 RLE textures) and every disc's `Characters` (skeletons)
+  and `Animations`.
