@@ -405,3 +405,5 @@ thumbnail is a convenience and must not be able to fail an export.
     every `.pak` with a `pack` magic - including THQ's, which it cannot read - and sorts sixth
     against `thq_pack`'s thirtieth, so Avatar: The Last Airbender lost all nine of its archives
     (699 MB).  Both loops now skip a plugin that produced no members; `tests/test_container_shadowing.py` pins it.
+
+| Harry Potter: Goblet of Fire | 1 | **not a `.hog` disc**: eight files, four of them EA `BIGF` totalling 956 MB, which `plugins/ea` already claims.  `data.big` holds 153 members, 152 of them `.str` RenderWare streams stamped `0x1802FFFF` (RW 3.6) with EA's own chunk ids (`0x071C` names, `0x0716` build paths).  The three smallest members carry no stock geometry chunks and no native groups, but they are metadata - the members run to 7.2 MB and the large ones are untested | see [formats/harry-potter-gof.md](formats/harry-potter-gof.md) |
