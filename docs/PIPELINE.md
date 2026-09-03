@@ -14,7 +14,7 @@ flowchart LR
     WALK --> MAN["disc_manifest.json<br/>every file, format, hash"]
     MAN --> RIP["2  Rip loop<br/>gcrip.rip"]
     RIP -->|"BMD / BDL"| J3D["3  J3D parse<br/>gcrip.formats.j3d"]
-    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, eurocom, hsf, sa2b, sadx, ninja_gc, billy, nu2, ttdisp, hgo, unreal, openspace, afs, lpac, melee, dbl, blitz, blitz_tex, bolt, bolt_model, bolt_mat, mk_ssf, treyarch_pak, ngl_mesh, nlg_glg, ea_la, edge_arc, edge_dataset, edge_model, edge_tex, dds_pack, fsta, agg, asb_tex, bmp, hff, png, frd_gct, frd_pak, ft_pak, gct, jam2, kceo, ljam, skye_pak, skx, toc_tim, toc_wad, vc_dat, vc_pack, tpl, mdgc, xmdl, u8, res (rdms meshes, surf textures), totemtech, acclaim_gdf, rw_native, cod_rws, a2m_gcr, yukes_pac, zip, pod, tr_pkg, tr_tex, tr_smf, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
+    RIP -->|"format a plugin claims<br/>(gcrip.plugins: retro, hsd, gma,<br/>jade, re4, ea, eagl, ebo, p3d, mdl2, mdl3, eurocom, hsf, sa2b, sadx, ninja_gc, billy, nu2, ttdisp, hgo, unreal, openspace, afs, lpac, melee, dbl, blitz, blitz_tex, bolt, bolt_model, bolt_mat, mk_ssf, treyarch_pak, ngl_mesh, nlg_glg, ea_la, edge_arc, edge_dataset, edge_model, edge_tex, dds_pack, fsta, agg, asb_tex, bmp, hff, png, frd_gct, frd_pak, ft_pak, gct, jam2, kceo, ljam, skye_pak, skx, toc_tim, toc_wad, vc_dat, vc_pack, tpl, mdgc, xmdl, u8, res (rdms meshes, surf textures), totemtech, acclaim_gdf, rw_native, cod_rws, a2m_gcr, a2m_hg, yukes_pac, zip, pod, tr_pkg, tr_tex, tr_smf, hsd, renderware, …)"| PLUG["3b  Plugin parse<br/>plugin.extract → ripcore Scene"]
     RIP -->|"nothing claims it"| GX["3c  Structure scan (fallback)<br/>gcrip.gxscan: GX display lists,<br/>vertex + index arrays"]
     J3D --> ANIM["4  Clip matching<br/>rip._AnimIndex + j3d_anim"]
     ANIM --> GLTF["5  glTF export<br/>gcrip.export.gltf / ripcore.gltf"]
@@ -184,6 +184,8 @@ flowchart LR
         ONE[".one v0.60 (Shadow)<br/>formats.one"] --> RW["RenderWare DFF/TXD<br/>plugins.renderware"]
         GCR["A2M .gcr DTStreamFAT<br/>plugins.a2m_gcr"] --> RW
         TEXDIC["TEXDIC_*.txd RW images<br/>formats.a2m_gcr"] -.->|"by name, level folder"| RW
+        GHR["A2M .ghr DTStreamFAT<br/>plugins.a2m_hg"] --> HG["HG objects + worlds .hgobj/.hgworld<br/>plugins.a2m_hg"]
+        HTD[".htd GX textures<br/>formats.a2m_hg"] -.->|"by name, level folder"| HG
         BML["PSO .bml<br/>plugins.bml"] --> NJ["NJCM / GJCM Ninja + Ginja<br/>plugins.ninja_gc"]
         GVM["GVM / GVR<br/>plugins.gvm"]
         REL[".rel modules + SA Tools tables<br/>plugins.sadx"] --> SADX["Basic / Ginja land tables<br/>formats.sadx"]
