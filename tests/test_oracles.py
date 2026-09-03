@@ -30,6 +30,7 @@ def test_discredited_oracles_record_how_they_failed():
         "box containment for quantised vertices",
         "quantised axis uses its full range",
         "decoder stopped at the declared length",
+        "triangle locality over a candidate position array",
     }
     for o in bad:
         assert any(

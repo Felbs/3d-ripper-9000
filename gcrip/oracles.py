@@ -135,6 +135,22 @@ ORACLES: tuple[Oracle, ...] = (
         "bytes span the full range, so this passes on noise.",
     ),
     Oracle(
+        "triangle locality over a candidate position array",
+        "a candidate array is the positions if the triangles that index it are small against "
+        "its own bounding box",
+        DISCREDITED,
+        "It is wrong in the worst way: it finds INDEX ARRAYS, not positions, and prefers them.  "
+        "Consecutive indices are "
+        "numerically close, so an index buffer read as xyz triples has tiny triangles inside a "
+        "wide box: on Piglet's clump tail the best score in the whole 2.2 MB was 0.0077 at an "
+        "offset whose vertices read (476,476,478), (478,478,478) - a run of one repeated u16.  "
+        "Real geometry scored worse.  The repair is to require the three components of a vertex "
+        "to differ - index data has them nearly equal - but a mean over the array is not enough "
+        "either, because triples that straddle a boundary lift the average: (331,331,331), "
+        "(719,719,719) still came top with that filter in place.  It has to be the FRACTION of "
+        "vertices whose components agree, and that is still unverified.",
+    ),
+    Oracle(
         "printable text",
         "the output decodes to a high fraction of printable characters",
         DISCREDITED,

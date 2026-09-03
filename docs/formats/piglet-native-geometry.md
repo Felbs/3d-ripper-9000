@@ -48,3 +48,40 @@ chunk at all - the walk finds only STRUCT and FRAMELIST - so RenderWare's declar
 is not available here either, and the index columns of the 87 strips run to 65,472, which means
 false-positive lists are still mixed in and the list set needs tightening before a count can be
 trusted.
+
+
+## The display lists read cleanly once the vertex-count cap is right
+
+The 87-strip scan above used a 2,048-vertex cap and let false positives in - its index columns
+ran to 65,472.  The real lists are bigger.  Walking from the first genuine opcode, at tail
+offset **77**:
+
+    98 10 2b   00 b1 00 b1 00 b1 00 b1   00 b2 00 b2 00 b2 00 b2 ...
+
+`0x102b` = **4,139 vertices**, then a second strip of 345 - **4,484 vertices, 3,922 triangles**,
+and now every column agrees:
+
+| column | max | distinct |
+|---|---|---|
+| 0-3 | 3,123 | 3,096 |
+
+All four index columns hold the **same** value on every vertex, so the attributes are
+interleaved and one index addresses them all - the same arrangement Acclaim's `.GDF` uses.  So
+this group has **3,124 vertices**.
+
+## The position array: found the trap, not the array
+
+Sweeping the 2.2 MB tail for a big-endian `s16` array of 3,124 triples and scoring it by
+triangle locality gives a best of **0.0077** - a score that would be conclusive on a real mesh.
+It is an **index array**.  Its vertices read `(476,476,478)`, `(478,478,478)`, `(464,464,464)`:
+a run of one repeated `u16`.
+
+That is a general trap and it is now in `gcrip/oracles.py` as discredited.  **Consecutive
+indices are numerically close, so an index buffer read as xyz has tiny triangles inside a wide
+box** - exactly what the oracle rewards - and it beats the real positions.  It is very likely
+what made the same search flat on Free Radical's `gcr`.
+
+The repair is to require a vertex's three components to differ, since index data has them
+nearly equal.  A *mean* over the array is not enough: with that filter in place the top hit was
+still `(331,331,331)`, `(719,719,719)`, because triples straddling a boundary lift the average.
+It has to be the **fraction** of vertices whose components agree, and that is where this stands.
