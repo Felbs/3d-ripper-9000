@@ -60,3 +60,24 @@ produce models through the existing fallback - it would just add ~160 KB blobs t
 That settles the cost: Asobo needs its own mesh reader on top of the codec and the page
 directory.  Three separate problems, so it is not a one-session job whatever the raw slice
 suggests.
+
+
+## From `ratsgc_m.elf` (2026-09-03): the resource codec, and why the pages are not the unit
+
+The ELF keeps its symbol table.  `UnPack_Z::DecodeRS(const u8* src, u8* dst)` is the codec the
+engine applies to **resources** (`ClassManager_Z::LoadResourceData(BigFileRsc_Z&)`: a resource
+record is `u32 offset, u32 size, u32 packed` and its bytes sit at `page + 0x18 + offset`):
+
+    header   u32 LE unpacked size, u32 LE packed size
+    stream   u32 BE control word: bits 31..2 are 30 flags, the low 2 bits k pick the split;
+             per flag from bit 31: 1 = match, a u16 BE v -> length (v >> (14 - k)) + 3,
+             offset (v & (0x3fff >> k)) + 1, copied byte by byte; 0 = one literal byte;
+             after 30 flags the next control word; stop when the unpacked size is out
+
+The **page records at 0x120 are not compressed with it**: the "packed" pages (stored two to
+forty bytes short of 163,840) open with zeros or with 8-byte repeats that no LZ output could
+hold, so the page-level difference is something else - a per-page trailer or a `Pack_Z`
+framing (`EncodeRS`, `EncodePacket`) still unread.  Above the pages sits a second table -
+16-byte resource entries the `ClassManager_Z` walks by handle - and above that Asobo's own
+class serialisation (`Mesh_Z`, `MeshStreamList_Z::SetVtxDesc`), so this remains a full
+engine transcription for one disc.  Parked with the codec written down.
