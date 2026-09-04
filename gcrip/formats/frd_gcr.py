@@ -635,8 +635,12 @@ def is_b(head: bytes, size: int) -> bool:
     if len(head) < 12:
         return False
     a, b, c = struct.unpack_from(">3I", head, 0)
-    ts2 = 0x20 <= b < size and a > b and b > 8
-    fp = 0x20 <= c < size and a > c and a < size and 0x20 <= b < size
+    if a >= size or a & 3 or b & 3 or c & 3:
+        return False
+    # the slot table follows the block's header words closely: 0x28 bytes after it on
+    # TimeSplitters 2, 0x3c on Future Perfect / Second Sight
+    ts2 = 0x20 <= b < size and 0x20 <= a - b <= 0x40
+    fp = 0x20 <= c < size and 0x30 <= a - c <= 0x50 and 0x20 <= b < size
     return ts2 or fp
 
 

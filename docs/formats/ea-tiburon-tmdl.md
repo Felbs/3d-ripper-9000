@@ -61,4 +61,10 @@ order.  `ea_terf.mmap_pack` returns `(name, rgba, warnings)` per texture; the pl
   u16 0xa4` on stadiums (850 of them on EAG_DUSK, indices descending by four, `k` cycling
   0..7) - crowd billboard quads, most likely; not exported.
 * `Swap` (texture swap chains - home/away, day/dusk), `Lite`, `Extn` are not read.
-* Player models: `PLADATA.DAT` / `PLYRFACE.DAT` are the next tables to check on the disc rip.
+* ~~Player models~~ - **read 2026-09-04**: Madden 06's `PLADATA.DAT` holds 61 `TMdl`
+  (`fm2400.ea3` faces, `pm2400ngc_*.ea3` bodies and shadow rigs) whose display lists open
+  with `GX_CMD_LOAD_INDX_A` / `_B` (`0x20` / `0x28`: `u16 index, u16 address`) bone-matrix
+  loads and whose vertices then lead with a matrix-index byte the attribute table does not
+  list; the shadow-only rigs index `0xff` into a three-entry colour table (read as white).
+  With those two rules **all 61 read, 81,446 triangles**; a face renders.  The bone
+  matrices are not applied (bind pose).

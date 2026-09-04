@@ -47,7 +47,14 @@ def _mmap_pack(names: list[str], w: int = 8, h: int = 4, stale: int = 0) -> byte
     return bytes(out)
 
 
-def _tmdl(name: str = "cube.ea3", *, wide: bool = False, textures: list[str] | None = None) -> bytes:
+def _tmdl(
+    name: str = "cube.ea3",
+    *,
+    wide: bool = False,
+    textures: list[str] | None = None,
+    skinned: bool = False,
+    white: bool = False,
+) -> bytes:
     """One quad (two triangles) as a strip with POS s16 (frac 4), NRM s8 (frac 6), CLR0 RGBA8
     and TEX0 s16 (frac 12); ``wide`` switches the position indices to u16 and draws the quad
     as a GX quad instead of a strip."""
@@ -64,7 +71,12 @@ def _tmdl(name: str = "cube.ea3", *, wide: bool = False, textures: list[str] | N
     clr_off = len(body)
     body += bytes([255, 0, 0, 255]) + bytes([0, 255, 0, 128])
     tex_off = len(body)
-    body += struct.pack(">2h", 0, 0) + struct.pack(">2h", 4096, 0) + struct.pack(">2h", 4096, 4096) + struct.pack(">2h", 0, 4096)
+    body += (
+        struct.pack(">2h", 0, 0)
+        + struct.pack(">2h", 4096, 0)
+        + struct.pack(">2h", 4096, 4096)
+        + struct.pack(">2h", 0, 4096)
+    )
     body += b"\0" * (-len(body) % 32)
     # display list
     dl_off = len(body)
@@ -74,9 +86,16 @@ def _tmdl(name: str = "cube.ea3", *, wide: bool = False, textures: list[str] | N
         for v in (0, 1, 2, 3):
             dl += struct.pack(">H", v) + bytes([0, v % 2, v])
     else:
+        if skinned:
+            # a player model loads its bone matrices before the strip and then leads every
+            # vertex with the matrix index byte
+            dl += bytes([0x20]) + struct.pack(">HH", 7, 0xB000)
+            dl += bytes([0x28]) + struct.pack(">HH", 0x15, 0x2400)
         dl += bytes([0x98]) + struct.pack(">H", 4)
         for v in (3, 0, 2, 1):
-            dl += bytes([v, 0, v % 2, v])
+            if skinned:
+                dl += bytes([3])
+            dl += bytes([v, 0, 0xFF if white else v % 2, v])
     dl += b"\0" * (-len(dl) % 32)
     body += dl
     # attribute table and mesh table
@@ -99,10 +118,21 @@ def _tmdl(name: str = "cube.ea3", *, wide: bool = False, textures: list[str] | N
     body += struct.pack(">II", 1, rec_off)
     body += mat_name + shader + tex_name
     body += b"\0" * (rec_off - len(body))
-    body += struct.pack(">IIHHI", names_off, names_off + len(mat_name), 1, 0, names_off + len(mat_name) + len(shader))
+    body += struct.pack(
+        ">IIHHI",
+        names_off,
+        names_off + len(mat_name),
+        1,
+        0,
+        names_off + len(mat_name) + len(shader),
+    )
     body += b"\0" * 28
     matl_end = len(body)
-    sections = [(b"Info", info_off, len(name) + 1), (b"Geom", 0x60, geom_end - 0x60), (b"Matl", matl_off, matl_end - matl_off)]
+    sections = [
+        (b"Info", info_off, len(name) + 1),
+        (b"Geom", 0x60, geom_end - 0x60),
+        (b"Matl", matl_off, matl_end - matl_off),
+    ]
     if textures is not None:
         text_off = len(body)
         pack = _mmap_pack(textures, stale=1)
@@ -121,7 +151,11 @@ def test_parse_sections_meshes_attrs_and_materials():
     model = ea_tmdl.parse(data)
     assert model.name == "cube.ea3"
     assert set(model.sections) == {b"Info", b"Geom", b"Matl"}
-    assert len(model.meshes) == 1 and model.meshes[0].triangles == 2 and model.meshes[0].attr_count == 4
+    assert (
+        len(model.meshes) == 1
+        and model.meshes[0].triangles == 2
+        and model.meshes[0].attr_count == 4
+    )
     assert [a.va for a in model.attrs] == [9, 10, 11, 13]
     assert model.materials[0].name == "lambert1_MATERIAL"
     assert model.materials[0].shader == "OnePass"
@@ -187,3 +221,16 @@ def test_truncated_tables_raise():
     struct.pack_into(">I", data, 0x60, len(data))  # mesh table past the end
     with pytest.raises(ea_tmdl.TmdlError):
         ea_tmdl.parse(bytes(data))
+
+
+def test_skinned_player_lists_skip_matrix_loads_and_the_matrix_byte():
+    data = _tmdl(skinned=True)
+    model = ea_tmdl.parse(data)
+    md = ea_tmdl.mesh_data(data, model, model.meshes[0])
+    assert md.indices.size == 6 and md.positions.shape == (4, 3)
+    assert sorted(set(md.indices.tolist())) == [0, 1, 2, 3]
+    # a colour index past the table (the shadow rigs' 0xff) is white, not an error
+    data = _tmdl(white=True)
+    model = ea_tmdl.parse(data)
+    md = ea_tmdl.mesh_data(data, model, model.meshes[0])
+    assert md.colors is not None and (md.colors == 255).all()

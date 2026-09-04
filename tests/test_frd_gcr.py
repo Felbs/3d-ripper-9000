@@ -86,6 +86,9 @@ def test_detection_is_the_12_and_the_trailer_offset():
     assert plugin.detect("ob/chrs/chr01.gcr", data[:64], len(data))
     assert not frd_gcr.is_gcr(data[:12], len(data) + 4)
     assert not plugin.detect("x.bin", bytes(64), 4096)
+    # an EA TERF archive's header (a tag, then small offsets) must not read as an array block
+    terf = b"TERF" + bytes(3) + b"@" + bytes([2, 2, 1, 6, 0, 0x40, 1, 0x79]) + bytes(48)
+    assert not plugin.detect("PLADATA.DAT", terf, 5969280)
     assert frd_gcr.parse(b"\0" * 64) is None
 
 

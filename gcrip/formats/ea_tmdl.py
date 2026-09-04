@@ -90,7 +90,9 @@ class Material:
 @dataclass
 class Model:
     name: str
-    sections: dict[bytes, tuple[int, int, int]] = field(default_factory=dict)  # tag -> offset, size, flags
+    sections: dict[bytes, tuple[int, int, int]] = field(
+        default_factory=dict
+    )  # tag -> offset, size, flags
     meshes: list[Mesh] = field(default_factory=list)
     attrs: list[Attr] = field(default_factory=list)
     materials: list[Material] = field(default_factory=list)
@@ -144,7 +146,9 @@ def _parse_geom(data: bytes, model: Model) -> None:
     for i in range(attr_n):
         model.attrs.append(Attr(*struct.unpack_from(">IHBBBBBB", data, attr_off + i * ATTR_SIZE)))
     for i in range(mesh_n):
-        dl, units, mat, _sentinel, tris, verts, first, na = struct.unpack_from(">IHHHHHHB", data, mesh_off + i * MESH_SIZE)
+        dl, units, mat, _sentinel, tris, verts, first, na = struct.unpack_from(
+            ">IHHHHHHB", data, mesh_off + i * MESH_SIZE
+        )
         model.meshes.append(Mesh(dl, units * DL_UNIT, mat, tris, verts, first, na))
 
 
@@ -161,7 +165,9 @@ def _parse_matl(data: bytes, model: Model) -> None:
             raise TmdlError("Matl record runs past the file")
         name_off, shader_off, ntex, _z, tex_off = struct.unpack_from(">IIHHI", data, rec)
         texture = _cstr(data, tex_off) if ntex and tex_off else None
-        model.materials.append(Material(_cstr(data, name_off), _cstr(data, shader_off), texture or None))
+        model.materials.append(
+            Material(_cstr(data, name_off), _cstr(data, shader_off), texture or None)
+        )
 
 
 # ---------------------------------------------------------------- vertex arrays
@@ -250,6 +256,9 @@ def _prim_triangles(op: int, verts: list[int]) -> list[tuple[int, int, int]]:
     return []
 
 
+INDEXED_LOADS = {0x20, 0x28, 0x30, 0x38}
+
+
 def draw(data: bytes, mesh: Mesh, attrs: list[Attr]) -> list[tuple[int, list[tuple[int, ...]]]]:
     """[(opcode, [index tuple per vertex])] for one mesh's display list."""
     widths = [2 if a.index == INDEX_U16 else 1 for a in attrs]
@@ -259,19 +268,30 @@ def draw(data: bytes, mesh: Mesh, attrs: list[Attr]) -> list[tuple[int, list[tup
     if vsize == 0 or p >= len(data):
         raise TmdlError("mesh without attributes")
     out = []
+    skinned = False
     while p + 3 <= end:
         op = data[p]
         if op == 0:
             break
+        if op in INDEXED_LOADS:
+            # GX_CMD_LOAD_INDX_A..D: a skinned player model loads its bone matrices from
+            # the indexed arrays before each strip (u16 index, u16 size / address), and
+            # its vertices then lead with a matrix-index byte the attribute table omits
+            p += 5
+            skinned = True
+            continue
         if op & 0x80 == 0 or (op & 0x78) > 0x38:
             raise TmdlError(f"display list opcode {op:#x} unknown")
         count = struct.unpack_from(">H", data, p + 1)[0]
         p += 3
-        if p + count * vsize > end:
+        stride = vsize + (1 if skinned else 0)
+        if p + count * stride > end:
             raise TmdlError("display list primitive runs past the mesh")
         verts = []
         for _ in range(count):
             idx = []
+            if skinned:
+                p += 1
             for w in widths:
                 idx.append(data[p] if w == 1 else struct.unpack_from(">H", data, p)[0])
                 p += w
@@ -321,6 +341,12 @@ def mesh_data(data: bytes, model: Model, mesh: Mesh) -> MeshData:
         arr = arrays[k]
         idx = np.array([v[k] for v in order], dtype=np.int64)
         if idx.max() >= len(arr):
+            if va == VA_CLR0 and len(arr):
+                # the shadow-only rigs index 0xff into a three-entry table: no colour, white
+                out = np.full((len(idx), arr.shape[1]), 255, arr.dtype)
+                ok = idx < len(arr)
+                out[ok] = arr[idx[ok]]
+                return out
             raise TmdlError(f"attribute {va} index past its array")
         return arr[idx]
 
