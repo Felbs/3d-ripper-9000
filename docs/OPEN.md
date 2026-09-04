@@ -6,6 +6,14 @@ textures through the plugin chain.
 
 Companion to [FORMATS.md](FORMATS.md), which lists what already works.
 
+## Closed 2026-09-03: Blitz texture format 17
+
+`bUploadTexture` in `bratz.elf` is a switch on the format code: 15 RGBA8, 16 RGB5A3, **17 C8
+over a big-endian RGB565 palette**, 18 C8 over RGB5A3, 19 / 20 the C4 pair, 21 CMPR, 22 I4,
+23 RGB565, 29 / 30 I8.  Every format-17 lightmap decodes; the three format-17 clothing
+textures carry a placeholder palette the outfit system swaps at runtime.  See
+[formats/blitz-gcp-gamecube.md](formats/blitz-gcp-gamecube.md).
+
 ## Closed 2026-09-03: the `.hff` discs are RenderWare (Aquaman, Casper, TONKA)
 
 Casper's "f32 unit vectors" were RenderWare geometry: `casperGCN.elf` carries RW 3.0's own
@@ -216,7 +224,6 @@ without the DOL.  Seven discs on one engine.
 | `.adb` | 11 | **low value, do not size it by file count.**  14 large `Sounds.adb` on the Acclaim discs (200-660 MB, ascending `u32` offset table, no recognised magic in the first member) whose discs are already served by `asb_tex`; and 411 tiny ones elsewhere - Shadow the Hedgehog's 364 total 0.1 MB, about 300 bytes each | see [formats/dgc-adb-survey.md](formats/dgc-adb-survey.md) |
 | Pac-Man Fever data outside the FST | 1 | the FST lists three `.BLT` (two of them 1.3 leftovers the DOL cannot read); the DOL opens `BoardGam`, `DataHUD` ... by name from the raw disc - 300 MB the manifest never sees | scan the image for `BOLT` headers when the drive is idle, hand the hits to `plugins.bolt` (see [formats/bolt-mass-media.md](formats/bolt-mass-media.md)) |
 | Yuke's `YOBJ` models (`.ymg`, behind a 16-byte `DUMY` stamp) | 3 (WWE Day of Reckoning 1-2, WrestleMania XIX) | **packs opened 2026-09-03** (`plugins.yukes_pac`: the `.tex` TPL textures rip); the model: `"YOBJ", u32 size, u16 4, u16 3, u32 0x40`, then (count, offset) pairs - bones (64-byte records, 16-char names, parent at +0x18), textures (16 B: name + extension), materials (variable, RGBA colours), hair/accessory records (0x68), a `POF0` pointer-offset table at the end; mesh records of 0x30 bytes from +0x4c (`u16, u8 groups, u8, 0x0a000000, data, 0, table A (16 B rows), table B (8 B rows: u8 index, u8 count, u16 count, u32 offset), bbox centre + radius, 4 x u16`); the group data are runs of u16 triangle indices behind a short header, not GX lists; no 12/16/8-byte stride of the "data" block puts the points inside the record's bounding sphere, so the positions are elsewhere (quantised, or in the 16-byte rows) | no symbols on any of the three discs; work from the `.ycg` (skeleton?) and `POF0` pointers, or gxscan-style brute force on the 16-byte rows |
-| Blitz texture format 17 | 9 discs, ~13% of textures | 8 bits a pixel behind a 512-byte block; not C8 over an RGB5A3 / RGB565 / IA8 palette in tiled or linear order (2026-09-03).  Everything else on the engine now reads | see the closing section of [formats/blitz-gcp-gamecube.md](formats/blitz-gcp-gamecube.md) |
 | FSTA `GKA` / `GGG` | 3 (Billy & Mandy, Kids Next Door, Charlie and the Chocolate Factory) | **`GGG` read 2026-09-03** (models; `GKA` is animation) - **not compressed** - body entropy 5.28 (`GGG`) and 6.82 (`GKA`) against 7.73 for `GMS`.  Magic is `ISVH` (`HVSI` reversed) but the fields are big-endian: the `u32` at +12 is the exact file size on both | what they hold.  Neither shows f32 runs, so any geometry is quantised.  Note the models are in `GMS`, which is compressed - these may be animation or collision |
 
 ## Mapped but blocked on a codec

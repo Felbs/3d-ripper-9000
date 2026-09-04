@@ -361,3 +361,19 @@ Chicken Little.
 Open on this engine: texture format 17; skinned characters export in bind pose without
 weights (the `_TBSoftSkin` matrix indices are read but not the palette); `.sim` and the
 animation (`m_*`) resources.
+
+
+## Format 17, from the ELF (2026-09-03)
+
+`bUploadTexture(int, _TBTexture*, GXTexWrapMode, GXTexWrapMode)` in `bratz.elf` (symtab)
+switches on `_TBTexture.format` at +40 and maps: 15 RGBA8, 16 RGB5A3, 17 **C8 with
+`GXInitTlutObj(palette, GX_TL_RGB565, 256)`**, 18 C8 with RGB5A3, 19 C4 with RGB565, 20 C4 with
+RGB5A3, 21 CMPR, 22 I4, 23 RGB565, 29 / 30 I8; the palette is the pointer at +108 (512 or 32
+bytes, big-endian), the pixels at +112 plus `bytes * frame`.  So the "512-byte block that is
+not a palette" was one - the earlier decode attempts had the right encoding and judged it on
+the wrong textures: of Bratz's 63 format-17 resources 60 are lightmaps (`lm_########`), and
+every one decodes to a plausible grey lightmap; the three clothing textures
+(`t_g_bp_shirt04a`, `t_g_ca_jacket06a_combo`, `t_g_sf_shirt10a`) carry a placeholder palette
+that `PaletteChangeCallback` / `CCharacterPart::PaletteLoaded` replace with the outfit's
+colours at runtime, which is why they looked like noise under every palette reading.
+`blitz_actor.texture` now decodes all four indexed formats.

@@ -150,7 +150,14 @@ def _prims_to_tris(op: int, verts: list[int]) -> list[tuple[int, int, int]]:
     if kind == 0x90:
         return [(verts[i], verts[i + 1], verts[i + 2]) for i in range(0, n - n % 3, 3)]
     if kind == 0x98:
-        return [((verts[i], verts[i + 1], verts[i + 2]) if i % 2 == 0 else (verts[i + 1], verts[i], verts[i + 2])) for i in range(n - 2)]
+        return [
+            (
+                (verts[i], verts[i + 1], verts[i + 2])
+                if i % 2 == 0
+                else (verts[i + 1], verts[i], verts[i + 2])
+            )
+            for i in range(n - 2)
+        ]
     if kind == 0xA0:
         return [(verts[0], verts[i], verts[i + 1]) for i in range(1, n - 1)]
     if kind == 0x80:
@@ -193,20 +200,43 @@ def _display_list(data: bytes, dl: int, size: int, layout) -> list[tuple[int, li
     return out
 
 
-def _arrays(data: bytes, pos_at: int, nrm_at: int, tex_at: int, clr_at: int, npos: int, nnrm: int, ntex: int, nclr: int):
+def _arrays(
+    data: bytes,
+    pos_at: int,
+    nrm_at: int,
+    tex_at: int,
+    clr_at: int,
+    npos: int,
+    nnrm: int,
+    ntex: int,
+    nclr: int,
+):
     def f32(at, n, k):
         if not at or n <= 0 or at + n * k * 4 > len(data):
             return None
-        return np.frombuffer(data, dtype=">f4", count=n * k, offset=at).reshape(n, k).astype(np.float32)
+        return (
+            np.frombuffer(data, dtype=">f4", count=n * k, offset=at)
+            .reshape(n, k)
+            .astype(np.float32)
+        )
 
     pos = f32(pos_at, npos, 3)
     nrm = None
     if nrm_at and nnrm > 0 and nrm_at + nnrm * 3 <= len(data):
-        nrm = np.frombuffer(data, dtype=np.int8, count=nnrm * 3, offset=nrm_at).reshape(nnrm, 3).astype(np.float32) / 64.0
+        nrm = (
+            np.frombuffer(data, dtype=np.int8, count=nnrm * 3, offset=nrm_at)
+            .reshape(nnrm, 3)
+            .astype(np.float32)
+            / 64.0
+        )
     tex = f32(tex_at, ntex, 2)
     clr = None
     if clr_at and nclr > 0 and clr_at + nclr * 4 <= len(data):
-        clr = np.frombuffer(data, dtype=np.uint8, count=nclr * 4, offset=clr_at).reshape(nclr, 4).copy()
+        clr = (
+            np.frombuffer(data, dtype=np.uint8, count=nclr * 4, offset=clr_at)
+            .reshape(nclr, 4)
+            .copy()
+        )
     return pos, nrm, tex, clr
 
 
@@ -219,8 +249,17 @@ def _batches(data: bytes, at: int, n: int) -> list[Batch]:
     return out
 
 
-def _dl_meshes(data: bytes, node: str, vertex_type: int, dl: int, dl_size: int, batches: list[Batch], prims_at: int,
-               arrays, warnings: list[str]) -> list[MeshData]:
+def _dl_meshes(
+    data: bytes,
+    node: str,
+    vertex_type: int,
+    dl: int,
+    dl_size: int,
+    batches: list[Batch],
+    prims_at: int,
+    arrays,
+    warnings: list[str],
+) -> list[MeshData]:
     pos, nrm, tex, clr = arrays
     if pos is None:
         warnings.append(f"{node}: mesh without positions")
@@ -261,7 +300,9 @@ def _dl_meshes(data: bytes, node: str, vertex_type: int, dl: int, dl_size: int, 
         if pidx.max() >= len(pos):
             warnings.append(f"{node}: position index past the array")
             continue
-        md = MeshData(node, b.texture1, b.texture2, pos[pidx], np.asarray(tris, dtype=np.uint32).reshape(-1))
+        md = MeshData(
+            node, b.texture1, b.texture2, pos[pidx], np.asarray(tris, dtype=np.uint32).reshape(-1)
+        )
         if nrm is not None and all(k_[1] is not None for k_ in order):
             nidx = np.array([k_[1] for k_ in order], dtype=np.int64)
             if nidx.max() < len(nrm):
@@ -280,8 +321,16 @@ def _dl_meshes(data: bytes, node: str, vertex_type: int, dl: int, dl_size: int, 
     return out
 
 
-def _stream_meshes(data: bytes, node: str, vertex_type: int, verts_at: int, nverts: int, batches: list[Batch],
-                   prims_at: int, warnings: list[str]) -> list[MeshData]:
+def _stream_meshes(
+    data: bytes,
+    node: str,
+    vertex_type: int,
+    verts_at: int,
+    nverts: int,
+    batches: list[Batch],
+    prims_at: int,
+    warnings: list[str],
+) -> list[MeshData]:
     size = PRIM_VERTEX_SIZE.get(vertex_type)
     if size is None:
         warnings.append(f"{node}: vertex type {vertex_type} has no stream layout")
@@ -289,12 +338,18 @@ def _stream_meshes(data: bytes, node: str, vertex_type: int, verts_at: int, nver
     if verts_at + nverts * size > len(data):
         warnings.append(f"{node}: vertex stream past the resource")
         return []
-    rows = np.frombuffer(data, dtype=np.uint8, count=nverts * size, offset=verts_at).reshape(nverts, size)
+    rows = np.frombuffer(data, dtype=np.uint8, count=nverts * size, offset=verts_at).reshape(
+        nverts, size
+    )
     pos = np.ascontiguousarray(rows[:, 0:12]).view(">f4").reshape(nverts, 3).astype(np.float32)
     nrm = np.ascontiguousarray(rows[:, 12:24]).view(">f4").reshape(nverts, 3).astype(np.float32)
     clr = np.ascontiguousarray(rows[:, 24:28]).copy()
     uv = np.ascontiguousarray(rows[:, 28:36]).view(">f4").reshape(nverts, 2).astype(np.float32)
-    uv2 = np.ascontiguousarray(rows[:, 36:44]).view(">f4").reshape(nverts, 2).astype(np.float32) if size >= 44 else None
+    uv2 = (
+        np.ascontiguousarray(rows[:, 36:44]).view(">f4").reshape(nverts, 2).astype(np.float32)
+        if size >= 44
+        else None
+    )
     out = []
     v = 0
     p = prims_at
@@ -323,8 +378,19 @@ def _stream_meshes(data: bytes, node: str, vertex_type: int, verts_at: int, nver
             continue
         sel = np.arange(lo, v)
         idx = np.asarray(tris, dtype=np.int64) - lo
-        out.append(MeshData(node, b.texture1, b.texture2, pos[sel], idx.astype(np.uint32).reshape(-1), nrm[sel], uv[sel],
-                            None if uv2 is None else uv2[sel], clr[sel]))
+        out.append(
+            MeshData(
+                node,
+                b.texture1,
+                b.texture2,
+                pos[sel],
+                idx.astype(np.uint32).reshape(-1),
+                nrm[sel],
+                uv[sel],
+                None if uv2 is None else uv2[sel],
+                clr[sel],
+            )
+        )
     return out
 
 
@@ -341,8 +407,20 @@ def parse(data: bytes) -> Actor:
     dl, dl_size = struct.unpack_from(">II", data, s + 56)
     pos_at, nrm_at, tex_at, clr_at, npos, nnrm = struct.unpack_from(">6I", data, s + 64)
     if nverts and dl and dl_size:
-        arrays = _arrays(data, pos_at, nrm_at, tex_at, clr_at, npos or nverts, nnrm or nverts, nverts, nverts)
-        actor.meshes += _dl_meshes(data, "skin", vertex_type, dl, dl_size, _batches(data, batches_at, nbatches), prims_at, arrays, warnings)
+        arrays = _arrays(
+            data, pos_at, nrm_at, tex_at, clr_at, npos or nverts, nnrm or nverts, nverts, nverts
+        )
+        actor.meshes += _dl_meshes(
+            data,
+            "skin",
+            vertex_type,
+            dl,
+            dl_size,
+            _batches(data, batches_at, nbatches),
+            prims_at,
+            arrays,
+            warnings,
+        )
     # the node tree
     root = struct.unpack_from(">I", data, ROOT_AT)[0]
     stack = [(root, -1)]
@@ -367,9 +445,13 @@ def parse(data: bytes) -> Actor:
             batches = _batches(data, mbatches_at, mbatches)
             if mdl and mdl_size and mverts:
                 arrays = _arrays(data, mpos, mnrm, mtex, mclr, mverts, mverts, mverts, mverts)
-                actor.meshes += _dl_meshes(data, name, vertex_type, mdl, mdl_size, batches, mprims_at, arrays, warnings)
+                actor.meshes += _dl_meshes(
+                    data, name, vertex_type, mdl, mdl_size, batches, mprims_at, arrays, warnings
+                )
             elif mverts and mverts_at and mprims_at:
-                actor.meshes += _stream_meshes(data, name, vertex_type, mverts_at, mverts, batches, mprims_at, warnings)
+                actor.meshes += _stream_meshes(
+                    data, name, vertex_type, mverts_at, mverts, batches, mprims_at, warnings
+                )
         if children:
             stack.append((children, index))
         if nxt:
@@ -381,8 +463,13 @@ def parse(data: bytes) -> Actor:
 
 # _TBTexture (160): +32 xDim, +36 yDim, +40 format, +44 u16 flags, +46 u8 mipLevels,
 # +47 u8 noofFrames, +108 palette, +112 frames (the pixel data of frame 0)
-TEX_GX = {21: 0xE, 15: 6}  # Blitz format code -> GX texture format
-TEX_C8 = {18}  # C8 indices behind a 256-entry RGB5A3 palette
+# Blitz format code -> GX texture format, from bUploadTexture in Bratz's bratz.elf: 15 RGBA8,
+# 16 RGB5A3, 21 CMPR, 22 I4, 23 RGB565, 29 / 30 I8
+TEX_GX = {21: 0xE, 15: 6, 16: 5, 22: 0, 23: 4, 29: 1, 30: 1}
+# palette formats -> (GX format, TLUT format, entries): 17 / 18 are C8 over an RGB565 /
+# RGB5A3 palette, 19 / 20 the C4 pair.  The palette sits 512 (32) bytes at +108, big-endian.
+TEX_PALETTE = {17: (9, 1, 256), 18: (9, 2, 256), 19: (8, 1, 16), 20: (8, 2, 16)}
+TEX_C8 = {18}  # kept for callers that asked before the ELF read
 MAX_DIM = 2048
 
 
@@ -395,9 +482,13 @@ def is_texture(data: bytes) -> bool:
 
 
 def texture(data: bytes) -> np.ndarray:
-    """Frame 0 of a Blitz texture resource as RGBA.  Format 17 (63 of Bratz 500 sampled
-    textures, 8 bits a pixel behind a 512-byte block that is not an RGB5A3 palette) is
-    still unread and raises."""
+    """Frame 0 of a Blitz texture resource as RGBA.
+
+    Format 17 - the one the statistics could not place - is C8 over a big-endian RGB565
+    palette (``bUploadTexture``: ``GXInitTlutObj(palette, GX_TL_RGB565, 256)``).  It decodes
+    every lightmap; Bratz's three format-17 clothing textures carry a placeholder palette
+    that ``PaletteChangeCallback`` replaces at runtime with the outfit's colour, so those
+    come out in the placeholder's colours."""
     from gcrip.formats import gx_texture as gx
 
     if not is_texture(data):
@@ -412,9 +503,11 @@ def texture(data: bytes) -> np.ndarray:
         if frames_at + need > len(data):
             raise TextureError("pixels past the resource")
         return gx.decode(gxf, w, h, data[frames_at : frames_at + need])
-    if fmt in TEX_C8:
-        if not palette_at or palette_at + 512 > len(data) or frames_at + w * h > len(data):
-            raise TextureError("C8 texture without its palette")
-        pal = gx.decode_palette(2, data[palette_at : palette_at + 512], 256)
-        return gx.decode(9, w, h, data[frames_at : frames_at + gx.encoded_size(9, w, h)], pal)
+    if fmt in TEX_PALETTE:
+        gxf, tlut, entries = TEX_PALETTE[fmt]
+        need = gx.encoded_size(gxf, w, h)
+        if not palette_at or palette_at + 2 * entries > len(data) or frames_at + need > len(data):
+            raise TextureError("indexed texture without its palette")
+        pal = gx.decode_palette(tlut, data[palette_at : palette_at + 2 * entries], entries)
+        return gx.decode(gxf, w, h, data[frames_at : frames_at + need], pal)
     raise TextureError(f"Blitz texture format {fmt} unread")

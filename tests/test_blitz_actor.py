@@ -187,3 +187,33 @@ def test_container_and_plugins_bind_textures_by_crc():
     tex_blob = dict(members)["t_wall.0000aaaa.tbt"]
     (tex_scene,) = blitz_tbt.extract(tex_blob, "pak.gcp/t_wall.0000aaaa.tbt", None)
     assert tex_scene.textures["t_wall"].shape == (8, 8, 4)
+
+
+def _indexed_texture(fmt: int, w: int = 8, h: int = 8) -> bytes:
+    """A format-17 / 18 (C8) or 19 / 20 (C4) resource: header, a big-endian palette at 160,
+    then the tiles at 160 + palette bytes."""
+    entries = 256 if fmt in (17, 18) else 16
+    d = bytearray(160)
+    struct.pack_into(">3I", d, 32, w, h, fmt)
+    d[46] = 1
+    d[47] = 1
+    palette = 160
+    frames = palette + 2 * entries
+    struct.pack_into(">II", d, 108, palette, frames)
+    pal = bytearray()
+    for i in range(entries):
+        pal += struct.pack(">H", 0xF800 if i == 1 else 0x07E0)  # RGB565: red, else green
+    pixels = bytes([1]) * (w * h) if entries == 256 else bytes([0x11]) * (w * h // 2)
+    return bytes(d) + bytes(pal) + pixels
+
+
+def test_format_seventeen_is_c8_over_an_rgb565_palette():
+    """`bUploadTexture` in bratz.elf: 17 -> C8 + GX_TL_RGB565, 18 -> C8 + RGB5A3, 19 / 20 the
+    C4 pair; the lightmaps decode with it."""
+    rgba = blitz_actor.texture(_indexed_texture(17))
+    assert rgba.shape == (8, 8, 4) and rgba[0, 0].tolist() == [255, 0, 0, 255]
+    rgba = blitz_actor.texture(_indexed_texture(19))
+    assert rgba.shape == (8, 8, 4) and rgba[0, 0].tolist() == [255, 0, 0, 255]
+    assert blitz_actor.TEX_PALETTE[17] == (9, 1, 256)
+    with pytest.raises(blitz_actor.TextureError):
+        blitz_actor.texture(_indexed_texture(17)[:400])
