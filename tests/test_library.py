@@ -88,6 +88,13 @@ def test_build_index_bakes_the_catalog(tmp_path):
     cat = library.build_catalog(tmp_path)
     assert cat["stats"] == stats and [g["id"] for g in cat["games"]] == [g["id"] for g in games]
 
+    # nmodels counts every thumbnailed model (for the "Show all" button); game_models lists them
+    assert a["nmodels"] == 2 and 'id="refresh"' in html and "/models.json" in html
+    gm = library.game_models(tmp_path, "AAAA")
+    assert gm["total"] == 2 and [m["n"] for m in gm["models"]] == ["big.gma", "small.gma"]
+    assert gm["models"][0]["g"] == "AAAA/a/big.gltf"
+    assert library.game_models(tmp_path, "NONE")["models"] == []
+
 
 def test_missing_hero_thumb_is_skipped(tmp_path):
     # a model whose thumb file is absent must not become the hero (no broken images)

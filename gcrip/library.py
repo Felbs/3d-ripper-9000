@@ -22,6 +22,36 @@ import webbrowser
 from pathlib import Path
 
 TOP_MODELS = 24  # inline model thumbnails baked per game
+ALL_MODELS_CAP = 600  # most models the served /models.json returns for one game
+
+
+def _model_card(root: Path, gid: str, m: dict, thumb: str, tris: int) -> dict:
+    out_rel = m.get("out_rel")
+    return {
+        "n": (m.get("path") or out_rel or "model").split("/")[-1],
+        "t": f"{gid}/{thumb}",
+        "tris": tris,
+        "tex": int(m.get("textures") or 0),
+        "g": f"{gid}/{out_rel}" if out_rel and out_rel.endswith(".gltf") else None,
+    }
+
+
+def game_models(root: Path, gid: str) -> dict:
+    """The full model list for one game (thumbnailed, non-duplicate), biggest first - the
+    served ``/models.json?game=`` body behind the page's *Show all N models*."""
+    try:
+        rr = json.loads((root / gid / "rip_results.json").read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return {"id": gid, "models": [], "total": 0}
+    models = rr.get("models", []) if isinstance(rr, dict) else rr
+    have = [
+        (int(m.get("triangles") or 0), m, m.get("thumb"))
+        for m in models
+        if m.get("thumb") and int(m.get("triangles") or 0) > 0 and not m.get("duplicate_of") and not m.get("error")
+    ]
+    have.sort(key=lambda x: -x[0])
+    cards = [_model_card(root, gid, m, thumb, tris) for tris, m, thumb in have[:ALL_MODELS_CAP]]
+    return {"id": gid, "models": cards, "total": len(have)}
 
 
 def _game_entry(root: Path, row: dict) -> dict | None:
@@ -60,16 +90,8 @@ def _game_entry(root: Path, row: dict) -> dict | None:
         if entry["hero"] is None and (root / gid / thumb).exists():
             entry["hero"] = f"{gid}/{thumb}"
         if len(entry["top"]) < TOP_MODELS:
-            out_rel = m.get("out_rel")
-            entry["top"].append(
-                {
-                    "n": (m.get("path") or out_rel or "model").split("/")[-1],
-                    "t": f"{gid}/{thumb}",
-                    "tris": tris,
-                    "tex": int(m.get("textures") or 0),
-                    "g": f"{gid}/{out_rel}" if out_rel and out_rel.endswith(".gltf") else None,
-                }
-            )
+            entry["top"].append(_model_card(root, gid, m, thumb, tris))
+    entry["nmodels"] = len(have)  # thumbnailed models available for "Show all"
     return entry
 
 
@@ -123,6 +145,21 @@ def serve_library(root: Path, *, port: int = 8765, blender: str | None = None, o
                 self.send_response(302)
                 self.send_header("Location", f"/library.html?fresh={int(time.time() * 1000)}")
                 self.end_headers()
+                return None
+            if path == "/models.json":
+                import urllib.parse as _up
+
+                gid = _up.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "").get("game", [""])[0]
+                if not gid or not (root / gid).is_dir():
+                    body = b'{"models":[],"total":0}'
+                else:
+                    body = json.dumps(game_models(root, gid)).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
                 return None
             if path == "/catalog.json":
                 # on demand only (the page's Refresh button) - one rescan of the metadata
@@ -230,10 +267,16 @@ function card(g){
   const b=[`<span class="badge${g.tris>0?" g":""}">${fmt(g.models)} mdl</span>`,g.tris>0?`<span class="badge">△ ${fmt(g.tris)}</span>`:"",g.textures>0?`<span class="badge">▦ ${fmt(g.textures)}</span>`:"",`<span class="icons">${icons}</span>`].join("");
   return `<div class="card" data-id="${g.id}">${hero}<div class="body"><div class="title" title="${esc(g.title)}">${esc(g.title)}</div><div class="meta">${b}</div></div></div>`;
 }
+function mcard(gid,m,i){return `<div class="mcard${served&&m.g?" v":""}" data-id="${gid}" data-i="${i}"><img loading=lazy src="${m.t}" alt=""><div class=mn title="${esc(m.n)}">${esc(m.n)}</div>△ ${fmt(m.tris)}${m.tex?` · ▦${m.tex}`:""}</div>`;}
+const fullModels={};  // gid -> loaded full list
 function expandBlock(g){
   const link=g.report?`<a href="${g.report}" target="_blank">Open full report ↗</a>`:"";
-  const strip=g.top.length?g.top.map((m,i)=>`<div class="mcard${served&&m.g?" v":""}" data-id="${g.id}" data-i="${i}"><img loading=lazy src="${m.t}" alt=""><div class=mn title="${esc(m.n)}">${esc(m.n)}</div>△ ${fmt(m.tris)}${m.tex?` · ▦${m.tex}`:""}</div>`).join(""):`<div style="color:#55555f">No model previews.</div>`;
-  return `<div class="expand"><h3>${esc(g.title)} — top ${g.top.length} of ${fmt(g.models)} models ${link}</h3><div class=mstrip>${strip}</div></div>`;
+  const full=fullModels[g.id];
+  const list=full||g.top, avail=full?full.length:(g.nmodels||g.top.length);
+  const strip=list.length?list.map((m,i)=>mcard(g.id,m,i)).join(""):`<div style="color:#55555f">No model previews.</div>`;
+  const more=(served&&!full&&avail>g.top.length)?`<a href="#" class="showall" data-id="${g.id}">Show all ${fmt(avail)} models ↓</a>`:"";
+  const shown=full?`all ${fmt(full.length)}`:`top ${g.top.length} of ${fmt(g.models)}`;
+  return `<div class="expand"><h3>${esc(g.title)} — ${shown} models ${more} ${link}</h3><div class=mstrip>${strip}</div></div>`;
 }
 function render(){
   const term=q.value.trim().toLowerCase();
@@ -248,7 +291,8 @@ function render(){
   let h="";for(const g of list){h+=card(g);if(expanded===g.id)h+=expandBlock(g);}
   grid.innerHTML=h;
   grid.querySelectorAll(".card").forEach(c=>c.onclick=()=>{expanded=expanded===c.dataset.id?null:c.dataset.id;render();});
-  grid.querySelectorAll(".mcard.v").forEach(c=>c.onclick=e=>{e.stopPropagation();const g=GAMES.find(x=>x.id===c.dataset.id);openMV(g.top[+c.dataset.i]);});
+  grid.querySelectorAll(".mcard.v").forEach(c=>c.onclick=e=>{e.stopPropagation();const gid=c.dataset.id,i=+c.dataset.i;const src=fullModels[gid]||GAMES.find(x=>x.id===gid).top;openMV(src[i]);});
+  grid.querySelectorAll(".showall").forEach(a=>a.onclick=async e=>{e.preventDefault();e.stopPropagation();const gid=a.dataset.id;a.textContent="loading…";try{const r=await fetch("/models.json?game="+encodeURIComponent(gid),{cache:"no-store"});fullModels[gid]=(await r.json()).models;render();}catch(err){a.textContent="load failed";}});
 }
 function ensureMV(cb){
   if(mvLoaded)return cb();
