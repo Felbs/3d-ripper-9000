@@ -125,3 +125,66 @@ def test_plugin_binds_the_paks_gct_by_id():
     assert scene.textures["tex_0775"].shape == (8, 8, 4)
     assert scene.extras["kinds"] == [0, 1] and scene.extras["textures"] == [775, 776]
     assert plugin.extract(data, "chr01.gcr", None)[0].textures == {}
+
+
+def build_level(sectors=1, textures=(3231, 3237)):
+    """A level: the eight-word header, texture slots at 0x20, then one block a sector - a
+    batch table, f32 positions, f32 uvs, RGBA colours, a strip of 6-byte vertices, its
+    (pointer, size) pair and the 0xa0 record whose +0x9c names the word before it."""
+    out = bytearray(0x20)
+    for t in textures:
+        out += struct.pack(">4I", t, 0, 0, 0)
+    out += struct.pack(">I", frd_gcr.LEVEL_NONE) + bytes(12)
+    for k in range(sectors):
+        table = len(out)
+        out += struct.pack(">5H", k % len(textures), 0, 0, 4, 0)
+        out += struct.pack(">5H", 0, 0, 0, 0, 0xFFFF)
+        out += bytes(-len(out) % 4)
+        pos_at = len(out)
+        for p in QUAD:
+            out += struct.pack(">3f", p[0] + 10 * k, p[1], p[2])
+        uv_at = len(out)
+        for u in UV:
+            out += struct.pack(">2f", *u)
+        clr_at = len(out)
+        for i in range(4):
+            out += bytes([200, 100 + i, 50, 255])
+        dl_at = len(out)
+        out += bytes([0x99]) + struct.pack(">H", 4)
+        for i in range(4):
+            out += struct.pack(">3H", i, i, i)
+        dl_size = len(out) - dl_at
+        out += bytes(-len(out) % 32)
+        pairs = len(out)
+        out += struct.pack(">2I", dl_at, dl_size)
+        out += bytes(4)  # the word +0x9c points at
+        rec = bytearray(frd_gcr.RECORD)
+        struct.pack_into(">I", rec, 0x14, table)
+        struct.pack_into(">5I", rec, 0x24, 0, pos_at, uv_at, clr_at, 0)
+        struct.pack_into(">f", rec, 0x8C, 1.0)
+        struct.pack_into(">I", rec, 0x90, pairs)
+        struct.pack_into(">I", rec, 0x9C, len(out) - 4)
+        out += rec
+    rooms = len(out)
+    out += bytes(72)
+    struct.pack_into(">8I", out, 0, 0x20, rooms, rooms, rooms, 0, 0xFFFFFFFF, 0xFFFFFFFF, 0)
+    return bytes(out)
+
+
+def test_levels_are_sector_records_found_by_their_back_pointer():
+    data = build_level(sectors=3)
+    assert frd_gcr.is_level(data[:0x20], len(data)) and not frd_gcr.is_gcr(data[:12], len(data))
+    assert plugin.detect("bg/level11/level11.gcr", data[:64], len(data))
+    m = frd_gcr.parse_level(data)
+    assert m is not None and m.warnings == [] and m.records == 3 and m.textures == [3231, 3237]
+    assert len(m.batches) == 3 and [b.slot for b in m.batches] == [0, 1, 0]
+    b = m.batches[1]
+    # 6-byte vertices: position, colour, uv - no normals in a level
+    assert b.normals is None and len(b.indices) == 6
+    assert np.allclose(b.positions[:, 0].min(), 10.0) and np.allclose(b.uvs, UV)
+    assert b.colors is not None and b.colors[3].tolist() == [200, 103, 50, 255]
+    src = _Src({"files/data/story/l_11_ST.pak/textures__3237.gct": _gct_i8()})
+    (scene,) = plugin.extract(data, "files/data/story/l_11_ST.pak/bg__level11__level11.gcr", src)
+    assert scene.extras["flavour"] == "level" and scene.triangles == 6
+    assert [mat.texture for mat in scene.materials] == [None, "tex_3237"]
+    assert not frd_gcr.is_level(build()[:0x20], len(build()))

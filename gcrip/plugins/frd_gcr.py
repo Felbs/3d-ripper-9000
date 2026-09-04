@@ -1,6 +1,7 @@
-"""Free Radical ``gcr`` character models (gcrip.formats.frd_gcr) - TimeSplitters 2's
-``ob/chrs/*.gcr``: one Scene a file, one primitive a display list, textured by the pak's
-``textures/%04d.gct`` members the file's slot table names."""
+"""Free Radical ``gcr`` models (gcrip.formats.frd_gcr) - TimeSplitters 2's characters,
+props and guns (``ob/**/*.gcr``) and its levels (``bg/level*/level*.gcr``): one Scene a file,
+one primitive a display list, textured by the pak's ``textures/%04d.gct`` members the file's
+slot table names."""
 
 from __future__ import annotations
 
@@ -13,7 +14,9 @@ NAME = "frd_gcr"
 
 
 def detect(path: str, head: bytes, size: int) -> bool:
-    return path.lower().endswith(".gcr") and frd_gcr.is_gcr(head, size)
+    return path.lower().endswith(".gcr") and (
+        frd_gcr.is_gcr(head, size) or frd_gcr.is_level(head, size)
+    )
 
 
 def _gct(src, path: str, gct: int) -> bytes | None:
@@ -33,7 +36,8 @@ def _gct(src, path: str, gct: int) -> bytes | None:
 
 
 def extract(data: bytes, path: str, src) -> list[Scene]:
-    model = frd_gcr.parse(data)
+    level = frd_gcr.is_level(data[:0x20], len(data))
+    model = frd_gcr.parse_level(data) if level else frd_gcr.parse(data)
     if model is None or not model.batches:
         return []  # legitimate: a character file with no readable display list
     stem = posixpath.basename(path).rsplit(".", 1)[0] or "model"
@@ -74,6 +78,7 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
         )
     scene.extras = {
         "format": "frd_gcr",
+        "flavour": "level" if level else "character",
         "nodes": model.records,
         "bones": model.bones,
         "lods": model.lods,

@@ -22,11 +22,20 @@ keeps is the **last 52 bytes** (``+4`` of the file says where: ``file length - 5
           +0x60 u16, +0x62 u16, +0x67 u8 uv flags, +0x8c f32 (1 / 0.5 / 0.3)
           +0x90 + 4 * lod   -> per batch ``u32 display list, u32 bytes`` (0, 0 = none)
 
-A display list is GX: ``0x98 | fmt, u16 count`` strips of vertices that are four big-endian
-``u16`` indices - position, normal, colour, uv - with, on the skinned kinds, a leading ``u8``
-matrix (bone) index, so 8 bytes on kind 0 and 9 on the others.  Positions are the bind pose in
-model space (feet at y = 0, head at 1.86 on ``chr128``), so a rigid node's bone is only
-metadata here.
+A display list is GX: ``0x98 | fmt, u16 count`` strips of vertices that are big-endian
+``u16`` indices - position, normal (only when the node has a normal array), colour, uv -
+with, on the skinned kinds, a leading ``u8`` matrix (bone) index: 8 bytes on a rigid
+character node, 9 on a skinned one, 6 on a level sector (no normals, vertex-lit).
+Positions are the bind pose in model space (feet at y = 0, head at 1.86 on ``chr128``), so
+a rigid node's bone is only metadata here.
+
+**Levels** (``bg/level*/level*.gcr``) reuse the node record without the trailer: ``+0`` is
+0x20 (the texture slots follow the eight-word header: ``u32 gct id, u32 flags, 0, u32``),
+``+4`` / ``+8`` / ``+0xc`` point at runtime scratch, 72-byte portal quads and entity
+placements, and +0x14 / +0x18 are -1.  The geometry is a run of sector blocks, each its
+batch table, arrays, display lists and pairs followed by the 0xa0 record - whose word at
++0x9c points four bytes before the record, which is how ``level_nodes`` finds them.  Level 11
+(Chicago) is 51 sectors, 10,461 triangles in world space, 62 textures.
 """
 
 from __future__ import annotations
@@ -60,7 +69,7 @@ class Batch:
     bone: int
     slot: int  # texture slot -> Model.textures
     positions: np.ndarray
-    normals: np.ndarray
+    normals: np.ndarray | None
     uvs: np.ndarray
     colors: np.ndarray | None
     indices: np.ndarray
@@ -108,8 +117,12 @@ def _batches(data: bytes, at: int) -> list[tuple[int, int, int, int]] | None:
     return None
 
 
-def _strips(data: bytes, at: int, size: int, stride: int):
-    """(index rows (n, 4), matrix bytes or None, triangle corner order) of one display list."""
+def _strips(data: bytes, at: int, size: int, layout: tuple[bool, bool, bool]):
+    """(index rows (n, 4): position, normal, colour, uv; matrix bytes or None; triangles) of
+    one display list.  ``layout`` says which optional fields a vertex carries: a leading
+    matrix byte, a normal index, a second colour index (skipped)."""
+    has_mtx, has_nrm, has_clr1 = layout
+    stride = (1 if has_mtx else 0) + 2 + (2 if has_nrm else 0) + 2 + (2 if has_clr1 else 0) + 2
     end = min(at + size, len(data))
     p = at
     rows, mtx, prims = [], [], []
@@ -126,10 +139,22 @@ def _strips(data: bytes, at: int, size: int, stride: int):
         if count < 1 or p + count * stride > end:
             return None
         raw = np.frombuffer(data, np.uint8, count * stride, p).reshape(count, stride)
-        if stride == 9:
+        if has_mtx:
             mtx.append(raw[:, 0].copy())
             raw = raw[:, 1:]
-        rows.append(raw.copy().view(">u2").reshape(count, 4))
+        cols = raw.copy().view(">u2").reshape(count, -1)
+        k = 0
+        pos = cols[:, k]
+        k += 1
+        if has_nrm:
+            nrm = cols[:, k]
+            k += 1
+        else:
+            nrm = np.zeros(count, ">u2")
+        clr = cols[:, k]
+        k += 1 + (1 if has_clr1 else 0)
+        tex = cols[:, k]
+        rows.append(np.stack([pos, nrm, clr, tex], 1))
         prims.append((op & PRIM_MASK, count, base))
         base += count
         p += count * stride
@@ -137,6 +162,97 @@ def _strips(data: bytes, at: int, size: int, stride: int):
         return None
     tri = _triangulate(prims, np.arange(base, dtype=np.uint32)).reshape(-1, 3)
     return np.concatenate(rows), (np.concatenate(mtx) if mtx else None), tri
+
+
+def _node(data: bytes, i: int, r: int, out: Model) -> None:
+    """The finest LOD of the 0xa0-byte node record at ``r`` into ``out.batches``."""
+    kind, bone = data[r], data[r + 1]
+    uv_flags = data[r + 0x67]
+    for lod in range(LODS):
+        table = struct.unpack_from(">I", data, r + 0x14 + 4 * lod)[0]
+        pairs = struct.unpack_from(">I", data, r + 0x90 + 4 * lod)[0]
+        if not table:
+            break
+        if lod:
+            out.lods = max(out.lods, lod + 1)
+            continue  # the finest level is the model; the others are the same shape
+        arrays = r + 0x24 + 0x14 * lod
+        _h, pos_at, uv_at, clr_at, nrm_at = struct.unpack_from(">5I", data, arrays)
+        batches = _batches(data, table)
+        if batches is None or not pos_at or not uv_at:
+            out.warnings.append(f"node {i}: batch table unreadable")
+            break
+        nverts = batches[-1][2] + batches[-1][3] if batches else 0
+        if not 0 < nverts <= MAX_VERTS or pos_at + nverts * 12 > len(data):
+            out.warnings.append(f"node {i}: {nverts} vertices past the file")
+            break
+        uv_stride = 12 if uv_flags & (1 << lod) else 8
+        layout = (kind != 0, nrm_at != 0, bool(uv_flags & (0x10 << lod)))
+        positions = np.frombuffer(data, ">f4", nverts * 3, pos_at).reshape(nverts, 3)
+        for k, (slot, _index, _first, _n) in enumerate(batches):
+            if pairs + 8 * k + 8 > len(data):
+                break
+            dl_at, dl_size = struct.unpack_from(">2I", data, pairs + 8 * k)
+            if not dl_at or not dl_size:
+                continue
+            got = _strips(data, dl_at, dl_size, layout)
+            if got is None:
+                out.warnings.append(f"node {i}: batch {k} display list unreadable")
+                continue
+            rows, mtx, tri = got
+            if int(rows[:, 0].max()) >= nverts:
+                out.warnings.append(f"node {i}: batch {k} indexes past {nverts} vertices")
+                continue
+            uniq, inverse = np.unique(rows, axis=0, return_inverse=True)
+            tri = inverse.reshape(-1)[tri]
+            keep = (tri[:, 0] != tri[:, 1]) & (tri[:, 1] != tri[:, 2])
+            tri = tri[keep & (tri[:, 0] != tri[:, 2])]
+            if not len(tri):
+                continue
+            pi = uniq[:, 0].astype(np.int64)
+            ni = uniq[:, 1].astype(np.int64)
+            ti = uniq[:, 3].astype(np.int64)
+            nmax, tmax = int(ni.max()), int(ti.max())
+            if nrm_at and nrm_at + (nmax + 1) * 4 <= len(data):
+                nrm = np.frombuffer(data, np.int8, (nmax + 1) * 4, nrm_at).reshape(-1, 4)[:, :3]
+                normals = (nrm[ni].astype(np.float32) * NRM_SCALE).astype(np.float32)
+            else:
+                normals = None
+            if uv_at + (tmax + 1) * uv_stride <= len(data):
+                uv = np.frombuffer(data, ">f4", (tmax + 1) * uv_stride // 4, uv_at).reshape(
+                    -1, uv_stride // 4
+                )[:, :2]
+                uvs = np.ascontiguousarray(uv[ti], np.float32)
+            else:
+                uvs = np.zeros((len(uniq), 2), np.float32)
+            colors = None
+            if clr_at:
+                ci = uniq[:, 2].astype(np.int64)
+                ncol = int(ci.max()) + 1
+                if clr_at + ncol * 4 <= len(data):
+                    c = np.frombuffer(data, np.uint8, ncol * 4, clr_at).reshape(-1, 4)
+                    colors = np.ascontiguousarray(c[ci])
+            per_vertex_bone = None
+            if mtx is not None:
+                # the matrix byte travels with the corner; take it from the first corner
+                # that names each unique vertex
+                first = np.zeros(len(uniq), np.int64)
+                first[inverse.reshape(-1)[::-1]] = np.arange(len(inverse) - 1, -1, -1)
+                per_vertex_bone = mtx[first].astype(np.uint16)
+            out.batches.append(
+                Batch(
+                    i,
+                    kind,
+                    bone,
+                    slot,
+                    np.ascontiguousarray(positions[pi], np.float32),
+                    normals,
+                    uvs,
+                    colors,
+                    tri.ravel().astype(np.uint32),
+                    per_vertex_bone,
+                )
+            )
 
 
 def parse(data: bytes) -> Model | None:
@@ -152,92 +268,67 @@ def parse(data: bytes) -> Model | None:
     out.textures = _textures(data)
     base = trailer - count * RECORD
     for i in range(count):
-        r = base + i * RECORD
-        kind, bone = data[r], data[r + 1]
-        stride = 8 if kind == 0 else 9
-        uv_flags = data[r + 0x67]
-        for lod in range(LODS):
-            table = struct.unpack_from(">I", data, r + 0x14 + 4 * lod)[0]
-            pairs = struct.unpack_from(">I", data, r + 0x90 + 4 * lod)[0]
-            if not table:
-                break
-            if lod:
-                out.lods = max(out.lods, lod + 1)
-                continue  # the finest level is the model; the others are the same shape
-            arrays = r + 0x24 + 0x14 * lod
-            _h, pos_at, uv_at, clr_at, nrm_at = struct.unpack_from(">5I", data, arrays)
-            batches = _batches(data, table)
-            if batches is None or not pos_at or not uv_at:
-                out.warnings.append(f"node {i}: batch table unreadable")
-                break
-            nverts = batches[-1][2] + batches[-1][3] if batches else 0
-            if not 0 < nverts <= MAX_VERTS or pos_at + nverts * 12 > len(data):
-                out.warnings.append(f"node {i}: {nverts} vertices past the file")
-                break
-            uv_stride = 12 if uv_flags & (1 << lod) else 8
-            positions = np.frombuffer(data, ">f4", nverts * 3, pos_at).reshape(nverts, 3)
-            for k, (slot, _index, _first, _n) in enumerate(batches):
-                if pairs + 8 * k + 8 > len(data):
-                    break
-                dl_at, dl_size = struct.unpack_from(">2I", data, pairs + 8 * k)
-                if not dl_at or not dl_size:
-                    continue
-                got = _strips(data, dl_at, dl_size, stride)
-                if got is None:
-                    out.warnings.append(f"node {i}: batch {k} display list unreadable")
-                    continue
-                rows, mtx, tri = got
-                if int(rows[:, 0].max()) >= nverts:
-                    out.warnings.append(f"node {i}: batch {k} indexes past {nverts} vertices")
-                    continue
-                uniq, inverse = np.unique(rows, axis=0, return_inverse=True)
-                tri = inverse.reshape(-1)[tri]
-                keep = (tri[:, 0] != tri[:, 1]) & (tri[:, 1] != tri[:, 2])
-                tri = tri[keep & (tri[:, 0] != tri[:, 2])]
-                if not len(tri):
-                    continue
-                pi = uniq[:, 0].astype(np.int64)
-                ni = uniq[:, 1].astype(np.int64)
-                ti = uniq[:, 3].astype(np.int64)
-                nmax, tmax = int(ni.max()), int(ti.max())
-                if nrm_at and nrm_at + (nmax + 1) * 4 <= len(data):
-                    nrm = np.frombuffer(data, np.int8, (nmax + 1) * 4, nrm_at).reshape(-1, 4)[:, :3]
-                    normals = (nrm[ni].astype(np.float32) * NRM_SCALE).astype(np.float32)
-                else:
-                    normals = np.zeros((len(uniq), 3), np.float32)
-                if uv_at + (tmax + 1) * uv_stride <= len(data):
-                    uv = np.frombuffer(data, ">f4", (tmax + 1) * uv_stride // 4, uv_at).reshape(
-                        -1, uv_stride // 4
-                    )[:, :2]
-                    uvs = np.ascontiguousarray(uv[ti], np.float32)
-                else:
-                    uvs = np.zeros((len(uniq), 2), np.float32)
-                colors = None
-                if clr_at:
-                    ci = uniq[:, 2].astype(np.int64)
-                    ncol = int(ci.max()) + 1
-                    if clr_at + ncol * 4 <= len(data):
-                        c = np.frombuffer(data, np.uint8, ncol * 4, clr_at).reshape(-1, 4)
-                        colors = np.ascontiguousarray(c[ci])
-                per_vertex_bone = None
-                if mtx is not None:
-                    # the matrix byte travels with the corner; take it from the first corner
-                    # that names each unique vertex
-                    first = np.zeros(len(uniq), np.int64)
-                    first[inverse.reshape(-1)[::-1]] = np.arange(len(inverse) - 1, -1, -1)
-                    per_vertex_bone = mtx[first].astype(np.uint16)
-                out.batches.append(
-                    Batch(
-                        i,
-                        kind,
-                        bone,
-                        slot,
-                        np.ascontiguousarray(positions[pi], np.float32),
-                        normals,
-                        uvs,
-                        colors,
-                        tri.ravel().astype(np.uint32),
-                        per_vertex_bone,
-                    )
-                )
+        _node(data, i, base + i * RECORD, out)
+    return out
+
+
+# -- levels: bg/level*.gcr ---------------------------------------------------------------------
+
+LEVEL_SLOTS = 0x20
+LEVEL_NONE = 0xFFFFFFFF
+
+
+def is_level(head: bytes, size: int) -> bool:
+    """``+0`` is 0x20 - the texture slots start right after the eight-word header - and the
+    words at +0x14 and +0x18 are -1."""
+    if len(head) < 0x20 or size < 0x400:
+        return False
+    a, b, c, d_, _e, f, g = struct.unpack_from(">7I", head, 0)
+    inside = 0 < b < size and 0 < c < size and 0 < d_ < size
+    return a == LEVEL_SLOTS and f == LEVEL_NONE and g == LEVEL_NONE and inside
+
+
+def _level_slots(data: bytes) -> list[int]:
+    out = []
+    p = LEVEL_SLOTS
+    while p + TEXTURE_SLOT <= len(data) and len(out) < MAX_BATCHES:
+        gct = struct.unpack_from(">I", data, p)[0]
+        if gct == LEVEL_NONE:
+            break
+        out.append(gct)
+        p += TEXTURE_SLOT
+    return out
+
+
+def level_nodes(data: bytes) -> list[int]:
+    """Offsets of a level's sector records: each 0xa0-byte record closes its own block and
+    its word at +0x9c points four bytes before itself."""
+    n = len(data) // 4 * 4
+    words = np.frombuffer(data, ">u4", n // 4)
+    at = np.arange(0, n, 4, dtype=np.int64)
+    ok = np.zeros(len(words), bool)
+    span = 0x9C // 4
+    ok[: len(words) - span] = words[span:] == (at[: len(words) - span] - 4)
+    ok &= at >= 4
+    out = []
+    for x in at[ok].tolist():
+        if x + RECORD > len(data):
+            continue
+        table = struct.unpack_from(">I", data, x + 0x14)[0]
+        pairs = struct.unpack_from(">I", data, x + 0x90)[0]
+        pos_at, uv_at = struct.unpack_from(">2I", data, x + 0x28)
+        if 0 < table < x and 0 < pairs < x and 0 < pos_at < x and 0 < uv_at < x:
+            out.append(x)
+    return out
+
+
+def parse_level(data: bytes) -> Model | None:
+    if not is_level(data[:0x20], len(data)):
+        return None
+    out = Model()
+    out.textures = _level_slots(data)
+    nodes = level_nodes(data)
+    out.records = len(nodes)
+    for i, r in enumerate(nodes):
+        _node(data, i, r, out)
     return out

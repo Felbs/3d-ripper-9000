@@ -318,3 +318,21 @@ stored normals on 100% of `chr128`'s 2,716 triangles (mean 0.90).
 flavour: `bg/level*.gcr` / `ob/tile*.gcr` (two pointers and a float grid at +0) and Future
 Perfect / Second Sight's character files (three pointers into a 52-byte block at +0, s16
 vertex data) - see OPEN.md.
+
+### The levels are the same records (2026-09-03, later)
+
+`bg/level11/level11.gcr` (852 KB, Chicago) has no trailer: `+0` is 0x20 and the texture slots
+start there (`u32 gct id, u32 flags, 0, u32`, 62 of them, ended by 0xFFFFFFFF); `+4` points at
+a zeroed runtime area at the end of the file, `+8` at a list of 98 seventy-two-byte portal
+quads (`u32 2, u32 1, f32 1.0, 0, 0, u32, f32 corner[4][3]`), `+0xc` at entity placements
+(`u32 type, u32 id, u32, f32 position[3], ..., f32 yaw`), and +0x14 / +0x18 are -1.  Between
+the slots and the portals the geometry is **sector blocks**: a batch table, f32 positions,
+f32 uvs, RGBA8 colours, display lists, the (pointer, size) pairs, then the 0xa0 node record -
+exactly the character record, kind 0, no normal array, and its word at +0x9c pointing four
+bytes before itself, which is what `frd_gcr.level_nodes` scans for (51 sectors here).  The
+display lists are `0x99` strips of **6-byte** vertices - position, colour, uv - since a level
+is vertex-lit; the general rule the reader now applies is: a matrix byte on kinds 1-3, a
+normal index only when the node has a normal array, a second colour index when bit `0x10 <<
+lod` of +0x67 is set.  Level 11 comes out in world space (-37..62 x -0.2..10.7 x -46..29),
+10,461 triangles at LOD 0 (LOD 1 is 245), with 45 of its 62 textures bound from the pak.
+A story pak is 46,437 triangles in all with its props.
