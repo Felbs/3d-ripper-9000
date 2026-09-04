@@ -100,3 +100,24 @@ otherwise 12. Colours RGBA8. UVs s16 / 4096 (tiling allowed: torch -0.6..1.85).
   decoded) and rig-only models (`A217_NanoHand`: 32-byte `.mdg`) carry no mesh at all;
   grass/collision materials have no `.tex`.
 - Jimmy Neutron: Jet Fusion container.
+
+
+## `GC01` - Jimmy Neutron: Jet Fusion (2026-09-03)
+
+Jet Fusion's `Data_GC.rkv` (RKV v1, 12,646 members) carries 1,317 `.mdl` + `.mdg` pairs
+whose `.mdl` open `GC01`, not `MDL3`, so the MDL3 reader declined them all and the disc
+yielded 18 models (its `.bpk` level packs).  `Jimmy.elf` keeps its symtab (no DWARF):
+`Model::UnpackTemplate` fixes the file's pointers and `Model::ExploreBuildVertex` - the
+tooling's vertex decoder - names the vertex.
+
+`.mdl` (`ModelTemplate`): `u16` at +4, `i16 subobjects` +6, `i16 refpoints` +8, `u32`
+subobject table +12, refpoint table +16, seven bounds floats +32.  A subobject is 0x50
+bytes: bounds, name pointer +0x30, `i16 materials` +0x42, material list pointer +0x44.  A
+material is 16 bytes: name pointer (the `.tex` stem, `Material::Create`), `.mdg` offset,
+`u16 bytes >> 4`, `u16`, `u32 strips`.  Refpoints are 0x20 bytes with the name at +16.
+
+`.mdg`: bare GX display lists - opcode (`0x98` strips), `u16 count`, then 24-byte vertices:
+`f32 position[3], s8 normal[3] / 64, u16 RGBA4, s16 uv / 4096`, three bytes of padding (the
+stride 0x18 and the constants 1/64, 15 and 4096 sit next to `ExploreBuildVertex`).  Every
+material's span walks list by list to its end: `room_6b_02` gives 1,786 lists and 68,616
+triangles (a tube level), the rock prop 218 at 0.96 normal agreement, textured.

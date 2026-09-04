@@ -6,6 +6,12 @@ textures through the plugin chain.
 
 Companion to [FORMATS.md](FORMATS.md), which lists what already works.
 
+## Closed 2026-09-03: Jimmy Neutron: Jet Fusion (Krome `GC01`)
+
+1,317 `.mdl` + `.mdg` pairs the MDL3 reader declined for their magic; `Jimmy.elf`'s
+`ExploreBuildVertex` names the 24-byte display-list vertex.  See
+[formats/krome-mdl2-gamecube.md](formats/krome-mdl2-gamecube.md).
+
 ## Closed 2026-09-03: Climax `.bad` (ATV: Quad Power Racing 2, Hot Wheels World Race, The Italian Job)
 
 Four oracles had failed on the LZSS because the framing was wrong, not the ring walk: Hot
