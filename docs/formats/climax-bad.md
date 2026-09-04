@@ -218,3 +218,47 @@ problem: four oracles have been tried and none can tell a good decode from a bad
 changed is that the *proven* oracle is now affordable - `gcrip/knownplain.py` against a full
 decode takes seconds, so the next attempt should look for a Climax asset stored raw somewhere in
 the library rather than guessing at operand encodings.
+
+
+## Settled from the DOL (2026-09-03): a block a member, and the `.bah` names them
+
+Hot Wheels ships `HotwheelsFCDntsc.map`, and it fits `sys/main.dol`.  `cLZSS::Decompress(char*
+src, char* dst)` reads `u32 kind, u32 count` and either copies `count` bytes (kind 0) or zeroes
+the 4113-byte ring, resets the decoder state and calls `cLZSS::read_data` until exactly
+`count` bytes are out.  The ring walk is what this note had all along - flag byte low bit
+first, `pos = lo | ((hi & 0xf0) << 4)` absolute in the ring, `len = (hi & 0x0f) + 3`, ring
+index from 4078, zero fill.  **The framing was the bug**: the archive is not a stream, it is
+one block per file, and running the decoder past the first block's `count` fed the next
+block's header in as compressed data.  That is precisely where "mass di" stopped completing
+into "distribution".  None of the oracles could see it because every one of them judged the
+ring walk, which was right.
+
+Decoded a block at a time, ATV's first 6 MB are **746 named members that all inflate to the
+size the directory declares**; blocks follow each other 4-byte aligned.
+
+The directory is `harchive.bah` / `ATV.bah` / `Archive.bah` beside the `.bad` (`Bark 1.06`,
+`cFile::LoadArchiveHeader` / `LoadArchiveDir`): from +12, a tree of `u32 name length, u32
+files, u32 subdirectories, u32`, the name, per file `u32 name length, u32 offset, u32 stored
+bytes, u32 size, u32 hash` and the name, then the subdirectories.  Hot Wheels: 6,796 files -
+3,575 `.bog`, 1,282 `.rom`, 21 `.row` tracks, 21 `.kdt`, 21 `.nin`; ATV: 2,113 - 983 `.bog`,
+380 `.rom`, 144 `.cuban` (the animations, not models), 19 `.row`; The Italian Job: 2,591.
+
+### `.bog` textures - `cBogFile::Load`, `BlimeyToGX`
+
+`BOG 1.01` (ATV, Italian Job) is a 40-byte header, `BOG 1.02` (Hot Wheels) 56: magic, u32
+format, width, height, mip levels, 1, image bytes.  `BlimeyToGX` maps the format: 2/8 RGB5A3,
+4 RGB565, 0x10/0x20/0x200/0x8000 RGBA8, 0x40 C8, 0x80 C4, 0x100/0x800/0x2000/0x4000 CMPR.  C8
+and C4 carry a 256 / 16 entry ARGB8888 palette before the tiles.  `24_7.bog` is the Street
+Breed livery; ATV's `Tpage2ATC` the quad's dragon decal.
+
+### `.rom` models - `cModelFile::Init`, `cModelMeshFile::Init`
+
+The file is the runtime image.  Counts at +12: materials (140-byte records at +0x48, the
+`.bog` stem in the first 16 bytes), B (124), attachment points (44: `frwheelcentre` + xyz),
+D (104), E (32), meshes; min/max patch steps at +36; bounds at +48.  Each mesh: `u32 flags,
+i32 material, u32 x3, u32 triangles, patches, C, vertices, u32 x3` (0x30 in 1.26, 0x34 in
+1.27 - ATV's DOL says 0x30, Hot Wheels' 0x34), then u32 triangle triples, 672-byte bicubic
+Bezier patches (12 bytes, f32 x[16], y[16], z[16] control points, six more zero arrays), C
+u32s and 56-byte vertices (f32 position, normal, uv, uv2, four words).  The ATV body walks
+to its last byte: 12 meshes, 1,156 triangles with the 21 patches tessellated 4x4, normal
+agreement 0.93, a quad with seat, fenders and pegs.

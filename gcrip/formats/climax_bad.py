@@ -19,24 +19,30 @@ tag with an underscore in it: the ``_`` is byte 0x5f, the *flag byte* that follo
 eight literals, and the text is ``CUBAN 1.02``.  A header sampled without decompressing it
 shows the compressor's control bytes interleaved with the data.
 
-## Where the stream starts
+## Read from the DOL (2026-09-03): a file is many blocks, one per member
 
-A file is a run of ``u32 kind, u32 count`` headers.  The stream begins at the first header
-whose payload starts with a flag byte of all literals, which is what every stream must open
-with while the ring is still empty:
+Hot Wheels ships ``HotwheelsFCDntsc.map``, and ``cLZSS::Decompress`` in its ``main.dol`` is
+the whole story the sweeps were missing.  It takes **one block** - ``u32 kind, u32 count`` and
+the bytes after - and for kind 0 copies ``count`` bytes, for anything else zeroes the ring,
+resets the decoder and inflates until exactly ``count`` bytes are out.  The ring walk itself
+is what this module had (position absolute, ``(hi & 0x0f) + 3``, ring index from 4078, zero
+fill).  What was wrong was the framing: the archive is not one stream.  Every member of the
+archive is its own block, so the decoder that ran on from the first block's end was inflating
+the next block's ``kind, count`` header as data - which is exactly where the text turned to
+gibberish.  Decoded block by block, ATV's first 5 MB are 572 clean members (``CUBAN 1.02``,
+``ROM 1.26``, ``BOG 1.01``, ``POINT 1.00``, parameter text files, ``bones``).
 
-* ATV and The Italian Job put it first, so the stream is at +8 (``ff`` then ``CUBAN 1.`` /
-  ``BOG 1.01``).
-* Hot Wheels has a 728-byte uncompressed block in front, so its stream is at +744 (``ff`` then
-  ``//`` and a comment).  Its tail carries a second one.
-
-The second header word is not a payload length - on ATV it measures a block of plain game text
-at the very end of the file - so it is not used to bound the walk.
+The directory is a sibling ``.bah`` (``Bark 1.06``, ``cFile::LoadArchiveDir``): from +12 a
+recursive tree of ``u32 name length, u32 files, u32 subdirectories, u32``, the name, then a
+file a ``u32 name length, u32 offset, u32 stored size, u32 size, u32 hash`` and its name,
+then the subdirectories.  Without the ``.bah`` the members are still separable - blocks
+follow each other 4-byte aligned - but nameless.
 """
 
 from __future__ import annotations
 
 import struct
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -200,3 +206,160 @@ def looks_like(head: bytes) -> bool:
         return False
     kind, count = struct.unpack_from(">2I", head, 0)
     return kind <= 2 and 0 < count < (1 << 27)
+
+
+# -- blocks and the .bah directory (from the Hot Wheels DOL, 2026-09-03) --------------------
+
+BAH_MAGIC = b"Bark 1.06"
+BAH_ROOT = 12
+KIND_RAW = 0
+BLOCK_ALIGN = 4
+MAX_MEMBERS = 1 << 18
+
+
+@dataclass(frozen=True)
+class Entry:
+    path: str
+    offset: int  # of the block's kind/count header in the .bad
+    stored: int  # bytes in the .bad, header included
+    size: int  # bytes once inflated
+    hash: int
+
+
+def is_bah(head: bytes) -> bool:
+    return head[: len(BAH_MAGIC)] == BAH_MAGIC
+
+
+def directory(bah: bytes) -> list[Entry]:
+    """Every file of the archive with its full path, from the ``.bah`` tree."""
+    if not is_bah(bah):
+        return []
+    out: list[Entry] = []
+
+    def walk(p: int, prefix: str) -> int:
+        if p + 16 > len(bah):
+            raise ValueError("directory past the file")
+        nlen, nfiles, nsub, _x = struct.unpack_from(">4I", bah, p)
+        p += 16
+        name = bah[p : p + nlen].split(b"\0", 1)[0].decode("latin-1", "replace")
+        p += nlen
+        here = f"{prefix}{name}/" if name else prefix
+        for _ in range(min(nfiles, MAX_MEMBERS)):
+            if p + 20 > len(bah):
+                raise ValueError("file record past the directory")
+            flen, offset, stored, size, digest = struct.unpack_from(">5I", bah, p)
+            p += 20
+            fname = bah[p : p + flen].split(b"\0", 1)[0].decode("latin-1", "replace")
+            p += flen
+            out.append(Entry(here + fname, offset, stored, size, digest))
+        for _ in range(min(nsub, MAX_MEMBERS)):
+            p = walk(p, here)
+        return p
+
+    try:
+        walk(BAH_ROOT, "")
+    except ValueError:
+        return []
+    return out
+
+
+def decode_block(data: bytes, at: int, count: int) -> tuple[bytes, int]:
+    """Inflate one block (``cLZSS::read_data``): ``count`` bytes out, from ``at``; returns
+    the bytes and where the input stopped."""
+    ring = bytearray(RING)
+    r = RING - MAX_MATCH
+    out = bytearray()
+    flags = 0
+    i = at
+    n = len(data)
+    while len(out) < count and i < n:
+        flags >>= 1
+        if not flags & 0x100:
+            flags = data[i] | 0xFF00
+            i += 1
+            if i >= n:
+                break
+        if flags & 1:
+            c = data[i]
+            i += 1
+            out.append(c)
+            ring[r] = c
+            r = (r + 1) % RING
+        else:
+            if i + 2 > n:
+                break
+            lo, hi = data[i], data[i + 1]
+            i += 2
+            pos = lo | ((hi & 0xF0) << 4)
+            for k in range((hi & 0x0F) + THRESHOLD + 1):
+                if len(out) >= count:
+                    break
+                c = ring[(pos + k) % RING]
+                out.append(c)
+                ring[r] = c
+                r = (r + 1) % RING
+    return bytes(out), i
+
+
+def block(data: bytes, at: int) -> tuple[bytes, int] | None:
+    """The block whose ``kind, count`` header sits at ``at``: (bytes, next block offset)."""
+    if at + HEADER > len(data):
+        return None
+    kind, count = struct.unpack_from(">2I", data, at)
+    if count > len(data) * MAX_EXPANSION:
+        return None
+    if kind == KIND_RAW:
+        end = at + HEADER + count
+        if end > len(data):
+            return None
+        return data[at + HEADER : end], end
+    out, end = decode_block(data, at + HEADER, count)
+    if len(out) != count:
+        return None
+    return out, end
+
+
+def member(data: bytes, entry: Entry) -> bytes | None:
+    """One named member; the compiled walk does the big ones (the block's stored size bounds
+    the input, so the walk cannot run into the next block)."""
+    at = entry.offset
+    if at + HEADER > len(data) or at + entry.stored > len(data):
+        return None
+    kind, count = struct.unpack_from(">2I", data, at)
+    if count != entry.size:
+        return None
+    if kind == KIND_RAW:
+        return data[at + HEADER : at + HEADER + count]
+    if _decompress_fast is not None and entry.stored > _JIT_MIN:
+        src = np.frombuffer(data[at + HEADER : at + entry.stored], np.uint8)
+        buf = np.zeros(count + MAX_MATCH, np.uint8)
+        written = _decompress_fast(
+            src, buf, np.zeros(RING, np.uint8), count, RING, MAX_MATCH, THRESHOLD
+        )
+        return buf[:count].tobytes() if written >= count else None
+    got = block(data, at)
+    if got is None or len(got[0]) != entry.size:
+        return None
+    return got[0]
+
+
+def members(data: bytes, bah: bytes | None) -> list[tuple[str, bytes]]:
+    """Every member: by the ``.bah`` when there is one, else block after block, named by
+    their order and their first bytes."""
+    out: list[tuple[str, bytes]] = []
+    if bah is not None:
+        for e in directory(bah):
+            blob = member(data, e)
+            if blob is not None:
+                out.append((e.path, blob))
+        return out
+    at = 0
+    while at + HEADER <= len(data) and len(out) < MAX_MEMBERS:
+        got = block(data, at)
+        if got is None:
+            break
+        blob, end = got
+        tag = "".join(chr(c) if 48 <= c < 123 and chr(c).isalnum() else "_" for c in blob[:5])
+        out.append((f"{len(out):05d}_{tag.strip('_') or 'raw'}.bin", blob))
+        at = end + (-end % BLOCK_ALIGN)
+    return out
