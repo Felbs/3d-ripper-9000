@@ -84,8 +84,8 @@ def test_detection_is_the_12_and_the_trailer_offset():
     data = build()
     assert frd_gcr.is_gcr(data[:12], len(data))
     assert plugin.detect("ob/chrs/chr01.gcr", data[:64], len(data))
-    assert not plugin.detect("ob/chrs/chr01.gcr", data[:64], len(data) + 4)
-    assert not plugin.detect("level.gcr", struct.pack(">3I", 327428, 327388, 1025884882), 387904)
+    assert not frd_gcr.is_gcr(data[:12], len(data) + 4)
+    assert not plugin.detect("x.bin", bytes(64), 4096)
     assert frd_gcr.parse(b"\0" * 64) is None
 
 
@@ -188,3 +188,175 @@ def test_levels_are_sector_records_found_by_their_back_pointer():
     assert scene.extras["flavour"] == "level" and scene.triangles == 6
     assert [mat.texture for mat in scene.materials] == [None, "tex_3237"]
     assert not frd_gcr.is_level(build()[:0x20], len(build()))
+
+
+def build_fp(s16=True, embedded=True, matrix_flag=False, kind=0, order_fp=True):
+    """A Future Perfect / Second Sight prop: slot table at 12, an s16 (or f32) QUAD, s16 uvs
+    (the pointer's bit 1 says so), normals by palette index, one strip, the 0xc0 record and
+    the trailer at +4.  ``order_fp`` picks the batch-entry field order."""
+    out = bytearray(12)
+    slot_at = len(out)
+    out += bytes(16) + struct.pack(">I", frd_gcr.END32) + bytes(12)
+    pos_at = len(out)
+    for p in QUAD:
+        out += struct.pack(">3h", *(int(v * 1024) for v in p)) if s16 else struct.pack(">3f", *p)
+    out += bytes(-len(out) % 4)
+    uv_at = len(out)
+    for u in UV:
+        out += struct.pack(">2h", *(int(v * 1024) for v in u))
+    out += bytes(-len(out) % 4)
+    dl_at = len(out)
+    out += bytes([0x9D]) + struct.pack(">H", 4)
+    for i in range(4):
+        if kind or matrix_flag:
+            out += bytes([3])
+        out += struct.pack(">3H", i, 7 + i, i)  # position, palette normal, uv
+    dl_size = len(out) - dl_at
+    out += bytes(-len(out) % 32)
+    pairs = len(out)
+    out += struct.pack(">2I", dl_at, dl_size)
+    table = len(out)
+    if order_fp:
+        out += struct.pack(">HBBHH", 0, 4, 3, 0, 0) + struct.pack(">HBBHH", 0, 0, 0xFF, 0, 0)
+    else:
+        out += struct.pack(">3HBB", 0, 0, 0, 4, 3) + struct.pack(">3HBB", 0, 0, 0, 0, 0xFF)
+    out += bytes(-len(out) % 4)
+    tex_at = len(out)
+    out += _gct_i8()
+    out += bytes(-len(out) % 4)
+    rec = bytearray(frd_gcr.RECORD_FP)
+    struct.pack_into(">5I", rec, 0, 0, pos_at, uv_at | 2, 1, 0)  # hdr, pos, uv, nrm, clr
+    rec[0x3C] = kind
+    struct.pack_into(">I", rec, 0x54, table)
+    struct.pack_into(">f", rec, 0xAC, 1.0)
+    struct.pack_into(">I", rec, 0xB0, pairs)
+    struct.pack_into(">I", rec, 0xBC, len(out) - 4)
+    out += rec
+    trailer = len(out)
+    flags = (0x10 if s16 else 0) | 0x40 | (0x10000 if matrix_flag else 0)
+    out += struct.pack(">4I", 1, 1, 1, flags) + bytes(48)
+    if embedded:
+        struct.pack_into(">4I", out, slot_at, tex_at, 0x1234, 0, 0x10000000)
+    else:
+        struct.pack_into(">4I", out, slot_at, 0x6BB088, 0x6BB088, 0, 0)
+    struct.pack_into(">3I", out, 0, 12, trailer, tex_at)
+    return bytes(out)
+
+
+def test_future_perfect_props_quantise_and_index_the_normal_palette():
+    palette = frd_gcr.normal_palette()
+    assert palette is not None and palette.shape == (4096, 3)
+    assert np.allclose(np.linalg.norm(palette, axis=1), 1.0, atol=1e-3)
+    data = build_fp()
+    assert frd_gcr.is_fp(data[:12], len(data)) and not frd_gcr.is_gcr(data[:12], len(data))
+    assert frd_gcr.b_block(data) is None
+    m = frd_gcr.parse_fp(data)
+    assert m is not None and m.warnings == [] and m.records == 1 and len(m.batches) == 1
+    (b,) = m.batches
+    assert np.allclose(b.positions, QUAD) and np.allclose(b.uvs, UV)
+    assert np.allclose(b.normals, palette[7:11])
+    assert b.colors is None and b.bones is None and len(b.indices) == 6
+    # f32 positions when the trailer flag is clear; the other batch-entry order; the
+    # trailer's matrix flag adds the byte even on a rigid node
+    (b,) = frd_gcr.parse_fp(build_fp(s16=False)).batches
+    assert np.allclose(b.positions, QUAD)
+    (b,) = frd_gcr.parse_fp(build_fp(order_fp=False)).batches
+    assert len(b.indices) == 6
+    (b,) = frd_gcr.parse_fp(build_fp(matrix_flag=True)).batches
+    assert b.bones is not None and b.bones.tolist() == [3, 3, 3, 3]
+
+
+def test_future_perfect_plugin_uses_embedded_or_hashed_textures():
+    data = build_fp()
+    (scene,) = plugin.extract(data, "files/pak/stream/lv5/prop4.pak/d7a0229a_0000", None)
+    assert scene.extras["flavour"] == "future_perfect" and scene.triangles == 2
+    assert scene.materials[0].texture == "slot_0" and scene.textures["slot_0"].shape == (8, 8, 4)
+    data = build_fp(embedded=False)
+    src = _Src({"files/pak/stream/lv5/tex1.pak/006bb088_0004": _gct_i8()})
+    (scene,) = plugin.extract(data, "files/pak/stream/lv5/prop4.pak/d7a0229a_0000", src)
+    assert scene.materials[0].texture == "tex_006bb088"
+    (bare,) = plugin.extract(data, "d7a0229a_0000", None)
+    assert bare.materials[0].texture is None and bare.materials[0].name == "tex_006bb088"
+
+
+def build_arrays(fp=False):
+    """The array-block flavour: TimeSplitters 2's f32 layout (block at +4, positions at 8)
+    or Future Perfect's s16 one (block at +8, positions at 12); one group, one entry, one
+    strip of QUAD whose second triangle is wound against the normals."""
+    out = bytearray(8 if not fp else 12)
+    pos_at = len(out)
+    for p in QUAD:
+        if fp:
+            out += struct.pack(">3h", *(int(v * 1024) for v in p))
+        else:
+            out += struct.pack(">3f", *p) + bytes(4)
+    uv_at = len(out)
+    for u in UV:
+        out += struct.pack(">2h", *(int(v * 1024) for v in u)) if fp else struct.pack(">2f", *u)
+    nrm_at = len(out)
+    for _ in QUAD:
+        out += struct.pack(">3hH", 0, 0, 16384, 0) if fp else struct.pack(">3f", 0, 0, 1) + bytes(4)
+    dl_at = len(out)
+    out += bytes([0x9E]) + struct.pack(">H", 4)
+    for i in range(4):
+        out += bytes([0]) + (
+            struct.pack(">4H", i, i, 0, i) if not fp else struct.pack(">3H", i, i, i)
+        )
+    dl_size = len(out) - dl_at
+    out += bytes(-len(out) % 32)
+    entries = len(out)
+    out += struct.pack(">5I", 1, 0, 4, dl_at, dl_size)
+    xblock = len(out)
+    out += struct.pack(">If", 0, 1.0)
+    groups = len(out)
+    if fp:
+        out += struct.pack(">6I", 0, entries, 1, xblock, 1, 0)
+    else:
+        out += struct.pack(">5I", entries, 1, xblock, 1, 0)
+    tree = len(out)
+    out += struct.pack(">4i", 0, -1, -1, -1)
+    block = len(out)
+    if fp:
+        out += struct.pack(">12I", pos_at, uv_at, nrm_at, 7, groups, tree, 1, 1, 0, 0, 0, 0)
+        out += struct.pack(">3f", 0.0, 0.0, 0.0)
+    else:
+        out += struct.pack(">12I", pos_at, uv_at, nrm_at, groups, tree, 1, 1, 0, 0, 0, 0, 0)
+    slots = len(out)
+    tex_at = slots + 32 + 16
+    out += struct.pack(">4I", tex_at, 0, 0, 0x10000000) + struct.pack(
+        ">4I", tex_at, 0, 0, 0x10000000
+    )
+    out += struct.pack(">I", frd_gcr.END32) + bytes(12)
+    assert len(out) == tex_at
+    out += _gct_i8()
+    nodes = len(out)
+    out += bytes(48)
+    if fp:
+        struct.pack_into(">3I", out, 0, slots, nodes, block)
+    else:
+        struct.pack_into(">2I", out, 0, slots, block)
+    return bytes(out)
+
+
+def test_array_block_characters_read_in_both_layouts():
+    for fp in (False, True):
+        data = build_arrays(fp)
+        assert frd_gcr.is_b(data[:64], len(data))
+        assert frd_gcr.b_block(data) == (struct.unpack_from(">I", data, 8 if fp else 4)[0], fp)
+        assert not frd_gcr.is_gcr(data[:12], len(data)) and not frd_gcr.is_level(
+            data[:0x20], len(data)
+        )
+        m = frd_gcr.parse_b(data)
+        assert m is not None and m.warnings == [] and m.records == 1 and len(m.batches) == 1
+        (b,) = m.batches
+        assert np.allclose(b.positions, QUAD) and np.allclose(b.uvs, UV)
+        assert np.allclose(b.normals, [[0, 0, 1]] * 4) and b.slot == 1
+        # every triangle re-wound to face its normals
+        t = b.indices.reshape(-1, 3)
+        face = np.cross(
+            b.positions[t[:, 1]] - b.positions[t[:, 0]], b.positions[t[:, 2]] - b.positions[t[:, 0]]
+        )
+        assert (face[:, 2] > 0).all()
+        (scene,) = plugin.extract(data, "ob/chrs/chr01.gcr", None)
+        assert scene.extras["flavour"] == "arrays" and scene.triangles == 2
+        assert scene.materials[0].texture == "slot_1"

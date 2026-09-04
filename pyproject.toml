@@ -22,7 +22,7 @@ dcrip = "dcrip.cli:main"
 include = ["gcrip*", "dcrip*", "ripcore*"]
 
 [tool.setuptools.package-data]
-gcrip = ["data/*.json", "data/**/*.ini", "data/**/*.INI"]
+gcrip = ["data/*.json", "data/*.npz", "data/**/*.ini", "data/**/*.INI"]
 
 [tool.ruff]
 line-length = 100

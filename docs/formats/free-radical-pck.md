@@ -336,3 +336,40 @@ normal index only when the node has a normal array, a second colour index when b
 lod` of +0x67 is set.  Level 11 comes out in world space (-37..62 x -0.2..10.7 x -46..29),
 10,461 triangles at LOD 0 (LOD 1 is 245), with 45 of its 62 textures bound from the pak.
 A story pak is 46,437 triangles in all with its props.
+
+### Future Perfect, Second Sight and the array-block characters (2026-09-03, later still)
+
+Future Perfect's paks name their members by hash (`db3b8403_0000`), so nothing there has a
+`.gcr` suffix - the plugin detects on the header shapes alone.  Its props and vehicles are
+the TS2 node record grown to **0xc0 bytes**: the four LOD array sub-records move to +0
+(`u32, ptr positions, ptr uvs, ptr normals, ptr colours` - normals and colours swap against
+TS2), kind at +0x3c, batch tables at +0x54, uv flags at +0x6b, pairs at +0xb0.  The trailer
+at `+4` carries flags at +0xc: **0x10 positions are `s16 / 1024`** (GX format 5 / 7, frac
+10, from the `GXSetVtxAttrFmt` calls at `0x8017e058`), **0x40 normals are indices into a
+4096-entry palette of unit vectors at `0x80412740` in the DOL** (`GXSetArray(GX_VA_NRM,
+palette, 12)` in the draw routine at `0x80182934`; Second Sight's DOL holds the identical
+table, now `gcrip/data/frd_normals.npz`), **0x10000 every vertex leads with a matrix byte**.
+A uv pointer with bit 1 set is `s16 / 1024`.  Batch entries are 8 bytes in one of two
+orders - `u16 slot, u16 index, u16 first, u8 count, u8 flags` or `u16 slot, u8 count, u8
+flags, u16 index, u16 first` - ended by flags 0xFF; a skinned character's `first` jumps
+because its nodes share one position array kept after the trailer.  Texture slots at 12
+embed a gct (`ptr, hash, 0, 0x10000000`) or name one by hash (`hash, hash, 0, 0` = the
+member `HHHHHHHH_NNNN` of some pak).  A node whose LOD 0 is empty draws its LOD 1.
+
+The characters proper (and TS2's `chrinc.pak`) are the **array-block** shape: a header of
+pointers (TS2 `slots, block`; FP `slots, nodes, block`), the block `ptr positions, ptr uvs,
+ptr normals, [u32 7], ptr groups, ptr node tree, u32 groups, u32 nodes, ...` with the
+positions directly behind the header words (`f32 x3 + flag`, `f32 uv`, `f32 normal + pad`
+on TS2; `s16 / 1024`, `s16 / 1024`, `s16 / 16384 + pad` on FP / SS), 20- or 24-byte groups
+(`[u32] ptr entries, u32 entries, ptr matrix slots, u32 matrices, u32 first`) of 20-byte
+entries (`u32 slot, u32 first, u32 count, ptr list, u32 bytes`) whose strips carry `u8
+matrix, u16 position, u16 normal, [u16 colour on TS2], u16 uv`.  Positions are model space
+(short strip edges, a standing figure), but the strips do not keep one winding: the signed
+agreement with the stored normals is 0 while the unsigned is 0.91, so the reader turns each
+triangle to face its own normals.
+
+Results: Future Perfect's three sampled prop paks read every model (29 models, 33,250
+triangles - props, a jeep, a boat); Second Sight's `csc/front.pak` and `csc/trollc.pak`
+read all 19 `.gcr` (20,712 triangles, 91 textures); TS2's `chrinc` character reads at
+4,334 triangles textured.  Not done: skinning (the matrix bytes and node trees are read,
+no joints are exported) and the FP / SS levels, which have not been looked at.
