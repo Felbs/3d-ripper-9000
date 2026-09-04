@@ -314,3 +314,32 @@ def test_day_of_reckoning_plugin_textures_from_the_sibling_tex_pack():
     (bare,) = plugin.extract(data, "000_0.ymg", None)
     assert bare.materials[0].texture is None
     assert np.allclose(bare.materials[0].base_color, (0xB2 / 255,) * 3 + (1.0,))
+
+
+def test_wrestlemania_xix_meshes_split_by_material_and_bind_the_tex_pack(monkeypatch):
+    data = build_xix(((0, 1, 2), (1, 3, 2)), single=False)
+    (mesh,) = yukes_yobj.meshes(data)
+    assert mesh.groups == [0, 1]
+    # the sample builder has no material tables; stand in for them
+    monkeypatch.setattr(
+        yukes_yobj,
+        "materials",
+        lambda _d: (
+            [
+                yukes_yobj.DorMaterial((0x96, 0x96, 0x96, 0xFF), ["tekin_01"]),
+                yukes_yobj.DorMaterial((0x95, 0x95, 0x95, 0xFF), ["g_skin", "yuka_01"]),
+            ],
+            ["tekin_01", "g_skin", "yuka_01"],
+        ),
+    )
+    src = _Src({"files/bg/0_2.tex/yuka_01.tpl": _tpl_rgba8_4x4((5, 6, 7, 255))})
+    (scene,) = plugin.extract(data, "files/bg/0_2.ymg", src)
+    assert scene.extras["variant"] == "xix" and scene.extras["textures"] == 1
+    assert len(scene.primitives) == 2 and scene.triangles == 2
+    assert [m.name for m in scene.materials] == ["tekin_01", "yuka_01"]
+    assert [m.texture for m in scene.materials] == [None, "yuka_01"]
+    assert np.allclose(scene.materials[0].base_color, (0x96 / 255,) * 3 + (1.0,))
+    # each primitive re-indexes only the vertices it touches, keeping their uvs and colours
+    second = scene.primitives[1]
+    assert len(second.positions) == 3 and second.indices.tolist() == [0, 2, 1]
+    assert second.uvs is not None and second.colors is not None

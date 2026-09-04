@@ -119,15 +119,16 @@ class Mesh:
     unsigned_agreement: float
     uvs: np.ndarray | None = None
     colors: np.ndarray | None = None
-    groups: list[int] | None = None  # WrestleMania XIX: the group a triangle came from
+    groups: list[int] | None = None  # WrestleMania XIX: a triangle's material (group byte 0)
 
 
 def _xix_groups(data: bytes, idx_at: int, count: int):
-    """WrestleMania XIX's index block: a table of 8-byte entries - ``u8, u8, u16 strips, u32
-    ptr`` - each pointing 8 bytes before its strips, every strip ``u32 corners`` then that
-    many 10-byte corners (``u16 index, RGBA8, s16 u, s16 v``).  A single-entry table is the
-    entry itself pointing at itself.  Returns (triangles, group ids, uvs, colours) or None
-    when it does not read that way (X8's block starts with a strip count instead)."""
+    """WrestleMania XIX's index block: a table of 8-byte entries - ``u8 material, u8, u16
+    strips, u32 ptr`` - each pointing 8 bytes before its strips, every strip ``u32 corners``
+    then that many 10-byte corners (``u16 index, RGBA8, s16 u, s16 v``).  A single-entry
+    table is the entry itself pointing at itself.  Returns (triangles, material ids, uvs,
+    colours) or None when it does not read that way (X8's block starts with a strip count
+    instead).  The material byte indexes the same 20-byte table version 4 uses."""
     t = idx_at + BLOCK_SKIP
     if t + 8 > len(data):
         return None
@@ -140,7 +141,7 @@ def _xix_groups(data: bytes, idx_at: int, count: int):
     uv = np.zeros((count, 2), np.float32)
     col = np.full((count, 4), 255, np.uint8)
     for g in range(n):
-        _a, _b, nstrips, ptr = struct.unpack_from(">BBHI", data, t + 8 * g)
+        material, _b, nstrips, ptr = struct.unpack_from(">BBHI", data, t + 8 * g)
         if nstrips == 0 or ptr + 8 > len(data) or (g == 0 and ptr != (first if n > 1 else t)):
             return None
         p = ptr + 8
@@ -161,7 +162,7 @@ def _xix_groups(data: bytes, idx_at: int, count: int):
             for k in range(nv - 2):
                 a, b, c = int(ids[k]), int(ids[k + 1]), int(ids[k + 2])
                 tris.append((a, b, c) if k % 2 == 0 else (b, a, c))
-                group_of.append(g)
+                group_of.append(material)
     if not tris:
         return None
     return tris, group_of, uv, col
@@ -258,15 +259,22 @@ def _table(data: bytes, at: int) -> tuple[int, int]:
     return count, ptr + BLOCK_SKIP
 
 
-def _dor_materials(y: bytes, out: DorModel) -> None:
+def _materials(y: bytes) -> tuple[list[DorMaterial], list[str], list[str]]:
+    """The 20-byte material table and the texture names it stages, from a YOBJ's start;
+    versions 3 (X8, XIX) and 4 share them.  Returns (materials, names, warnings)."""
+    warnings: list[str] = []
+    if len(y) < 0x28:
+        return [], [], warnings
     count, at = _table(y, 0x18)
     ncount, nat = _table(y, 0x20)
+    names: list[str] = []
     if ncount and nat + ncount * NAME <= len(y):
-        out.names = [_name(y, nat + i * NAME) for i in range(ncount)]
+        names = [_name(y, nat + i * NAME) for i in range(ncount)]
+    materials: list[DorMaterial] = []
     for i in range(min(count, MAX_GROUPS)):
         m = at + i * MATERIAL
         if m + MATERIAL > len(y):
-            out.warnings.append("material table past the file")
+            warnings.append("material table past the file")
             break
         diffuse = tuple(int(c) for c in y[m : m + 4])
         ptr = struct.unpack_from(">I", y, m + 16)[0] + BLOCK_SKIP
@@ -274,13 +282,23 @@ def _dor_materials(y: bytes, out: DorModel) -> None:
         if ptr + 32 <= len(y):
             stages = struct.unpack_from(">H", y, ptr)[0]
             for k in range(min(stages, 16)):
-                s = ptr + 32 + k * STAGE
-                if s + STAGE > len(y):
+                st = ptr + 32 + k * STAGE
+                if st + STAGE > len(y):
                     break
-                t = y[s + STAGE - 1]
-                if t != NO_TEXTURE and t < len(out.names):
-                    textures.append(out.names[t])
-        out.materials.append(DorMaterial(diffuse, textures))
+                t = y[st + STAGE - 1]
+                if t != NO_TEXTURE and t < len(names):
+                    textures.append(names[t])
+        materials.append(DorMaterial(diffuse, textures))
+    return materials, names, warnings
+
+
+def materials(data: bytes) -> tuple[list[DorMaterial], list[str]]:
+    """(materials, texture names) of any YOBJ, wrapped or not; empty when it has no tables."""
+    at = yobj_at(data)
+    if at < 0:
+        return [], []
+    got, names, _w = _materials(data[at:])
+    return got, names
 
 
 def _dor_bones(y: bytes, out: DorModel) -> None:
@@ -359,7 +377,8 @@ def dor_model(data: bytes) -> DorModel | None:
     out = DorModel()
     out.meshes = struct.unpack_from(">H", y, 10)[0]
     _dor_bones(y, out)
-    _dor_materials(y, out)
+    out.materials, out.names, warned = _materials(y)
+    out.warnings.extend(warned)
     for k in range(out.meshes):
         m = MESH_TABLE + k * MESH_RECORD
         if m + MESH_RECORD > len(y):

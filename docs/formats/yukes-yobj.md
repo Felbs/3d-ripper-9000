@@ -91,7 +91,12 @@ corners and the pointer as the data start; read as strips from `ptr + 8`, `0_2.y
 every one of its 6 records - 6,545 triangles at **0.989** unsigned agreement, with uvs and
 vertex colours the X8 variant never had (its strips are bare indices).  The group's leading
 bytes (0, 1, 2, ... 16, 26, 65, 68) are material indices into a table not yet tied to the
-`.tex` files, so the meshes come out with uvs but no texture bound.
+`.tex` files, so the meshes come out with uvs but no texture bound.  **Tied since the Day
+of Reckoning read (2026-09-03)**: version 3 carries the same header tables at +0x18 (20-byte
+materials) and +0x20 (16-byte texture names), the group byte is the material index, and the
+material's TEV stages name the texture - `0_2.ymg`'s arena is 59 primitives over 53
+materials (`tekin_01`, `yuka_01`, `kabe_02` ...), each looked up as `<name>.tpl` in the
+sibling `.tex` pack.
 
 
 ## Day of Reckoning, read (2026-09-03)

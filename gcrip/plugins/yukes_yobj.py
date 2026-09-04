@@ -55,6 +55,45 @@ def _texture(src, path: str, name: str) -> bytes | None:
     return None
 
 
+class _Binder:
+    """Scene materials by YOBJ material index, their picture pulled from the ``.tex`` pack
+    on first use."""
+
+    def __init__(self, scene: Scene, materials, path: str, src):
+        self.scene, self.materials, self.path, self.src = scene, materials, path, src
+        self.index: dict[int, int] = {}
+
+    def __call__(self, material: int) -> int:
+        if material in self.index:
+            return self.index[material]
+        scene = self.scene
+        mat = self.materials[material] if material < len(self.materials) else None
+        picture = _picture(mat.textures) if mat else None
+        key = None
+        if picture:
+            if picture not in scene.textures:
+                blob = _texture(self.src, self.path, picture)
+                if blob is not None:
+                    try:
+                        images = tpl.parse(blob)
+                        if images:
+                            scene.textures[picture] = images[0].decode()
+                    except Exception as e:  # noqa: BLE001 - untextured is still a model
+                        scene.warnings.append(f"{picture}.tpl: {e}")
+            if picture in scene.textures:
+                key = picture
+        # the diffuse (0xb2 grey on wrestlers) is what GX lights multiply the picture by; a
+        # textured glTF material is left white so viewers do not darken it twice
+        diffuse = (
+            tuple(c / 255.0 for c in mat.diffuse) if mat and key is None else (1.0, 1.0, 1.0, 1.0)
+        )
+        scene.materials.append(
+            MaterialDef(name=picture or f"material_{material:02d}", texture=key, base_color=diffuse)
+        )
+        self.index[material] = len(scene.materials) - 1
+        return self.index[material]
+
+
 def _dor(data: bytes, path: str, src) -> list[Scene]:
     model = yukes_yobj.dor_model(data)
     if model is None or not model.groups:
@@ -62,42 +101,11 @@ def _dor(data: bytes, path: str, src) -> list[Scene]:
     stem = posixpath.basename(path).rsplit(".", 1)[0] or "model"
     scene = Scene(name=stem)
     scene.warnings.extend(model.warnings)
-    material_of: dict[int, int] = {}
+    bind = _Binder(scene, model.materials, path, src)
     for g in model.groups:
-        if g.material not in material_of:
-            mat = model.materials[g.material] if g.material < len(model.materials) else None
-            picture = _picture(mat.textures) if mat else None
-            key = None
-            if picture:
-                if picture not in scene.textures:
-                    blob = _texture(src, path, picture)
-                    if blob is not None:
-                        try:
-                            images = tpl.parse(blob)
-                            if images:
-                                scene.textures[picture] = images[0].decode()
-                        except Exception as e:  # noqa: BLE001 - untextured is still a model
-                            scene.warnings.append(f"{picture}.tpl: {e}")
-                if picture in scene.textures:
-                    key = picture
-            # the diffuse (0xb2 grey on wrestlers) is what GX lights multiply the picture by;
-            # a textured glTF material is left white so viewers do not darken it twice
-            diffuse = (
-                tuple(c / 255.0 for c in mat.diffuse)
-                if mat and key is None
-                else (1.0, 1.0, 1.0, 1.0)
-            )
-            scene.materials.append(
-                MaterialDef(
-                    name=picture or f"material_{g.material:02d}",
-                    texture=key,
-                    base_color=diffuse,
-                )
-            )
-            material_of[g.material] = len(scene.materials) - 1
         scene.primitives.append(
             Primitive(
-                material=material_of[g.material],
+                material=bind(g.material),
                 positions=g.positions * UPRIGHT,
                 indices=g.indices,
                 normals=g.normals * UPRIGHT,
@@ -131,7 +139,27 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
         return []
     stem = posixpath.basename(path).rsplit(".", 1)[0] or "model"
     scene = Scene(name=stem)
+    materials, _names = yukes_yobj.materials(data)
+    bind = _Binder(scene, materials, path, src)
     for i, mesh in enumerate(found):
+        if mesh.groups is not None and materials:
+            # XIX: one primitive a material, the vertices it touches re-indexed
+            tri = mesh.indices.reshape(-1, 3)
+            by_material = np.asarray(mesh.groups, np.int64)
+            for material in sorted(set(mesh.groups)):
+                sub = tri[by_material == material]
+                used, local = np.unique(sub.reshape(-1), return_inverse=True)
+                scene.primitives.append(
+                    Primitive(
+                        material=bind(material),
+                        positions=mesh.positions[used],
+                        indices=local.reshape(-1).astype(np.uint32),
+                        normals=mesh.normals[used],
+                        uvs=mesh.uvs[used] if mesh.uvs is not None else None,
+                        colors=mesh.colors[used] if mesh.colors is not None else None,
+                    )
+                )
+            continue
         scene.materials.append(MaterialDef(name=f"{stem}_{i:04d}", texture=None))
         scene.primitives.append(
             Primitive(
@@ -147,5 +175,6 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
         "format": "yukes_yobj",
         "meshes": len(found),
         "variant": "xix" if any(m.uvs is not None for m in found) else "x8",
+        "textures": len(scene.textures),
     }
     return [scene]
