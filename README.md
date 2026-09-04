@@ -57,6 +57,12 @@ In Blender the default *Solid* viewport shading hides textures - press **Z > Mat
   on any model thumbnail previews it **in 3D** in the browser (through the same on-the-fly
   `.glb` packing). `--build-only` just writes `library.html` (works from `file://`, minus the
   live 3D viewer).
+- **MCP server** (`tools/library_mcp.py`, registered as `gcrip-library` in `.mcp.json`) exposes
+  the same library to an assistant as tools: `library_stats`, `search_games` (query + textured/
+  skinned/animated/has_models filters + sort), `list_models` (a game's models with thumbnail and
+  glTF paths, paginated) and `model_glb` (pack one model into a self-contained `.glb`). Point it
+  at a dump root with `GCRIP_DUMP_ROOT`; it reads only the metadata JSONs, so it is safe to query
+  while a rip is running. The query logic lives in `gcrip/library_query.py`.
 - `gcrip blend out/rip/GZLE01` writes one `.blend` next to every model, marked as a Blender
   **asset** (thumbnail, catalog = disc folder, tags). Register `out/rip` as an Asset Library
   (Preferences > File Paths, or the GCRip panel's *Add rip folder as asset library* button)

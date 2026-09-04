@@ -110,3 +110,80 @@ def test_missing_hero_thumb_is_skipped(tmp_path):
     _, games, _ = _catalog(tmp_path)
     assert games[0]["hero"] is None  # thumb was missing
     assert games[0]["top"][0]["n"] == "m.gma"  # still listed in the strip
+
+
+def _mini_dump(tmp_path):
+    rows = [
+        _write(
+            tmp_path,
+            "WIND",
+            [
+                {
+                    "path": "a/link.bdl",
+                    "out_rel": "a/link.gltf",
+                    "triangles": 900,
+                    "textures": 3,
+                    "thumb": "a/link_thumb.png",
+                    "skinned": True,
+                },
+                {
+                    "path": "a/boat.bdl",
+                    "out_rel": "a/boat.gltf",
+                    "triangles": 300,
+                    "textures": 1,
+                    "thumb": "a/boat_thumb.png",
+                },
+            ],
+            {"exported": 2, "triangles": 1200, "textures": 4, "clips": 5},
+        ),
+        _write(
+            tmp_path,
+            "PONG",
+            [
+                {
+                    "path": "b/ball.bdl",
+                    "out_rel": "b/ball.gltf",
+                    "triangles": 40,
+                    "textures": 0,
+                    "thumb": "b/ball_thumb.png",
+                }
+            ],
+            {"exported": 1, "triangles": 40},
+        ),
+        _write(tmp_path, "NADA", [], {"exported": 0, "triangles": 0}),
+    ]
+    with (tmp_path / "batch_results.jsonl").open("w", encoding="utf-8") as fh:
+        for r in rows:
+            fh.write(json.dumps(r) + "\n")
+    return tmp_path
+
+
+def test_query_search_and_list(tmp_path):
+    from gcrip import library_query as lq
+
+    root = _mini_dump(tmp_path)
+    assert lq.stats(root) == {"games": 3, "with_geo": 2, "models": 3, "tris": 1240, "tex": 4}
+    # search by id/title and filters
+    assert [g["id"] for g in lq.search_games(root, "wind")] == ["WIND"]
+    assert [g["id"] for g in lq.search_games(root, "", skinned=True)] == ["WIND"]
+    assert [g["id"] for g in lq.search_games(root, "", has_models=True, sort="models")] == [
+        "WIND",
+        "PONG",
+    ]
+    assert [g["id"] for g in lq.search_games(root, "", sort="title")] == ["NADA", "PONG", "WIND"]
+    # list_models resolves by id or title, paginates, and carries the glTF path
+    lm = lq.list_models(root, "The WIND game".lower().replace("the ", "") and "WIND")
+    assert lm["total"] == 2 and lm["models"][0]["g"] == "WIND/a/link.gltf"
+    page = lq.list_models(root, "WIND", limit=1, offset=1)
+    assert page["returned"] == 1 and page["models"][0]["n"] == "boat.bdl"
+    assert "error" in lq.list_models(root, "ZZZ")
+
+
+def test_query_pack_glb_guards(tmp_path):
+    from gcrip import library_query as lq
+
+    root = _mini_dump(tmp_path)
+    # a path outside the root or a non-.gltf is refused; a missing file too
+    assert "error" in lq.pack_glb(root, "../secret.gltf")
+    assert "error" in lq.pack_glb(root, "WIND/a/link.png")
+    assert "error" in lq.pack_glb(root, "WIND/a/nope.gltf")
