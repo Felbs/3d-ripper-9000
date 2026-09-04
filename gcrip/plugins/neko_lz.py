@@ -37,6 +37,23 @@ def detect(path: str, head: bytes, size: int) -> bool:
     return path.lower().endswith(".mwld") and neko_mwld.is_level(head, size)
 
 
+def _sibling(src, path: str, suffix: str) -> bytes | None:
+    """``<level>tin.pc`` / ``<level>gfx.pc`` beside the ``.GCN`` this member came from,
+    unpacked (``src.get`` hands back the LZ file)."""
+    by_path = getattr(src, "by_path", None) or {}
+    container = posixpath.dirname(path)  # files/data/L11/L11.GCN
+    folder = posixpath.dirname(container)
+    stem = posixpath.basename(container).rsplit(".", 1)[0].lower()
+    want = f"{folder}/{stem}{suffix}".lower()
+    for p in by_path:
+        if p.lower() == want:
+            try:
+                return neko_lz.unpack(src.get(p))
+            except Exception:  # noqa: BLE001 - the world is still worth having untextured
+                return None
+    return None
+
+
 def extract(data: bytes, path: str, src) -> list[Scene]:
     w = neko_mwld.parse(data)
     if w is None or not len(w.triangles):
@@ -45,10 +62,25 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
     stem = posixpath.basename(posixpath.dirname(path)).rsplit(".", 1)[0] or "world"
     scene = Scene(name=stem)
     scene.warnings.extend(w.warnings)
+    tin = gfx = None
+    if src is not None:
+        raw = _sibling(src, path, "tin.pc")
+        tin = neko_mwld.tin(raw) if raw else None
+        gfx = _sibling(src, path, "gfx.pc") if tin else None
     for material in np.unique(w.materials):
         tri = w.triangles[w.materials == material]
         uniq, inverse = np.unique(tri.ravel(), return_inverse=True)
-        scene.materials.append(MaterialDef(name=f"material_{int(material)}", texture=None))
+        texture = None
+        index = neko_mwld.texture_of_material(tin, int(material)) if tin and gfx else None
+        if index is not None:
+            texture = f"tex_{index}"
+            if texture not in scene.textures:
+                rgba = neko_mwld.decode_texture(gfx, tin.textures[index])
+                if rgba is None:
+                    texture = None
+                else:
+                    scene.textures[texture] = rgba
+        scene.materials.append(MaterialDef(name=f"material_{int(material)}", texture=texture))
         scene.primitives.append(
             Primitive(
                 material=len(scene.materials) - 1,
@@ -62,5 +94,6 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
         "format": "neko_mwld",
         "objects": [o[0] for o in w.objects],
         "faces": int(len(w.triangles)),
+        "textures_in_level": len(tin.textures) if tin else 0,
     }
     return [scene]

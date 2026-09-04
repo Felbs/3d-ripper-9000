@@ -69,3 +69,34 @@ def test_container_names_the_level_and_extracts_a_scene():
     assert len(scenes) == 1 and scenes[0].name == "L11"
     assert len(scenes[0].primitives) == 2 and scenes[0].extras["objects"] == ["01", "02"]
     assert scenes[0].primitives[0].colors.max() <= 1.0
+
+
+def build_tin(textures):
+    """textures: list of (kind, width, blob); slots map 1:1, materials map to slots 1:1."""
+    a = b = c = len(textures)
+    head = struct.pack(">5I", 3, 4, a, b, c) + bytes(neko_mwld.TIN_HEADER - 20)
+    slots = b"".join(struct.pack(">HHI", k, 16, 0) for k in range(a))
+    mats = b"".join(struct.pack(">HH", 1, k) + bytes(12) for k in range(b))
+    recs = b""
+    gfx = b""
+    for kind, width, blob in textures:
+        recs += struct.pack(">4I", kind, len(blob), width, len(gfx))
+        gfx += blob
+    return head + slots + mats + recs, gfx
+
+
+def test_tin_tables_and_textures():
+    from gcrip.formats import gx_texture
+
+    cmpr = bytes(gx_texture.encoded_size(14, 8, 8))
+    rgba = bytes([1, 2, 3, 4]) * 64
+    c8 = struct.pack(">256H", *([0x801F] * 256)) + bytes(gx_texture.encoded_size(9, 8, 8))
+    tin, gfx = build_tin([(1, 8, cmpr), (5, 8, rgba), (1, 8, c8)])
+    t = neko_mwld.tin(tin)
+    assert t is not None and len(t.textures) == 3 and t.materials == [0, 1, 2]
+    assert neko_mwld.texture_of_material(t, 2) == 2 and neko_mwld.texture_of_material(t, 9) is None
+    assert neko_mwld.decode_texture(gfx, t.textures[0]).shape == (8, 8, 4)
+    # a Charlie's Angels kind-1 picture: palette first, 8-bit indices - not a CMPR chain
+    px = neko_mwld.decode_texture(gfx, t.textures[2])
+    assert px.shape == (8, 8, 4) and px[0, 0].tolist() == [0, 0, 255, 255]
+    assert neko_mwld.tin(bytes(64)) is None

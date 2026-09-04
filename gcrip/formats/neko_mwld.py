@@ -139,3 +139,97 @@ def parse(data: bytes) -> World | None:
         if tag == "MWLD":
             return world(payload)
     return None
+
+
+# -- TIN.PC + GFX.PC: the textures ------------------------------------------------------------
+
+TIN_HEADER = 0x20
+TIN_A = 8
+TIN_B = 16
+TIN_C = 16
+PALETTE = 512
+TYPE_MASK = 0x8F  # the loader clears bits 5 and 6 before testing the kind
+KIND_CMPR = (1, 0x81)
+
+
+@dataclass
+class Texture:
+    kind: int
+    size: int
+    width: int
+    offset: int
+
+
+@dataclass
+class Tin:
+    slots: list[int]  # A: texture index a slot
+    materials: list[int]  # B: slot a material
+    textures: list[Texture]  # C: offset-ordered pictures in GFX.PC
+
+
+def tin(data: bytes) -> Tin | None:
+    """``TIN.PC`` unpacked: ``u32 3, u32 4, u32 a, u32 b, u32 c`` then ``a`` 8-byte slot
+    records (``u16 texture, u16 flags, u32``), ``b`` 16-byte material records (``u16, u16
+    slot, ...``) and ``c`` 16-byte texture records ``u32 kind, u32 bytes, u32 width, u32
+    offset`` - the loader at 0x8000dfc4 of Cocoto Kart Racer's DOL reads exactly these, with
+    ``kind & 0x8f`` 1 / 0x81 for CMPR (5 mips at 256, 4 at 128, 3 below) and anything else
+    RGBA8.  Charlie's Angels' kind-1 pictures are C8 instead: a 512-byte RGB5A3 palette then
+    the indices, which the byte count tells apart from a CMPR chain."""
+    if len(data) < TIN_HEADER or data[:8] != b"\0\0\0\x03\0\0\0\x04":
+        return None
+    a, b, c = struct.unpack_from(">3I", data, 8)
+    end = TIN_HEADER + TIN_A * a + TIN_B * b + TIN_C * c
+    if a > 65535 or b > 65535 or c > 65535 or end > len(data):
+        return None
+    slots = [struct.unpack_from(">H", data, TIN_HEADER + TIN_A * k)[0] for k in range(a)]
+    at = TIN_HEADER + TIN_A * a
+    materials = [struct.unpack_from(">H", data, at + TIN_B * k + 2)[0] for k in range(b)]
+    at += TIN_B * b
+    textures = [Texture(*struct.unpack_from(">4I", data, at + TIN_C * k)) for k in range(c)]
+    return Tin(slots, materials, textures)
+
+
+def texture_of_material(t: Tin, material: int) -> int | None:
+    """material -> slot -> texture index, or None past any table."""
+    if not 0 <= material < len(t.materials):
+        return None
+    slot = t.materials[material]
+    if not 0 <= slot < len(t.slots):
+        return None
+    tex = t.slots[slot]
+    return tex if 0 <= tex < len(t.textures) else None
+
+
+def _chain(fmt: int, width: int) -> int:
+    from gcrip.formats import gx_texture  # noqa: PLC0415
+
+    total = 0
+    w = width
+    while w >= 8:
+        total += gx_texture.encoded_size(fmt, w, w)
+        w //= 2
+    return total
+
+
+def decode_texture(gfx: bytes, t: Texture) -> np.ndarray | None:
+    from gcrip.formats import gx_texture  # noqa: PLC0415
+
+    w = t.width
+    if not (8 <= w <= 1024) or w & (w - 1) or t.offset + t.size > len(gfx) or t.size <= 0:
+        return None
+    blob = gfx[t.offset : t.offset + t.size]
+    kind = t.kind & TYPE_MASK
+    try:
+        if kind in KIND_CMPR:
+            body = t.size // 2 if kind == 0x81 else t.size
+            if body >= PALETTE + w * w and body != _chain(14, w):
+                # Charlie's Angels: a 512-byte RGB5A3 palette then 8-bit indices
+                palette = gx_texture.decode_palette(2, blob[:PALETTE], 256)
+                need = gx_texture.encoded_size(9, w, w)
+                return gx_texture.decode(9, w, w, blob[PALETTE : PALETTE + need], palette)
+            need = gx_texture.encoded_size(14, w, w)
+            return gx_texture.decode(14, w, w, blob[:need])
+        need = gx_texture.encoded_size(6, w, w)
+        return gx_texture.decode(6, w, w, blob[:need]) if len(blob) >= need else None
+    except ValueError:
+        return None
