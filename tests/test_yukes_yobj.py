@@ -105,3 +105,52 @@ def test_the_plugin_builds_one_primitive_a_mesh():
 def test_a_file_that_is_not_yobj_yields_nothing():
     assert yukes_yobj.meshes(b"DUMY" + bytes(256)) == []
     assert plugin.extract(b"DUMY" + bytes(256), "x/point.ymg", None) == []
+
+
+def build_xix(groups=((0, 1, 2, 3),), single=True):
+    """WrestleMania XIX's block: an 8-byte entry a group (u8, u8, u16 strips, u32 ptr), the
+    strips 8 bytes past the pointer as `u32 corners` + 10-byte corners.  A one-group table is
+    the entry pointing at itself; more groups point past the table."""
+    n = 4
+    pos_at = POS_BLOCK
+    nrm_at = pos_at + n * yukes_yobj.STRIDE
+    idx_at = nrm_at + n * yukes_yobj.STRIDE
+    t = idx_at + yukes_yobj.BLOCK_SKIP
+    table = bytearray()
+    bodies = bytearray()
+    body_at = t + 8 * len(groups)
+    for g, strip in enumerate(groups):
+        ptr = t if single and len(groups) == 1 else body_at + len(bodies)
+        table += struct.pack(">BBHI", g, 0, 1, ptr)
+        if not (single and len(groups) == 1):
+            bodies += bytes(8)  # the 8 bytes the pointer sits before
+        bodies += struct.pack(">I", len(strip))
+        for v in strip:
+            bodies += struct.pack(">H4Bhh", v, 10 * v, 20, 30, 255, v * 8192, 16384)
+    data = bytearray(t + len(table) + len(bodies) + 16)
+    data[0:4] = yukes_yobj.MAGIC
+    struct.pack_into(">H", data, MARKER_AT + yukes_yobj.COUNT_AT, n)
+    struct.pack_into(">I", data, MARKER_AT, yukes_yobj.MARKER)
+    struct.pack_into(">I", data, MARKER_AT + yukes_yobj.POS_AT, pos_at)
+    struct.pack_into(">I", data, MARKER_AT + yukes_yobj.NRM_AT, nrm_at)
+    struct.pack_into(">I", data, MARKER_AT + yukes_yobj.IDX_AT, idx_at)
+    for i, p in enumerate(QUAD):
+        struct.pack_into(">3f", data, pos_at + 8 + i * 12, *p)
+        struct.pack_into(">3f", data, nrm_at + 8 + i * 12, 0.0, 0.0, 1.0)
+    data[t : t + len(table)] = table
+    data[body_at : body_at + len(bodies)] = bodies
+    return bytes(data)
+
+
+def test_wrestlemania_xix_groups_carry_uvs_and_colours():
+    (m,) = yukes_yobj.meshes(build_xix())
+    assert len(m.indices) == 6 and m.uvs is not None and m.colors is not None
+    assert np.allclose(m.uvs[2], [0.5, 0.5]) and m.colors[3].tolist() == [30, 20, 30, 255]
+    assert m.groups == [0, 0]
+    (m,) = yukes_yobj.meshes(build_xix(((0, 1, 2), (1, 3, 2)), single=False))
+    assert len(m.indices) == 6 and sorted(set(m.groups)) == [0, 1]
+    (scene,) = plugin.extract(build_xix(), "0_2.ymg", None)
+    assert scene.extras["variant"] == "xix" and scene.primitives[0].uvs is not None
+    # X8's block still reads as before, without uvs
+    (scene,) = plugin.extract(build(), "dummy_x8.ymg", None)
+    assert scene.extras["variant"] == "x8" and scene.primitives[0].uvs is None

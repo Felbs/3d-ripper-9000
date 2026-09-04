@@ -71,12 +71,65 @@ MAX_STRIP = 8192
 UNIT_TOLERANCE = 1e-2
 
 
+CORNER = 10  # WrestleMania XIX: u16 index, RGBA8 colour, s16 uv / 32768
+MAX_GROUPS = 4096
+UV_SCALE = 1.0 / 32768.0
+
+
 @dataclass
 class Mesh:
     positions: np.ndarray
     normals: np.ndarray
     indices: np.ndarray
     unsigned_agreement: float
+    uvs: np.ndarray | None = None
+    colors: np.ndarray | None = None
+    groups: list[int] | None = None  # WrestleMania XIX: the group a triangle came from
+
+
+def _xix_groups(data: bytes, idx_at: int, count: int):
+    """WrestleMania XIX's index block: a table of 8-byte entries - ``u8, u8, u16 strips, u32
+    ptr`` - each pointing 8 bytes before its strips, every strip ``u32 corners`` then that
+    many 10-byte corners (``u16 index, RGBA8, s16 u, s16 v``).  A single-entry table is the
+    entry itself pointing at itself.  Returns (triangles, group ids, uvs, colours) or None
+    when it does not read that way (X8's block starts with a strip count instead)."""
+    t = idx_at + BLOCK_SKIP
+    if t + 8 > len(data):
+        return None
+    first = struct.unpack_from(">I", data, t + 4)[0]
+    n = (first - t) // 8 if first > t else 1
+    if not 0 < n <= MAX_GROUPS or (first > t and (first - t) % 8):
+        return None
+    tris: list[tuple[int, int, int]] = []
+    group_of: list[int] = []
+    uv = np.zeros((count, 2), np.float32)
+    col = np.full((count, 4), 255, np.uint8)
+    for g in range(n):
+        _a, _b, nstrips, ptr = struct.unpack_from(">BBHI", data, t + 8 * g)
+        if nstrips == 0 or ptr + 8 > len(data) or (g == 0 and ptr != (first if n > 1 else t)):
+            return None
+        p = ptr + 8
+        for _ in range(nstrips):
+            if p + 4 > len(data):
+                return None
+            nv = struct.unpack_from(">I", data, p)[0]
+            p += 4
+            if not 1 <= nv <= MAX_STRIP or p + CORNER * nv > len(data):
+                return None
+            raw = np.frombuffer(data, np.uint8, CORNER * nv, p).reshape(nv, CORNER)
+            ids = raw[:, :2].copy().view(">u2").reshape(nv)
+            if int(ids.max()) >= count:
+                return None
+            uv[ids] = raw[:, 6:10].copy().view(">i2").reshape(nv, 2).astype(np.float32) * UV_SCALE
+            col[ids] = raw[:, 2:6]
+            p += CORNER * nv
+            for k in range(nv - 2):
+                a, b, c = int(ids[k]), int(ids[k + 1]), int(ids[k + 2])
+                tris.append((a, b, c) if k % 2 == 0 else (b, a, c))
+                group_of.append(g)
+    if not tris:
+        return None
+    return tris, group_of, uv, col
 
 
 def is_yobj(head: bytes) -> bool:
@@ -107,7 +160,7 @@ def _orient(positions, normals, tri):
     length = np.linalg.norm(face, axis=1)
     keep = length > 1e-9
     if not keep.any():
-        return None, 0.0
+        return None, 0.0, keep
     tri, face, length = tri[keep], face[keep], length[keep]
     face /= length[:, None]
     vert = (normals[tri[:, 0]] + normals[tri[:, 1]] + normals[tri[:, 2]]).astype(np.float64) / 3
@@ -116,7 +169,7 @@ def _orient(positions, normals, tri):
     cos = (face * vert).sum(1)
     flip = cos < 0
     tri[flip] = tri[flip][:, ::-1]
-    return tri, float(np.abs(cos).mean())
+    return tri, float(np.abs(cos).mean()), keep
 
 
 def meshes(data: bytes) -> list[Mesh]:
@@ -143,22 +196,36 @@ def meshes(data: bytes) -> list[Mesh]:
         if np.abs(lengths - 1.0).max() > UNIT_TOLERANCE:
             continue
         positions = np.frombuffer(data, ">f4", count * 3, pos_at + BLOCK_SKIP).reshape(count, 3)
-        tris = _strips(data, idx_at + INDEX_SKIP, count)
+        uvs = colors = groups = None
+        xix = _xix_groups(data, idx_at, count)
+        if xix is not None:
+            tris, groups, uvs, colors = xix
+        else:
+            tris = _strips(data, idx_at + INDEX_SKIP, count)
         if not tris:
             continue
-        tri, agreement = _orient(
+        tri_in = np.array(tris, np.int64)
+        tri, agreement, keep = _orient(
             np.ascontiguousarray(positions),
             np.ascontiguousarray(normals),
-            np.array(tris, np.int64),
+            tri_in.copy(),
         )
         if tri is None:
             continue
+        if groups is not None:
+            # _orient drops zero-area triangles; keep the group ids of the survivors
+            groups = [gid for gid, k in zip(groups, keep, strict=True) if k]
+            if len(groups) != len(tri):
+                groups = None
         out.append(
             Mesh(
                 np.ascontiguousarray(positions, np.float32),
                 np.ascontiguousarray(normals, np.float32),
                 tri.ravel().astype(np.uint32),
                 agreement,
+                uvs,
+                colors,
+                groups,
             )
         )
     return out

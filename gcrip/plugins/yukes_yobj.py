@@ -29,7 +29,13 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
                 positions=mesh.positions,
                 indices=mesh.indices,
                 normals=mesh.normals,
+                uvs=mesh.uvs,
+                colors=mesh.colors,
             )
         )
-    scene.extras = {"format": "yukes_yobj", "meshes": len(found)}
+    scene.extras = {
+        "format": "yukes_yobj",
+        "meshes": len(found),
+        "variant": "xix" if any(m.uvs is not None for m in found) else "x8",
+    }
     return [scene]

@@ -76,3 +76,17 @@ Ten files of 732 on X8, so the disc total will be far larger.
   reader here declines - so the geometry on those discs is not simply `YOBJ` behind a wrapper.
   The relocation tables suggest the offsets inside are meant to be fixed up at load, which
   would explain why a `YOBJ` lifted out on its own does not resolve.  That is where to start.
+
+
+## XIX's index block, read (2026-09-03)
+
+The block that "opens with a table of eight-byte entries" is a **group table**: an entry a
+group, `u8, u8, u16 strips, u32 ptr`, the pointer landing 8 bytes before the group's strips;
+a single-group record is one entry pointing at itself.  Each strip is `u32 corners` followed
+by that many **10-byte corners**: `u16 vertex index, RGBA8 colour, s16 u, s16 v` (/ 32768).
+The earlier attempt produced 97 triangles at 0.451 because it read the entry's count as
+corners and the pointer as the data start; read as strips from `ptr + 8`, `0_2.ymg` gives
+every one of its 6 records - 6,545 triangles at **0.989** unsigned agreement, with uvs and
+vertex colours the X8 variant never had (its strips are bare indices).  The group's leading
+bytes (0, 1, 2, ... 16, 26, 65, 68) are material indices into a table not yet tied to the
+`.tex` files, so the meshes come out with uvs but no texture bound.
