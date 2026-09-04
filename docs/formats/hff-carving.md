@@ -52,3 +52,18 @@ on, but had **no PNG decoder** - so a PNG handed out by any container fell throu
 fallback and produced nothing.  `gcrip/formats/png.py` + `gcrip/plugins/png.py` close that,
 and it applies well beyond these three discs: FutureTactics' `files.pak`, for one, indexes
 members by paths like `FRONTEND\ALIENGICON(1).PNG`.
+
+
+## The rest of the file is RenderWare (2026-09-03)
+
+`casperGCN.elf` keeps a symbol table, and it is RenderWare 3.0's: `readGeometryNative`,
+`WorldBuildMeshAtomicSector`, `SkinGeometryRead`, `GeometryListStreamRead`, `_rxDlVertexFmt`.
+Scanning Casper's first 16 MB for little-endian chunk headers with the RW 3 stamps
+(`0x0800FFFF`, `0x0C02FFFF`) finds them back to back from 67,584 on: three texture
+dictionaries, one world, 40 clumps and 148 bare rasters (type 0x15), 56% of the bytes.  The
+`hff` container walks them now - a top-level TEXDICT / CLUMP / WORLD / raster whose size fits
+is a member, the next starts at its end, and anything else resyncs 4 bytes on - and the
+RenderWare plugin reads them unchanged: Casper's world is 13,650 triangles with 78 textures
+bound from the dictionaries beside it; TONKA's middle 12 MB hold 104 clumps (28,301
+triangles); Aquaman's head 3 clumps and a world, 34,212 triangles.  Aquaman's textures are
+its PNGs, which the streams cannot name, so its models come out untextured for now.

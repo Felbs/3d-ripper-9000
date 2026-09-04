@@ -55,3 +55,23 @@ def test_only_the_hff_extension_is_claimed():
 def test_a_stray_signature_shorter_than_the_minimum_is_not_a_member():
     data = png.MAGIC + png.END + build()
     assert len(hff.members(data)) == 3
+
+
+def test_renderware_streams_are_carved_between_the_pngs():
+    """Casper's hff holds no PNG at all: its members are RenderWare 3.0 streams back to back."""
+    import struct
+
+    def chunk(t: int, body: bytes) -> bytes:
+        return struct.pack("<3I", t, len(body), 0x0C02FFFF) + body
+
+    txd = chunk(0x16, bytes(20))
+    dff = chunk(0x10, bytes(32))
+    bsp = chunk(0x0B, bytes(64))
+    data = b"// this file contains the path\r\n" + bytes(8) + txd + bytes(4) + dff + b"junk" + bsp
+    got = hff.rw_members(data)
+    assert [m.name for m in got] == ["stream_00000.txd", "stream_00001.dff", "stream_00002.bsp"]
+    assert [data[m.offset : m.offset + m.size] for m in got] == [txd, dff, bsp]
+    names = [n for n, _ in hff.expand(data)]
+    assert names == ["stream_00000.txd", "stream_00001.dff", "stream_00002.bsp"]
+    # a header whose size runs past the file is not a stream
+    assert hff.rw_members(struct.pack("<3I", 0x10, 999, 0x0C02FFFF)) == []
