@@ -153,3 +153,11 @@ descriptors with no geometry of their own.
 What is still not known is how a pair addresses the float array: 253,416 pairs against about
 16,000 stride-24 vertices means either the first value indexes a per-run window, or the
 attributes are split across arrays.  The stride-24 float region is the place to test that.
+
+**2026-09-04 evening (z_steamboat2.mpk.ngc, cached copy):** the map-pack internals are
+per-member variable - this member has its position array at **stride 12** (pure f32 triples,
+~32,400 verts, world extent +-15k-38k, coarse quantized mantissas) at 0x35c000 after a
+14-record descriptor table at 0x35ae80, where z_hunt had stride 24 and a 1 MB table.  The
+'80 80 80 ff' record terminator holds on both.  Regions here: 0x140000 = repeating
+`07e1 07e0 5555...` fill, 0x3c0000 = RGBA-like color rows.  Do not assume one fixed layout
+across .mpk members; the descriptor records must drive the reader.
