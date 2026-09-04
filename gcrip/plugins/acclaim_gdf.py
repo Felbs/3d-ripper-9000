@@ -7,14 +7,20 @@ import posixpath
 
 import numpy as np
 
-from gcrip.formats import acclaim_gdf
+from gcrip.formats import acclaim_gdf, acclaim_skn
 from ripcore.scene import MaterialDef, Primitive, Scene
 
 NAME = "acclaim_gdf"
 
 
 def detect(path: str, head: bytes, size: int) -> bool:
-    return path.lower().endswith((".gdf", ".skn")) and acclaim_gdf.is_gdf(head, size)
+    if not path.lower().endswith((".gdf", ".skn")):
+        return False
+    # the player-body .SKN files pass the loose (36, 76) shape here by accident; the SKN
+    # tiling identity is exact, so a file it accepts belongs to plugins.acclaim_skn
+    if acclaim_skn.is_skn(head, size):
+        return False
+    return acclaim_gdf.is_gdf(head, size)
 
 
 def extract(data: bytes, path: str, src) -> list[Scene]:
