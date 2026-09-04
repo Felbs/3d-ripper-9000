@@ -67,6 +67,8 @@ class Mesh:
     uvs: np.ndarray | None
     normals: np.ndarray | None
     joints: np.ndarray  # (N,) u16, the first influence's joint
+    joints4: np.ndarray | None = None  # (N,4) u16 skin joints
+    weights4: np.ndarray | None = None  # (N,4) f32 skin weights
 
 
 @dataclass
@@ -126,11 +128,14 @@ def _vertices(
 
     With a ``skeleton`` (4x4 joint globals from :mod:`gcrip.formats.skye_skel`), every
     influence is decoded properly: ``v = sum w_i * (G_j @ (raw/1024))``; the joint index
-    addresses the joint-global list directly (0-based, proven by the render oracle).  Without one (props, or no matching ``.skg``), the first
+    addresses the joint-global list directly (0-based, proven by the render oracle).
+    Without one (props, or no matching ``.skg``), the first
     influence's raw coords at /1024 stand alone - exact for the single-joint props, and an
     honest approximation otherwise."""
     pos = np.empty((d.nverts, 3), np.float32)
     joints = np.empty(d.nverts, np.uint16)
+    j4 = np.zeros((d.nverts, 4), np.uint16)
+    w4 = np.zeros((d.nverts, 4), np.float32)
     p = d.voff
     for i in range(d.nverts):
         n = struct.unpack_from(">I", data, p)[0]
@@ -144,6 +149,9 @@ def _vertices(
             p += INFLUENCE
             if k == 0:
                 first_j = j
+            if k < 4:
+                j4[i, k] = j
+                w4[i, k] = w
             local = np.array((x, y, z), np.float64) / FIXED_POINT
             if skeleton is not None and 0 <= j < len(skeleton):
                 G = skeleton[j]
@@ -153,8 +161,11 @@ def _vertices(
                 acc = local
                 tw = 1.0
         pos[i] = acc / max(tw, 1e-9)
+        s4 = w4[i].sum()
+        if s4 > 0:
+            w4[i] /= s4
         joints[i] = first_j
-    return pos, joints
+    return pos, joints, j4, w4
 
 
 def _normals(data: bytes, d: Directory) -> np.ndarray | None:
@@ -176,7 +187,7 @@ def meshes(data: bytes, skeleton: list[np.ndarray] | None = None) -> list[Mesh]:
     joint-global list from :func:`gcrip.formats.skye_skel.match_skeleton`."""
     out: list[Mesh] = []
     for d in directories(data):
-        pos, joints = _vertices(data, d, skeleton)
+        pos, joints, j4, w4 = _vertices(data, d, skeleton)
         tri = np.frombuffer(data[d.ioff : d.ioff + d.ntris * TRIANGLE], ">u2").reshape(d.ntris, 8)
         vi, ti = tri[:, :3].astype(np.int64), tri[:, 3:6].astype(np.int64)
         if vi.max() >= d.nverts or ti.max() >= d.nuvs:
@@ -193,6 +204,8 @@ def meshes(data: bytes, skeleton: list[np.ndarray] | None = None) -> list[Mesh]:
                 uvs=corner_uv,
                 normals=corner_n,
                 joints=joints[vi].reshape(-1),
+                joints4=j4[vi].reshape(-1, 4),
+                weights4=w4[vi].reshape(-1, 4),
             )
         )
     return out

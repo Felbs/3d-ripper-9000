@@ -151,8 +151,8 @@ def test_skx_vertices_decode_fixed_point_with_skeleton():
     # joint 1's global translation is (10,0,0)
     d = skxm.Directory(1, 16, 100.0, 0, 1, 16, 1, 32)
     data = struct.pack(">I", 1) + struct.pack(">4h", 1024, 2048, -1024, 1) + struct.pack(">f", 1.0)
-    pos, joints = skxm._vertices(data + bytes(64), d, G)
+    pos, joints, j4, w4 = skxm._vertices(data + bytes(64), d, G)
     np.testing.assert_allclose(pos[0], [11, 2, -1], atol=1e-5)
     # without a skeleton the raw first influence stands alone at /1024
-    pos2, _ = skxm._vertices(data + bytes(64), d, None)
+    pos2, _, _, _ = skxm._vertices(data + bytes(64), d, None)
     np.testing.assert_allclose(pos2[0], [1, 2, -1], atol=1e-5)

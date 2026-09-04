@@ -7,7 +7,7 @@ from __future__ import annotations
 import posixpath
 
 from gcrip.formats import skx, skye_skel
-from ripcore.scene import MaterialDef, Primitive, Scene
+from ripcore.scene import Joint, MaterialDef, Primitive, Scene
 
 NAME = "skx"
 
@@ -16,7 +16,7 @@ def detect(path: str, head: bytes, size: int) -> bool:
     return skx.is_skx(head)
 
 
-def _skeleton_for(data: bytes, src):
+def _group_for(data: bytes, src):
     """Joint globals via the group ``.skg`` banks reachable from the source, matched by the
     SKX header's joint count; cached per source."""
     if src is None or not hasattr(src, "by_path"):
@@ -33,14 +33,15 @@ def _skeleton_for(data: bytes, src):
                     continue
         _skg_cache.clear()
         cache = _skg_cache[key] = (src, blobs)
-    return skye_skel.match_skeleton(data, cache[1])
+    return skye_skel.match_group(data, cache[1])
 
 
 _skg_cache: dict = {}
 
 
 def extract(data: bytes, path: str, src) -> list[Scene]:
-    found = skx.meshes(data, skeleton=_skeleton_for(data, src))
+    group = _group_for(data, src)
+    found = skx.meshes(data, skeleton=group[0] if group else None)
     if not found:
         return []
     stem = posixpath.basename(path).rsplit(".", 1)[0] or "skx"
@@ -57,7 +58,22 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
                 indices=mesh.indices,
                 normals=mesh.normals,
                 uvs=mesh.uvs,
+                joints=mesh.joints4 if group else None,
+                weights=mesh.weights4 if group else None,
             )
         )
+    if group:
+        _, joint_list, skg_blob = group
+        for i, (parent, t, q) in enumerate(joint_list):
+            scene.joints.append(
+                Joint(
+                    name=f"joint{i}",
+                    parent=parent if 0 <= parent < i else None,
+                    translation=tuple(t),
+                    rotation=tuple(q),
+                    scale=(1.0, 1.0, 1.0),
+                )
+            )
+        scene.clips = skye_skel.skg_clips(skg_blob)
     scene.extras = {"format": "skx", "meshes": len(found)}
     return [scene]
