@@ -1,4 +1,4 @@
-# 007: Agent Under Fire - `maps/*.ngc` (EA Redwood Shores, a Quake III derivative) - in progress 2026-09-03
+# 007: Agent Under Fire - `maps/*.ngc` (EA Redwood Shores, a Quake III derivative) - 2026-09-03
 
 38 map files, 6-9 MB each, 273 MB - the whole level content of the disc (the `.gsf` beside
 them are sound).  `Bond.elf` ships a **symtab** (17,636 symbols) and the engine is id Tech 3
@@ -78,3 +78,22 @@ an octagonal deathmatch arena spanning -2016..1136 x -448..1456 x -128..768 (scr
 the id table then the texture headers at +0x5b0) - `SHDR_FixupShaderTable` (924 B) and
 `SHDR_SetupStage` name the fields.  Not yet done: the shader -> texture id path, the texture
 headers, patches (`R_DrawPatch`), `bmodels`, the entity placements and the `restable` models.
+
+## Shipped: the world with its textures (2026-09-03, end of day)
+
+`gcrip/formats/auf_ngc.py` + `gcrip/plugins/auf_ngc.py`.  The shader path closed the loop:
+a surface's `u16` at +4 indexes the `shaders` chunk's 16-byte shader array (`SHDR_GetIDX`
+is `base + idx * 16`), a shader's pointer at +0xc reaches its 20-byte body (`ptr stages, u8,
+u8 stages`), a stage (20 bytes) carries a `u32` texture id at +4 (`0xccddccdd` is the
+lightmap stage), and `restxtrs` maps ids to 68-byte headers - `u32 GX format, u16 width,
+u16 height, u32, u32, u32 data offset, u32 bytes, ...` - whose pixels are already tiled for
+the hardware (`gx_texture.decode`).  `dm1.ngc` binds 42 of its 43 shaders; `alp1_1.ngc`
+(Alpine) is 17,412 triangles / 91 textures, `carrier1.ngc` 26,346 / 40.  Read against
+`SHDR_FixupShaderTable` (the chunk's `(ptr, count)` pairs and which record fields are
+pointers), `R_AddVisibleLeaves` (the sort key: `shader << 7 | lightmap`, `SHDR_GetIDX`,
+`SHDR_SetupStage`, `R_DrawSurf`).
+
+Not read: the bicubic patches (surface type != 0, `R_DrawPatch`), the lightmaps (the second
+uv set is exported, the `ligtmaps` images are not), `bmodels` and the entity placements, and
+the `restable` models (`NGCObject3D`) - the characters, weapons and props.  Wave 57 re-rips
+the disc.

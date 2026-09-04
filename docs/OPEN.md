@@ -6,6 +6,14 @@ textures through the plugin chain.
 
 Companion to [FORMATS.md](FORMATS.md), which lists what already works.
 
+## Closed 2026-09-03: 007 Agent Under Fire maps (the world)
+
+`Bond.elf` ships a symtab, the engine is Quake III with EA's chunk stream on top: BOA
+byte-LZ chunks, a `bspfile` of Q3 lumps, `ngcsurfs` with `s16` vertices behind a 3x4 world
+matrix and `u8` strip indices, shaders and textures by `u32` id.  Three maps read textured
+(10k-26k triangles each).  Models and patches are still open - see the row below and
+[formats/auf-ngc.md](formats/auf-ngc.md).  Wave 57.
+
 ## Closed 2026-09-03: Free Radical `gcr` - TimeSplitters 2, Future Perfect, Second Sight
 
 Four shapes, one reader (`gcrip/formats/frd_gcr.py`): TS2 characters / props / guns (0xa0
@@ -255,7 +263,7 @@ without the DOL.  Seven discs on one engine.
 |---|---|---|---|
 | EA content on Tiger Woods 2003 / 2004 / 2005 | 6 | **closed 2026-09-03** - `Rdat` is EA's `rcmp` LZ, read out of the 2005 DOL (`gcrip/formats/ea_rcmp.py`); one 2005 hole yields 428k triangles + 95 textures through `shoc` -> `ea_obg` / `ea_txg`.  See the closing section of [formats/ea-shoc-hog.md](formats/ea-shoc-hog.md) | re-rip the five discs (wave 32) |
 | `.adb` | 11 | **low value, do not size it by file count.**  14 large `Sounds.adb` on the Acclaim discs (200-660 MB, ascending `u32` offset table, no recognised magic in the first member) whose discs are already served by `asb_tex`; and 411 tiny ones elsewhere - Shadow the Hedgehog's 364 total 0.1 MB, about 300 bytes each | see [formats/dgc-adb-survey.md](formats/dgc-adb-survey.md) |
-| 007: Agent Under Fire `maps/*.ngc` | 1 (+ Everything or Nothing and From Russia with Love if the studio kept the shape) | **in progress 2026-09-03**: `Bond.elf` has a symtab and the engine is Quake III + EA - the map is a chunk stream (`RSRC_Load`) of BOA-compressed chunks (byte LZ, done), `bspfile` is Q3 lumps under other names with an `ngcsurfs` GX surface lump, `restxtrs` the textures, `restable` the models (`NGCObject3D`, pointer-fixup image) | [formats/auf-ngc.md](formats/auf-ngc.md): read `R_InitSurfaces`, `RSRC_InitStaticTextures`, `FS_UseResourceTable`, `FixupNGCModelData` |
+| 007: Agent Under Fire - what `maps/*.ngc` still holds | 1 (+ Everything or Nothing / From Russia with Love if the studio kept the shape) | **the world ships 2026-09-03** (`plugins/auf_ngc.py`: BOA chunks, `ngcsurfs` strips through the world matrix, shaders -> `restxtrs` textures).  Left: bicubic patches (`R_DrawPatch`), the `ligtmaps` images, `bmodels` + entity placements, and the **`restable` models** - `NGCObject3D` pointer-fixup images (`FixupNGCModelData`: `(count, ptr)` pairs from +0x30 - positions, normals, ST, `NGC_EntVtx`, tri strips, matrix map, geom groups / sections) reached through `FS_UseResourceTable` | [formats/auf-ngc.md](formats/auf-ngc.md) |
 | Pac-Man Fever data outside the FST | 1 | the FST lists three `.BLT` (two of them 1.3 leftovers the DOL cannot read); the DOL opens `BoardGam`, `DataHUD` ... by name from the raw disc - 300 MB the manifest never sees | scan the image for `BOLT` headers when the drive is idle, hand the hits to `plugins.bolt` (see [formats/bolt-mass-media.md](formats/bolt-mass-media.md)) |
 | FSTA `GKA` / `GGG` | 3 (Billy & Mandy, Kids Next Door, Charlie and the Chocolate Factory) | **`GGG` read 2026-09-03** (models; `GKA` is animation) - **not compressed** - body entropy 5.28 (`GGG`) and 6.82 (`GKA`) against 7.73 for `GMS`.  Magic is `ISVH` (`HVSI` reversed) but the fields are big-endian: the `u32` at +12 is the exact file size on both | what they hold.  Neither shows f32 runs, so any geometry is quantised.  Note the models are in `GMS`, which is compressed - these may be animation or collision |
 
