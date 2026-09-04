@@ -19,19 +19,40 @@ control field sitting beside an 8-bit length, and every reading of them as a *co
 explain matches that need different lengths from identical bytes.  They are not a control.
 They are the bottom two bits of the length.
 
-What settles it, on the 251 packed members of the first 24 MB of NBA 2K3's ``game.dat``:
+**The stream is input-driven and the encoder trims it** (settled 2026-09-04).  The stored
+stream is decoded until the member's bytes run out, not until a target is reached, because the
+u32 at +21 is not the member's output length - it is the first record's own size field, read
+through the stream's opening literals, and a member may hold *several* records
+(``MORPHEDIT.IFF`` decodes to three).  Two encoder habits follow from the stream being sized
+by its content rather than by a header:
 
-* **246 land exactly on the length the member declares**, with no clipping and no rounding -
-  the decoder is not stopped at the target, it arrives there.  Length is the oracle here and it
-  has to be measured that way: stopping the walk at the target makes any rule land on it, which
-  is how a wrong rule once scored 251 of 251.
-* **all 246 then carry ``RTXT`` at +16 and the nested ``RTXT`` at +44** - the chunk header the
-  uncompressed members show - and read back as named textures: ``unif``, ``office_photos``,
-  ``coachface``.
-* the walk consumes 90% of the stored span, the rest being the member's padding.
+* **Trailing zero-producing ops are trimmed.**  A member whose output ends in a run of zeros
+  may store a stream that stops short of them - ``AH743.IFF`` ends 16 zeros early, cleanly
+  between ops, and 58 of the 359 packed members in the verification corpus end *inside* a
+  match word, because the trim cut at the container's 32-byte alignment and left a stale
+  byte of the fuller stream behind (``AA743.IFF`` dangles ``06`` - the first byte of a
+  ``06 00 00`` match that would copy 24 more zeros).  A cut like that ends the stream; it is
+  not an error.
+* **Up to 31 bytes of source slop follow the content.**  The encoder compressed its source
+  buffer through the 32-byte alignment padding, so a few bytes of junk may decode after the
+  last record.  Record walkers already stop at the tiling boundary and never see it.
 
-Two of the 251 do not reach their declared length and three overrun it by sixteen bytes; those
-are reported, not smoothed over.
+What settles all of it, on the 359 packed members fully inside the first 24 MB of NBA 2K3's
+``game.dat`` (251 of them RTXT texture members, 108 others):
+
+* **zero decode errors** - no match ever reaches before the start of the output, which is the
+  check that catches a wrong split of the 24-bit word within a handful of ops;
+* **every member's decoded tag matches the one it advertises** at +17;
+* **239 of the 251 RTXT members tile into complete records exactly** (the other 12 carry
+  non-RTXT chunks after their first record, ``A030.IFF``-style, and tile as far as RTXT
+  records go); the multi-record members ``MORPHEDIT.IFF`` and ``REF1.IFF`` - unreachable
+  under the old stop-at-declared walk - tile as 3 x 17,072 to the byte;
+* the five members the stop-at-declared walk could not explain are all explained: two were
+  multi-record, three were trimmed.
+
+The earlier "same bytes, different lengths" contradiction that suggested hidden adaptive
+state is fully dissolved: it was an artifact of a wrong op grammar consuming the wrong number
+of bytes before the point of comparison.  There is no adaptive state.
 """
 
 from __future__ import annotations
@@ -44,7 +65,7 @@ from gcrip.identities import Identity
 VERBATIM = 16
 #: the tag of a stored member sits at +16; a packed one has a zero there and the tag at +17
 TAG_AT = 16
-#: the packed member states its own output length here
+#: the first record's size field - part of the output, read back through the opening literals
 DECLARED_AT = 21
 #: length occupies the top ten bits of the 24-bit match word
 LENGTH_SHIFT = 14
@@ -52,55 +73,104 @@ LENGTH_SHIFT = 14
 DISTANCE_MASK = 0x3FFF
 #: no member on any of the five discs is anywhere near this
 MAX_OUTPUT = 64 << 20
+#: the largest zero-tail trim seen on a real member is 101 bytes (PB30.IFF); a shortfall far
+#: beyond that is a mis-decode, not a trim
+MAX_PAD = 4096
 
 
 class PackError(ValueError):
-    """The packed stream does not reach the length the member declares."""
+    """The packed stream is not decodable as this codec."""
 
 
 def is_packed(head: bytes) -> bool:
     """A packed member has a zero where a stored one has its four-character tag."""
-    return len(head) >= DECLARED_AT + 4 and head[TAG_AT] == 0 and head[TAG_AT + 1 : TAG_AT + 5].isalpha()
+    if len(head) < DECLARED_AT + 4:
+        return False
+    return head[TAG_AT] == 0 and head[TAG_AT + 1 : TAG_AT + 5].isalpha()
 
 
 def declared(head: bytes) -> int:
-    """The output length the member states, not counting the sixteen verbatim bytes."""
+    """The first record's size field - a *minimum* for the output, not its length."""
     return struct.unpack_from(">I", head, DECLARED_AT)[0]
 
 
-def unpack(data: bytes) -> bytes:
-    """Decode one packed member.  Raises if the stream cannot reach the declared length."""
-    want = declared(data)
-    if not 0 < want <= MAX_OUTPUT:
-        raise PackError(f"declared output length {want} is not plausible")
-    target = want + VERBATIM
+def decode(data: bytes) -> tuple[bytearray, bool]:
+    """Decode the whole stored stream.  Returns ``(output, clean)``.
+
+    ``clean`` is False when the stream ends inside a match word - the encoder's trim cutting
+    at an alignment boundary - which ends the stream and is ordinary, not an error.  A match
+    reaching before the start of the output raises, because that is what a wrong reading of
+    the 24-bit word produces within a handful of ops.
+    """
     out = bytearray(data[:VERBATIM])
     i = VERBATIM
     n = len(data)
-    while len(out) < target and i < n:
+    while i < n:
         flags = data[i]
         i += 1
         for bit in range(8):
-            if len(out) >= target or i >= n:
+            if i >= n:
                 break
             if not (flags >> bit) & 1:
                 out.append(data[i])
                 i += 1
                 continue
             if i + 3 > n:
-                raise PackError(f"a match runs off the end of the member at {i}")
+                return out, False
             word = data[i] << 16 | data[i + 1] << 8 | data[i + 2]
             i += 3
             length = word >> LENGTH_SHIFT
             distance = (word & DISTANCE_MASK) + 1
             if distance > len(out):
                 raise PackError(f"distance {distance} reaches before the output at {len(out)}")
+            if len(out) + length > MAX_OUTPUT:
+                raise PackError(f"output would pass {MAX_OUTPUT} bytes")
             for _ in range(length):
                 out.append(out[-distance])
+    return out, True
+
+
+def _tiling_target(out: bytearray, tag: bytes, floor: int) -> int:
+    """How far the output provably extends: the record tiling the decode itself shows.
+
+    Records are ``16-byte header, tag, u32 size`` spanning ``size + 16``; a member may hold
+    several.  Only records whose headers actually decoded count - a tiling read from junk
+    would invent output.
+    """
+    target = floor
+    at = 0
+    while at + 24 <= len(out):
+        if bytes(out[at + TAG_AT : at + TAG_AT + 4]) != tag:
+            break
+        size = struct.unpack_from(">I", out, at + TAG_AT + 4)[0]
+        if size < 8 or size > MAX_OUTPUT:
+            break
+        at += size + VERBATIM
+        target = max(target, at)
+    return target
+
+
+def unpack(data: bytes) -> bytes:
+    """Decode one packed member.
+
+    The stream is decoded to its end; if it stops short of the record tiling it declares,
+    the difference is the zero tail the encoder trimmed and comes back as zeros.  The result
+    may carry up to 31 bytes of the encoder's alignment slop after the last record - record
+    walkers stop at the tiling boundary and never read it.
+    """
+    if not is_packed(data[: DECLARED_AT + 4]):
+        raise PackError("not a packed member")
+    want = declared(data)
+    if not 0 < want <= MAX_OUTPUT:
+        raise PackError(f"first record size {want} is not plausible")
+    out, _clean = decode(data)
+    target = _tiling_target(out, data[TAG_AT + 1 : TAG_AT + 5], want + VERBATIM)
     if len(out) < target:
-        raise PackError(f"stream ended {target - len(out)} bytes short of the declared {want}")
-    # the last match may overrun the declared end; that is ordinary for an LZ stream
-    return bytes(out[:target])
+        pad = target - len(out)
+        if pad > MAX_PAD:
+            raise PackError(f"stream ends {pad} bytes short of its own record tiling")
+        out += bytes(pad)
+    return bytes(out)
 
 
 # -- identities ---------------------------------------------------------------------------
@@ -113,7 +183,8 @@ def _reaches_declared(data: bytes):
         out = unpack(data)
     except PackError as exc:
         return False, str(exc)
-    return len(out) == declared(data) + VERBATIM, f"{len(out)} bytes for a declared {declared(data)}"
+    want = declared(data) + VERBATIM
+    return len(out) >= want, f"{len(out)} bytes against the first record's {want}"
 
 
 def _nested_tag(data: bytes):
@@ -129,8 +200,8 @@ def _nested_tag(data: bytes):
 
 IDENTITIES = [
     Identity(
-        "the stream arrives at the declared length",
-        "output == the u32 the member states at +21, plus the sixteen verbatim bytes",
+        "the stream covers the first record",
+        "decoded length >= the record size the stream's own literals state, plus 16",
         _reaches_declared,
     ),
     Identity(

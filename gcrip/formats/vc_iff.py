@@ -1,11 +1,11 @@
 """Visual Concepts ``RTXT`` texture records - the ``.IFF`` members of ``game.dat``.
 
 NBA 2K2/2K3, NFL 2K3 and the two NCAA 2K3 discs keep everything in one ``game.dat``
-(:mod:`gcrip.formats.vc_dat`).  Most of its ``.IFF`` members are packed with a codec that is
-not solved yet, but **58 of NBA 2K3's 1,916 are stored as they are** - ``size == span`` in the
-table - and four of those are large: ``PLAYERS.IFF`` (10.2 MB), ``LOADM.IFF`` (4.5 MB),
-``CHWG.IFF`` (3.5 MB) and ``AOSTREET.IFF`` (1.2 MB).  Those are texture banks, and they need no
-codec at all.
+(:mod:`gcrip.formats.vc_dat`).  Most of its ``.IFF`` members are packed
+(:mod:`gcrip.formats.vc_pack` decodes them), and **58 of NBA 2K3's 1,916 are stored as they
+are** - ``size == span`` in the table - four of those large: ``PLAYERS.IFF`` (10.2 MB),
+``LOADM.IFF`` (4.5 MB), ``CHWG.IFF`` (3.5 MB) and ``AOSTREET.IFF`` (1.2 MB).  Those are
+texture banks, and they need no codec at all.
 
 A member is a run of fixed records, each one image.  Big-endian::
 

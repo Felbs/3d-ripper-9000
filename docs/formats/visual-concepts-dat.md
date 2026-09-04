@@ -69,10 +69,10 @@ are 477 of NBA 2K3's 827 MB between them and hold neither geometry nor textures,
 over 32 MB are skipped rather than carried - holding those two would add half a gigabyte to
 every worker.
 
-## The codec - solved (2026-09-02)
+## The codec - solved (2026-09-02, stream semantics settled 2026-09-04)
 
     16 bytes copied to the output verbatim
-    then, repeatedly:
+    then, until the member's bytes run out:
         u8 flags
         eight items, bit taken LSB first:
             bit 0 -> literal, one byte
@@ -80,7 +80,8 @@ every worker.
                         length   = word >> 14           (10 bits)
                         distance = (word & 0x3fff) + 1  (14 bits)
 
-That is the whole thing: a **10:14 split of a 24-bit word**.
+That is the whole thing: a **10:14 split of a 24-bit word**, decoded **to the end of the
+input**, not to a target length.  There is no adaptive state.
 
 ### Why every earlier attempt stopped in the same place
 
@@ -94,24 +95,56 @@ The note used to record "`b1` is a two-bit control, its low six bits are zero in
 observed".  That was measured over the first few ops of one member.  Over a whole member `b1`
 takes 90-odd values.
 
+### The stream is input-driven - the last riddle, and where "adaptive state" came from
+
+The u32 at +21, long called "the declared output length", **is not a header field at all**.
+The stream's first flags byte is `0x00` and its first eight literals are the tag and a u32 -
+so +17 is the tag and +21 is the *first record's own size field*, seen through the stream.  A
+member may hold several records: `MORPHEDIT.IFF` (span 45,616 against a "declared" 17,056)
+decodes to **three** 17,072-byte `RTXT` records that tile to the byte.  Stopping the walk at
++21's value was wrong for every multi-record member, and it produced the five "failures" the
+2026-09-02 note reported.
+
+The other three of those five are the second encoder habit: **trailing zero-producing ops are
+trimmed from the stored stream.**  `AH743.IFF` ends cleanly 16 zeros short of its record;
+`AA743.IFF` ends *inside* a match word - the trim cut at the container's 32-byte alignment and
+left the first byte of a `06 00 00` match (24 more zeros, distance 1) dangling.  A cut like
+that ends the stream.  The decoder gives the zeros back by padding to the record tiling the
+output itself shows.  Up to 31 bytes of slop may also decode *past* the last record - the
+encoder compressed its source buffer through the alignment padding - and record walkers never
+see it.
+
+The "same bytes, different lengths" contradiction that suggested hidden adaptive state is
+fully dissolved: under the wrong op grammar the ops *before* the comparison point consumed the
+wrong number of bytes, so the "identical position" was not identical.  The nine members that
+carried the contradiction (`AH999`, `MDCLASS`, ...) all decode under the 10:14 split, most of
+them into readable plaintext - `aistreet.bin`, `cwdloop.bin`, and runs of the string
+`PADDING*` - which the old "no plaintext twin for `AUSB`" note said could never be checked.
+
 ### What settles it
 
-The 251 packed members in the first 24 MB of NBA 2K3's `game.dat`, each of which states its own
-output length at +21:
+All 359 packed members that sit whole inside the first 24 MB of NBA 2K3's `game.dat` - 251
+`RTXT` texture members and 108 others (`BSUA`, `AUSB`, `PLAY`, ...):
 
-* **246 of 251 arrive at that length exactly** - the walk is not stopped there, it ends there -
-  and the two that fall short and three that overrun by sixteen bytes are reported, not hidden.
-* **All 246 then carry `RTXT` at +16 and the nested `RTXT` at +44**, the header the uncompressed
-  members show, and read back as named textures: `unif`, `office_photos`, `coachface`, `uni600`.
-* The walk consumes 90.4% of the stored span; the remainder is the member's padding.
+* **zero decode errors** - no match ever reaches before the start of the output, the check
+  that catches a wrong split of the 24-bit word within a handful of ops;
+* **every decoded member carries the tag it advertises at +17**;
+* **239 of the 251 `RTXT` members tile into complete records exactly** (the other 12 carry
+  non-`RTXT` chunks after their first record, `A030.IFF`-style, and tile as far as `RTXT`
+  goes); `MORPHEDIT.IFF` and `REF1.IFF` tile as 3 x 17,072 to the byte;
+* 301 streams end cleanly between ops, 58 end inside a trimmed match word - both ordinary;
+* end to end, **311 of 311 packed `RTXT` members decode and 425 textures come out** of the
+  24 MB slice through the shipped `vc_iff` reader (60 members decode but hold `LOADM`-style
+  record layouts the reader declines by design - a reader gap, not a codec one).
 
-**The measurement that matters is that the decoder *arrives* at the declared length.**  Clipping
-the final copy to the target - the ordinary way to end an LZ decode - makes the length oracle
-vacuous, and a wrong split (`length = ((b0 << 2) | (b1 >> 6)) + 3`) scored 251 of 251 that way
-while producing visible garbage: `office_photos` interleaved with fragments of itself.  With the
-clip removed the same rule scores 164.  That is now recorded in `gcrip/oracles.py`.
+**The measurement that matters is structure the decode cannot fake.**  Clipping the final copy
+to a target - the ordinary way to end an LZ decode - makes any length oracle vacuous, and a
+wrong split (`length = ((b0 << 2) | (b1 >> 6)) + 3`) once scored 251 of 251 that way while
+producing visible garbage.  That lesson is recorded in `gcrip/oracles.py`; the tiling of whole
+record runs, and plaintext like `PADDING*`, are the oracles that replaced it.
 
-`gcrip/formats/vc_pack.py` ships it, with both identities declared.
+`gcrip/formats/vc_pack.py` ships it, with both identities declared, and
+`tests/test_vc_pack.py` pins three real members - one per way a real stream ends.
 
 ## The textures that need no codec at all
 
@@ -154,73 +187,56 @@ several times smoother than its own pixels in a random order, and that test does
 the picture is of.  Measuring it on the *indices* is what does not work - it only agrees when
 the palette happens to be ordered, which `AOSTREET`'s is and `CHWG`'s is not.
 
-**Once the codec falls the same reader covers the other 1,858 members and the other four
-discs** - they hold the same records, just packed.
+**The codec has now fallen, and the same reader covers the packed members too** - on the
+24 MB verification slice alone it turns 311 packed `RTXT` members into 425 more textures.
 
-## Narrowing the last field - four things the next attempt should not re-derive
+## Two field tests that survive the solve
 
 **1. `span >= declared` does not mean a member is stored raw.**  Members are padded, so the
 span is an upper bound on the stored bytes, never the stored length.  `LOGOS.CDF` has span 512
-against declared 464 and is still packed - you can read it in the member itself, where
-`logos.cdf` appears as `"log" c0 "os.cdf"` with a control byte in the middle of its own name.
-Two members were treated as plaintext on this basis and produced pages of meaningless
-"solutions".  **The reliable test is the tag: a raw member has its 4CC at +16, a packed one has
-a `00` at +16 and the tag at +17.**  (The shipped `vc_iff` reader never used the span, so its
-971 textures are unaffected.)
+against declared 464 and is still packed.  **The reliable test is the tag: a raw member has
+its 4CC at +16, a packed one has a `00` at +16 and the tag at +17** - and the `00` is no
+accident: it is the stream's first flags byte, eight literals deep, and the tag and "declared"
+u32 are simply the first eight bytes of the output read through it.
 
-**2. There is no plaintext twin for the `AUSB` or `PLAY` tags.**  Of NBA 2K3's 108 members with
-span >= declared, 30 carry `RTXT` at +16 and are genuinely raw; the other 78 have no tag there
-and are packed.  So the only known plaintext on the disc is the texture records - which is what
-`gcrip/formats/vc_iff.py` reads, and it is why the framing could be verified at all.
+**2. The nine-member "different lengths" table** that once sat here (`AH999` ... `MDCLASS
+exactly 119`) is preserved in spirit as a warning: it was an artifact of a wrong op grammar,
+not evidence of adaptive state - a length disagreement at "the same position" means the
+positions were never the same.  Four ops of agreement on a template that is mostly zeros is
+weak evidence; whole-member record tiling is the real oracle.
 
-**3. The `b1` byte is a two-bit control, not the high half of a distance.**  Its low six bits
-are zero in **every** match observed, across every member: only `0x00`, `0x40`, `0x80` and
-`0xc0` ever appear.  A distance high byte would vary.
+## 2026-09-04: the DOL is a bootstrap - the engine is `files/game.img`
 
-**4. The rule for `control == 0` is also wrong, not just the unknown one.**  This is the
-finding that matters, and it invalidates part of the section above.  Take the members whose
-decode contains **exactly one** unknown match - so every other op is forced and the single
-unknown's length is fully determined by the declared output size.  Nine of them hit the
-identical triple `01 c0 1b` at the identical output position 41 with the identical distance 28,
-and they require **different lengths**:
+Why every scan over `sys/main.dol` failed to find the decompressor: **it is not in there.**
+The xref walk over the cached DOL (`vc/nba2k3_main.dol`, 156k instructions) settles it:
 
-    AH999, ANIMS      29 upwards        CAIRBALL, BUILD36  39 upwards
-    CTIME, LINES      67 upwards        MDCLASS            exactly 119
-    MINTRO, MONONE    37 upwards        MDNONE, MOCLASS    107 upwards
+- The `[VCLOADER]` strings resolve to an **ELF loader** at `0x8009ac34`: it opens a file by
+  name (`0x8009b288`, a wrapper over the SDK `DVDOpen` at `0x80020cdc`), checks `\x7fELF`
+  (magic string at `0x800a2060`), requires `e_type == 2` (ET_EXEC), copies every
+  `PT_LOAD` program segment to its vaddr, zero-fills the BSS tails, prints
+  `[VCLOADER] Jumping to the executable...` and jumps to the entry point (`blrl` at
+  `0x8009afa8`).
+- Every caller passes the name at `0x800a1d60`: **`game.img`** (with `intro.mov` beside it -
+  the DOL also carries the CRI Sofdec movie player, which is most of its bulk).
+- The DOL's only three `DVDOpen` call sites are that loader and two in the CRI `gcCi` device
+  layer.  Nothing in the DOL parses the `DAT\1` header, walks 24-byte entries, or reads
+  `game.dat` at all.
 
-Same input bytes, same state, different answers.  A length is a function of the encoding, so
-one of the ops decoded *before* this point is consuming the wrong number of bytes - which means
-`length = b0 + 3, distance = b2 + 1` for `control == 0` is not right either, even though it
-reproduces the first four matches of `AH959` against the `RTXT` template exactly.
+So the boot flow is `main.dol` (bootstrap: intro movie + ELF loader) -> `files/game.img`
+(the actual engine, a plain uncompressed ELF on the disc) - and the member decompressor lives
+in `game.img`, which is not cached.  **No DOL transcription of the codec is possible from
+what is on hand**, and none is needed: the codec is verified empirically at scale above.  If
+a disassembly-level confirmation is ever wanted, the file to fetch is `files/game.img` from
+any of the five discs (double-read, per the D: misread rule), and the `[VCLOADER]` addresses
+above are the front door.
 
-That is the thread to pull: **the trace that verified `control == 0` is only four ops long**,
-and four ops of agreement on a template that is mostly zeros is weaker evidence than it looked.
-The raw `BUILD04/16/18/21.DAT` give the full `RTXT` plaintext to check a longer trace against -
-16 zeros, `RTXT`, the size twice, zeros, `RTXT`, `17`, `25`, zeros, then a name such as
-`headband00`, `armband0007`, `socks0000`, then `ff ff ff f5`.  A compressed member of the same
-tag (`AA754`, `AH743`, `AH945`, `AH954`, `AH959`, all 17,072 bytes) decodes to exactly that
-shape, so the first 176 bytes are known plaintext and can pin far more than four ops.
+## What is still open here
 
-## 2026-09-04 night: the DOL is in hand; naive scans do not find the decompressor
-
-`sys/main.dol` (689,216 B, double-read against the D: misread rule) is cached at the
-session scratchpad (`vc/nba2k3_main.dol`).  The disc is only `main.dol` + `game.dat`, so the
-decompressor is certainly in these 156k instructions.  What was ruled out tonight:
-
-- **No strings**: no `BSUA`, `AUSB`, `.IFF`, `game.dat`, `DAT\1` or `RTXT` anywhere in the
-  DOL - the member magic seen in compressed streams is not checked by immediate or by
-  string, and files are opened by FST entry number, not path.
-- **Signature scans miss it**: top-2-bit extractions near byte loads (2 hits - both audio
-  header parsers), 0x40/0x80/0xc0 compares near `lbz` (10 hits - none LZ),
-  `lbzx`+`stb` backward-copy windows near flag tests (4 hits - a palette twiddler and a
-  string reverse), `mulli x24` table stride (2 hits - both date math).
-- The `.sym` files on NHL2K3 are speech-line tables under `sound/speech/`, not linker maps.
-
-The next session should walk it properly: find the DVD read of FST entry 1 (`DVDFastOpen` /
-`DVDReadAsync` shapes in the SDK code at the top of .text), follow the read buffer's
-consumers to the member loader, and take the branch that handles `kind == 0x01000000`.
-Failing that, a Dolphin breakpoint on the first read past the `game.dat` name table gives
-the decompressor's address in one run.  The known-plaintext corpus (`vc_members.json`,
-`cases.json`, the RTXT template) is ready to verify any transcription instantly - and the
-"same bytes, different lengths" contradiction from the empirical attack still says the
-scheme carries hidden adaptive state, which is why guessing op grammars kept failing.
+- The 60-odd `AA0xx`/`AH0xx` members (~117 KB decoded) whose `RTXT` records are laid out
+  `LOADM`-style - they decode cleanly but `vc_iff` declines their records.  A second record
+  layout, likely mip chains or a different pixel format.
+- Readers for the non-texture tags (`BSUA`, `AUSB`, `PLAY`, ...).  Their decodes carry
+  readable strings (`aistreet.bin`, runs of `PADDING*`), so the decompression is right; the
+  chunk layouts are simply unread.
+- The other four discs: the codec and container are the same family; running the full rip
+  over them is a pipeline task, not a format one.

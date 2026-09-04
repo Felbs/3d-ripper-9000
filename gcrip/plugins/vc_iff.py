@@ -22,8 +22,8 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
         try:
             data = vc_pack.unpack(data)
         except vc_pack.PackError as exc:
-            # the member says how long its output is; failing to reach it is a fact worth
-            # reporting, not a silent nothing
+            # a member that cannot cover its own record tiling, or whose stream walks off
+            # the front of the output, is a fact worth reporting, not a silent nothing
             raise vc_pack.PackError(f"{path}: {exc}") from None
     found = vc_iff.textures(data)
     if not found:

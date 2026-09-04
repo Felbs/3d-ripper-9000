@@ -37,37 +37,84 @@ read exactly and none was refused** - 227 MB of payload.
 
 A member that comes out the wrong size returns `None` rather than being passed on short.
 
-## What is inside - surveyed, and not GX
+## What is inside - all four families identified (2026-09-04)
 
-Sampling 91 members across the archive gives three families:
+Sampling 91 members across the archive gives four families, and every one is now read:
 
-* **`00 00 7c xx` / `00 00 7d xx`** - 48 of the 91, the bulk.  A `u32` that always sits near
-  32,000 (`0x7d0a`, `0x7ce4`, `0x7d00`), then `0xffffffff`, then a size-like word, a small
-  count, and **`f32` fields** - 16.0 and 1.0 on one, 29.0 and 1.0 on another, 1380.0 and 1.0 on
-  a third.  Floats and a count make this the geometry candidate.
-* **`00 00 00 0e`** - 26 of the 91.  Opens `14, 119, 14660, 0, 21504, 0` and then runs
-  sub-records separated by `0xffffffff`, so it is itself a container.
-* **`!WAR`** (3) and a `00 00 6d xx` family (several small ones).
+* **`00 00 7c xx` / `00 00 7d xx`** - 48 of the 91, the bulk - are **sounds**, not geometry.
+  The word that "always sits near 32,000" is the **sample rate** (31,911..32,062 Hz -
+  pitch-adjusted per sound), the size-like word at +8 is the **sample count**, +12 is the
+  **channel count** (1 or 2), and the f32 pair is **duration in 30 fps frames** and 1.0:
+  `samples / rate == frames / 30` holds exactly on every member checked.  The `00 00 6d xx`
+  family is the same header at ~28,000 Hz.
+* **`4d 75 73 21`** is ASCII **`Mus!`** - music.
+* **`00 00 00 0e`** - the DRM unit container, fully cracked below.  **Everything that is not
+  audio travels in these**: textures, animations, VO metadata, and the models.
 
-### The `00 00 00 0e` sections are themselves a container
+### `00 00 00 0e` - Crystal Dynamics DRM units, cracked
 
-    +0   u32 0x0000000e
-    +4   u32 record count
-    +8   u32, u32, u32, u32          the rest of a 24-byte header
-    +24  record[count], 20 bytes each, every one beginning 0xffffffff
+`gcrip/formats/tr_legend.py` + `gcrip/plugins/tr_legend.py`.  Version 14 is the same DRM
+version Legend uses on other platforms; the GC layout, big-endian:
 
-Verified on **60 of 60** such members: the count at +4 is exactly the number of 20-byte
-records that follow, and all of them begin with the sentinel.  On the first section sampled
-the count is 119 and the sentinels sit at 24, 44, 64, 84 ... - 118 gaps of exactly 20 - after
-which the stride breaks and the payload begins.
+    +0   u32 version = 14
+    +4   u32 count                    section records PLUS ONE
+    +8   u32 unit_header_size
+    +12  u32 0
+    +16  u32 0x800                    map granularity, constant on every unit
+    +20  u32 0
+    +24  record[count-1], 20 bytes:
+             u32 0xffffffff           pointer slot, patched at load
+             u32 size                 payload bytes
+             u32 type<<24 | sub       0 data, 2 animation, 5 texture, 6 wave, 7 material
+             u32 relocs<<8
+             u32 id
+         u32 0xffffffff               the phantom "last record" is only this sentinel;
+                                      the unit's relocation pairs start right after it
+         pair[]  {u32 value, u32 offset}   offsets ascend and stay < unit_header_size,
+                                           which is how the list's end is found
+         unit header (unit_header_size bytes: LOD distances, object metadata)
+    per section, in record order:
+         pair[relocs] then the payload (size bytes)
 
-The record's remaining four words look like a size and some flags (306,048 then 187,604,
-87,408, 43,720, 43,720 - descending), which is the next thing to pin down.
+**The tiling is byte-exact on 16 of 16 units**: header + records + sentinel + unit pairs +
+unit header + per-section `relocs*8 + size` equals the member length.  The earlier "60 of 60
+members have count 20-byte sentinel records" observation counted the phantom record as real -
+the sentinel run passes either way, the end-of-file identity does not.
 
-**The geometry is not GX display lists.**  `gxscan` over those 91 members finds 3 meshes and
-206 triangles in total, all of them in the `00 00 00 0e` family - nothing at all in the
-`7c/7d` bulk.  So Tomb Raider: Legend needs its own mesh reader, and the `7c/7d` family with
-its float fields is where to start.
+**Relocations** are `{u32 value, u32 offset}`: value's high u16 is `(target_section + 1) * 8`,
+its **low u16 is uninitialised garbage** - fragments of a build-machine path (`:\`, `re`,
+`.d`) survive in it - and offset is the patch site.  The u32 stored at the patch site is an
+offset within the target section.
 
-The archive itself is open, which is the part that was blocking: 1.29 GB and 4,314 members are
-now reachable where before none of it was.
+**Type 5 = textures**: 16-byte header `{u32 subtype, u32 w<<16|h, u32 data_size = size-16,
+u32 format}` then GC texel data (CMPR blocks are visible in the bytes); subtype 0x12/0x09/0x05
+distinguishes layouts.  Decoding these is still open.
+**Type 2 = animations** (f32 pairs), **type 6 = waves** (sample-rate header like the 7c/7d
+family), **type 7 = material stubs**.
+
+### The models - GX-shaped display lists, and the reader ships
+
+A type-0 section beginning `04 c2 04 52` is a **model header**: +0x10 f32 scale vec3, +0x20
+vertex count, and four relocated pointers at +0x64/+0x68/+0x6c/+0x70 giving position / normal
+/ color / uv array offsets - all into ONE geometry section.  That geometry section is a naked
+GX display list from its start up to the first array: ops `0x99` strip / `0x81` quads /
+`0x91` triangles (VAT 1), `0x00` NOP padding to 32-byte boundaries, and **9-byte vertices**:
+
+    u8  matrix index (skinning; 0 on static models)
+    u16 position index    -> s16 x,y,z * scale
+    u16 normal index      -> s8 x,y,z / 127
+    u16 color index       -> RGBA u8
+    u16 uv index          -> u8 u,v   (quantisation unverified; /255 for now)
+
+`gxscan` missed these because the lists carry no CP/VAT setup at all - arrays and formats are
+bound by the engine from the model header, so the scanner had nothing to anchor on.  The one
+place it fired (206 triangles) is one of these sections.
+
+**Proof by render**: 43 models out of 16 sampled units, zero out-of-range indices, 9,011
+clean triangles - and the wireframes are unambiguous: a perched bird, a spyglass, a crane,
+and a leopard head **with whiskers** in the unit whose VO strings read
+`VO\Animals\LEO_see_04`.  Median-edge/extent sits at 2-6% on organic models.
+
+Still open: texture decoding (type 5 subtype -> GC format mapping), skinned assembly (the
+matrix index and the per-segment pivot list at +0xf0 of the model header), the exact UV
+quantisation, and `!WAR`.
