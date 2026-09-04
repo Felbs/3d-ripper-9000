@@ -184,3 +184,38 @@ def test_model_extracts_through_pre_with_sibling_tex():
     assert len(scenes) == 1 and scenes[0].triangles == 1
     assert scenes[0].materials[0].texture == "00001234"
     assert not plug.detect("models/peds/a/a.skin.ngc", pre[:64], 4096)
+
+
+def test_pre_version_2_has_twelve_byte_entries():
+    """Tony Hawk's Pro Skater 4's archives: version 0xabcd0002, no checksum in the entry."""
+    body = b""
+    for name, data in ((r"Levels\kon\kon.tex.ngc", b"tex" * 10), ("a.scn.ngc", b"scn" * 5)):
+        nm = name.encode() + b"\0"
+        nm = nm.ljust((len(nm) + 3) & ~3, b"\0")
+        body += struct.pack(">IIHH", len(data), 0, len(nm), 0) + nm
+        body += data.ljust((len(data) + 3) & ~3, b"\0")
+    data = struct.pack(">III", 12 + len(body), nv.PRE_VERSION_2, 2) + body
+    assert nv.is_pre(data)
+    out = nv.pre_entries(data)
+    assert [n for n, _ in out] == ["Levels/kon/kon.tex.ngc", "a.scn.ngc"]
+    assert out[0][1] == b"tex" * 10 and out[1][1] == b"scn" * 5
+
+
+def test_gctx_pictures_of_pro_skater_3():
+    from gcrip.formats import gx_texture
+    from gcrip.plugins import neversoft as plugin
+
+    w, h = 8, 8
+    size = w * h
+    head = nv.GCTX_MAGIC + struct.pack(">HHHHI", w, h, 8, 1, size)
+    head = head.ljust(nv.GCTX_NAME_AT, b"\0") + b"deck.png\0"
+    head = head.ljust(nv.GCTX_HEADER, b"\0")
+    data = head + bytes([3] * size) + struct.pack(">256H", *([0x83E0] * 256))
+    assert nv.is_gctx(data)
+    rgba = nv.gctx(data)
+    assert rgba.shape == (8, 8, 4) and rgba[0, 0].tolist() == [0, 255, 0, 255]
+    assert plugin.detect("pre/x.pre/textures/deck.png", data[:64], len(data))
+    scenes = plugin.extract(data, "pre/x.pre/textures/deck.png", None)
+    assert scenes and scenes[0].extras["textures_only"] and "deck" in scenes[0].textures
+    assert not plugin.detect("a/b.png", b"\x89PNG" + bytes(60), 64)
+    assert gx_texture.encoded_size(9, 8, 8) == 64

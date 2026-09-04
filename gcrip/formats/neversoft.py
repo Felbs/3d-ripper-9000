@@ -66,6 +66,7 @@ import numpy as np
 from gcrip.formats import gx_texture
 
 PRE_VERSION = 0xABCD0003
+PRE_VERSION_2 = 0xABCD0002  # Tony Hawk's Pro Skater 4: 12-byte entries, no checksum
 
 
 class NeversoftError(ValueError):
@@ -77,11 +78,18 @@ class NeversoftError(ValueError):
 # ---------------------------------------------------------------------------
 
 
+def _pre_order(data: bytes) -> str | None:
+    """ ">" for the GameCube-native archives, "<" for Tony Hawk's Pro Skater 3's, which kept
+    the PC byte order (version 0xabcd0002 little-endian)."""
+    for order in (">", "<"):
+        total, version, count = struct.unpack_from(order + "III", data, 0)
+        if version in (PRE_VERSION, PRE_VERSION_2) and 0 < count < 100000 and total >= 12:
+            return order
+    return None
+
+
 def is_pre(data: bytes) -> bool:
-    if len(data) < 12:
-        return False
-    total, version, count = struct.unpack_from(">III", data, 0)
-    return version == PRE_VERSION and 0 < count < 100000 and total >= 12
+    return len(data) >= 12 and _pre_order(data) is not None
 
 
 def lzss_decompress(src: bytes, out_size: int) -> bytes:
@@ -121,14 +129,16 @@ def lzss_decompress(src: bytes, out_size: int) -> bytes:
 def pre_entries(data: bytes) -> list[tuple[str, bytes]]:
     if not is_pre(data):
         raise NeversoftError("not a PRE archive")
-    _total, _version, count = struct.unpack_from(">III", data, 0)
+    order = _pre_order(data) or ">"
+    _total, version, count = struct.unpack_from(order + "III", data, 0)
     pos = 12
     out = []
+    entry = 12 if version == PRE_VERSION_2 else 16
     for _ in range(count):
-        if pos + 16 > len(data):
+        if pos + entry > len(data):
             break
-        size, packed, name_len, _pad, _crc = struct.unpack_from(">IIHHI", data, pos)
-        pos += 16
+        size, packed, name_len, _pad = struct.unpack_from(order + "IIHH", data, pos)
+        pos += entry  # THUG's entry ends with a u32 checksum; THPS4's has none
         name = data[pos : pos + name_len].split(b"\0", 1)[0].decode("latin-1")
         pos += name_len
         stored = packed or size
@@ -521,3 +531,44 @@ def parse_model(data: bytes) -> Model:
                 meshes.append(mesh)
         objects.append(ModelObject(meshes, sphere, skin))
     return Model(positions, normals, colors, uvs, materials, objects, warnings)
+
+
+# ---------------------------------------------------------------------------
+# Tony Hawk's Pro Skater 3: GCTX pictures inside the (little-endian) .pre archives
+# ---------------------------------------------------------------------------
+
+GCTX_MAGIC = b"GCTX"
+GCTX_HEADER = 0x60
+GCTX_NAME_AT = 24
+
+
+def is_gctx(data: bytes) -> bool:
+    if len(data) < GCTX_HEADER or data[:4] != GCTX_MAGIC:
+        return False
+    w, h, bpp, levels, size = struct.unpack_from(">HHHHI", data, 4)
+    return bpp in (4, 8, 16, 32) and 0 < w <= 2048 and 0 < h <= 2048 and size == w * h * bpp // 8
+
+
+def gctx(data: bytes) -> np.ndarray | None:
+    """``GCTX, u16 width, u16 height, u16 bits per pixel, u16 levels, u32 bytes`` and the
+    file name at +24; pixels at +0x60 (GX tiled), and for 8- and 4-bit pictures an RGB5A3
+    palette straight after them (256 or 16 entries).  16 bits is RGB5A3, 32 RGBA8."""
+    from gcrip.formats import gx_texture  # noqa: PLC0415
+
+    if not is_gctx(data):
+        return None
+    w, h, bpp, _levels, size = struct.unpack_from(">HHHHI", data, 4)
+    px = data[GCTX_HEADER : GCTX_HEADER + size]
+    if len(px) < size:
+        return None
+    try:
+        if bpp in (8, 4):
+            entries = 256 if bpp == 8 else 16
+            pal = data[GCTX_HEADER + size : GCTX_HEADER + size + 2 * entries]
+            if len(pal) < 2 * entries:
+                return None
+            fmt = 9 if bpp == 8 else 8
+            return gx_texture.decode(fmt, w, h, px, gx_texture.decode_palette(2, pal, entries))
+        return gx_texture.decode(5 if bpp == 16 else 6, w, h, px)
+    except ValueError:
+        return None

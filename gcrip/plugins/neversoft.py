@@ -27,6 +27,9 @@ def expand(data: bytes) -> list[tuple[str, bytes]]:
 
 def detect(path: str, head: bytes, size: int) -> bool:
     low = path.lower()
+    if low.endswith(".png"):
+        # Pro Skater 3's board and menu pictures come out of its .pre as GCTX, not PNG
+        return head[:4] == nv.GCTX_MAGIC and nv.is_gctx(head.ljust(nv.GCTX_HEADER, bytes(1)))
     # PRE members are recorded without an offset by the manifest walker, so
     # their sniffed head is the archive's: go by the name for those
     inside_pre = ".prg/" in low or ".pre/" in low or ".prx/" in low
@@ -161,6 +164,11 @@ def model_to_scene(m: nv.Model, name: str, textures: list[nv.Texture]) -> Scene:
 def extract(data: bytes, path: str, src) -> list[Scene]:
     low = path.lower()
     stem = path.rsplit("/", 1)[-1].split(".", 1)[0]
+    if low.endswith(".png"):
+        if not nv.is_gctx(data):
+            data = _fetch(path, src)
+        rgba = nv.gctx(data)
+        return [_scene(stem, {stem[:64]: rgba})] if rgba is not None else []
     if low.endswith((".mdl.ngc", ".scn.ngc", ".skin.ngc")):
         if not nv.is_model(data):
             data = _fetch(path, src)
