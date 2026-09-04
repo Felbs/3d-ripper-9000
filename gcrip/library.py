@@ -295,7 +295,12 @@ select{padding:.5rem;border-radius:8px;border:1px solid var(--edge);background:v
 .kb.effect{background:#183a3f;color:#b8ecf2}.rg{color:var(--good)}
 .fl{float:right;cursor:pointer;opacity:.35;font-size:.8rem;line-height:1}
 .fl:hover{opacity:.9}.fl.on{opacity:1}
-.mcard.flagged{border-color:#7a3a3a}
+.mcard.flagged{border-color:#a05050;background:#221a1a}
+.acts{display:flex;gap:.45rem;margin-top:.28rem;font-size:.64rem;align-items:center}
+.acts .fl{float:none;opacity:.75;font-size:.64rem}
+.acts .fl.on{color:#ff9d9d;opacity:1}
+.acts .act{cursor:pointer;color:var(--dim)}
+.acts .act:hover,.acts .fl:hover{color:var(--accent);opacity:1}
 .dash{grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:.8rem}
 .panel{background:var(--panel);border:1px solid var(--edge);border-radius:11px;padding:.8rem .9rem}
 .panel h3{margin:.1rem 0 .6rem;font-size:.88rem;color:var(--txt)}
@@ -352,7 +357,7 @@ footer{color:#55555f;font-size:.72rem;padding:1.5rem 1.1rem;border-top:1px solid
 <div class="controls cats" id="cats"></div></header>
 <main><div class="grid" id="grid"></div><div class="empty" id="empty" hidden>No games match.</div></main>
 <footer id="foot"></footer>
-<div id="modal"><div class="bar"><b id="mvname"></b><a id="mvdl" href="#" download>Download .glb</a><span id="mvflag" class="chip" style="cursor:pointer">🚩 Flag as glitchy</span><span class="x" onclick="closeMV()">×</span></div><div id="mv"></div></div>
+<div id="modal"><div class="bar"><b id="mvname"></b><a id="mvdl" href="#" download>Download .glb</a><span id="mvblend" class="chip" style="cursor:pointer">🟦 Open in Blender</span><span id="mvflag" class="chip" style="cursor:pointer">🚩 Flag as glitchy</span><span class="x" onclick="closeMV()">×</span></div><div id="mv"></div></div>
 <script>
 let GAMES=__DATA__, STATS=__STATS__;
 const served=location.protocol==="http:"||location.protocol==="https:";
@@ -395,9 +400,11 @@ function card(g){
   return `<div class="card" data-id="${g.id}">${hero}<div class="body"><div class="title" title="${esc(g.title)}">${esc(g.title)}</div><div class="meta">${b}</div></div></div>`;
 }
 function kbadge(m){const k=m.k&&m.k!=="unknown"?`<span class="kb ${m.k}">${m.k}</span>`:"";return k+(m.r?`<span class="kb rg" title=rigged>⤳</span>`:"")+(m.a?`<span class="kb" title=animated>▶</span>`:"");}
-function flbtn(m){if(!served)return "";const on=mkey(m) in FLAGS;return `<span class="fl${on?" on":""}" title="${on?"flagged for review - click to clear":"flag as glitchy for review"}">🚩</span>`;}
-function mcard(gid,m,i){const on=mkey(m) in FLAGS;return `<div class="mcard${served&&m.g?" v":""}${on?" flagged":""}" data-id="${gid}" data-i="${i}"><img loading=lazy src="${m.t}" alt=""><div class=mn title="${esc(m.n)}">${esc(m.n)}</div>△ ${fmt(m.tris)}${m.tex?` · ▦${m.tex}`:""}<div>${kbadge(m)}${flbtn(m)}</div></div>`;}
-function mcardG(m,i){/* model card in library-wide models mode, tagged with its game */return `<div class="mcard${served&&m.g?" v":""}" data-id="${m.gid}" data-i="${i}" data-flat="1"><img loading=lazy src="${m.t}" alt=""><div class=mn title="${esc(m.n)}">${esc(m.n)}</div><div class="mn gjump" data-g="${m.gid}" title="open ${esc(m.title||"")}" style="color:var(--accent);cursor:pointer">${esc(m.title||"")}</div>△ ${fmt(m.tris)}${m.tex?` · ▦${m.tex}`:""}<div>${kbadge(m)}${flbtn(m)}</div></div>`;}
+function flbtn(m){if(!served)return "";const on=mkey(m) in FLAGS;return `<span class="fl${on?" on":""}" title="${on?"flagged for review — click to clear":"flag as glitchy for review"}">${on?"🚩 flagged":"🚩 flag"}</span>`;}
+function actrow(m){if(!served)return "";const b=m.g?`<span class=act data-act=open title="open in Blender">🟦 Blender</span><span class=act data-act=reveal title="show file in Explorer">📂</span>`:"";return `<div class=acts>${flbtn(m)}${b}</div>`;}
+async function doAct(act,m){try{await fetch("/"+act+"?path="+encodeURIComponent(m.g),{cache:"no-store"});}catch(e){alert(act+" failed: "+e);}}
+function mcard(gid,m,i){const on=mkey(m) in FLAGS;return `<div class="mcard${served&&m.g?" v":""}${on?" flagged":""}" data-id="${gid}" data-i="${i}"><img loading=lazy src="${m.t}" alt=""><div class=mn title="${esc(m.n)}">${esc(m.n)}</div>△ ${fmt(m.tris)}${m.tex?` · ▦${m.tex}`:""}<div>${kbadge(m)}</div>${actrow(m)}</div>`;}
+function mcardG(m,i){/* model card in library-wide models mode, tagged with its game */return `<div class="mcard${served&&m.g?" v":""}" data-id="${m.gid}" data-i="${i}" data-flat="1"><img loading=lazy src="${m.t}" alt=""><div class=mn title="${esc(m.n)}">${esc(m.n)}</div><div class="mn gjump" data-g="${m.gid}" title="open ${esc(m.title||"")}" style="color:var(--accent);cursor:pointer">${esc(m.title||"")}</div>△ ${fmt(m.tris)}${m.tex?` · ▦${m.tex}`:""}<div>${kbadge(m)}</div>${actrow(m)}</div>`;}
 const fullModels={};  // gid -> loaded full model list, shared by the game pages
 if(served)fetch("/flags.json",{cache:"no-store"}).then(r=>r.json()).then(f=>{FLAGS=f;drawCats();render();}).catch(()=>{});
 async function toggleFlag(m,el){
@@ -442,6 +449,7 @@ async function renderGame(gid){
     <div class=mstrip>${list.length?list.map((m,i)=>mcard(g.id,m,i)).join(""):`<div style="color:#55555f">No models match.</div>`}</div></div>`;
   grid.querySelectorAll(".mcard").forEach(c=>{c.onclick=()=>{if(served&&c.classList.contains("v"))openMV(list[+c.dataset.i]);};});
   grid.querySelectorAll(".fl").forEach(el=>{el.onclick=e=>{e.stopPropagation();const card=el.closest(".mcard");toggleFlag(list[+card.dataset.i],el);};});
+  grid.querySelectorAll(".act").forEach(el=>{el.onclick=e=>{e.stopPropagation();const card=el.closest(".mcard");doAct(el.dataset.act,list[+card.dataset.i]);};});
 }
 function renderGames(){
   const term=q.value.trim().toLowerCase();
@@ -479,6 +487,7 @@ async function renderModels(){
   grid.querySelectorAll(".mcard").forEach(c=>{c.onclick=()=>{if(served&&c.classList.contains("v"))openMV(list[+c.dataset.i]);};});
   grid.querySelectorAll(".gjump").forEach(t=>t.onclick=e=>{e.stopPropagation();location.hash="g="+encodeURIComponent(t.dataset.g);});
   grid.querySelectorAll(".fl").forEach(el=>{el.onclick=e=>{e.stopPropagation();const card=el.closest(".mcard");toggleFlag(list[+card.dataset.i],el);};});
+  grid.querySelectorAll(".act").forEach(el=>{el.onclick=e=>{e.stopPropagation();const card=el.closest(".mcard");doAct(el.dataset.act,list[+card.dataset.i]);};});
 }
 let mermaidLoaded=false;
 function ensureMermaid(cb){
@@ -542,6 +551,7 @@ function openMV(m){
   const fb=document.getElementById("mvflag");
   const setfb=()=>{const on=mkey(m) in FLAGS;fb.textContent=on?"🚩 Flagged — click to clear":"🚩 Flag as glitchy";fb.classList.toggle("on",on);};
   setfb();fb.onclick=async()=>{await toggleFlag(m,fb);setfb();};
+  document.getElementById("mvblend").onclick=()=>doAct("open",m);
   ensureMV(()=>{document.getElementById("mv").innerHTML=`<model-viewer src="${url}" camera-controls auto-rotate exposure="1.1" shadow-intensity="0.6" style="width:100%;height:100%"></model-viewer>`;});
   document.getElementById("modal").classList.add("on");
 }
