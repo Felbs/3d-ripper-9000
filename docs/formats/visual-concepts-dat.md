@@ -230,13 +230,91 @@ a disassembly-level confirmation is ever wanted, the file to fetch is `files/gam
 any of the five discs (double-read, per the D: misread rule), and the `[VCLOADER]` addresses
 above are the front door.
 
+## 2026-09-04 (night 2): the member families, and the MODELS
+
+Every decoded member is a run of **generic records** sharing one frame - `16 bytes of
+header, a 4CC, u32 size` (span `size + 16`), the frame the `RTXT` reader already used -
+and the 4CCs are all **reversed**: `RTXT`=TXTR, `ENCS`=SCNE, `YALP`=PLAY, `EMAN`=NAME,
+`BSUA`=AUSB, `MNAA`=AANM, `ODUA`=AUDO, `TSOR`=ROST, `TNOF`=FONT, `" SSC"`=CSS.  The 370
+members whole inside the 24 MB slice group as:
+
+| family | members | what they are |
+|---|---|---|
+| `RTXT` | 251 | texture banks - already shipped |
+| `HTXT` | 60 | the `AA0xx`/`AH0xx` "LOADM-style" members: per-NBA-team uniform art - `HTXT names` + `NAME`, `HTXT numbers` + `NAME` (jersey lettering), and one standard `RTXT unif` record `vc_iff` can already read |
+| `YALP` | 34 | `PB*.IFF` playbooks (floats + play scripts, "plb") |
+| `ENCS` | 9 | **SCNE scene records - the models** (12 MB: FRONTEND, GAMEDATA, ...) |
+| `" SSC"` | 6 | cutscene scripts |
+| rest | 10 | AANM (AISTREET, 4.8 MB), ROST, AUDO, FONT, `nSiH/tFiH/uAiH` (LIGHTS.IFF), DRCT, HITX, AUSB |
+
+### SCNE - Maya-exported scenes, cracked (ships as `vc_scene`)
+
+The `ENCS` records are Maya exports - the string tables carry the artists' source paths
+(`W:/Artists/NBA2K2/icons/light_pyramid/blue.pix`, `D:/nba2k3/coach/textures/...`),
+material names (`lambert2`) and node names, including full skeletons (`rhumerus`,
+`rcollar`, `lfingers`...).  On the 24 MB slice, FRONTEND.IFF alone holds the NBA **ball**,
+a full **player** (`benplay`), a **referee**, the **basket + backboard + net**, position
+icons and the ESPN overlay props; GAMEDATA.IFF holds **coach, cheerleader, cameraman01-04,
+crowd, crowdfem, media01-02**.
+
+A record holds node tables, a **position dequantization matrix** (row-major 4x4, per-axis
+scale + translation - the player's is diag(0.005976, 0.005955, 0.0012555) - followed by
+its exact inverse and the normal matrix diag(1/64)), the string table, and per shape a
+vertex array + **GX display lists**:
+
+    vertex, 16 bytes:  [u16 U (s8.8)] [s16 x y z] [s8 nx ny nz] [pad] [u16 0] [u16 V]
+    vertex, 14 bytes:  [u16 misc: 1 or a bone id] [u16 U] [u16 V] [s16 x y z] [u16 RGB565]
+    display list:      0x20/0x28/0x30 load-indexed-XF (pos mtx -> XF row 0, normal -> 0x400,
+                       texture -> 0x78 = GX_TEXMTX0), then 0x9a tristrip (0x80/0x90/0xA0
+                       also live): u16 count, then per vertex [pnmtx][texmtx?][p][n][u] -
+                       the trailing index fields are always equal (one index per vertex),
+                       u8 or u16.
+
+Facts that took a night elsewhere, settled here by oracles:
+
+* **Vertices are model-space** (the Acclaim SKN archetype, not bone-local): every bind-pose
+  matrix in the record's palette is the identity, and the raw point cloud is a T-pose.
+  The per-vertex `pnmtx` bytes (0/3/6/9 = XF row slots) are matrix-palette skinning for
+  animation only.  A blend table (`40 00 40 00` = 0.5/0.5 in 1.15 fixed) sits after the
+  vertex array; unresolved, not needed for the static export.
+* **The engine repoints the CP array base between draws** - indices stay 8-bit over a
+  630-vertex array.  The base lives in the unmapped node graph, so the reader solves it:
+  by **normal congruence** (stored normals vs triangle normals; ~0.95 right, ~0.5 wrong)
+  for the 16-byte layout, and by **minimum mean-log strip-edge length** with hard filters
+  on the misc/uv fields for the 14-byte layout.  Normalizing by bounding box is gameable
+  (junk inflates the box); the median alone is blind to a shifted read's seam outliers;
+  mean-log is what survived both.
+* Oracles that pinned it: `ballhi` = 170 verts at radius 16383.3 +- 0.3, position/normal
+  cosine >= 0.9992; GLOBAL.IFF's light pyramid = exactly 4 faces x 3 verts sharing face
+  normals, strip `0 1 2 2 3 3 4 5 5 6 6 7 8 8 9 9 a b` reducing to those 4 faces.
+* Renders (the gate that matters): the ball is a clean geodesic sphere; the player is a
+  complete T-pose with head, hands, feet in all three views; the net is a tapered cylinder
+  hanging at rim height; the backboards render as a facing pair at both ends of the court
+  with circular rims.
+
+`gcrip/formats/vc_scene.py` + `gcrip/plugins/vc_scene.py` ship it.  The plugin claims
+`ENCS` and `HTXT` members (stored or packed), emits one Scene per scene record - named
+from the record's NUL-bounded node strings: `GAMEDATA_coach`, `FRONTEND_ball` - and sweeps
+the member's record run for inline `RTXT` records (GAMEDATA carries 29 crowd/coach
+textures that way; each `AA/AH` member yields its `unif` texture).  On the slice: FRONTEND
+13 model scenes + 36 textures, GAMEDATA 13 + 29.  `tests/test_vc_scene.py` pins both
+layouts with synthetic fixtures.
+
 ## What is still open here
 
-- The 60-odd `AA0xx`/`AH0xx` members (~117 KB decoded) whose `RTXT` records are laid out
-  `LOADM`-style - they decode cleanly but `vc_iff` declines their records.  A second record
-  layout, likely mip chains or a different pixel format.
-- Readers for the non-texture tags (`BSUA`, `AUSB`, `PLAY`, ...).  Their decodes carry
-  readable strings (`aistreet.bin`, runs of `PADDING*`), so the decompression is right; the
-  chunk layouts are simply unread.
-- The other four discs: the codec and container are the same family; running the full rip
-  over them is a pipeline task, not a format one.
+- **Skinned colored-layout characters (the coach class)**: parts with their own arrays
+  (head, hands, feet) come out placed right, but the INDEX16 body draws span multiple
+  base repointings inside one index window, so a single solved address leaves seam
+  spaghetti.  Needs the node graph's real array pointers.  (Attempted per-draw re-solving;
+  it traded one artifact for another and was reverted.)
+- Mesh->texture binding and the skeleton/skin tables: all in the unmapped node graph.
+  Scenes ship with textures unbound.
+- The `HTXT`/`NAME` jersey-lettering record layout (the `names`/`numbers` art). The
+  members' `unif` RTXT records are already extracted.
+- Readers for `PLAY`, `AANM`, `CSS`, `ROST`, `AUDO`, `FONT`, `HiSn/HiFt/HiAu` and friends.
+- `vc_pack.is_packed` misses two real cases seen in the slice: a tag with a non-alpha
+  character (`" SSC"` fails `isalpha`) and a stream whose first flags byte is not 0x00
+  (a match landed in the first eight items - `PB01.IFF`'s head starts `0x80`).  Six
+  members in 370.  The scene plugin sidesteps the first for its own tags; the container
+  route still emits the raw bytes for the rest.
+- The other four discs: same container, same codec, same engine - pipeline work.

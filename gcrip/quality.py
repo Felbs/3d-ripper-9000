@@ -202,7 +202,7 @@ def geometry_metrics(positions: np.ndarray, triangles: np.ndarray) -> dict[str, 
 
     finite_rows = np.all(np.isfinite(positions), axis=1)
     m["nonfinite_pct"] = round(float(1.0 - finite_rows.mean()) * 100, 3)
-    pos = positions[finite_rows]
+    pos = positions[finite_rows].astype(np.float64)  # f64: extreme coords overflow f32 math
     if len(pos) == 0:
         m["extent"] = 0.0
         return m
@@ -224,7 +224,8 @@ def geometry_metrics(positions: np.ndarray, triangles: np.ndarray) -> dict[str, 
     tri_ok = triangles[np.all(finite_rows[triangles], axis=1)]
     if len(tri_ok):
         edges = np.concatenate([tri_ok[:, [0, 1]], tri_ok[:, [1, 2]], tri_ok[:, [2, 0]]])
-        lengths = np.linalg.norm(positions[edges[:, 0]] - positions[edges[:, 1]], axis=1)
+        p64 = positions.astype(np.float64)
+        lengths = np.linalg.norm(p64[edges[:, 0]] - p64[edges[:, 1]], axis=1)
         tol = diag * 1e-9
         m["degenerate_edge_pct"] = round(float((lengths <= tol).mean()) * 100, 2)
         live = lengths[lengths > tol]
