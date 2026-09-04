@@ -57,3 +57,24 @@ models live in `restable`.
 `RecoverPointer<T>` functions are 16 bytes each: `ptr ? base + ptr : 0`).  Everything Nothing
 (2004) and From Russia with Love (2005) are the same studio; their `.ngc` / `.exa` may be the
 next versions of this.
+
+## The world geometry reads (2026-09-03, later)
+
+`ngcsurfs` (`R_InitSurfaces`, `R_DrawSurf`, `R_AddVisibleLeaves`): `f32 1.15` then `(ptr,
+count)` pairs at +8 - vertices (+8, 14 bytes each), strip indices (+0x10, `u8`), surfaces
+(+0x18, 28 bytes), surface groups (+0x20, 0x70 bytes), shader ids (+0x28, `u32`, resolved by
+`SHDR_LookupID`), a pointer table (+0x30), three more arrays, and **a 3x4 world matrix at
++0xc0** that `R_InitVtxTForm` loads as the position matrix.  The GX vertex format
+(`R_InitVtxDesc`'s tables at `0x80261ca0` / `0x80261cc0`) is `POS s16 frac 0, TEX0 s16 frac
+8, TEX1 s16 frac 15`, all index8, so a 14-byte vertex is `s16 x, y, z, s16 s, t, s16 lm_s,
+lm_t` and world position = `M * (x, y, z)`; a surface (28 bytes) is `u8 type (0 strip, else
+patch), u8 lightmap, u16 0x400, u16 shader index, u8 4, u8 vertices, u32 0, ptr vertex array,
+u16 first index, u16, u16 0x7fff, u16, u32` and draws one `GX_TRIANGLESTRIP` of `vertices`
+`u8` indices from the index array at `first`.  `dm1.ngc`: 4,039 strips, 10,223 triangles,
+an octagonal deathmatch arena spanning -2016..1136 x -448..1456 x -128..768 (scratchpad
+`bond/auf.py::world`, rendered).  The shader index goes into the `shaders` chunk (`f32
+0.945, u32 92 shaders, (count, offset) x 5`: 16-byte shader records at +0x1b6c, stages at
++0x3ed0 ...) whose textures are `u32` ids into `restxtrs` (`f32 1.2, u32 358 ids, 16, 0x5b0`:
+the id table then the texture headers at +0x5b0) - `SHDR_FixupShaderTable` (924 B) and
+`SHDR_SetupStage` name the fields.  Not yet done: the shader -> texture id path, the texture
+headers, patches (`R_DrawPatch`), `bmodels`, the entity placements and the `restable` models.
