@@ -150,7 +150,7 @@ def _containment(data: bytes, sigs: list[int], pos: np.ndarray, limit: int = 24)
             scores.append(0.0)
             continue
         d = np.linalg.norm(pos[pi] - sphere[:3], axis=1)
-        scores.append(float((d <= max(float(sphere[3]), 1.0) * 1.2 + 100.0).mean()))
+        scores.append(float((d <= max(float(sphere[3]), 1.0) * 1.05 + 2.0).mean()))
     return float(np.mean(scores)) if scores else 0.0
 
 
@@ -320,7 +320,8 @@ def parse(data: bytes) -> Level:
         raise GunMpkError("no meshes found")
     arrays, warnings = locate_arrays(data, sigs)
     npos, ncol, nuv, nnrm = arrays["npos"], arrays["ncol"], arrays["nuv"], arrays["nnrm"]
-    positions = np.frombuffer(data, ">f4", npos * 3, arrays["pos0"]).reshape(-1, 3).astype(np.float32)
+    positions = np.frombuffer(data, ">f4", npos * 3, arrays["pos0"]).reshape(-1, 3)
+    positions = positions.astype(np.float32)
     colors = np.frombuffer(data, np.uint8, ncol * 4, arrays["col0"]).reshape(-1, 4).copy()
     uvs = np.frombuffer(data, ">i2", nuv * 2, arrays["uv0"]).reshape(-1, 2).astype(np.float32)
     uvs *= UV_SCALE
@@ -347,7 +348,7 @@ def parse(data: bytes) -> Level:
         # prop meshes index their object's inline arrays, not the global ones:
         # their vertices land far outside the mesh's own bounding sphere
         d = np.linalg.norm(positions[pi] - np.array(sphere[:3], np.float32), axis=1)
-        if (d <= max(sphere[3], 1.0) * 1.2 + 100.0).mean() < 0.98:
+        if (d <= max(sphere[3], 1.0) * 1.05 + 2.0).mean() < 0.98:
             rejected += 1
             continue
         meshes.append(Mesh(material, checksum, flags, sphere, corners, tris))

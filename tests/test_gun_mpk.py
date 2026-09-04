@@ -12,7 +12,7 @@ QUAD = np.array(
     [[100.0, 0.0, 100.0], [200.0, 0.0, 100.0], [100.0, 0.0, 200.0], [200.0, 0.0, 200.0]],
     np.float32,
 )
-NPOS, NNRM, NCOL, NUV = 4, 600, 4, 4
+NPOS, NNRM, NCOL, NUV = 4, 800, 4, 4
 
 
 def build_pack() -> bytes:

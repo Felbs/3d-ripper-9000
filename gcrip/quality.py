@@ -40,8 +40,8 @@ MAX_TRIANGLES = 500_000  # bigger models are scored from metadata only (HDD is s
 SPAGHETTI_MIN_TRIS = 128  # low-poly props legitimately have long edges vs their extent
 SPAGHETTI_SUSPECT = 0.15  # median edge / bbox diagonal
 SPAGHETTI_GARBAGE = 0.25
-DUP_TOP_SHARE = 0.30  # most common single position covers this share -> collapsed
-DEGENERATE_EDGE_SHARE = 0.20  # zero-length edges
+DUP_TOP_SHARE = 0.50  # most common single position covers this share -> collapsed
+DEGENERATE_EDGE_SHARE = 0.20  # zero-length edges: soft signal here, hard at 2x
 SHATTER_MIN_VERTS = 100
 SHATTER_COMPONENTS = 8
 SHATTER_LARGEST_SHARE = 0.15
@@ -191,8 +191,12 @@ def geometry_metrics(positions: np.ndarray, triangles: np.ndarray) -> dict[str, 
     diag = float(np.linalg.norm(extent))
     m["extent"] = round(diag, 6)
 
-    # collapse: one position repeated over most of the mesh
-    counts = np.unique(pos, axis=0, return_counts=True)[1]
+    # collapse: one position repeated over most of the mesh.  The inverse mapping also
+    # welds duplicate positions, so connectivity below is not fooled by per-face vertex
+    # splitting (every exporter duplicates positions to carry per-face normals/UVs).
+    weld = np.full(len(positions), -1, dtype=np.int64)
+    uniq, inv, counts = np.unique(pos, axis=0, return_inverse=True, return_counts=True)
+    weld[finite_rows] = inv
     m["dup_top_share"] = round(float(counts.max() / len(pos)), 4)
     m["unique_positions"] = int(counts.size)
 
@@ -206,9 +210,12 @@ def geometry_metrics(positions: np.ndarray, triangles: np.ndarray) -> dict[str, 
         live = lengths[lengths > tol]
         if diag > 0 and live.size:
             m["median_edge_ratio"] = round(float(np.median(live)) / diag, 5)
-        # connectivity on unique undirected edges
-        und = np.unique(np.sort(edges, axis=1), axis=0)
-        n_comp, largest = _components(len(positions), und)
+        # connectivity on unique undirected edges, welded by position
+        wedges = weld[edges]
+        wedges = wedges[np.all(wedges >= 0, axis=1)]
+        und = np.unique(np.sort(wedges, axis=1), axis=0)
+        und = und[und[:, 0] != und[:, 1]]
+        n_comp, largest = _components(len(uniq), und)
         m["n_components"] = n_comp
         m["largest_component_share"] = round(largest, 4)
     return m
@@ -267,8 +274,11 @@ def score_model(
             hard.append("collapsed_extent")
         elif metrics.get("dup_top_share", 0) > DUP_TOP_SHARE and verts >= 12:
             hard.append("collapsed_positions")
-        if metrics.get("degenerate_edge_pct", 0) > DEGENERATE_EDGE_SHARE * 100:
+        deg = metrics.get("degenerate_edge_pct", 0)
+        if deg > DEGENERATE_EDGE_SHARE * 200:
             hard.append("degenerate_edges")
+        elif deg > DEGENERATE_EDGE_SHARE * 100:
+            soft.append("degenerate_edges_mild")
         if (
             verts >= SHATTER_MIN_VERTS
             and metrics.get("n_components", 0) >= SHATTER_COMPONENTS
@@ -404,7 +414,9 @@ def audit_library(
     """
     root = Path(root)
     gids = only or sorted(
-        e.name for e in os.scandir(root) if e.is_dir() and (root / e.name / "rip_results.json").is_file()
+        e.name
+        for e in os.scandir(root)
+        if e.is_dir() and (root / e.name / "rip_results.json").is_file()
     )
     if limit_games:
         gids = gids[:limit_games]

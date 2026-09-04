@@ -161,3 +161,81 @@ per-member variable - this member has its position array at **stride 12** (pure 
 '80 80 80 ff' record terminator holds on both.  Regions here: 0x140000 = repeating
 `07e1 07e0 5555...` fill, 0x3c0000 = RGBA-like color rows.  Do not assume one fixed layout
 across .mpk members; the descriptor records must drive the reader.
+
+## CRACKED 2026-09-04: the map pack's level geometry reads
+
+`gcrip/formats/gun_mpk.py` + `gcrip/plugins/gun_mpk.py`.  Verified on three members -
+z_steamboat2 (cached), z_hunt and z_fort (double-read from the disc): 28,085 / 27,592 /
+31,878 triangles, and the wireframes are the levels (z_fort's walled compound with two
+X-braced watchtowers, z_steamboat2's river valley).  Two of the earlier readings dissolve:
+the "index pairs" were display-list corners seen without their opcodes, and the "stride-24
+float region" was the position array seen at the wrong phase - it is stride 12.
+
+### The pack, top to bottom (z_steamboat2)
+
+| region | what |
+|---|---|
+| 0x0 | `04 20 00 00` image chain (a 128x128 CMPR lightmap page), more CMPR blocks after it |
+| ~0x6000 .. 0x338000 | **prop objects**: per-object inline arrays + the same mesh records (below), plus embedded 32x32 CMPR textures, material register display lists (`61` BP loads), 32-byte material records (checksum, pass count, f32 draw distance, texture checksum) |
+| 0x337d0c | the LAST `aa ff ee ff` marker - the **scene header is the 44 bytes before it** |
+| .. 0x352000 | CMPR texture pages |
+| 0x352xxx | 32-byte material table (`00..00 ff | texture crc | idx | crc | passes | .. | pass idx | material idx`) |
+| 0x356410 .. 0x35bdcc | 718 32-byte descriptor/group records (u32 0, u32 corner count, u32 format word, u16 texture index or ffff, u16 2, RGBA, `30 00 30 00`, `41/51`, u16 1) - counts sum to 54,441, more than the meshes draw; **not needed to read the geometry**, purpose open (LODs?) |
+| 0x35BDD0 | **positions**: 32,725 x f32[3] big-endian |
+| +16 zero pad | **colours**: 5,505 x RGBA8 |
+| next | **uvs**: 22,130 x s16[2], /1024 |
+| +2 | **normals**: 43,481 x s16[3], /16384, unit length (the run test that locates them) |
+| .. end | **the level meshes** - mesh records + display lists, back to back |
+
+### Scene header (marker - 44)
+
+    u32 position count | u32 normal count | u16 colour count | u16 uv count | ...
+
+z_steamboat2: 32725 / 43481 / 5505 / 22130.  The reader finds the arrays end-anchored:
+the normal array is the file's longest run of unit s16 triples; uvs end 2 bytes before it
+(4-aligned), colours before the uvs, positions before the colours with the exact base
+settled by a bounding-sphere vote (the padding varies).
+
+### Mesh record - scan signature `00 15 00 04`, dl size repeated
+
+Relative to the signature at `s` (the record is 64 bytes; level meshes carry one extra
+leading sphere copy at s-52, making 80 - scan by signature and both read the same):
+
+    s-36  u32    display list size        s+4   u16  corner count
+    s-32  u32    material checksum        s+6   u16  0x0200
+    s-28  u32    flags (81000007 / 90000007 / 80002047 ...)
+    s-24  u32    mesh checksum            s+12  u32  display list size again
+    s-20  f32[4] bounding sphere x y z r  s+16  f32  (draw distance?)
+    s-4   u32    0                        s+24  u32  0x00004400
+                                          s+28  the display list
+
+### Display list
+
+`08 50` CP VCD_LO (0x7e00 on level meshes), `08 60` VCD_HI (3), `10 ...` XF loads, then
+GX draws - `9f` strips / `97` triangles, VAT 7 - whose vertices are index16 tuples
+`(pos, nrm, col0, tex0)` per the VCD.  **Indices are absolute into the global arrays**:
+across all 692 level meshes the per-attribute maxima are 32724 / 43480 / 5504 / 22106 =
+count - 1 for every array.
+
+### The proof
+
+Every level mesh's decoded vertices sit inside the bounding sphere its own header stores:
+mean containment 1.000 over 692 meshes, worst dmax/r = 1.017.  A wrong position base
+fails this instantly (base +8 scores 0.087), which is also the reader's runtime vote.
+Face-vs-vertex-normal agreement is only moderate (mean dot +0.27, 39% > 0.7 on
+well-shaped triangles, positive-leaning so the winding is right) - the normal indices and
+array are as described, but treat exported normals as best-effort.
+
+### Still open
+
+* **Prop objects** (front of the pack): the same mesh records, but their indices address
+  per-object INLINE arrays (positions f32 right after an `80 80 80 ff` descriptor, then
+  colours, then uvs; z_hunt's "(626, 7)" pairs are 2-attribute corners of this kind).
+  The sphere test rejects them (10-103 per pack), so they are skipped, not garbled.
+  Their object header is 32 bytes at marker-44 shape too: `u32 nvert, u32 ntri, ...`
+  (0x6d60 in the cached member: 24 verts, 8 tris, 480 bytes = 24 x (12+4+4)).
+* **Textures**: material checksum -> texture checksum is in the pack's material table;
+  the CMPR pages and 32x32 tiles are embedded with `04 20` headers.  Not yet bound.
+* The 718-record descriptor/group table before the position array (counts sum past what
+  the meshes draw).
+* `.img.ngc` format 6 still does not reconcile; `.apk` (1,233) and `.pak` (119) unread.

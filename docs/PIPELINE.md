@@ -271,6 +271,7 @@ flowchart LR
         DAS["RE4 DAS / DRS<br/>plugins.re4"]
         BF["Jade .bf<br/>plugins.jade"]
         PRE["Neversoft PRE<br/>plugins.neversoft"]
+        GUNMPK["Gun .mpk.ngc map packs<br/>global arrays + signed mesh DLs<br/>plugins.gun_mpk"]
         BIG["Crystal Dynamics bigfile.dat<br/>hash table + sector offsets<br/>plugins.cd_bigfile"] --> DRM["DRM units 00 00 00 0e<br/>sections + relocations + GX display lists<br/>plugins.tr_legend"]
         TIM2["Sony TIM2 in AFS<br/>offset table -> pictures<br/>plugins.tim2"]
         SHOC["EA SHOC .hog<br/>SHDR + Zdat/SDAT/Rdat<br/>plugins.shoc"] --> TXG["TXG texture groups<br/>TXHE headers + TXDA pixels<br/>plugins.ea_txg"] --> OBG["OBG terrain<br/>ARRA arrays + ELDA strips<br/>plugins.ea_obg"]
@@ -287,7 +288,7 @@ flowchart LR
         POD --> TRPKG["`.PKG` named chunks<br/>1tex / _smf / _dfm / _skl<br/>plugins.tr_pkg"] --> TRSMF["`_smf` GX display lists<br/>inline vertices, quads<br/>v7/v4 inline, v6 indexed<br/>plugins.tr_smf"] & TRDFM["`_dfm` skinned meshes v2 / v5<br/>BE 1-4 bone records, home pose over .SKL<br/>plugins.tr_dfm"] & TRTEX["`.TEX` CMPR / C8+RGB5A3<br/>24-byte header in v2, 28 in v3<br/>plugins.tr_tex"] & GX
         DBL["Avalanche .dbl/.dbu/.mdb<br/>plugins.dbl"] --> DBLM["mesh records: GX arrays +<br/>FIFO display lists, texture tables<br/>formats.dbl_mesh"]
     end
-    EAGL & EBO & SA2B & SADX & BILLY & RW & NJ & MDL2 & MDL3 & HSD & EDB & HSF & P3D & DAS & BF & PRE & NU2 & HGO & DISP & UE2 & CPA & DBLM & TRTEX & TRSMF & BTEX & GX --> SCENE["ripcore Scene → glTF"]
+    EAGL & EBO & SA2B & SADX & BILLY & RW & NJ & MDL2 & MDL3 & HSD & EDB & HSF & P3D & DAS & BF & PRE & GUNMPK & NU2 & HGO & DISP & UE2 & CPA & DBLM & TRTEX & TRSMF & BTEX & GX --> SCENE["ripcore Scene → glTF"]
 ```
 
 
