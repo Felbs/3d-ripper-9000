@@ -360,6 +360,8 @@ const fmt=n=>n>=1e6?(n/1e6).toFixed(1)+"M":n>=1e3?(n/1e3).toFixed(0)+"k":(""+n);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 function drawStats(){document.getElementById("sub").textContent=`${STATS.with_geo} of ${STATS.games} discs with geometry`;
 document.getElementById("statbar").innerHTML=[["Games",STATS.games],["With geometry",STATS.with_geo],["Models",fmt(STATS.models)],["Triangles",fmt(STATS.tris)],["Textures",fmt(STATS.tex)]].map(([k,v])=>`<span class="stat">${k} <b>${v}</b></span>`).join("");}
+let FLAGS={};  // model key (gltf or thumb path) -> flag entry, mirrored from /flags.json
+const mkey=m=>m.g||m.t;
 drawStats();
 const refresh=document.getElementById("refresh");
 if(served){refresh.onclick=async()=>{refresh.textContent="↻ …";try{const r=await fetch("/catalog.json",{cache:"no-store"});const c=await r.json();GAMES=c.games;STATS=c.stats;modelCacheKey="\x00";drawStats();drawCats();render();}catch(e){alert("Refresh failed: "+e);}refresh.textContent="↻ Refresh";};}
@@ -397,8 +399,6 @@ function flbtn(m){if(!served)return "";const on=mkey(m) in FLAGS;return `<span c
 function mcard(gid,m,i){const on=mkey(m) in FLAGS;return `<div class="mcard${served&&m.g?" v":""}${on?" flagged":""}" data-id="${gid}" data-i="${i}"><img loading=lazy src="${m.t}" alt=""><div class=mn title="${esc(m.n)}">${esc(m.n)}</div>△ ${fmt(m.tris)}${m.tex?` · ▦${m.tex}`:""}<div>${kbadge(m)}${flbtn(m)}</div></div>`;}
 function mcardG(m,i){/* model card in library-wide models mode, tagged with its game */return `<div class="mcard${served&&m.g?" v":""}" data-id="${m.gid}" data-i="${i}" data-flat="1"><img loading=lazy src="${m.t}" alt=""><div class=mn title="${esc(m.n)}">${esc(m.n)}</div><div class="mn gjump" data-g="${m.gid}" title="open ${esc(m.title||"")}" style="color:var(--accent);cursor:pointer">${esc(m.title||"")}</div>△ ${fmt(m.tris)}${m.tex?` · ▦${m.tex}`:""}<div>${kbadge(m)}${flbtn(m)}</div></div>`;}
 const fullModels={};  // gid -> loaded full model list, shared by the game pages
-let FLAGS={};  // model key (gltf or thumb path) -> flag entry, mirrored from /flags.json
-const mkey=m=>m.g||m.t;
 if(served)fetch("/flags.json",{cache:"no-store"}).then(r=>r.json()).then(f=>{FLAGS=f;drawCats();render();}).catch(()=>{});
 async function toggleFlag(m,el){
   const key=mkey(m),on=!(key in FLAGS);
