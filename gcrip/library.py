@@ -545,6 +545,8 @@ function ensureMV(cb){
 }
 function openMV(m){
   if(!m.g)return;
+  if(m.tris>400000&&!confirm(m.n+" is "+fmt(m.tris)+" triangles - the in-page viewer can freeze the tab for a while on models this big.
+Load anyway?  (Tip: the Blender button handles giant models fine.)"))return;
   const url="/glb?path="+encodeURIComponent(m.g);
   document.getElementById("mvname").textContent=m.n;
   document.getElementById("mvdl").href=url;
