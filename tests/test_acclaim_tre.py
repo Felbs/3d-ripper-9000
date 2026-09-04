@@ -57,3 +57,11 @@ def test_texture_decodes():
     scenes = plugin.extract(data, "x/tex_00000064.atx", None)
     assert scenes and scenes[0].textures["tex_00000064"].shape == (8, 16, 4)
     assert not plugin.detect("x/tex_00000064.atx", bytes(32), 32)
+
+
+def test_nested_tables_are_walked():
+    inner = build([(k * 3, b"y" * 4) for k in range(8)] + [(50, build_texture())])
+    data = build([(k * 7, b"x" * 4) for k in range(8)] + [(100, inner)])
+    names = [n for n, _ in plugin.expand(data)]
+    assert "00000064/tex_00000032.atx" in names
+    assert not any(n == "00000064.bin" for n in names)

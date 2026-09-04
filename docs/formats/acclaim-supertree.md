@@ -26,3 +26,15 @@ triples the table holds, so directories are members too - the tree in the name.
 134 KB `.ati`), so the **models are still unlocated** - most likely behind the `.atr` actor
 definitions' references.  The plugin hands out every member under 4 MB except the `SWAP`
 packs, textures as `tex_<key>.atx`.
+
+## The tree is nested, and the models are `AAAp` (2026-09-04, later)
+
+Members whose first 16 bytes read as a record with an offset and size inside the member are
+**tables themselves** - 105 of them on Vexx, one of 407 MB - and the plugin now walks them
+(`expand` recurses to depth 3, naming leaves `<key>/<key>/tex_<key>.atx`).  A full recursive
+census of Vexx: 7,706 more textures (40 MB; the 65,568-byte ones carry a `u32` byte count at
++8 rather than a `u16` at +10, accepted now), 4,631 `SWAP/ANIM`, 21,264 `*PARTDEF` texts,
+3,451 `.atr` actors - and **74 `AAAp` members, 116 MB**, the level geometry: `"AAAp", u32
+version 0x01f00002, u32 offset a, u32 offset b, u32 32000, u32`, then 0x50-byte segment
+records (the two offsets again, a bounding box of eight `s16`, a count) and, at the offsets,
+dense packed data that is not plain `s16` arrays.  Reading `AAAp` is the next step here.

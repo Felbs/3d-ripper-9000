@@ -60,7 +60,10 @@ def is_tre(head: bytes, size: int) -> bool:
 
 
 def is_texture(head: bytes, size: int) -> bool:
-    if len(head) < TEXTURE_HEADER or head[:10] != bytes(10) or head[24:26] != b"\xff\xff":
+    # eight zero bytes, u32 pixel bytes, u32, u16 width, height, width, height, ff ff, kind
+    if len(head) < TEXTURE_HEADER or head[:8] != bytes(8) or head[24:26] != b"\xff\xff":
+        return False
+    if struct.unpack_from(">I", head, 8)[0] != size - TEXTURE_HEADER:
         return False
     fmt = TEXTURE_FORMATS.get(head[29])
     width, height = struct.unpack_from(">2H", head, 16)
