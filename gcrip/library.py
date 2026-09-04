@@ -187,6 +187,16 @@ def serve_library(root: Path, *, port: int = 8765, blender: str | None = None, o
                 self.end_headers()
                 self.wfile.write(body)
                 return None
+            if path == "/quality.json":
+                qf = root / "quality_flags.json"
+                body = qf.read_bytes() if qf.exists() else b"{}"
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
+                return None
             if path in ("/flag", "/flags.json"):
                 import urllib.parse as _up
 
@@ -301,6 +311,9 @@ select{padding:.5rem;border-radius:8px;border:1px solid var(--edge);background:v
 .acts .fl.on{color:#ff9d9d;opacity:1}
 .acts .act{cursor:pointer;color:var(--dim)}
 .acts .act:hover,.acts .fl:hover{color:var(--accent);opacity:1}
+.kb.qgarbage{background:#5a2222;color:#ffb3b3}
+.kb.qsuspect{background:#5a4a22;color:#ffe2a8}
+.kb.quntextured{background:#333340;color:#c8c8dd}
 .dash{grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:.8rem}
 .panel{background:var(--panel);border:1px solid var(--edge);border-radius:11px;padding:.8rem .9rem}
 .panel h3{margin:.1rem 0 .6rem;font-size:.88rem;color:var(--txt)}
@@ -366,6 +379,7 @@ const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",
 function drawStats(){document.getElementById("sub").textContent=`${STATS.with_geo} of ${STATS.games} discs with geometry`;
 document.getElementById("statbar").innerHTML=[["Games",STATS.games],["With geometry",STATS.with_geo],["Models",fmt(STATS.models)],["Triangles",fmt(STATS.tris)],["Textures",fmt(STATS.tex)]].map(([k,v])=>`<span class="stat">${k} <b>${v}</b></span>`).join("");}
 let FLAGS={};  // model key (gltf or thumb path) -> flag entry, mirrored from /flags.json
+let QUALITY={};  // model key -> {score, reasons} from the automated quality audit
 const mkey=m=>m.g||m.t;
 drawStats();
 const refresh=document.getElementById("refresh");
@@ -382,6 +396,11 @@ function drawCats(){
   if(STATS.rigged)h+=`<span class="chip cat" data-k="rigged" title="characters with a skeleton/rig">⤳ Rigged<span class=c>${fmt(STATS.rigged)}</span></span>`;
   const nf=Object.keys(FLAGS).length;
   if(nf)h+=`<span class="chip cat" data-k="flagged" title="models you flagged as glitchy">🚩 Flagged<span class=c>${nf}</span></span>`;
+  const qc={garbage:0,suspect:0,untextured:0};
+  for(const k in QUALITY){const sc=QUALITY[k].score;if(sc in qc)qc[sc]++;}
+  if(qc.garbage)h+=`<span class="chip cat" data-k="qgarbage" title="auto-detected broken geometry">🗑 Garbage<span class=c>${fmt(qc.garbage)}</span></span>`;
+  if(qc.suspect)h+=`<span class="chip cat" data-k="qsuspect" title="auto-detected suspect geometry">⚠ Suspect<span class=c>${fmt(qc.suspect)}</span></span>`;
+  if(qc.untextured)h+=`<span class="chip cat" data-k="quntextured" title="models missing textures">▦? Untextured<span class=c>${fmt(qc.untextured)}</span></span>`;
   document.getElementById("cats").innerHTML=h;
   document.querySelectorAll("#cats .cat").forEach(c=>{if(cats.has(c.dataset.k))c.classList.add("on");c.onclick=()=>{const k=c.dataset.k;cats.has(k)?cats.delete(k):cats.add(k);c.classList.toggle("on");render();};});
 }
@@ -400,13 +419,16 @@ function card(g){
   return `<div class="card" data-id="${g.id}">${hero}<div class="body"><div class="title" title="${esc(g.title)}">${esc(g.title)}</div><div class="meta">${b}</div></div></div>`;
 }
 function kbadge(m){const k=m.k&&m.k!=="unknown"?`<span class="kb ${m.k}">${m.k}</span>`:"";return k+(m.r?`<span class="kb rg" title=rigged>⤳</span>`:"")+(m.a?`<span class="kb" title=animated>▶</span>`:"");}
+const QLAB={garbage:"🗑 garbage",suspect:"⚠ suspect",untextured:"▦? untextured"};
+function qbadge(m){const q=QUALITY[mkey(m)];if(!q||!QLAB[q.score])return "";return `<span class="kb q${q.score}" title="${esc((q.reasons||[]).join(", "))}">${QLAB[q.score]}</span>`;}
 function flbtn(m){if(!served)return "";const on=mkey(m) in FLAGS;return `<span class="fl${on?" on":""}" title="${on?"flagged for review — click to clear":"flag as glitchy for review"}">${on?"🚩 flagged":"🚩 flag"}</span>`;}
 function actrow(m){if(!served)return "";const b=m.g?`<span class=act data-act=open title="open in Blender">🟦 Blender</span><span class=act data-act=reveal title="show file in Explorer">📂</span>`:"";return `<div class=acts>${flbtn(m)}${b}</div>`;}
 async function doAct(act,m){try{await fetch("/"+act+"?path="+encodeURIComponent(m.g),{cache:"no-store"});}catch(e){alert(act+" failed: "+e);}}
-function mcard(gid,m,i){const on=mkey(m) in FLAGS;return `<div class="mcard${served&&m.g?" v":""}${on?" flagged":""}" data-id="${gid}" data-i="${i}"><img loading=lazy src="${m.t}" alt=""><div class=mn title="${esc(m.n)}">${esc(m.n)}</div>△ ${fmt(m.tris)}${m.tex?` · ▦${m.tex}`:""}<div>${kbadge(m)}</div>${actrow(m)}</div>`;}
-function mcardG(m,i){/* model card in library-wide models mode, tagged with its game */return `<div class="mcard${served&&m.g?" v":""}" data-id="${m.gid}" data-i="${i}" data-flat="1"><img loading=lazy src="${m.t}" alt=""><div class=mn title="${esc(m.n)}">${esc(m.n)}</div><div class="mn gjump" data-g="${m.gid}" title="open ${esc(m.title||"")}" style="color:var(--accent);cursor:pointer">${esc(m.title||"")}</div>△ ${fmt(m.tris)}${m.tex?` · ▦${m.tex}`:""}<div>${kbadge(m)}</div>${actrow(m)}</div>`;}
+function mcard(gid,m,i){const on=mkey(m) in FLAGS;return `<div class="mcard${served&&m.g?" v":""}${on?" flagged":""}" data-id="${gid}" data-i="${i}"><img loading=lazy src="${m.t}" alt=""><div class=mn title="${esc(m.n)}">${esc(m.n)}</div>△ ${fmt(m.tris)}${m.tex?` · ▦${m.tex}`:""}<div>${kbadge(m)}${qbadge(m)}</div>${actrow(m)}</div>`;}
+function mcardG(m,i){/* model card in library-wide models mode, tagged with its game */return `<div class="mcard${served&&m.g?" v":""}" data-id="${m.gid}" data-i="${i}" data-flat="1"><img loading=lazy src="${m.t}" alt=""><div class=mn title="${esc(m.n)}">${esc(m.n)}</div><div class="mn gjump" data-g="${m.gid}" title="open ${esc(m.title||"")}" style="color:var(--accent);cursor:pointer">${esc(m.title||"")}</div>△ ${fmt(m.tris)}${m.tex?` · ▦${m.tex}`:""}<div>${kbadge(m)}${qbadge(m)}</div>${actrow(m)}</div>`;}
 const fullModels={};  // gid -> loaded full model list, shared by the game pages
 if(served)fetch("/flags.json",{cache:"no-store"}).then(r=>r.json()).then(f=>{FLAGS=f;drawCats();render();}).catch(()=>{});
+if(served)fetch("/quality.json",{cache:"no-store"}).then(r=>r.json()).then(q=>{QUALITY=q;drawCats();render();}).catch(()=>{});
 async function toggleFlag(m,el){
   const key=mkey(m),on=!(key in FLAGS);
   let note="";
@@ -416,10 +438,14 @@ async function toggleFlag(m,el){
   try{const r=await fetch("/flag?"+p.toString(),{cache:"no-store"});FLAGS=await r.json();}catch(e){alert("flag failed: "+e);return;}
   drawCats();render();
 }
-const kindCats=()=>[...cats].filter(k=>k!=="rigged"&&k!=="flagged");
-function modelKindOK(m){const kc=kindCats();if(cats.has("rigged")&&!m.r)return false;if(cats.has("flagged")&&!(mkey(m) in FLAGS))return false;if(kc.length&&!kc.includes(m.k))return false;return true;}
+const QKINDS=["qgarbage","qsuspect","quntextured"];
+const kindCats=()=>[...cats].filter(k=>k!=="rigged"&&k!=="flagged"&&!QKINDS.includes(k));
+function modelKindOK(m){const kc=kindCats();if(cats.has("rigged")&&!m.r)return false;if(cats.has("flagged")&&!(mkey(m) in FLAGS))return false;
+  for(const qk of QKINDS)if(cats.has(qk)){const q=QUALITY[mkey(m)];if(!q||("q"+q.score)!==qk)return false;}
+  if(kc.length&&!kc.includes(m.k))return false;return true;}
 function gameHasFlag(g){for(const k of Object.keys(FLAGS))if(k.startsWith(g.id+"/"))return true;return false;}
-function catGameOK(g){for(const k of cats){if(k==="rigged"){if(!(g.rigged>0))return false;}else if(k==="flagged"){if(!gameHasFlag(g))return false;}else if(!(g.kinds&&g.kinds[k]>0))return false;}return true;}
+function gameHasQ(g,qk){for(const k in QUALITY){if(k.startsWith(g.id+"/")&&("q"+QUALITY[k].score)===qk)return true;}return false;}
+function catGameOK(g){for(const k of cats){if(k==="rigged"){if(!(g.rigged>0))return false;}else if(k==="flagged"){if(!gameHasFlag(g))return false;}else if(QKINDS.includes(k)){if(!gameHasQ(g,k))return false;}else if(!(g.kinds&&g.kinds[k]>0))return false;}return true;}
 function gameFromHash(){const m=location.hash.match(/^#g=(.+)$/);return m?decodeURIComponent(m[1]):null;}
 function render(){const gid=gameFromHash();if(gid)return renderGame(gid);if(mode==="models")return renderModels();if(mode==="stats")return renderStats();renderGames();}
 addEventListener("hashchange",()=>{q.value="";render();});
