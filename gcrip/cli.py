@@ -422,6 +422,19 @@ def cmd_serve(args: argparse.Namespace) -> int:
     )
 
 
+def cmd_library(args: argparse.Namespace) -> int:
+    from gcrip.library import build_index, serve_library
+
+    root = Path(args.dumproot)
+    if args.build_only:
+        dest = build_index(root)
+        print(f"wrote {dest}")
+        return 0
+    return serve_library(
+        root, port=args.port, blender=args.blender, open_browser=not args.no_browser
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="gcrip", description="GameCube asset extractor")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -671,6 +684,16 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--blender", help="blender executable (default: auto-detect / $BLENDER)")
     p.add_argument("--no-browser", action="store_true")
     p.set_defaults(fn=cmd_serve)
+
+    p = sub.add_parser("library", help="browse every ripped game in one page (with 3D preview)")
+    p.add_argument("dumproot", help="the batch dump root (folder with batch_results.jsonl)")
+    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--blender", help="blender executable (default: auto-detect / $BLENDER)")
+    p.add_argument("--no-browser", action="store_true")
+    p.add_argument(
+        "--build-only", action="store_true", help="write library.html and exit; do not serve"
+    )
+    p.set_defaults(fn=cmd_library)
 
     args = ap.parse_args(argv)
     try:

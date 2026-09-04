@@ -52,6 +52,11 @@ In Blender the default *Solid* viewport shading hides textures - press **Z > Mat
 
 - `gcrip serve out/rip/GZLE01` opens the report in your browser with an **Open in Blender**
   and **Show file** button on every card (Blender is auto-detected; `--blender PATH` otherwise).
+- `gcrip library "D:/3d dump/GameCube"` builds one page over **every** ripped game and serves
+  it: search / sort / filter across the whole library, a hero thumbnail per game, and a click
+  on any model thumbnail previews it **in 3D** in the browser (through the same on-the-fly
+  `.glb` packing). `--build-only` just writes `library.html` (works from `file://`, minus the
+  live 3D viewer).
 - `gcrip blend out/rip/GZLE01` writes one `.blend` next to every model, marked as a Blender
   **asset** (thumbnail, catalog = disc folder, tags). Register `out/rip` as an Asset Library
   (Preferences > File Paths, or the GCRip panel's *Add rip folder as asset library* button)
@@ -307,6 +312,7 @@ gcrip dump  D:/roms/gamecube --out "D:/3d dump/GameCube"   # every disc: rip + e
 gcrip dump  game.iso --out "D:/3d dump/GameCube" --blend    # one disc, plus a .blend per model
 gcrip dump  D:/roms/gamecube --survey out/survey/survey.jsonl --engine J3D --out out/rip   # J3D discs only
 gcrip serve out/GZLE01                         # report with Open-in-Blender buttons
+gcrip library "D:/3d dump/GameCube"            # browse EVERY game in one page, 3D preview any model
 gcrip blend out/GZLE01                         # .blend asset library (needs Blender)
 gcrip stage out/GZLE01 M_NewD2                 # recompile a Wind Waker level into one glTF
 gcrip stage out/GZLE01 --all                   # every stage + stage_matrix.md
