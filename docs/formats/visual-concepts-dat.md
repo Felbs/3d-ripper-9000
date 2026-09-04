@@ -200,3 +200,27 @@ The raw `BUILD04/16/18/21.DAT` give the full `RTXT` plaintext to check a longer 
 `headband00`, `armband0007`, `socks0000`, then `ff ff ff f5`.  A compressed member of the same
 tag (`AA754`, `AH743`, `AH945`, `AH954`, `AH959`, all 17,072 bytes) decodes to exactly that
 shape, so the first 176 bytes are known plaintext and can pin far more than four ops.
+
+## 2026-09-04 night: the DOL is in hand; naive scans do not find the decompressor
+
+`sys/main.dol` (689,216 B, double-read against the D: misread rule) is cached at the
+session scratchpad (`vc/nba2k3_main.dol`).  The disc is only `main.dol` + `game.dat`, so the
+decompressor is certainly in these 156k instructions.  What was ruled out tonight:
+
+- **No strings**: no `BSUA`, `AUSB`, `.IFF`, `game.dat`, `DAT\1` or `RTXT` anywhere in the
+  DOL - the member magic seen in compressed streams is not checked by immediate or by
+  string, and files are opened by FST entry number, not path.
+- **Signature scans miss it**: top-2-bit extractions near byte loads (2 hits - both audio
+  header parsers), 0x40/0x80/0xc0 compares near `lbz` (10 hits - none LZ),
+  `lbzx`+`stb` backward-copy windows near flag tests (4 hits - a palette twiddler and a
+  string reverse), `mulli x24` table stride (2 hits - both date math).
+- The `.sym` files on NHL2K3 are speech-line tables under `sound/speech/`, not linker maps.
+
+The next session should walk it properly: find the DVD read of FST entry 1 (`DVDFastOpen` /
+`DVDReadAsync` shapes in the SDK code at the top of .text), follow the read buffer's
+consumers to the member loader, and take the branch that handles `kind == 0x01000000`.
+Failing that, a Dolphin breakpoint on the first read past the `game.dat` name table gives
+the decompressor's address in one run.  The known-plaintext corpus (`vc_members.json`,
+`cases.json`, the RTXT template) is ready to verify any transcription instantly - and the
+"same bytes, different lengths" contradiction from the empirical attack still says the
+scheme carries hidden adaptive state, which is why guessing op grammars kept failing.
