@@ -166,3 +166,14 @@ words reach tables near the section's end; after the records comes a bone-index 
 `s16` position data with x = 0 rows.  There are **no GX display lists** in a `bmsh` (no
 `0x98` chains at any stride), so the triangles are an index list the CPU skins - the next
 thing to find.
+
+More of `bmsh` (scotsman_new, 95 KB, 3 batches, 4 surfs): the header word at +0x24 is a
+self-relative offset to a table of `(u32 bones, ptr)` rows, one a batch (25 and 29 bones on
+the first two batches; the third batch record is a different shape - `ptr gshd` then a
+bone-index list); each row's target is `bones` x 16-byte records `u32 bone, u32 vertices, ptr
+vertices, u32` whose vertices are **12-byte `s16 position[3], s16 normal[3]`** in bone space
+(position x the header's 1/4096, normals / 1024 - 434 of 434 unit length on bone 1).  After
+the last vertex run sit **u8 weight pairs summing to 256** (`ec 14`, `c6 3a`, `80 80`) for the
+two-bone vertices.  Still missing: the triangle / uv stream the batch records' two table
+pointers (+0xc, +0x1c) lead to - `u32 2, u32 0x180, ...` then more 12-byte records - and the
+`body` bind matrices' order.
