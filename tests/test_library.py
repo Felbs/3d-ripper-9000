@@ -237,3 +237,32 @@ def test_query_search_models(tmp_path):
     # per-game kind counts reach the catalog for the page's category chips
     g = lq.find_game(root, "WIND")
     assert g["kinds"] == {"character": 1, "vehicle": 1} and g["rigged"] == 1
+
+
+def test_review_flags_roundtrip(tmp_path):
+    from gcrip import library_query as lq
+
+    root = _mini_dump(tmp_path)
+    assert lq.read_flags(root) == {}
+    # flag link's model by its glTF key
+    flags = lq.set_flag(
+        root, "WIND/a/link.gltf", True, name="link.bdl", gid="WIND", note="arm bent"
+    )
+    assert "WIND/a/link.gltf" in flags and flags["WIND/a/link.gltf"]["note"] == "arm bent"
+    assert (root / "review_flags.json").exists()
+    # the audit list joins the flag with live catalog data
+    fl = lq.flagged_models(root)
+    assert len(fl) == 1 and fl[0]["gid"] == "WIND" and fl[0]["tris"] == 900
+    assert fl[0]["note"] == "arm bent"
+    # a flag for a vanished model still shows, marked
+    lq.set_flag(root, "GONE/x.gltf", True, name="x", gid="GONE")
+    titles = {f["title"] for f in lq.flagged_models(root)}
+    assert "(no longer in catalog)" in titles
+    # unflag
+    lq.set_flag(root, "WIND/a/link.gltf", False)
+    lq.set_flag(root, "GONE/x.gltf", False)
+    assert lq.read_flags(root) == {}
+    # hostile keys are refused
+    lq.set_flag(root, "../escape.gltf", True)
+    lq.set_flag(root, "C:/abs.gltf", True)
+    assert lq.read_flags(root) == {}

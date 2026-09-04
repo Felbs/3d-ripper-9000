@@ -94,6 +94,15 @@ def search_models(
 
 
 @mcp.tool()
+def flagged_models() -> list[dict]:
+    """The models the user flagged as glitchy in the library UI (their review/audit list).
+
+    Each entry carries the model's name, game, triangle count, glTF path, the flag time and
+    any note the user typed.  This is the work list for rip fixes - group by game/format."""
+    return lq.flagged_models(ROOT)
+
+
+@mcp.tool()
 def model_glb(gltf_path: str, dest: str | None = None) -> dict:
     """Pack one model (its ``g`` path from list_models) into a self-contained ``.glb`` on disk.
 

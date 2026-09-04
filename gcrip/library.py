@@ -185,6 +185,32 @@ def serve_library(root: Path, *, port: int = 8765, blender: str | None = None, o
                 self.end_headers()
                 self.wfile.write(body)
                 return None
+            if path in ("/flag", "/flags.json"):
+                import urllib.parse as _up
+
+                from gcrip import library_query as _lq
+
+                if path == "/flag":
+                    qs = _up.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+                    one = lambda k, d="": qs.get(k, [d])[0]  # noqa: E731
+                    flags = _lq.set_flag(
+                        root,
+                        one("key"),
+                        one("on") == "1",
+                        name=one("n"),
+                        gid=one("gid"),
+                        note=one("note"),
+                    )
+                else:
+                    flags = _lq.read_flags(root)
+                body = json.dumps(flags).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
+                return None
             if path == "/search_models.json":
                 import urllib.parse as _up
 
@@ -262,6 +288,9 @@ select{padding:.5rem;border-radius:8px;border:1px solid var(--edge);background:v
 .kb.vehicle{background:#3a3320;color:#ffe6a8}.kb.level{background:#243a2c;color:#bfe8cd}
 .kb.prop{background:#3a2b45;color:#e6cff5}.kb.ui{background:#2a2a33;color:#b9b9c8}
 .kb.effect{background:#183a3f;color:#b8ecf2}.rg{color:var(--good)}
+.fl{float:right;cursor:pointer;opacity:.35;font-size:.8rem;line-height:1}
+.fl:hover{opacity:.9}.fl.on{opacity:1}
+.mcard.flagged{border-color:#7a3a3a}
 main{padding:1rem 1.1rem 4rem}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.8rem}
 .card{background:var(--panel);border:1px solid var(--edge);border-radius:11px;overflow:hidden;cursor:pointer;transition:border-color .12s,transform .12s}
@@ -306,7 +335,7 @@ footer{color:#55555f;font-size:.72rem;padding:1.5rem 1.1rem;border-top:1px solid
 <div class="controls cats" id="cats"></div></header>
 <main><div class="grid" id="grid"></div><div class="empty" id="empty" hidden>No games match.</div></main>
 <footer id="foot"></footer>
-<div id="modal"><div class="bar"><b id="mvname"></b><a id="mvdl" href="#" download>Download .glb</a><span class="x" onclick="closeMV()">×</span></div><div id="mv"></div></div>
+<div id="modal"><div class="bar"><b id="mvname"></b><a id="mvdl" href="#" download>Download .glb</a><span id="mvflag" class="chip" style="cursor:pointer">🚩 Flag as glitchy</span><span class="x" onclick="closeMV()">×</span></div><div id="mv"></div></div>
 <script>
 let GAMES=__DATA__, STATS=__STATS__;
 const served=location.protocol==="http:"||location.protocol==="https:";
@@ -327,8 +356,10 @@ function drawCats(){
   const K=STATS.kinds||{};
   let h=CATS.filter(([k])=>K[k]).map(([k,label])=>`<span class="chip cat" data-k="${k}">${label}<span class=c>${fmt(K[k])}</span></span>`).join("");
   if(STATS.rigged)h+=`<span class="chip cat" data-k="rigged" title="characters with a skeleton/rig">⤳ Rigged<span class=c>${fmt(STATS.rigged)}</span></span>`;
+  const nf=Object.keys(FLAGS).length;
+  if(nf)h+=`<span class="chip cat" data-k="flagged" title="models you flagged as glitchy">🚩 Flagged<span class=c>${nf}</span></span>`;
   document.getElementById("cats").innerHTML=h;
-  document.querySelectorAll("#cats .cat").forEach(c=>c.onclick=()=>{const k=c.dataset.k;cats.has(k)?cats.delete(k):cats.add(k);c.classList.toggle("on");render();});
+  document.querySelectorAll("#cats .cat").forEach(c=>{if(cats.has(c.dataset.k))c.classList.add("on");c.onclick=()=>{const k=c.dataset.k;cats.has(k)?cats.delete(k):cats.add(k);c.classList.toggle("on");render();};});
 }
 drawCats();
 document.querySelectorAll(".chip[data-f]").forEach(c=>c.onclick=()=>{filters[c.dataset.f]=!filters[c.dataset.f];c.classList.toggle("on");render();});
@@ -345,12 +376,26 @@ function card(g){
   return `<div class="card" data-id="${g.id}">${hero}<div class="body"><div class="title" title="${esc(g.title)}">${esc(g.title)}</div><div class="meta">${b}</div></div></div>`;
 }
 function kbadge(m){const k=m.k&&m.k!=="unknown"?`<span class="kb ${m.k}">${m.k}</span>`:"";return k+(m.r?`<span class="kb rg" title=rigged>⤳</span>`:"")+(m.a?`<span class="kb" title=animated>▶</span>`:"");}
-function mcard(gid,m,i){return `<div class="mcard${served&&m.g?" v":""}" data-id="${gid}" data-i="${i}"><img loading=lazy src="${m.t}" alt=""><div class=mn title="${esc(m.n)}">${esc(m.n)}</div>△ ${fmt(m.tris)}${m.tex?` · ▦${m.tex}`:""}<div>${kbadge(m)}</div></div>`;}
-function mcardG(m,i){/* model card in library-wide models mode, tagged with its game */return `<div class="mcard${served&&m.g?" v":""}" data-id="${m.gid}" data-i="${i}" data-flat="1"><img loading=lazy src="${m.t}" alt=""><div class=mn title="${esc(m.n)}">${esc(m.n)}</div><div class="mn gjump" data-g="${m.gid}" title="open ${esc(m.title||"")}" style="color:var(--accent);cursor:pointer">${esc(m.title||"")}</div>△ ${fmt(m.tris)}${m.tex?` · ▦${m.tex}`:""}<div>${kbadge(m)}</div></div>`;}
+function flbtn(m){if(!served)return "";const on=mkey(m) in FLAGS;return `<span class="fl${on?" on":""}" title="${on?"flagged for review - click to clear":"flag as glitchy for review"}">🚩</span>`;}
+function mcard(gid,m,i){const on=mkey(m) in FLAGS;return `<div class="mcard${served&&m.g?" v":""}${on?" flagged":""}" data-id="${gid}" data-i="${i}"><img loading=lazy src="${m.t}" alt=""><div class=mn title="${esc(m.n)}">${esc(m.n)}</div>△ ${fmt(m.tris)}${m.tex?` · ▦${m.tex}`:""}<div>${kbadge(m)}${flbtn(m)}</div></div>`;}
+function mcardG(m,i){/* model card in library-wide models mode, tagged with its game */return `<div class="mcard${served&&m.g?" v":""}" data-id="${m.gid}" data-i="${i}" data-flat="1"><img loading=lazy src="${m.t}" alt=""><div class=mn title="${esc(m.n)}">${esc(m.n)}</div><div class="mn gjump" data-g="${m.gid}" title="open ${esc(m.title||"")}" style="color:var(--accent);cursor:pointer">${esc(m.title||"")}</div>△ ${fmt(m.tris)}${m.tex?` · ▦${m.tex}`:""}<div>${kbadge(m)}${flbtn(m)}</div></div>`;}
 const fullModels={};  // gid -> loaded full model list, shared by the game pages
-const kindCats=()=>[...cats].filter(k=>k!=="rigged");
-function modelKindOK(m){const kc=kindCats();if(cats.has("rigged")&&!m.r)return false;if(kc.length&&!kc.includes(m.k))return false;return true;}
-function catGameOK(g){for(const k of cats){if(k==="rigged"){if(!(g.rigged>0))return false;}else if(!(g.kinds&&g.kinds[k]>0))return false;}return true;}
+let FLAGS={};  // model key (gltf or thumb path) -> flag entry, mirrored from /flags.json
+const mkey=m=>m.g||m.t;
+if(served)fetch("/flags.json",{cache:"no-store"}).then(r=>r.json()).then(f=>{FLAGS=f;drawCats();render();}).catch(()=>{});
+async function toggleFlag(m,el){
+  const key=mkey(m),on=!(key in FLAGS);
+  let note="";
+  if(on){note=prompt("What looks wrong? (optional note for the rip fixer)","glitchy")||"";if(note===null)return;}
+  const p=new URLSearchParams({key,on:on?"1":"0",n:m.n||"",gid:m.gid||key.split("/")[0]});
+  if(note&&note!=="glitchy")p.set("note",note);else if(note)p.set("note",note);
+  try{const r=await fetch("/flag?"+p.toString(),{cache:"no-store"});FLAGS=await r.json();}catch(e){alert("flag failed: "+e);return;}
+  drawCats();render();
+}
+const kindCats=()=>[...cats].filter(k=>k!=="rigged"&&k!=="flagged");
+function modelKindOK(m){const kc=kindCats();if(cats.has("rigged")&&!m.r)return false;if(cats.has("flagged")&&!(mkey(m) in FLAGS))return false;if(kc.length&&!kc.includes(m.k))return false;return true;}
+function gameHasFlag(g){for(const k of Object.keys(FLAGS))if(k.startsWith(g.id+"/"))return true;return false;}
+function catGameOK(g){for(const k of cats){if(k==="rigged"){if(!(g.rigged>0))return false;}else if(k==="flagged"){if(!gameHasFlag(g))return false;}else if(!(g.kinds&&g.kinds[k]>0))return false;}return true;}
 function gameFromHash(){const m=location.hash.match(/^#g=(.+)$/);return m?decodeURIComponent(m[1]):null;}
 function render(){const gid=gameFromHash();if(gid)return renderGame(gid);if(mode==="models")return renderModels();renderGames();}
 addEventListener("hashchange",()=>{q.value="";render();});
@@ -379,6 +424,7 @@ async function renderGame(gid){
     <div style="margin:.2rem 0 .6rem">${badges}</div>
     <div class=mstrip>${list.length?list.map((m,i)=>mcard(g.id,m,i)).join(""):`<div style="color:#55555f">No models match.</div>`}</div></div>`;
   grid.querySelectorAll(".mcard").forEach(c=>{c.onclick=()=>{if(served&&c.classList.contains("v"))openMV(list[+c.dataset.i]);};});
+  grid.querySelectorAll(".fl").forEach(el=>{el.onclick=e=>{e.stopPropagation();const card=el.closest(".mcard");toggleFlag(list[+card.dataset.i],el);};});
 }
 function renderGames(){
   const term=q.value.trim().toLowerCase();
@@ -415,6 +461,7 @@ async function renderModels(){
   grid.innerHTML=list.length?`<div class=mstrip style="grid-column:1/-1">${list.map((m,i)=>mcardG(m,i)).join("")}</div>`:"";
   grid.querySelectorAll(".mcard").forEach(c=>{c.onclick=()=>{if(served&&c.classList.contains("v"))openMV(list[+c.dataset.i]);};});
   grid.querySelectorAll(".gjump").forEach(t=>t.onclick=e=>{e.stopPropagation();location.hash="g="+encodeURIComponent(t.dataset.g);});
+  grid.querySelectorAll(".fl").forEach(el=>{el.onclick=e=>{e.stopPropagation();const card=el.closest(".mcard");toggleFlag(list[+card.dataset.i],el);};});
 }
 function ensureMV(cb){
   if(mvLoaded)return cb();
@@ -428,6 +475,9 @@ function openMV(m){
   const url="/glb?path="+encodeURIComponent(m.g);
   document.getElementById("mvname").textContent=m.n;
   document.getElementById("mvdl").href=url;
+  const fb=document.getElementById("mvflag");
+  const setfb=()=>{const on=mkey(m) in FLAGS;fb.textContent=on?"🚩 Flagged — click to clear":"🚩 Flag as glitchy";fb.classList.toggle("on",on);};
+  setfb();fb.onclick=async()=>{await toggleFlag(m,fb);setfb();};
   ensureMV(()=>{document.getElementById("mv").innerHTML=`<model-viewer src="${url}" camera-controls auto-rotate exposure="1.1" shadow-intensity="0.6" style="width:100%;height:100%"></model-viewer>`;});
   document.getElementById("modal").classList.add("on");
 }

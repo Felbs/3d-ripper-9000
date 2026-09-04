@@ -65,3 +65,15 @@ the baked top 24 with a note).  The search box scopes to that game's model names
 category chips filter within it; every thumbnail 3D-previews.  In Models mode the game-title
 line on each card jumps to that game's page.  The old inline expand strip is gone - the page
 replaced it.
+
+## Review flags - the user's audit loop (2026-09-04 night)
+
+The user reviews models in the UI and flags glitchy ones; the flags are the work list for
+rip fixes.  Every model card and the 3D viewer carry a 🚩 toggle (with an optional note
+prompt - "arm bent", "spikes"); flags persist in **`review_flags.json` at the dump root**
+(atomic tmp+replace writes, keys are the model's glTF/thumb rel path, validated relative).
+Served endpoints: `/flag?key&on&n&gid&note` and `/flags.json`; a "🚩 Flagged" chip (with
+count) filters models AND games to the flagged set.  `library_query.read_flags/set_flag/
+flagged_models` is the API - `flagged_models` joins flags with live catalog data and keeps
+orphaned flags visible as "(no longer in catalog)".  The MCP server exposes `flagged_models`
+so a session starts by reading the audit list and grouping it by game/format.

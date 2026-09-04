@@ -8,6 +8,8 @@ file's mtime so repeated queries in one session do not re-scan every game.
 
 from __future__ import annotations
 
+import json
+import time as _time
 from pathlib import Path
 
 from gcrip.library import build_catalog, game_models
@@ -180,6 +182,64 @@ def search_models(
                 break
     out.sort(key=lambda m: -m["tris"])
     return {"models": out[: max(1, limit)], "total": len(out)}
+
+
+FLAGS_FILE = "review_flags.json"
+
+
+def read_flags(root: Path) -> dict:
+    """The review flags the user set in the library UI - ``{key: {n, gid, note?, time}}``
+    where ``key`` is the model's glTF path (or thumb path when it has no glTF)."""
+    p = Path(root) / FLAGS_FILE
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def set_flag(
+    root: Path, key: str, on: bool, *, name: str = "", gid: str = "", note: str = ""
+) -> dict:
+    """Set or clear one review flag; returns the updated flag map.  Keys are validated to
+    stay relative (no drive letters or parent escapes)."""
+    key = key.strip().replace("\\", "/")
+    if not key or key.startswith("/") or ".." in key or ":" in key:
+        return read_flags(root)
+    flags = read_flags(root)
+    if on:
+        entry = {"n": name or key.rsplit("/", 1)[-1], "gid": gid or key.split("/", 1)[0],
+                 "time": _time.strftime("%Y-%m-%d %H:%M")}
+        if note:
+            entry["note"] = note[:500]
+        flags[key] = entry
+    else:
+        flags.pop(key, None)
+    tmp = Path(root) / (FLAGS_FILE + ".tmp")
+    tmp.write_text(json.dumps(flags, indent=1), encoding="utf-8")
+    tmp.replace(Path(root) / FLAGS_FILE)
+    return flags
+
+
+def flagged_models(root: Path) -> list[dict]:
+    """The flagged models joined with their live catalog data (title, tris, kind) - what a
+    session reads to see which models the user marked as glitchy and which games/formats
+    they cluster in."""
+    flags = read_flags(root)
+    out = []
+    for g in catalog(root)["games"]:
+        if not g.get("nmodels"):
+            continue
+        for m in _models_cached(root, g["id"]):
+            key = m.get("g") or m.get("t")
+            if key in flags:
+                out.append({**m, "gid": g["id"], "title": g["title"],
+                            **{k: v for k, v in flags[key].items() if k in ("note", "time")}})
+    known = {m.get("g") or m.get("t") for m in out}
+    for key, e in flags.items():  # flags whose model vanished from the catalog still show
+        if key not in known:
+            out.append({"n": e.get("n", key), "g": key, "gid": e.get("gid", ""),
+                        "title": "(no longer in catalog)", "tris": 0, **e})
+    return out
 
 
 def pack_glb(root: Path, rel_gltf: str, dest: str | None = None) -> dict:
