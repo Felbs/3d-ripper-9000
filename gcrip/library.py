@@ -320,7 +320,7 @@ if(served){refresh.onclick=async()=>{refresh.textContent="↻ …";try{const r=a
 else refresh.style.display="none";
 document.getElementById("foot").innerHTML=served?"Served locally — click any model thumbnail to preview it in 3D, or open a game's full report. Nothing is uploaded.":"Opened from disk — click a game to preview its top models, or open its full report. For live 3D preview, run <code>gcrip library</code> to serve the folder.";
 const grid=document.getElementById("grid"),empty=document.getElementById("empty"),q=document.getElementById("q"),sortSel=document.getElementById("sort");
-const filters={geo:false,tex:false,skin:false,anim:false};let expanded=null,mvLoaded=false,mode="games";
+const filters={geo:false,tex:false,skin:false,anim:false};let mvLoaded=false,mode="games";
 const cats=new Set();  // active category kinds (and the pseudo-kind "rigged")
 const CATS=[["character","Characters"],["weapon","Weapons"],["vehicle","Vehicles"],["level","Levels"],["prop","Props"],["ui","UI"],["effect","FX"]];
 function drawCats(){
@@ -333,7 +333,7 @@ function drawCats(){
 drawCats();
 document.querySelectorAll(".chip[data-f]").forEach(c=>c.onclick=()=>{filters[c.dataset.f]=!filters[c.dataset.f];c.classList.toggle("on");render();});
 const modeG=document.getElementById("modeGames"),modeM=document.getElementById("modeModels");
-function setMode(m){mode=m;modeG.classList.toggle("on",m==="games");modeM.classList.toggle("on",m==="models");
+function setMode(m){mode=m;if(gameFromHash())history.replaceState(null,"",location.pathname+location.search);modeG.classList.toggle("on",m==="games");modeM.classList.toggle("on",m==="models");
   q.placeholder=m==="models"?"Search models…  (character / weapon / part names across every game)":"Search games…  (title or disc filename)";
   render();}
 modeG.onclick=()=>setMode("games");modeM.onclick=()=>setMode("models");
@@ -346,21 +346,40 @@ function card(g){
 }
 function kbadge(m){const k=m.k&&m.k!=="unknown"?`<span class="kb ${m.k}">${m.k}</span>`:"";return k+(m.r?`<span class="kb rg" title=rigged>⤳</span>`:"")+(m.a?`<span class="kb" title=animated>▶</span>`:"");}
 function mcard(gid,m,i){return `<div class="mcard${served&&m.g?" v":""}" data-id="${gid}" data-i="${i}"><img loading=lazy src="${m.t}" alt=""><div class=mn title="${esc(m.n)}">${esc(m.n)}</div>△ ${fmt(m.tris)}${m.tex?` · ▦${m.tex}`:""}<div>${kbadge(m)}</div></div>`;}
-function mcardG(m,i){/* model card in library-wide models mode, tagged with its game */return `<div class="mcard${served&&m.g?" v":""}" data-id="${m.gid}" data-i="${i}" data-flat="1"><img loading=lazy src="${m.t}" alt=""><div class=mn title="${esc(m.n)}">${esc(m.n)}</div><div class=mn style="color:var(--dim)" title="${esc(m.title||"")}">${esc(m.title||"")}</div>△ ${fmt(m.tris)}${m.tex?` · ▦${m.tex}`:""}<div>${kbadge(m)}</div></div>`;}
-const fullModels={};  // gid -> loaded full list
-function expandBlock(g){
-  const link=g.report?`<a href="${g.report}" target="_blank">Open full report ↗</a>`:"";
-  const full=fullModels[g.id];
-  const list=full||g.top, avail=full?full.length:(g.nmodels||g.top.length);
-  const strip=list.length?list.map((m,i)=>mcard(g.id,m,i)).join(""):`<div style="color:#55555f">No model previews.</div>`;
-  const more=(served&&!full&&avail>g.top.length)?`<a href="#" class="showall" data-id="${g.id}">Show all ${fmt(avail)} models ↓</a>`:"";
-  const shown=full?`all ${fmt(full.length)}`:`top ${g.top.length} of ${fmt(g.models)}`;
-  return `<div class="expand"><h3>${esc(g.title)} — ${shown} models ${more} ${link}</h3><div class=mstrip>${strip}</div></div>`;
-}
+function mcardG(m,i){/* model card in library-wide models mode, tagged with its game */return `<div class="mcard${served&&m.g?" v":""}" data-id="${m.gid}" data-i="${i}" data-flat="1"><img loading=lazy src="${m.t}" alt=""><div class=mn title="${esc(m.n)}">${esc(m.n)}</div><div class="mn gjump" data-g="${m.gid}" title="open ${esc(m.title||"")}" style="color:var(--accent);cursor:pointer">${esc(m.title||"")}</div>△ ${fmt(m.tris)}${m.tex?` · ▦${m.tex}`:""}<div>${kbadge(m)}</div></div>`;}
+const fullModels={};  // gid -> loaded full model list, shared by the game pages
 const kindCats=()=>[...cats].filter(k=>k!=="rigged");
 function modelKindOK(m){const kc=kindCats();if(cats.has("rigged")&&!m.r)return false;if(kc.length&&!kc.includes(m.k))return false;return true;}
 function catGameOK(g){for(const k of cats){if(k==="rigged"){if(!(g.rigged>0))return false;}else if(!(g.kinds&&g.kinds[k]>0))return false;}return true;}
-function render(){if(mode==="models")return renderModels();renderGames();}
+function gameFromHash(){const m=location.hash.match(/^#g=(.+)$/);return m?decodeURIComponent(m[1]):null;}
+function render(){const gid=gameFromHash();if(gid)return renderGame(gid);if(mode==="models")return renderModels();renderGames();}
+addEventListener("hashchange",()=>{q.value="";render();});
+async function renderGame(gid){
+  const g=GAMES.find(x=>x.id===gid);
+  if(!g){grid.innerHTML=`<div class=empty>No game ${esc(gid)} — <a href="#" onclick="location.hash=''">back to the library</a></div>`;empty.hidden=true;return;}
+  q.placeholder=`Search the ${fmt(g.nmodels||g.models)} models in ${g.title}…`;
+  let full=fullModels[g.id];
+  if(!full&&served&&(g.nmodels||0)>g.top.length){
+    grid.innerHTML=`<div class=empty>loading ${fmt(g.nmodels)} models…</div>`;
+    try{const r=await fetch("/models.json?game="+encodeURIComponent(g.id),{cache:"no-store"});full=fullModels[g.id]=(await r.json()).models;}catch(e){full=null;}
+    if(gameFromHash()!==gid)return;  // user navigated away while loading
+  }
+  const pool=full||g.top||[];
+  const term=q.value.trim().toLowerCase();
+  let list=pool.filter(m=>modelKindOK(m)&&(!term||m.n.toLowerCase().includes(term)));
+  const k=sortSel.value;list.sort((a,b)=>k==="tex"?b.tex-a.tex:k==="title"?a.n.localeCompare(b.n):b.tris-a.tris);
+  const badges=[`${fmt(g.models)} models`,g.tris>0?`△ ${fmt(g.tris)}`:"",g.textures>0?`▦ ${fmt(g.textures)}`:"",g.skinned?"⤳ rigged":"",g.clips>0?`▶ ${fmt(g.clips)} clips`:""].filter(Boolean).map(x=>`<span class=badge>${x}</span>`).join(" ");
+  const report=g.report?`<a href="${g.report}" target="_blank" style="color:var(--accent)">Full report ↗</a>`:"";
+  const note=(!served&&(g.nmodels||0)>pool.length)?` — top ${pool.length} only (serve with <code>gcrip library</code> for all)`:` — ${fmt(list.length)}${list.length!==pool.length?` of ${fmt(pool.length)}`:""} shown`;
+  empty.hidden=true;
+  grid.innerHTML=`<div class=expand style="grid-column:1/-1">
+    <h3><a href="#" onclick="location.hash='';return false" style="color:var(--accent);text-decoration:none">← Library</a>
+    &nbsp; ${esc(g.title)} <span style="color:var(--dim);font-weight:400;font-size:.78rem">${esc(g.disc)}${note}</span>
+    &nbsp; ${report}</h3>
+    <div style="margin:.2rem 0 .6rem">${badges}</div>
+    <div class=mstrip>${list.length?list.map((m,i)=>mcard(g.id,m,i)).join(""):`<div style="color:#55555f">No models match.</div>`}</div></div>`;
+  grid.querySelectorAll(".mcard").forEach(c=>{c.onclick=()=>{if(served&&c.classList.contains("v"))openMV(list[+c.dataset.i]);};});
+}
 function renderGames(){
   const term=q.value.trim().toLowerCase();
   let list=GAMES.filter(g=>{
@@ -372,11 +391,10 @@ function renderGames(){
   const k=sortSel.value,key=k==="models"?"models":k==="tex"?"textures":"tris";
   list.sort((a,b)=>k==="title"?a.title.localeCompare(b.title):b[key]-a[key]);
   empty.hidden=list.length>0;
-  let h="";for(const g of list){h+=card(g);if(expanded===g.id)h+=expandBlock(g);}
+  let h="";for(const g of list)h+=card(g);
   grid.innerHTML=h;
-  grid.querySelectorAll(".card").forEach(c=>c.onclick=()=>{expanded=expanded===c.dataset.id?null:c.dataset.id;render();});
-  grid.querySelectorAll(".mcard.v").forEach(c=>c.onclick=e=>{e.stopPropagation();const gid=c.dataset.id,i=+c.dataset.i;const src=fullModels[gid]||GAMES.find(x=>x.id===gid).top;openMV(src[i]);});
-  grid.querySelectorAll(".showall").forEach(a=>a.onclick=async e=>{e.preventDefault();e.stopPropagation();const gid=a.dataset.id;a.textContent="loading…";try{const r=await fetch("/models.json?game="+encodeURIComponent(gid),{cache:"no-store"});fullModels[gid]=(await r.json()).models;render();}catch(err){a.textContent="load failed";}});
+  // a card opens the game's own page - every model in that game, searchable
+  grid.querySelectorAll(".card").forEach(c=>c.onclick=()=>{location.hash="g="+encodeURIComponent(c.dataset.id);});
 }
 let modelCache=[],modelCacheKey="\x00";
 async function renderModels(){
@@ -396,6 +414,7 @@ async function renderModels(){
   empty.hidden=list.length>0;
   grid.innerHTML=list.length?`<div class=mstrip style="grid-column:1/-1">${list.map((m,i)=>mcardG(m,i)).join("")}</div>`:"";
   grid.querySelectorAll(".mcard").forEach(c=>{c.onclick=()=>{if(served&&c.classList.contains("v"))openMV(list[+c.dataset.i]);};});
+  grid.querySelectorAll(".gjump").forEach(t=>t.onclick=e=>{e.stopPropagation();location.hash="g="+encodeURIComponent(t.dataset.g);});
 }
 function ensureMV(cb){
   if(mvLoaded)return cb();

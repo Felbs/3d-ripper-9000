@@ -55,3 +55,13 @@ the served `/search_models.json` (query + kind + rigged + animated + game + min_
 `file://` it degrades to searching the baked top-24 strips).  `library_query.search_models`
 is the same engine for the MCP server (`search_models` tool) - per-game model lists cached on
 each `rip_results.json` mtime (first scan ~30 s over 638 games, then ~30 ms).
+
+## Game pages (2026-09-04 night)
+
+Clicking a game card now opens **that game's own page** (`#g=<id>` hash route, linkable,
+back/forward safe): a header with the title, disc, badges and the full-report link, then a
+grid of **every** model in the game (served: fetched once through `/models.json`; `file://`:
+the baked top 24 with a note).  The search box scopes to that game's model names and the
+category chips filter within it; every thumbnail 3D-previews.  In Models mode the game-title
+line on each card jumps to that game's page.  The old inline expand strip is gone - the page
+replaced it.
