@@ -61,10 +61,12 @@ def test_a_wrong_influence_count_does_not_land():
     assert skx._walk(data, d.voff, d.nverts + 1, d.ioff) is None
 
 
-def test_positions_are_s16_over_the_radius():
-    data = build(radius=32768.0)  # scale 1.0, so the s16 come through unchanged
+def test_positions_are_s16_fixed_point():
+    # the 2026-09-04 crack: coords are 6.10 fixed-point (/1024) in the joint frame, NOT
+    # scaled by the directory radius - the radius scaling made every skinned model spaghetti
+    data = build(radius=32768.0)
     (m,) = skx.meshes(data)
-    assert m.positions.max() == 6000.0  # y = 2000 * 3
+    assert m.positions.max() == 6000.0 / 1024.0
 
 
 def test_the_two_index_triples_address_different_arrays():
@@ -96,3 +98,61 @@ def test_plugin_detects_and_extracts():
     (scene,) = plugin.extract(data, "models/AWGARGST#12.SKX", None)
     assert scene.name == "AWGARGST#12"
     assert scene.triangles == 2
+
+
+def _skel_pair():
+    """A 2-joint skeleton: SKX joint table + group .skg with parents (root, then child
+    translated +10 in x)."""
+    import struct
+
+    import numpy as np
+
+    # skg: header record + 2 joint records, all carrying the +-5 bbox signature
+    bbox = struct.pack(">6f", -5, -5, -5, 5, 5, 5)
+
+    def rec(parent, idx):
+        return struct.pack(">3i", parent, idx, -1) + struct.pack(">7f", 0, 0, 0, 0, 0, 0, 1) + bbox
+
+    skg = b"\x00GKS" + bytes(60) + rec(2, 3) + rec(-1, 1) + rec(0, 2)
+    # skx joint table: header with count 3 (2 joints + header rec), rows at 0xa4
+    hdr = bytearray(0xA4)
+    hdr[:4] = b"\x00XKS"
+    struct.pack_into(">I", hdr, 12, 3)
+    row0 = struct.pack(">12f", 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0) + bytes(128 - 48)
+    row1 = struct.pack(">12f", 1, 0, 0, 0, 1, 0, 0, 0, 1, 10, 0, 0) + bytes(128 - 48)
+    skx_blob = bytes(hdr) + row0 + row1
+    return skx_blob, skg, np
+
+
+def test_skye_skeleton_matching_and_globals():
+    from gcrip.formats import skye_skel
+
+    skx_blob, skg, np = _skel_pair()
+    assert skye_skel.skg_parents(skg) == [-1, 0]
+    assert skye_skel.skx_joint_count(skx_blob) == 3
+    loc = skye_skel.skx_joint_locals(skx_blob)
+    assert len(loc) == 2
+    G = skye_skel.match_skeleton(skx_blob, [b"junk", skg])
+    assert G is not None and len(G) == 2
+    np.testing.assert_allclose(G[1][:3, 3], [10, 0, 0])  # child chained through the root
+
+
+def test_skx_vertices_decode_fixed_point_with_skeleton():
+    import struct
+
+    import numpy as np
+
+    from gcrip.formats import skx as skxm
+    from gcrip.formats import skye_skel
+
+    skx_blob, skg, _ = _skel_pair()
+    G = skye_skel.match_skeleton(skx_blob, [skg])
+    # one vertex: single influence on joint 1 at raw (1024, 2048, -1024) -> local (1,2,-1),
+    # joint 1's global translation is (10,0,0)
+    d = skxm.Directory(1, 16, 100.0, 0, 1, 16, 1, 32)
+    data = struct.pack(">I", 1) + struct.pack(">4h", 1024, 2048, -1024, 1) + struct.pack(">f", 1.0)
+    pos, joints = skxm._vertices(data + bytes(64), d, G)
+    np.testing.assert_allclose(pos[0], [11, 2, -1], atol=1e-5)
+    # without a skeleton the raw first influence stands alone at /1024
+    pos2, _ = skxm._vertices(data + bytes(64), d, None)
+    np.testing.assert_allclose(pos2[0], [1, 2, -1], atol=1e-5)

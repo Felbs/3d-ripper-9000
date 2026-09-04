@@ -116,17 +116,44 @@ def directories(data: bytes) -> list[Directory]:
     return out
 
 
-def _vertices(data: bytes, d: Directory) -> tuple[np.ndarray, np.ndarray]:
+FIXED_POINT = 1024.0  # s16 vertex coords are 6.10 fixed-point in the joint's local frame
+
+
+def _vertices(
+    data: bytes, d: Directory, skeleton: list[np.ndarray] | None
+) -> tuple[np.ndarray, np.ndarray]:
+    """Positions and first-influence joints.
+
+    With a ``skeleton`` (4x4 joint globals from :mod:`gcrip.formats.skye_skel`), every
+    influence is decoded properly: ``v = sum w_i * (G_j @ (raw/1024))``; the joint index
+    addresses the joint-global list directly (0-based, proven by the render oracle).  Without one (props, or no matching ``.skg``), the first
+    influence's raw coords at /1024 stand alone - exact for the single-joint props, and an
+    honest approximation otherwise."""
     pos = np.empty((d.nverts, 3), np.float32)
     joints = np.empty(d.nverts, np.uint16)
-    scale = d.radius / FULL
     p = d.voff
     for i in range(d.nverts):
         n = struct.unpack_from(">I", data, p)[0]
-        x, y, z, j = struct.unpack_from(">4h", data, p + 4)
-        pos[i] = (x * scale, y * scale, z * scale)
-        joints[i] = j
-        p += 4 + INFLUENCE * n
+        p += 4
+        acc = np.zeros(3)
+        tw = 0.0
+        first_j = 0
+        for k in range(n):
+            x, y, z, j = struct.unpack_from(">4h", data, p)
+            w = struct.unpack_from(">f", data, p + 8)[0]
+            p += INFLUENCE
+            if k == 0:
+                first_j = j
+            local = np.array((x, y, z), np.float64) / FIXED_POINT
+            if skeleton is not None and 0 <= j < len(skeleton):
+                G = skeleton[j]
+                acc += w * (G[:3, :3] @ local + G[:3, 3])
+                tw += w
+            elif skeleton is None and k == 0:
+                acc = local
+                tw = 1.0
+        pos[i] = acc / max(tw, 1e-9)
+        joints[i] = first_j
     return pos, joints
 
 
@@ -143,12 +170,13 @@ def _normals(data: bytes, d: Directory) -> np.ndarray | None:
     return n.astype(np.float32)
 
 
-def meshes(data: bytes) -> list[Mesh]:
+def meshes(data: bytes, skeleton: list[np.ndarray] | None = None) -> list[Mesh]:
     """One mesh a directory, expanded to one vertex a triangle corner - the position and uv
-    index streams are separate, so corners are the only common vertex."""
+    index streams are separate, so corners are the only common vertex.  ``skeleton`` is the
+    joint-global list from :func:`gcrip.formats.skye_skel.match_skeleton`."""
     out: list[Mesh] = []
     for d in directories(data):
-        pos, joints = _vertices(data, d)
+        pos, joints = _vertices(data, d, skeleton)
         tri = np.frombuffer(data[d.ioff : d.ioff + d.ntris * TRIANGLE], ">u2").reshape(d.ntris, 8)
         vi, ti = tri[:, :3].astype(np.int64), tri[:, 3:6].astype(np.int64)
         if vi.max() >= d.nverts or ti.max() >= d.nuvs:
