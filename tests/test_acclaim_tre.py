@@ -47,8 +47,7 @@ def test_container_names_textures_and_skips_swap():
     assert plugin.is_container("files/supertree0.tre", data[:256])
     out = plugin.expand(data)
     names = [n for n, _ in out]
-    assert "tex_00000064.atx" in names and not any("000000c8" in n for n in names)
-    assert names[0] == "00000000.bin"
+    assert names == ["tex_00000064.atx"]
 
 
 def test_texture_decodes():

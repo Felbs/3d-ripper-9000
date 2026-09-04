@@ -46,16 +46,15 @@ def _walk(data: bytes, out: list, prefix: str, depth: int) -> None:
                 continue
         if e.size > MAX_MEMBER:
             continue
-        blob = data[e.offset : e.offset + e.size]
         if acclaim_tre.is_texture(head, e.size):
-            out.append((f"{prefix}tex_{e.key:08x}.atx", blob))
-        else:
-            out.append((f"{prefix}{e.key:08x}.bin", blob))
+            out.append((f"{prefix}tex_{e.key:08x}.atx", data[e.offset : e.offset + e.size]))
+        # everything else (AAAp geometry, SWAP packs, actors, text) has no reader yet and
+        # would only cost the rip memory - the file is the whole 739 MB disc
 
 
 def expand(data: bytes) -> list[tuple[str, bytes]]:
-    """Every leaf of the tree - members that are tables themselves (105 on Vexx, holding
-    7,706 more textures and the ``AAAp`` geometry) are walked, not handed out."""
+    """The pictures of every leaf of the tree - members that are tables themselves (105 on
+    Vexx, holding 7,706 more textures and the ``AAAp`` geometry) are walked, not handed out."""
     out: list[tuple[str, bytes]] = []
     _walk(data, out, "", 0)
     return out
