@@ -278,3 +278,43 @@ same length as the positions - and no array of that length is unit length in any
 So `gcr` shares the *vertex shape* with RenderWare native geometry - 8-byte vertices of four
 big-endian `u16` behind GX strips - and not the array layout.  Whatever anchors its arrays is
 something else, and the position search still has nothing to stand on.
+
+
+## `gcr` characters, read (2026-09-03)
+
+Everything above was looking for the header at the front.  **The header is the last 52
+bytes**, and `+4` of the file is its offset (`file length - 52`); `+0` is 12, the offset of
+a 16-byte texture-slot table (`u32 gct id, u32[3]`, ended by `0xFFFFFFFF`) whose ids are the
+`textures/%04d.gct` members of the same pak.  Found by reading the TS2 `main.dol` (no
+symbols): `GXSetArray` is the function that writes `0x08, 0xA0 + attr - 9` to the write-gather
+pipe, and its caller at `0x8024a454` - nine calls - is the draw routine.  It takes the header
+pointer, reads `u32 records` from it, and walks **0xa0-byte node records that sit just before
+the header**:
+
+    +0    u8 kind        0 rigid (its bone is +1), 1 / 2 / 3 skinned pieces
+    +1    u8 bone        +2 .. +5 more node bytes, 0xff none
+    +0x14 + 4 * lod      -> batch table: 10-byte u16 texture slot, u16 index, u16 first
+                            vertex, u16 vertices, u16 flags; ends on flags == 0xFFFF
+    +0x24 + 0x14 * lod   u32, ptr positions (f32 x3), ptr uvs (f32 x2; x3 when bit lod of
+                            +0x67 is set), ptr colours (RGBA8 or 0), ptr normals (s8 x3, pad)
+    +0x60 u16, +0x62 u16, +0x67 u8 uv flags, +0x8c f32 (1.0 / 0.5 / 0.3)
+    +0x90 + 4 * lod      -> per batch (u32 display list, u32 bytes); (0, 0) when the batch's
+                            triangles live in a neighbour's list
+
+The display lists are the `0x9B` strips the earlier note counted, but the vertex is **9
+bytes on the skinned kinds** - `u8 matrix index` then `u16 position, normal, colour, uv` -
+and 8 on rigid ones; reading every list as 8 bytes is what made the "1,046 positions" and the
+missing normal array.  The normals are `s8 / 64` with a pad byte (stride 4), which is why no
+unit-length `f32` or `s16` array was ever found.  The last batch's `first + vertices` is the
+position count (263 on `chr128`'s first node, which the display lists index up to 262).
+
+Positions are the bind pose in model space - feet at y = 0, head at 1.86 - so the model
+exports T-posed without touching the bones; the 27-bone skeleton (`+4` of the header) and the
+per-vertex matrix bytes are read but not applied.  Standard strip parity agrees with the
+stored normals on 100% of `chr128`'s 2,716 triangles (mean 0.90).
+
+`gcrip/formats/frd_gcr.py` + `gcrip/plugins/frd_gcr.py`: **all 314 `.gcr` in TS2's
+`chr.pak` read, 343,841 triangles**, textured by gct id from the same pak.  Not this
+flavour: `bg/level*.gcr` / `ob/tile*.gcr` (two pointers and a float grid at +0) and Future
+Perfect / Second Sight's character files (three pointers into a 52-byte block at +0, s16
+vertex data) - see OPEN.md.
