@@ -34,12 +34,13 @@ from gcrip.identities import Identity
 HEADER = 8
 WRAPPER = 16
 MAGIC = b"CTRL"
+STOC = b"STOC"
 SHOC = b"SHOC"
 SHDR = b"SHDR"
 ZDAT = b"Zdat"
 DATA = (ZDAT, b"SDAT", b"Rdat")
 FILL = b"FILL"
-TAGS = {SHOC, SHDR, ZDAT, b"SDAT", b"Rdat", FILL, MAGIC, b"SYNC", b"PADD"}
+TAGS = {SHOC, SHDR, ZDAT, b"SDAT", b"Rdat", FILL, MAGIC, b"SYNC", b"PADD", STOC, b"SWVR", b"SONO"}
 ZLIB_CMF = b"x"
 RAW_PREFIX = 40
 #: Bytes of per-chunk header before a data chunk's payload, proven by size identity on
@@ -59,7 +60,9 @@ class Member:
 
 
 def is_shoc(head: bytes) -> bool:
-    return head[:4] == MAGIC
+    # a bare CTRL stream (Tiger Woods .hog) or one behind a STOC zone index (The Lord of the
+    # Rings: The Return of the King / The Third Age .scg - the same SHOC members inside)
+    return head[:4] in (MAGIC, STOC)
 
 
 def _chunks(data: bytes) -> list[tuple[bytes, int, int]]:

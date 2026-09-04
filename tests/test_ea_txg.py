@@ -77,3 +77,25 @@ def test_the_plugin_names_every_texture_with_a_material():
     (scene,) = plugin.extract(blob, "hole.hog/txfh", None)
     assert set(scene.textures) == {"tbmulch", "tbcp1"}
     assert {m.texture for m in scene.materials} == set(scene.textures)
+
+
+def test_short_entries_of_the_lord_of_the_rings():
+    from gcrip.formats import gx_texture as gx
+
+    pixels = bytes(gx.encoded_size(14, 8, 8))
+    rec = (
+        b"dirt9\0\0\0"
+        + struct.pack(">I", 0)
+        + bytes(44)
+        + struct.pack(">2H", 8, 8)
+        + bytes([14])
+        + bytes(19)
+    )
+    assert len(rec) == ea_txg.SHORT_ENTRY
+    body = b"HEAD" + struct.pack(">I", 8) + bytes(8)
+    body += b"TXHE" + struct.pack(">I", len(rec)) + rec
+    body += b"TXDA" + struct.pack(">I", len(pixels)) + pixels
+    data = b"TXG \x02\x11\x00\x00" + body
+    tx = ea_txg.textures(data)
+    assert [(t.name, t.width, t.height, t.format) for t in tx] == [("dirt9", 8, 8, 14)]
+    assert ea_txg.decode(data, tx[0]).shape == (8, 8, 4)

@@ -116,3 +116,66 @@ def _runs(idx: np.ndarray) -> list[np.ndarray]:
     if start < idx.size:
         parts.append(idx[start:])
     return parts
+
+
+# -- The Lord of the Rings: The Return of the King / The Third Age -------------------------
+
+NAMED_HEAD = b"\x00\x02"
+NAMED_ATTRS = b"\x00\x03\x00\x03"
+NAMED_SEARCH = 48
+UV_TYPE = 1
+COLOR_TYPE = 0
+UV_SCALE = 1.0 / 1024.0
+
+
+@dataclass
+class NamedElement:
+    name: str
+    corners: np.ndarray  # (n, 3) u16: position, uv, colour indices - one strip
+
+
+def named_elements(data: bytes, found: list[Chunk] | None = None) -> list[NamedElement]:
+    """RotK / Third Age ``ELDA``: elements introduced by ``00 02 <material>\0``, a short
+    property list, ``00 03 00 03``, ``u16 corners`` and corners of three ``u16`` indices -
+    position, uv (the type-1 array of packed ``s16`` pairs) and colour (the type-0 RGBA
+    array) - forming one triangle strip.  Tiger Woods' ``ELDA`` carries none of this."""
+    out: list[NamedElement] = []
+    for c in found if found is not None else chunks(data):
+        if c.tag != b"ELDA":
+            continue
+        p = data[c.at + HEADER : c.at + HEADER + c.size]
+        at = 0
+        while True:
+            head = p.find(NAMED_HEAD, at)
+            if head < 0:
+                break
+            end = p.find(b"\0", head + 2, head + 2 + 32)
+            name = p[head + 2 : end] if end > 0 else b""
+            if not name or not all(32 <= ch < 127 for ch in name):
+                at = head + 1
+                continue
+            attrs = p.find(NAMED_ATTRS, end, end + NAMED_SEARCH)
+            if attrs < 0:
+                at = head + 1
+                continue
+            count = struct.unpack_from(">H", p, attrs + 4)[0]
+            if count < 3 or attrs + 6 + 6 * count > len(p):
+                at = head + 1
+                continue
+            corners = np.frombuffer(p, ">u2", 3 * count, attrs + 6).reshape(count, 3)
+            out.append(NamedElement(name.decode("ascii"), corners))
+            at = attrs + 6 + 6 * count
+    return out
+
+
+def typed_array(
+    data: bytes, kind: int, found: list[Chunk] | None = None
+) -> tuple[int, int, int] | None:
+    """``(offset, count, components)`` of the first ARRA of the given type."""
+    for c in found if found is not None else chunks(data):
+        if c.tag != b"ARRA" or c.size < 16:
+            continue
+        word, shape = struct.unpack_from(">2I", data, c.at + HEADER)
+        if word >> 24 == kind and 0 < (word & 0xFFFFFF) < MAX_COUNT:
+            return c.at + 16, word & 0xFFFFFF, shape >> 18
+    return None

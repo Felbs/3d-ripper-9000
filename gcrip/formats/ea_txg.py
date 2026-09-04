@@ -46,6 +46,8 @@ MIP0_AT = 16
 SIZE_AT = 64
 FORMAT_AT = 72
 MAX_DIM = 4096
+SHORT_ENTRY = 80  # The Lord of the Rings: RotK / Third Age - an 8-byte name, same fields after
+SHORT_NAME = 8
 
 
 @dataclass
@@ -83,18 +85,36 @@ def textures(data: bytes) -> list[Texture]:
     if not headers or not pixels:
         return []
     out = []
-    for i in range(len(headers) // ENTRY):
-        rec = headers[i * ENTRY : (i + 1) * ENTRY]
-        width, height = struct.unpack_from(">2H", rec, SIZE_AT)
-        fmt = rec[FORMAT_AT]
-        offset = struct.unpack_from(">I", rec, MIP0_AT)[0]
+    entry, name_len, mip0_at, size_at, format_at = _layout(headers)
+    for i in range(len(headers) // entry):
+        rec = headers[i * entry : (i + 1) * entry]
+        width, height = struct.unpack_from(">2H", rec, size_at)
+        fmt = rec[format_at]
+        offset = struct.unpack_from(">I", rec, mip0_at)[0]
         if fmt not in gx.TILE_DIMS or not (0 < width <= MAX_DIM and 0 < height <= MAX_DIM):
             continue
         if offset + gx.encoded_size(fmt, width, height) > len(pixels):
             continue
-        name = rec[:NAME].split(b"\0")[0].decode("latin-1") or f"texture{i}"
+        name = rec[:name_len].split(b"\0")[0].decode("latin-1") or f"texture{i}"
         out.append(Texture(name, width, height, fmt, offset))
     return out
+
+
+LONG_LAYOUT = (ENTRY, NAME, MIP0_AT, SIZE_AT, FORMAT_AT)
+SHORT_LAYOUT = (SHORT_ENTRY, SHORT_NAME, 8, 56, 60)
+
+
+def _layout(headers: bytes) -> tuple[int, int, int, int, int]:
+    """Tiger Woods' 88-byte entries carry a 16-byte name (mips +16, size +64, format +72);
+    The Lord of the Rings' 80-byte ones an 8-byte name (mips +8, size +56, format +60).  The
+    size that divides the chunk decides, the format byte when both do."""
+    n = len(headers)
+    if n % ENTRY == 0 and n % SHORT_ENTRY:
+        return LONG_LAYOUT
+    if n % SHORT_ENTRY == 0 and n % ENTRY:
+        return SHORT_LAYOUT
+    long_ok = n >= ENTRY and headers[FORMAT_AT] in gx.TILE_DIMS
+    return LONG_LAYOUT if long_ok else SHORT_LAYOUT
 
 
 def decode(data: bytes, tex: Texture) -> np.ndarray | None:
