@@ -25,6 +25,7 @@ processed serially, and models over ``MAX_TRIANGLES`` scored from metadata only.
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import os
 import time
@@ -40,14 +41,33 @@ MAX_TRIANGLES = 500_000  # bigger models are scored from metadata only (HDD is s
 SPAGHETTI_MIN_TRIS = 128  # low-poly props legitimately have long edges vs their extent
 SPAGHETTI_SUSPECT = 0.15  # median edge / bbox diagonal
 SPAGHETTI_GARBAGE = 0.25
+# co-gate: even the SHORT end of the edge distribution must be long.  Random-index
+# spaghetti has essentially no short edges (p10 ~ random-pair distance, 15%+ of the
+# diagonal); legit coarse meshes (Tiger Woods terrain slabs, med 0.27) keep a local
+# fringe (p10 ~ 2%).  Calibrated on G6WE69 ter_* vs GDQE7L STONEL11 (p10 0.19).
+SPAGHETTI_P10_GARBAGE = 0.04
+SPAGHETTI_P10_SUSPECT = 0.03
 DUP_TOP_SHARE = 0.50  # most common single position covers this share -> collapsed
 DEGENERATE_EDGE_SHARE = 0.20  # zero-length edges: soft signal here, hard at 2x
 SHATTER_MIN_VERTS = 100
-SHATTER_COMPONENTS = 8
+SHATTER_COMPONENTS = 16
 SHATTER_LARGEST_SHARE = 0.15
+SHATTER_TRIS_PER_COMP = 4.0  # legit multi-part stages average far more triangles/part
 TINY_SHARE = 0.01  # vs the game's median model vertex count
 TINY_MIN_MEDIAN = 300  # only meaningful when the game's models are non-trivial
 GAME_TEXTURED_MIN = 0.5  # game share of textured models before "untextured" is a verdict
+
+# Known-benign exceptions, matched with fnmatch against "<GID>/<out_rel>".  Tiger Woods
+# `ter` slabs decode byte-identical to raw known-plaintext copies (see gcrip/knownplain.py),
+# so the exports are faithful to the source even though their edge statistics look tangled
+# (coarse LOD-stitch sheets: median edge ~0.27 of the diagonal, isotropic normals).  Only
+# the spaghetti-family signals are suppressed for matches; NaN/collapse still apply.
+SPAGHETTI_EXEMPT = (
+    "G6WE69*/*.hog/*.gltf",  # Tiger Woods 06
+    "G5TE69*/*.hog/*.gltf",  # Tiger Woods 2005
+    "GW4E69*/*.hog/*.gltf",  # Tiger Woods 2004 (both discs)
+    "GTIE69*/*.hog/*.gltf",  # Tiger Woods 2003
+)
 
 _HARD = "garbage"
 _SOFT = "suspect"
@@ -210,6 +230,7 @@ def geometry_metrics(positions: np.ndarray, triangles: np.ndarray) -> dict[str, 
         live = lengths[lengths > tol]
         if diag > 0 and live.size:
             m["median_edge_ratio"] = round(float(np.median(live)) / diag, 5)
+            m["p10_edge_ratio"] = round(float(np.percentile(live, 10)) / diag, 5)
         # connectivity on unique undirected edges, welded by position
         wedges = weld[edges]
         wedges = wedges[np.all(wedges >= 0, axis=1)]
@@ -226,6 +247,15 @@ def audit_model(gltf_path: str | os.PathLike) -> dict[str, Any]:
     gltf_path = Path(gltf_path)
     gltf, positions, triangles = load_geometry(gltf_path)
     m = geometry_metrics(positions, triangles)
+    if m.get("no_geometry"):
+        declared = sum(
+            1
+            for mesh in gltf.get("meshes", [])
+            for prim in mesh.get("primitives", [])
+            if "POSITION" in prim.get("attributes", {})
+        )
+        if declared:  # meshes are declared but no accessor could be read (truncated .bin)
+            m["geometry_unreadable"] = True
 
     # texture presence / broken image references
     has_tex = False
@@ -252,8 +282,12 @@ def score_model(
     metrics: dict[str, Any],
     meta: dict[str, Any] | None = None,
     game_ctx: dict[str, Any] | None = None,
+    suppress: tuple[str, ...] = (),
 ) -> tuple[str, list[str]]:
-    """Turn metrics (+ rip metadata, + game context) into (score, reasons)."""
+    """Turn metrics (+ rip metadata, + game context) into (score, reasons).
+
+    *suppress* names reasons to drop before the verdict (known-benign exceptions).
+    """
     meta = meta or {}
     game_ctx = game_ctx or {}
     hard: list[str] = []
@@ -263,10 +297,11 @@ def score_model(
         hard.append("nan_positions")
     n_tris = metrics.get("triangles", 0)
     ratio = metrics.get("median_edge_ratio")
+    p10 = metrics.get("p10_edge_ratio", 0.0)
     if ratio is not None and n_tris >= SPAGHETTI_MIN_TRIS:
-        if ratio > SPAGHETTI_GARBAGE:
+        if ratio > SPAGHETTI_GARBAGE and p10 > SPAGHETTI_P10_GARBAGE:
             hard.append("spaghetti")
-        elif ratio > SPAGHETTI_SUSPECT:
+        elif ratio > SPAGHETTI_SUSPECT and p10 > SPAGHETTI_P10_SUSPECT:
             soft.append("spaghetti_mild")
     if not metrics.get("no_geometry"):
         verts = metrics.get("vertices", 0)
@@ -279,10 +314,12 @@ def score_model(
             hard.append("degenerate_edges")
         elif deg > DEGENERATE_EDGE_SHARE * 100:
             soft.append("degenerate_edges_mild")
+        n_comp = metrics.get("n_components", 0)
         if (
             verts >= SHATTER_MIN_VERTS
-            and metrics.get("n_components", 0) >= SHATTER_COMPONENTS
+            and n_comp >= SHATTER_COMPONENTS
             and metrics.get("largest_component_share", 1.0) < SHATTER_LARGEST_SHARE
+            and n_tris < n_comp * SHATTER_TRIS_PER_COMP
         ):
             soft.append("shattered")
         median_v = game_ctx.get("median_vertices", 0)
@@ -294,9 +331,14 @@ def score_model(
             soft.append("tiny_vs_siblings")
     if metrics.get("missing_texture_count"):
         soft.append("missing_texture_files")
+    if metrics.get("geometry_unreadable"):
+        soft.append("unreadable_geometry")
     if metrics.get("unreadable"):
         soft.append("unreadable")
 
+    if suppress:
+        hard = [r for r in hard if r not in suppress]
+        soft = [r for r in soft if r not in suppress]
     if hard:
         return _HARD, hard + soft
     if soft:
@@ -348,11 +390,23 @@ def audit_game(root: str | os.PathLike, gid: str) -> tuple[dict[str, Any], dict[
                 "skipped_large": True,
             }
         else:
+            gpath = root / gid / out_rel
             try:
-                metrics = audit_model(root / gid / out_rel)
+                metrics = audit_model(gpath)
+            except FileNotFoundError:
+                if gpath.with_suffix(".bin").is_file():
+                    # per-part entry folded into a merged glTF (e.g. Melee jobj parts):
+                    # the .bin remains, the per-part .gltf does not.  Not a defect.
+                    metrics = {"merged_bin_only": True, "triangles": n_tris}
+                else:
+                    metrics = {"unreadable": True, "triangles": n_tris}
             except (OSError, ValueError, json.JSONDecodeError):
                 metrics = {"unreadable": True, "triangles": n_tris}
-        score, reasons = score_model(metrics, meta, ctx)
+        key = f"{gid}/{out_rel}"
+        suppress: tuple[str, ...] = ()
+        if any(fnmatch.fnmatch(key, pat) for pat in SPAGHETTI_EXEMPT):
+            suppress = ("spaghetti", "spaghetti_mild")
+        score, reasons = score_model(metrics, meta, ctx, suppress=suppress)
         counts[score] += 1
         if score != "ok":
             flags[f"{gid}/{out_rel}"] = {"score": score, "reasons": reasons}

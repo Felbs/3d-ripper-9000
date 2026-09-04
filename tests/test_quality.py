@@ -231,6 +231,45 @@ def test_audit_game_untextured_and_report(tmp_path):
     assert report["worst"][0]["out_rel"] == "spag.gltf"  # garbage sorts first
 
 
+def test_coarse_mesh_with_local_fringe_not_spaghetti(tmp_path):
+    # a mesh whose median edge is long but which keeps a short-edge fringe
+    # (Tiger Woods terrain slabs) must not be called spaghetti
+    pos, tris = grid_mesh(40)
+    rng = np.random.default_rng(11)
+    shuffled = rng.permutation(tris[: len(tris) // 2].reshape(-1)).reshape(-1, 3)
+    mixed = np.concatenate([shuffled, tris[len(tris) // 2 :]])  # half local, half long
+    path = write_gltf(tmp_path, "coarse", pos, mixed)
+    m = audit_model(path)
+    assert m["p10_edge_ratio"] < 0.03
+    score, reasons = score_model(m)
+    assert "spaghetti" not in reasons
+
+
+def test_truncated_bin_is_unreadable_geometry(tmp_path):
+    pos, tris = grid_mesh(10)
+    path = write_gltf(tmp_path, "trunc", pos, tris)
+    (tmp_path / "trunc.bin").write_bytes(b"")  # rip in progress / bad write
+    m = audit_model(path)
+    assert m.get("geometry_unreadable")
+    score, reasons = score_model(m)
+    assert score == "suspect"
+    assert "unreadable_geometry" in reasons
+
+
+def test_audit_game_merged_bin_only_is_ok(tmp_path):
+    gid = "GTEST3"
+    gdir = tmp_path / gid
+    gdir.mkdir()
+    (gdir / "part.bin").write_bytes(b"\0" * 64)  # merged export kept the .bin only
+    models = [{"out_rel": "part.gltf", "triangles": 50, "vertices": 40, "textures": 1}]
+    (gdir / "rip_results.json").write_text(
+        json.dumps({"game_id": gid, "title": "T", "models": models}), encoding="utf-8"
+    )
+    report, flags = audit_game(tmp_path, gid)
+    assert flags == {}
+    assert report["garbage"] == 0 and report["suspect"] == 0
+
+
 def test_audit_game_unreadable_model_is_suspect(tmp_path):
     gid = "GTEST2"
     gdir = tmp_path / gid

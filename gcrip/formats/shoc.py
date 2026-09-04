@@ -11,6 +11,7 @@ out as pairs::
       SHDR   u32 version | char type[4] | u32 index | u32 unpacked size
       Zdat   a zlib stream (06)
       Rdat   u32 unpacked size + EA's rcmp LZ (2003/2004/2005) - ea_rcmp
+      Ldat   u32 packed size + a bare zlib stream, no 44-byte header (The Third Age)
 
 so a member is an ``SHDR`` naming it and the data chunks that follow.  Members are typed rather
 than named - ``sfx``, ``ter``, ``tgd``, ``Cact``, ``txf``, ``SONO``, ``CAMC``.
@@ -38,7 +39,8 @@ STOC = b"STOC"
 SHOC = b"SHOC"
 SHDR = b"SHDR"
 ZDAT = b"Zdat"
-DATA = (ZDAT, b"SDAT", b"Rdat")
+LDAT = b"Ldat"
+DATA = (ZDAT, b"SDAT", b"Rdat", LDAT)
 FILL = b"FILL"
 TAGS = {SHOC, SHDR, ZDAT, b"SDAT", b"Rdat", FILL, MAGIC, b"SYNC", b"PADD", STOC, b"SWVR", b"SONO"}
 ZLIB_CMF = b"x"
@@ -99,6 +101,31 @@ def members(data: bytes) -> list[Member]:
         if head is None or not parts:
             return
         kind, index, unpacked = head
+        if any(inner == LDAT for inner, _ in parts):
+            # The Third Age: `Ldat` is a u32 packed size then a bare zlib stream - no 44-byte
+            # chunk header.  A resource may span several chunks, and a chunk either starts a
+            # new stream (`78 ..`) or continues the previous one, so the inflater is carried
+            # across chunks and renewed only once its stream has ended.  341 of 341 resources
+            # on e98c02.scg inflate to exactly their declared sizes this way.
+            z = None
+            pieces = []
+            for inner, payload in parts:
+                if inner != LDAT:
+                    return
+                while payload:
+                    if z is None or z.eof:
+                        if payload[:1] != ZLIB_CMF:
+                            break  # the tail of a chunk after its stream ended is padding
+                        z = zlib.decompressobj()
+                    try:
+                        pieces.append(z.decompress(payload))
+                    except zlib.error:
+                        return
+                    payload = z.unused_data if z.eof else b""
+            blob = b"".join(pieces)
+            if len(blob) == unpacked and unpacked:
+                out.append(Member(kind, index, blob))
+            return
         if any(inner == EALZ for inner, _ in parts):
             pieces = []
             for inner, payload in parts:
@@ -224,6 +251,13 @@ def resources(data: bytes) -> list[Resource]:
             # WRAPPER + HEADER would be 4 bytes too far and breaks the identity outright
             start = at + WRAPPER + 4 + CHUNK_HEADER
             end = at + span
+            if inner == LDAT:
+                # The Third Age: u32 packed size + bare zlib stream, straight after the
+                # inner tag - the 44-byte chunk header the other data tags carry is absent
+                start = at + WRAPPER + 4 + 4
+                if start < end:
+                    cur.blocks.append(Block(inner, start, end - start, UNKNOWN))
+                continue
             if start >= end:
                 continue
             if inner == EALZ:
@@ -257,7 +291,7 @@ def _tags_are_known(data: bytes):
     blocks = [b for r in rs for b in r.blocks]
     if not blocks:
         return None, "no data blocks"
-    good = sum(1 for b in blocks if b.how in (STORED, ZLIB, EALZ))
+    good = sum(1 for b in blocks if b.how in (STORED, ZLIB, EALZ, LDAT))
     return good == len(blocks), f"{good} of {len(blocks)} blocks carry a known storage tag"
 
 

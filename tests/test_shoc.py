@@ -173,7 +173,7 @@ def test_the_inner_tag_says_how_a_block_is_stored():
     assert shoc.STORED == b"SDAT"
     assert shoc.ZLIB == b"Zdat"
     assert shoc.EALZ == b"Rdat"
-    assert set(shoc.DATA) == {shoc.STORED, shoc.ZLIB, shoc.EALZ}
+    assert set(shoc.DATA) == {shoc.STORED, shoc.ZLIB, shoc.EALZ, shoc.LDAT}
 
 
 def test_a_zlib_block_reports_an_unknown_size_rather_than_a_wrong_one():
@@ -194,3 +194,40 @@ def test_a_stored_block_is_its_own_payload():
 
     b = shoc.Block(shoc.STORED, 64, 8128, 8128)
     assert b.stored and b.unpacked == b.size
+
+
+def test_an_ldat_member_is_a_bare_zlib_stream_behind_a_size_word():
+    """The Third Age's data tag: u32 packed size then a zlib stream, with none of the
+    44-byte chunk header the other data tags carry."""
+    body = b"third age bytes" * 20
+    packed = zlib.compress(body)
+    data = (
+        shoc.MAGIC
+        + struct.pack(">I", 16)
+        + bytes(8)
+        + shdr(b"Cobj", 3, len(body))
+        + wrap(shoc.LDAT + struct.pack(">I", len(packed)) + packed)
+    )
+    (m,) = shoc.members(data)
+    assert (m.kind, m.index, m.data) == ("Cobj", 3, body)
+    (r,) = [r for r in shoc.resources(data) if r.blocks]
+    assert r.blocks[0].how == shoc.LDAT and r.blocks[0].unpacked == shoc.UNKNOWN
+
+
+def test_an_ldat_stream_may_continue_across_chunks_or_start_anew():
+    """A resource's chunks are fed to one inflater that is renewed when its stream ends, so
+    both a split stream and back-to-back independent streams assemble - 341 of 341 resources
+    on The Third Age's e98c02.scg reconcile this way."""
+    a, b = b"first stream" * 30, b"second stream" * 30
+    za, zb = zlib.compress(a), zlib.compress(b)
+    split = len(za) // 2
+    parts = [za[:split], za[split:] + zb]  # continuation, then a new stream in the same chunk
+    data = (
+        shoc.MAGIC
+        + struct.pack(">I", 16)
+        + bytes(8)
+        + shdr(b"txfx", 9, len(a) + len(b))
+        + b"".join(wrap(shoc.LDAT + struct.pack(">I", len(p)) + p) for p in parts)
+    )
+    (m,) = shoc.members(data)
+    assert m.data == a + b
