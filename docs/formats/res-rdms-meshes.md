@@ -154,26 +154,55 @@ bytes, which `res_surf` decodes to nothing.  `res.shader_textures` walks the two
 `expand()` suffixes the mesh member with `_tNNN` (the surf's section index) and the plugin
 binds the sibling `NNN_surf_*` member from the container.  Wave 58 re-rips the three discs.
 
-## Characters are `bmsh`, not `rdms` (2026-09-04, open)
+## Characters are `bmsh` (2026-09-04, read)
 
-`characters/*.res` on Samurai Jack carry `surf`, `gshd`, **`bmsh`** (the skinned mesh, 7-95
-KB), `body` (248 bytes: a bone / bind block with 4x4 identity-ish matrices) and `banm`
-animations - no `rdms` at all, so the characters of all three discs are still unread.
-`bmsh` opens `u32 batches, u32 8, f32 scale (1/4096), u32 6, u32 0x28, u32 0x70, 0, 1, 0,
-u32, f32, 0` and then 0x28-byte batch records whose first word is a self-relative offset to
-the batch's `gshd` (`0xfffffcb0` from +0x30 lands on the first shader) and whose +0xc / +0x1c
-words reach tables near the section's end; after the records comes a bone-index list and
-`s16` position data with x = 0 rows.  There are **no GX display lists** in a `bmsh` (no
-`0x98` chains at any stride), so the triangles are an index list the CPU skins - the next
-thing to find.
+`characters/*.res` on all three discs carry `surf`, `gshd`, **`bmsh`** (the skinned mesh),
+`body` (the skeleton: 0xa0-byte bone records with a parent index at +8, local rotation and
+translation, and an inverse bind matrix at +0x60) and `banm` animations - no `rdms`.  The
+reader is `gcrip/formats/res_bmsh.py`; the plugin turns a `bmsh` member into one Scene with a
+primitive a batch, textured, rotated Z-up to Y-up.
 
-More of `bmsh` (scotsman_new, 95 KB, 3 batches, 4 surfs): the header word at +0x24 is a
-self-relative offset to a table of `(u32 bones, ptr)` rows, one a batch (25 and 29 bones on
-the first two batches; the third batch record is a different shape - `ptr gshd` then a
-bone-index list); each row's target is `bones` x 16-byte records `u32 bone, u32 vertices, ptr
-vertices, u32` whose vertices are **12-byte `s16 position[3], s16 normal[3]`** in bone space
-(position x the header's 1/4096, normals / 1024 - 434 of 434 unit length on bone 1).  After
-the last vertex run sit **u8 weight pairs summing to 256** (`ec 14`, `c6 3a`, `80 80`) for the
-two-bone vertices.  Still missing: the triangle / uv stream the batch records' two table
-pointers (+0xc, +0x1c) lead to - `u32 2, u32 0x180, ...` then more 12-byte records - and the
-`body` bind matrices' order.
+The section is `u32 batches, u32 8, f32 scale (1/4096), ...` with a self-relative pointer at
++0x24, then `batches - 1` 0x28-byte sub-batch records (`ptr gshd, 6, palette bones, ptr
+palette, 0, 1, 0, ptr table, f32 radius, 0` - the sword, the eyes) and the main record (`ptr
+gshd`, a bone list, then its table at the +0x24 pointer, 32-aligned).  A batch **table** is
+0x40 bytes:
+
+    +00 u32 rigid rows,  ptr   16-byte rows  u32 bone, u32 count, ptr run, u32
+    +08 u32 pair rows,   ptr   24-byte rows  u32 bone a, u32 bone b, u32 count, u32, ptr run, u32
+    +10 u32 blend rows,  ptr   20-byte rows  u32 bone, u32 count, ptr run, u32, u32
+    +18 ptr bounds (8 s16)     +1c u32 36
+    +20 ptr uvs (f32 u, f32 v, 0, 0 a vertex)    +24 u32 vertices
+    +28 u32 display-list bytes                   +2c ptr display list
+    +40 the vertex buffer: s16 x y z, s16 nx ny nz - 12 bytes a vertex
+
+**The buffer is the bind pose in model space** - no bone maths.  The rigid and pair rows
+point *into* it (a bone's run sits at slot `(run - buffer) / 12`, which is how the slot
+numbering was found: the display list's indices only agreed with the stored normals at
+those bases, 16 for bone 1's 434 vertices rather than the 14 a packed count gives), so they
+describe the skin rather than supply vertices, and a slot no row claims is still a vertex.
+The blend rows are the exception: their runs sit *after* the buffer, one copy of the vertex
+per contributing bone, with slot lists after the blend table (`u16[count]` padded to 32
+bytes, then `u8[count]` weights summing to 256, padded to 32); the buffer holds other data
+where those slots sit, so a blended slot takes any of its copies (all equal at bind).
+
+The display list is one `0x99` (triangle strip, VAT 1, the byte after a pad) with a `u16`
+count and 8-byte corners of **four identical `u16` slot indices**, restarted with repeated
+indices.  The `body` bones are not needed for the rip but are read as far as the layout
+above - the Scotsman's inverse bind matrices are pure translations, the arms' quaternion rows
+rotate.
+
+Results: the Scotsman (3 batches, 1,638 + 150 + 27 vertices, 2,314 triangles) is a textured
+T-pose with 100 % of face normals agreeing with the stored ones (mean 0.87) and a longest
+edge of 0.29 on a 1.03-wide model; the eyeball (one bone) 100 %; Lemony Snicket's Aunt
+Josephine (3,569 triangles) and the bald man, Digimon's Agumon / Gabumon / Guilmon (up to 11
+batches a file) all at 99-100 %.
+
+## The shader's surf link moves with the shader's size
+
+`gshd` is 208 bytes on Samurai Jack, 212 on Digimon, 216 on Lemony Snicket, and 332 / 336
+for two-stage shaders; the surf link is always **116 bytes before the end** (+0x5c, +0x60,
++0x64, +0xd8 / +0xdc) with a two-stage shader's first stage 120 bytes earlier - the base map,
+which wins when it links a surf (the Scotsman's body: the first stage is the 128x128 skin,
+the second a 2,880-byte detail).  Lemony Snicket's `rdms` link their shader at +0 rather
+than +4 (`res.shader_textures` tries both) - 14 of 14 on its character props now bind.

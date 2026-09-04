@@ -65,7 +65,7 @@ def build_linked() -> bytes:
     # layout: surf at data_off, gshd after it (32-byte aligned), rdms after that
     gshd_at = data_off + len(surf) + (-len(surf) % 32)
     rdms_at = gshd_at + len(gshd) + (-len(gshd) % 32)
-    struct.pack_into(">i", gshd, res.SURF_LINK, data_off - (gshd_at + res.SURF_LINK))
+    struct.pack_into(">i", gshd, len(gshd) - res.SURF_TAIL, data_off - (gshd_at + len(gshd) - res.SURF_TAIL))
     struct.pack_into(">i", rdms, res.SHADER_LINK, gshd_at - (rdms_at + res.SHADER_LINK))
     body = bytearray()
     entries = []

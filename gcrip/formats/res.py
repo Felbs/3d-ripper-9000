@@ -91,7 +91,8 @@ def _stem(path: str) -> str:
 
 
 SHADER_LINK = 4  # an rdms section's word at +4 reaches its gshd
-SURF_LINK = 0x5C  # a gshd section's word at +0x5c reaches its surf
+SURF_TAIL = 116  # a gshd section's surf link sits this far before its end (+0x5c of 208)
+SURF_STAGE = 120  # a two-stage shader is this much longer, its first link that much earlier
 
 
 def shader_textures(data: bytes, found: list[Section] | None = None) -> dict[int, int]:
@@ -104,18 +105,66 @@ def shader_textures(data: bytes, found: list[Section] | None = None) -> dict[int
     reach their ``gshd`` the same way from their batch records.
     """
     found = sections(data) if found is None else found
-    by_offset = {s.offset: (i, s.tag) for i, s in enumerate(found)}
     out: dict[int, int] = {}
     for i, s in enumerate(found):
         if s.tag != "rdms" or s.offset + SHADER_LINK + 4 > len(data):
             continue
-        gshd = s.offset + SHADER_LINK + struct.unpack_from(">i", data, s.offset + SHADER_LINK)[0]
-        if by_offset.get(gshd, (None, None))[1] != "gshd" or gshd + SURF_LINK + 4 > len(data):
+        for link in (SHADER_LINK, 0):
+            # Samurai Jack and Digimon link at +4 (+0 is a 1); Lemony Snicket links at +0
+            gshd = s.offset + link + struct.unpack_from(">i", data, s.offset + link)[0]
+            surf = surf_of_shader(data, gshd, found)
+            if surf is not None:
+                out[i] = surf
+                break
+    return out
+
+
+def surf_of_shader(data: bytes, gshd: int, found: list[Section] | None = None) -> int | None:
+    """The surf section index a ``gshd`` at absolute offset ``gshd`` samples, or None.
+
+    The link is the self-relative word 116 bytes before the shader's end: +0x5c of Samurai
+    Jack's 208-byte shaders, +0x60 of Digimon's 212, +0x64 of Lemony Snicket's 216, and
+    +0xd8 / +0xdc of the 332 / 336-byte two-stage ones - whose first stage, 120 bytes
+    earlier, is the base map and wins when it links a surf.
+    """
+    found = sections(data) if found is None else found
+    by_offset = {s.offset: (i, s.tag) for i, s in enumerate(found)}
+    hit = by_offset.get(gshd)
+    if not hit or hit[1] != "gshd":
+        return None
+    size = found[hit[0]].size
+    stages = max(0, (size - SURF_TAIL) // SURF_STAGE)
+    for k in range(stages, -1, -1):
+        # the first stage's texture is the base map; a two-stage shader's last is its detail
+        link = gshd + size - SURF_TAIL - SURF_STAGE * k
+        if link < gshd or link + 4 > len(data):
             continue
-        surf = gshd + SURF_LINK + struct.unpack_from(">i", data, gshd + SURF_LINK)[0]
+        surf = link + struct.unpack_from(">i", data, link)[0]
         hit = by_offset.get(surf)
         if hit and hit[1] == "surf":
-            out[i] = hit[0]
+            return hit[0]
+    return None
+
+
+def character_textures(data: bytes, found: list[Section] | None = None) -> dict[int, str]:
+    """bmsh section index -> its batches' surf indices as a ``_t`` tag (``012-003``, ``x``
+    for a batch without a texture), through each batch's gshd (formats.res_bmsh.tables)."""
+    from gcrip.formats import res_bmsh  # noqa: PLC0415 - avoid the import cycle at load
+
+    found = sections(data) if found is None else found
+    out: dict[int, str] = {}
+    for i, s in enumerate(found):
+        if s.tag != "bmsh":
+            continue
+        blob = data[s.offset : s.offset + s.size]
+        if not res_bmsh.is_bmsh(blob):
+            continue
+        tags = []
+        for shader, _table in res_bmsh.tables(blob):
+            surf = surf_of_shader(data, s.offset + shader, found) if shader is not None else None
+            tags.append("x" if surf is None else f"{surf:03d}")
+        if tags:
+            out[i] = "-".join(tags)
     return out
 
 
@@ -135,6 +184,7 @@ def expand(data: bytes) -> list[tuple[str, bytes]]:
     out = []
     found = sections(data)
     textures = shader_textures(data, found)
+    characters = character_textures(data, found)
     for i, s in enumerate(found):
         label = _stem(named[s.offset]) if s.offset in named else str(s.ident)
         if s.tag == "rdms" and s.offset in owners:
@@ -143,6 +193,8 @@ def expand(data: bytes) -> list[tuple[str, bytes]]:
         if s.tag == "rdms" and i in textures:
             # ... and names the surf member its shader samples, so the plugin can bind it
             label = f"{label}_t{textures[i]:03d}"
+        if s.tag == "bmsh" and i in characters:
+            label = f"{label}_t{characters[i]}"
         name = f"{i:03d}_{s.tag or 'sect'}_{label}.bin"
         out.append((name, data[s.offset : s.offset + s.size]))
     return out
