@@ -154,3 +154,163 @@ def test_wrestlemania_xix_groups_carry_uvs_and_colours():
     # X8's block still reads as before, without uvs
     (scene,) = plugin.extract(build(), "dummy_x8.ymg", None)
     assert scene.extras["variant"] == "x8" and scene.primitives[0].uvs is None
+
+
+# -- Day of Reckoning (version 4) -------------------------------------------------------------
+
+DOR_NAMES = ("g_skin", "face", "hair_00")
+
+
+def _tpl_rgba8_4x4(rgba=(10, 20, 30, 255)) -> bytes:
+    """A one-image TPL: 4x4 RGBA8, every texel `rgba` (AR pairs then GB pairs per tile)."""
+    r, g, b, a = rgba
+    tile = bytes([a, r] * 16) + bytes([g, b] * 16)
+    head = struct.pack(">3I", 0x0020AF30, 1, 12)
+    table = struct.pack(">2I", 20, 0)
+    image = struct.pack(">HHIIIIIIfBBBB", 4, 4, 6, 64, 0, 0, 1, 1, 0.0, 0, 0, 0, 0)
+    return (head + table + image).ljust(64, b"\0") + tile
+
+
+def build_dor(strips=((0, 1, 2, 3),), materials=(1, 0), dumy=True, normal=(-1, 0, 0)):
+    """A version-4 YOBJ: one mesh of QUAD, one group a strip, each group on `materials[i]`.
+    Material 0 stacks g_skin under face, material 1 is hair_00 alone.  `normal` is stored,
+    i.e. (nz, nx, ny) - the default is a geometric -z, which the file winding produces."""
+    out = bytearray(0x48)
+    struct.pack_into(">HHI", out, 8, yukes_yobj.VERSION_DOR, 1, 0x40)
+    mesh = bytearray(yukes_yobj.MESH_RECORD)
+    out += mesh  # patched below
+    skip = yukes_yobj.BLOCK_SKIP
+
+    def block(payload: bytes) -> int:
+        """Append `payload` behind an 8-byte header; returns the pointer that names it."""
+        at = len(out)
+        out.extend(bytes(skip) + payload)
+        return at
+
+    verts = b"".join(
+        struct.pack(">6h", int(x * 64), int(y * 64), int(z * 64), *(int(c * 4096) for c in normal))
+        for x, y, z in QUAD
+    )
+    data_ptr = block(verts)
+    strip_ptrs = []
+    for strip in strips:
+        body = struct.pack(">I", len(strip)) + b"".join(
+            struct.pack(">Hhh", v, v * 256, 1024 - v * 256) for v in strip
+        )
+        strip_ptrs.append(block(body))
+    rows = b"".join(
+        struct.pack(">BBHI", materials[i], 1, 1, ptr) for i, ptr in enumerate(strip_ptrs)
+    )
+    groups_ptr = block(rows)
+    struct.pack_into(">HHBBBB", mesh, 0, len(QUAD), 0, 3, 0, len(strips), 0)
+    struct.pack_into(">IIIII", mesh, 8, yukes_yobj.MARKER, data_ptr, 0, 0, groups_ptr)
+    struct.pack_into(">4f", mesh, 28, 0.5, 0.5, 0.0, 0.8)
+    out[0x48 : 0x48 + len(mesh)] = mesh
+    # bones
+    bones = b"".join(
+        struct.pack(">16si3f3ff", name, parent, *t, 0.0, 0.0, 0.0, 1.0).ljust(64, b"\0")
+        for name, parent, t in ((b"null", -1, (0, 0, 0)), (b"Bip", 0, (0.0, -100.0, 0.0)))
+    )
+    bones_ptr = block(bones)
+    # names
+    names_ptr = block(b"".join(n.encode().ljust(16, b"\0") for n in DOR_NAMES))
+
+    # materials: stage lists first, then the 20-byte records that point at them
+    def stages(*tex):
+        body = struct.pack(">HH", len(tex), 0) + bytes([0xE4] * 4) + bytes([0xFF] * 16)
+        body += struct.pack(">II", 0, 0)
+        for t in tex:
+            body += bytes(19) + bytes([t])
+        return block(body)
+
+    s0 = stages(0, 1)
+    s1 = stages(2)
+    records = b"".join(
+        bytes([0xB2, 0xB2, 0xB2, 0xFF]) * 3 + struct.pack(">HHI", 0, 0, ptr) for ptr in (s0, s1)
+    )
+    materials_ptr = block(records)
+    struct.pack_into(">2I", out, 0x10, 2, bones_ptr)
+    struct.pack_into(">2I", out, 0x18, 2, materials_ptr)
+    struct.pack_into(">2I", out, 0x20, len(DOR_NAMES), names_ptr)
+    out[0:4] = yukes_yobj.MAGIC
+    struct.pack_into(">I", out, 4, len(out))
+    if dumy:
+        out = bytearray(b"DUMY" + struct.pack(">I", 16) + bytes(16)) + out
+    return bytes(out)
+
+
+def test_day_of_reckoning_is_version_4_behind_a_dumy_stamp():
+    data = build_dor()
+    assert data[:4] == b"DUMY" and yukes_yobj.yobj_at(data) == 24
+    assert yukes_yobj.version(data) == 4 and yukes_yobj.is_dor(data)
+    assert yukes_yobj.is_yobj(data[:64]) and plugin.detect("000_0.ymg", data[:64], len(data))
+    assert yukes_yobj.version(build_dor(dumy=False)) == 4
+    assert not yukes_yobj.is_dor(build_xix()) and yukes_yobj.dor_model(build_xix()) is None
+    assert yukes_yobj.version(build_xix()) == 0  # X8 / XIX builders leave +8 zero
+
+
+def test_day_of_reckoning_groups_read_by_material():
+    m = yukes_yobj.dor_model(build_dor(strips=((0, 1, 2, 3), (1, 3, 2))))
+    assert m is not None and m.warnings == [] and m.meshes == 1
+    assert [b.name for b in m.bones] == ["null", "Bip"] and m.bones[1].parent == 0
+    assert m.bones[1].translation == (0.0, -100.0, 0.0)
+    assert m.names == list(DOR_NAMES)
+    assert [mat.textures for mat in m.materials] == [["g_skin", "face"], ["hair_00"]]
+    assert m.materials[0].diffuse == (0xB2, 0xB2, 0xB2, 0xFF)
+    assert [g.material for g in m.groups] == [1, 0]
+    quad, tri = m.groups
+    assert len(quad.indices) == 6 and len(tri.indices) == 3
+    assert np.allclose(quad.positions[quad.indices[:3]].sum(0), [1.0, 1.0, 0.0], atol=1e-6)
+    # the stored (nz, nx, ny) comes back as a geometric normal, and agrees with the winding
+    assert np.allclose(quad.normals, [[0.0, 0.0, -1.0]] * 4)
+    assert quad.agreement > 0.99 and tri.agreement > 0.99
+    # corner uvs / 1024, unique per (index, u, v)
+    v = quad.positions[:, 0] + 2 * quad.positions[:, 1]  # 0, 1, 2, 3 by QUAD order
+    order = np.argsort(v)
+    assert np.allclose(quad.uvs[order], [[0.0, 1.0], [0.25, 0.75], [0.5, 0.5], [0.75, 0.25]])
+
+
+def test_day_of_reckoning_declines_bad_groups():
+    data = bytearray(build_dor())
+    # a strip index past the vertex count: that group is dropped with a warning
+    at = data.find(struct.pack(">IHhh", 4, 0, 0, 1024)) + 4
+    struct.pack_into(">H", data, at, 9)
+    m = yukes_yobj.dor_model(bytes(data))
+    assert m is not None and m.groups == [] and m.warnings == ["mesh 0: group 0 does not read"]
+    assert plugin.extract(bytes(data), "x.ymg", None) == []
+
+
+class _Src:
+    def __init__(self, files):
+        self.by_path = files
+
+    def get(self, path):
+        return self.by_path[path]
+
+
+def test_day_of_reckoning_plugin_textures_from_the_sibling_tex_pack():
+    data = build_dor(strips=((0, 1, 2, 3), (1, 3, 2)))
+    src = _Src(
+        {
+            "files/model/wrestler/000_0.tex/face.tpl": _tpl_rgba8_4x4((10, 20, 30, 255)),
+            "files/model/wrestler/000_0.tex/g_skin.tpl": _tpl_rgba8_4x4((1, 1, 1, 255)),
+            "files/model/wrestler/017_1.tex/hair_00.tpl": _tpl_rgba8_4x4((90, 80, 70, 255)),
+        }
+    )
+    (scene,) = plugin.extract(data, "files/model/wrestler/000_0.ymg", src)
+    assert scene.extras["variant"] == "dor" and scene.triangles == 3
+    assert len(scene.primitives) == 2 and len(scene.materials) == 2
+    # the picture is the stage without a g_/m_/n_ prefix; hair_00 comes from another pack
+    assert [m.name for m in scene.materials] == ["hair_00", "face"]
+    assert [m.texture for m in scene.materials] == ["hair_00", "face"]
+    assert scene.textures["face"][0, 0].tolist() == [10, 20, 30, 255]
+    assert scene.textures["hair_00"].shape == (4, 4, 4)
+    assert scene.materials[1].base_color == (1.0, 1.0, 1.0, 1.0)
+    # stood upright: the quad's -z normal becomes +z, y is negated
+    assert np.allclose(scene.primitives[0].normals[0], [0.0, 0.0, 1.0])
+    assert scene.extras["stages"]["material_00"] == ["g_skin", "face"]
+    assert scene.extras["bones"] == ["null", "Bip"]
+    # without a pack the material keeps the file's diffuse and no texture
+    (bare,) = plugin.extract(data, "000_0.ymg", None)
+    assert bare.materials[0].texture is None
+    assert np.allclose(bare.materials[0].base_color, (0xB2 / 255,) * 3 + (1.0,))

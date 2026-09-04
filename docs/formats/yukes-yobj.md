@@ -54,7 +54,7 @@ turned into rubbish.
 |---|---|---|---|---|---|
 | WrestleMania X8 | 10 of 732 | 8,104 | 125,428 | 47,090 | 0.983 (98% > 0.9) |
 | WrestleMania XIX | 10 of 1,464 | declined | - | - | - |
-| WWE Day of Reckoning | 10 of 1,099 | declined | - | - | - |
+| WWE Day of Reckoning | `000_0.ymg` (one wrestler) | 3 meshes, 39 groups | 2,478 | 3,542 | 0.908 signed, textured from its `.tex` |
 
 Ten files of 732 on X8, so the disc total will be far larger.
 
@@ -62,6 +62,8 @@ Ten files of 732 on X8, so the disc total will be far larger.
 
 * **XIX's index block**, described above - the geometry arrays read perfectly there, only
   the primitive lists do not.
+* ~~`DUMY`~~ - **read 2026-09-03**, see the Day of Reckoning section below.  The text that
+  follows is the earlier dead end, kept because the `.pms` nesting it describes still stands.
 * **`DUMY`**, which is what nearly every `.ymg` on the two Day of Reckoning discs is
   (147 of 150 sampled, and all 166 `.pms` and 150 sampled `.ypc`).  It is **not** a thin
   wrapper around a `YOBJ`, which is the first thing to try and the first thing to rule out.
@@ -90,3 +92,59 @@ every one of its 6 records - 6,545 triangles at **0.989** unsigned agreement, wi
 vertex colours the X8 variant never had (its strips are bare indices).  The group's leading
 bytes (0, 1, 2, ... 16, 26, 65, 68) are material indices into a table not yet tied to the
 `.tex` files, so the meshes come out with uvs but no texture bound.
+
+
+## Day of Reckoning, read (2026-09-03)
+
+The `.ymg` on both Day of Reckoning discs **are** thin wrappers after all: `"DUMY", u32 16,
+sixteen zero bytes`, then a `YOBJ` whose `u16` at +8 is **4** (X8 and XIX say 3), then a
+`POF0` pointer-offset table.  What made the earlier attempt fail was the assumption that a
+version-4 YOBJ shares version 3's f32 arrays: it does not.  The layout was read against the
+renderer in DoR's `main.dol` (no symbols, but the strip-drawing loop at `0x800bdb2c` is
+unmistakable: `GXBegin(GX_TRIANGLESTRIP, 0, count)` then, per corner, the same `u16` written
+twice - position and normal index - and `s16 u, v`; four corner layouts by two flag bits, the
+others adding an RGBA8 colour or dropping the uvs, which is exactly XIX's 10-byte corner).
+Every pointer again lands eight bytes before its data.
+
+```
++0x08  u16 4, u16 meshes, u32 0x40
++0x10  u32 bones, ptr        64 B: char name[16], i32 parent, f32 t[3], f32 r[3], f32 length, 0
++0x18  u32 materials, ptr    20 B: rgba diffuse, rgba, rgba, u16 flags, u16, ptr TEV block
++0x20  u32 names, ptr        16 B texture names ("face" NUL "bmp" - the dot is written as NUL)
++0x28  u32, ptr              hair / accessory records, 0x68 bytes
++0x48  mesh records, 0x30 B: u16 vertices, u16, u8, u8 skin runs, u8 groups, u8,
+                             u32 0x0a000000, ptr data, u32 0, ptr runs, ptr groups,
+                             f32 centre[3], f32 radius, u16[4]
+data    vertices x 12 B: s16 position[3] / 64, s16 normal[3] / 4096
+groups  8 B: u8 material, u8 strips, u16 strips, ptr -> strips of u32 corners then
+        6-byte corners: u16 index, s16 u, s16 v (/ 1024)
+runs    16 B: ptr weights, u32, u8 bone[3] (0xff none), u8 bones, u32 vertices
+TEV     u16 stages, u16, u8[4], u8[16], ptr, ptr, then 20 B a stage, its last byte a
+        texture-name index (0xff none)
+```
+
+Three things worth writing down:
+
+* **The normal is stored rotated.**  The triple at +6 is unit length in every record, but read
+  as (x, y, z) it agrees with the face normals at 0.37; as `(n1, n2, n0)` at 0.97-0.998, and
+  the five other orders sit below 0.6.  So the file holds (nz, nx, ny).  With that order the
+  strips want the opposite of the usual parity (the signed agreement is -0.97 with the
+  usual one), which the reader takes as the winding rule.
+* **One group is one material**, and the group's first byte indexes the 20-byte material
+  table (a wrestler's 39 groups use materials 0-38 in order across its three meshes).  The
+  material's TEV stages name the textures: a face is `g_skin, m_face, face, blood`, hair
+  `g_skin, hair_00`, the mouth just `mouth`.  The plugin binds the first stage without a
+  `g_` / `m_` / `n_` prefix (gradient, mask, normal-ish helpers) and looks the name up as
+  `<name>.tpl` inside the sibling `.tex` pack - the same directory and stem first
+  (`000_0.ymg` -> `000_0.tex`), any other pack after.
+* **Vertices are in the bind pose, y down**: the head sits at y = -175, the `Bip` root at
+  -102.  The plugin turns the model half a turn about x so it stands up without mirroring.
+  The 16-byte skin runs (consecutive vertex ranges, up to three bones each, weights behind
+  the pointer for two- and three-bone runs) are parsed for their counts but not applied, and
+  no joints are exported yet; the bone table (parent, translation, Euler rotation, length)
+  is read and listed in `extras.bones`.
+
+`000_0.ymg` (a wrestler): 3 meshes - head (11 groups), hair strands (13), body (15) - 3,542
+triangles, 18 of the 39 materials with a picture bound, signed agreement 0.908; the head's
+`mouth` group is the low one at 0.68.  `m_body.ymg` and `mu0_024_l1.ymg` from `edit_data`
+read the same way (0.95 / 0.93).  `camera.ymg` in `debug/viewer` is a bare version-3 file.

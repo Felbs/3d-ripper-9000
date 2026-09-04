@@ -6,6 +6,15 @@ textures through the plugin chain.
 
 Companion to [FORMATS.md](FORMATS.md), which lists what already works.
 
+## Closed 2026-09-03: WWE Day of Reckoning models (Yuke's `YOBJ` version 4)
+
+The `DUMY` stamp was a thin wrapper after all; what differed was the YOBJ inside - version 4
+(the `u16` at +8) with s16 positions and rotated normals, 6-byte strip corners, one group a
+material and TEV stages naming the sibling `.tex` pack's TPLs.  Read against the renderer in
+the DoR `main.dol`.  A wrestler comes out textured (3,542 triangles, 18 textures, 0.908
+signed).  Skin weights and joints are not exported yet.  See
+[formats/yukes-yobj.md](formats/yukes-yobj.md).  Both discs are in queued wave 47.
+
 ## Closed 2026-09-03: Blitz texture format 17
 
 `bUploadTexture` in `bratz.elf` is a switch on the format code: 15 RGBA8, 16 RGB5A3, **17 C8
@@ -223,7 +232,6 @@ without the DOL.  Seven discs on one engine.
 | EA content on Tiger Woods 2003 / 2004 / 2005 | 6 | **closed 2026-09-03** - `Rdat` is EA's `rcmp` LZ, read out of the 2005 DOL (`gcrip/formats/ea_rcmp.py`); one 2005 hole yields 428k triangles + 95 textures through `shoc` -> `ea_obg` / `ea_txg`.  See the closing section of [formats/ea-shoc-hog.md](formats/ea-shoc-hog.md) | re-rip the five discs (wave 32) |
 | `.adb` | 11 | **low value, do not size it by file count.**  14 large `Sounds.adb` on the Acclaim discs (200-660 MB, ascending `u32` offset table, no recognised magic in the first member) whose discs are already served by `asb_tex`; and 411 tiny ones elsewhere - Shadow the Hedgehog's 364 total 0.1 MB, about 300 bytes each | see [formats/dgc-adb-survey.md](formats/dgc-adb-survey.md) |
 | Pac-Man Fever data outside the FST | 1 | the FST lists three `.BLT` (two of them 1.3 leftovers the DOL cannot read); the DOL opens `BoardGam`, `DataHUD` ... by name from the raw disc - 300 MB the manifest never sees | scan the image for `BOLT` headers when the drive is idle, hand the hits to `plugins.bolt` (see [formats/bolt-mass-media.md](formats/bolt-mass-media.md)) |
-| Yuke's `YOBJ` models (`.ymg`, behind a 16-byte `DUMY` stamp) | 2 (WWE Day of Reckoning 1-2; **WrestleMania XIX reads since 2026-09-03** - its group table + 10-byte corners with uvs and colours, [formats/yukes-yobj.md](formats/yukes-yobj.md)) | **packs opened 2026-09-03** (`plugins.yukes_pac`: the `.tex` TPL textures rip); the model: `"YOBJ", u32 size, u16 4, u16 3, u32 0x40`, then (count, offset) pairs - bones (64-byte records, 16-char names, parent at +0x18), textures (16 B: name + extension), materials (variable, RGBA colours), hair/accessory records (0x68), a `POF0` pointer-offset table at the end; mesh records of 0x30 bytes from +0x4c (`u16, u8 groups, u8, 0x0a000000, data, 0, table A (16 B rows), table B (8 B rows: u8 index, u8 count, u16 count, u32 offset), bbox centre + radius, 4 x u16`); the group data are runs of u16 triangle indices behind a short header, not GX lists; no 12/16/8-byte stride of the "data" block puts the points inside the record's bounding sphere, so the positions are elsewhere (quantised, or in the 16-byte rows) | no symbols on any of the three discs; work from the `.ycg` (skeleton?) and `POF0` pointers, or gxscan-style brute force on the 16-byte rows |
 | FSTA `GKA` / `GGG` | 3 (Billy & Mandy, Kids Next Door, Charlie and the Chocolate Factory) | **`GGG` read 2026-09-03** (models; `GKA` is animation) - **not compressed** - body entropy 5.28 (`GGG`) and 6.82 (`GKA`) against 7.73 for `GMS`.  Magic is `ISVH` (`HVSI` reversed) but the fields are big-endian: the `u32` at +12 is the exact file size on both | what they hold.  Neither shows f32 runs, so any geometry is quantised.  Note the models are in `GMS`, which is compressed - these may be animation or collision |
 
 ## Mapped but blocked on a codec

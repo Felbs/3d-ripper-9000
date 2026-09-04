@@ -47,12 +47,47 @@ eight-byte entries (``u16``, ``u16``, ``u32`` pointer) rather than going straigh
 A reader for that was tried and produced 97 triangles at 0.451 agreement while also cutting
 X8 from 8,104 meshes to 5,480, so it is left out and the files are declined instead of being
 turned into rubbish.
+
+## Day of Reckoning (version 4, 2026-09-03)
+
+The ``u16`` at +8 is a version: 3 on X8 / XIX, **4 on both Day of Reckoning discs**, whose
+``.ymg`` wrap the YOBJ in a 24-byte ``DUMY`` stamp (``"DUMY", u32 16, zeros``) and end with a
+``POF0`` pointer-offset table.  Read against the renderer in DoR's ``main.dol`` (the loop at
+``0x800bdb2c`` that writes ``GX_TRIANGLESTRIP`` corners to the write-gather pipe: the same
+u16 index for position and normal, then ``s16 u, v``; four corner layouts by two flag bits,
+this one being uv-without-colour).  Every offset again points eight bytes before its data::
+
+    +0x08  u16 4 (version), u16 meshes, u32 0x40
+    +0x10  u32 bones, ptr        64-byte: char name[16], i32 parent, f32 translation[3],
+                                 f32 rotation[3] (radians), f32 length, zeros
+    +0x18  u32 materials, ptr    20-byte: rgba diffuse, rgba, rgba, u16 flags, u16, ptr
+    +0x20  u32 names, ptr        16-byte texture names, the "." of ".bmp" written as NUL
+    +0x28  u32, ptr              hair / accessory records (0x68 bytes)
+    +0x48  mesh records, 0x30 bytes each:
+           u16 vertices, u16, u8, u8 skin runs, u8 groups, u8, u32 0x0a000000, ptr data,
+           u32 0, ptr skin runs, ptr groups, f32 centre[3], f32 radius, u16[4]
+
+    data     vertices x 12 bytes: s16 position[3] / 64, s16 normal[3] / 4096 - stored in
+             the order (nz, nx, ny) against the positions: read as (n1, n2, n0) they agree
+             with the face normals at 0.97-0.998, in any other order below 0.6
+    groups   8 bytes: u8 material, u8 strips, u16 strips, ptr - strips of ``u32 corners``
+             then 6-byte corners ``u16 index, s16 u, s16 v`` (uv / 1024), one group per
+             material, so a wrestler's head is eleven groups (face, hair, mouth, eyes ...)
+    runs     16 bytes: ptr weights, u32, u8 bone[3] (0xff none), u8 bones, u32 vertices -
+             consecutive vertex runs and the bones that move them; the weights behind the
+             pointer are not decoded (the runs cover all but a few vertices of each mesh)
+
+A material's pointer leads (+8) to ``u16 stages, u16, u8[4], u8[16], ptr, ptr`` and then
+20-byte TEV stages whose last byte is a texture-name index (0xff none) - a face is g_skin,
+m_face, face, blood in that order.  The textures themselves are the ``.tpl`` members of the
+sibling ``.tex`` pack (``plugins/yukes_tex.py``), by those names.  Vertices are in the bind
+pose, y down: the head of a wrestler sits at y = -175 with the Biped root at -102.
 """
 
 from __future__ import annotations
 
 import struct
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -133,7 +168,220 @@ def _xix_groups(data: bytes, idx_at: int, count: int):
 
 
 def is_yobj(head: bytes) -> bool:
-    return head[:4] == MAGIC
+    return head[:4] == MAGIC or (head[:4] == DUMY and head[DUMY_SKIP : DUMY_SKIP + 4] == MAGIC)
+
+
+# -- Day of Reckoning (version 4) -------------------------------------------------------------
+
+DUMY = b"DUMY"
+DUMY_SKIP = 24
+VERSION_DOR = 4
+MESH_TABLE = 0x48
+MESH_RECORD = 0x30
+VERTEX_DOR = 12
+CORNER_DOR = 6
+GROUP = 8
+RUN = 16
+MATERIAL = 20
+STAGE = 20
+NAME = 16
+BONE = 64
+POS_SCALE = 1.0 / 64.0
+NRM_SCALE = 1.0 / 4096.0
+UV_SCALE_DOR = 1.0 / 1024.0
+NRM_ORDER = (1, 2, 0)  # the stored normal is (nz, nx, ny)
+NO_TEXTURE = 0xFF
+
+
+@dataclass
+class DorMaterial:
+    diffuse: tuple[int, int, int, int]
+    textures: list[str]  # the TEV stages' texture names, in stage order
+
+
+@dataclass
+class DorGroup:
+    mesh: int
+    material: int
+    positions: np.ndarray
+    normals: np.ndarray
+    uvs: np.ndarray
+    indices: np.ndarray
+    agreement: float
+
+
+@dataclass
+class DorBone:
+    name: str
+    parent: int
+    translation: tuple[float, float, float]
+    rotation: tuple[float, float, float]
+
+
+@dataclass
+class DorModel:
+    bones: list[DorBone] = field(default_factory=list)
+    materials: list[DorMaterial] = field(default_factory=list)
+    names: list[str] = field(default_factory=list)
+    groups: list[DorGroup] = field(default_factory=list)
+    meshes: int = 0
+    warnings: list[str] = field(default_factory=list)
+
+
+def yobj_at(data: bytes) -> int:
+    """Where the YOBJ starts: 0, or past a ``DUMY`` stamp; -1 when neither."""
+    if data[:4] == MAGIC:
+        return 0
+    if data[:4] == DUMY and data[DUMY_SKIP : DUMY_SKIP + 4] == MAGIC:
+        return DUMY_SKIP
+    return -1
+
+
+def version(data: bytes) -> int:
+    at = yobj_at(data)
+    if at < 0 or at + 12 > len(data):
+        return 0
+    return struct.unpack_from(">H", data, at + 8)[0]
+
+
+def is_dor(data: bytes) -> bool:
+    return version(data) == VERSION_DOR
+
+
+def _name(data: bytes, at: int) -> str:
+    return data[at : at + NAME].split(b"\0", 1)[0].decode("latin-1", "replace")
+
+
+def _table(data: bytes, at: int) -> tuple[int, int]:
+    """A (count, pointer) pair, the pointer resolved to where its data starts."""
+    count, ptr = struct.unpack_from(">2I", data, at)
+    return count, ptr + BLOCK_SKIP
+
+
+def _dor_materials(y: bytes, out: DorModel) -> None:
+    count, at = _table(y, 0x18)
+    ncount, nat = _table(y, 0x20)
+    if ncount and nat + ncount * NAME <= len(y):
+        out.names = [_name(y, nat + i * NAME) for i in range(ncount)]
+    for i in range(min(count, MAX_GROUPS)):
+        m = at + i * MATERIAL
+        if m + MATERIAL > len(y):
+            out.warnings.append("material table past the file")
+            break
+        diffuse = tuple(int(c) for c in y[m : m + 4])
+        ptr = struct.unpack_from(">I", y, m + 16)[0] + BLOCK_SKIP
+        textures: list[str] = []
+        if ptr + 32 <= len(y):
+            stages = struct.unpack_from(">H", y, ptr)[0]
+            for k in range(min(stages, 16)):
+                s = ptr + 32 + k * STAGE
+                if s + STAGE > len(y):
+                    break
+                t = y[s + STAGE - 1]
+                if t != NO_TEXTURE and t < len(out.names):
+                    textures.append(out.names[t])
+        out.materials.append(DorMaterial(diffuse, textures))
+
+
+def _dor_bones(y: bytes, out: DorModel) -> None:
+    count, at = _table(y, 0x10)
+    for i in range(min(count, MAX_GROUPS)):
+        b = at + i * BONE
+        if b + BONE > len(y):
+            out.warnings.append("bone table past the file")
+            break
+        parent = struct.unpack_from(">i", y, b + 16)[0]
+        t = struct.unpack_from(">3f", y, b + 20)
+        r = struct.unpack_from(">3f", y, b + 32)
+        out.bones.append(DorBone(_name(y, b), parent, t, r))
+
+
+def _dor_group(y: bytes, mesh: int, verts: np.ndarray, at: int, out: DorModel) -> bool:
+    material, _n, strips, ptr = struct.unpack_from(">BBHI", y, at)
+    p = ptr + BLOCK_SKIP
+    corners: list[np.ndarray] = []
+    tris: list[tuple[int, int, int]] = []
+    base = 0
+    for _ in range(strips):
+        if p + 4 > len(y):
+            return False
+        n = struct.unpack_from(">I", y, p)[0]
+        p += 4
+        if not 1 <= n <= MAX_STRIP or p + n * CORNER_DOR > len(y):
+            return False
+        c = np.frombuffer(y, ">i2", n * 3, p).reshape(n, 3)
+        if int(c[:, 0].max()) >= len(verts) or int(c[:, 0].min()) < 0:
+            return False
+        corners.append(c)
+        p += n * CORNER_DOR
+        for k in range(n - 2):
+            a, b, cc = base + k, base + k + 1, base + k + 2
+            # the stored normals want the opposite of the usual strip parity
+            tris.append((b, a, cc) if k % 2 == 0 else (a, b, cc))
+        base += n
+    if not corners or not tris:
+        return False
+    raw = np.concatenate(corners)
+    uniq, inverse = np.unique(raw, axis=0, return_inverse=True)
+    tri = inverse.reshape(-1)[np.array(tris, np.int64)]
+    idx = uniq[:, 0].astype(np.int64)
+    positions = (verts[idx, :3] * POS_SCALE).astype(np.float32)
+    normals = (verts[idx, 3:][:, NRM_ORDER] * NRM_SCALE).astype(np.float32)
+    uvs = (uniq[:, 1:].astype(np.float32) * UV_SCALE_DOR).astype(np.float32)
+    keep = tri[:, 0] != tri[:, 1]
+    keep &= (tri[:, 1] != tri[:, 2]) & (tri[:, 0] != tri[:, 2])
+    tri = tri[keep]
+    if not len(tri):
+        return False
+    a, b, c = positions[tri[:, 0]], positions[tri[:, 1]], positions[tri[:, 2]]
+    face = np.cross(b - a, c - a).astype(np.float64)
+    length = np.linalg.norm(face, axis=1)
+    ok = length > 1e-9
+    agreement = 0.0
+    if ok.any():
+        vert = (normals[tri[ok, 0]] + normals[tri[ok, 1]] + normals[tri[ok, 2]]).astype(np.float64)
+        agreement = float(((face[ok] / length[ok, None]) * vert).sum(1).mean() / 3)
+    out.groups.append(
+        DorGroup(mesh, material, positions, normals, uvs, tri.ravel().astype(np.uint32), agreement)
+    )
+    return True
+
+
+def dor_model(data: bytes) -> DorModel | None:
+    """A Day of Reckoning YOBJ: its groups (one per material), materials and bones."""
+    at = yobj_at(data)
+    if at < 0 or version(data) != VERSION_DOR:
+        return None
+    y = data[at:]
+    size = struct.unpack_from(">I", y, 4)[0]
+    if size <= len(y):
+        y = y[:size]
+    out = DorModel()
+    out.meshes = struct.unpack_from(">H", y, 10)[0]
+    _dor_bones(y, out)
+    _dor_materials(y, out)
+    for k in range(out.meshes):
+        m = MESH_TABLE + k * MESH_RECORD
+        if m + MESH_RECORD > len(y):
+            out.warnings.append(f"mesh {k}: record past the file")
+            break
+        nverts = struct.unpack_from(">H", y, m)[0]
+        groups = y[m + 6]
+        marker, data_at, _z, _runs_at, groups_at = struct.unpack_from(">5I", y, m + 8)
+        if marker != MARKER:
+            out.warnings.append(f"mesh {k}: no {MARKER:#x} marker")
+            continue
+        data_at += BLOCK_SKIP
+        groups_at += BLOCK_SKIP
+        if nverts < MIN_COUNT or data_at + nverts * VERTEX_DOR > len(y):
+            out.warnings.append(f"mesh {k}: {nverts} vertices past the file")
+            continue
+        verts = np.frombuffer(y, ">i2", nverts * 6, data_at).reshape(nverts, 6)
+        for g in range(groups):
+            at_g = groups_at + g * GROUP
+            if at_g + GROUP > len(y) or not _dor_group(y, k, verts, at_g, out):
+                out.warnings.append(f"mesh {k}: group {g} does not read")
+    return out
 
 
 def _strips(data: bytes, start: int, count: int) -> list[tuple[int, int, int]]:
