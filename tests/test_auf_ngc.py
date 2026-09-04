@@ -131,3 +131,87 @@ def test_plugin_binds_the_maps_own_textures():
     assert scene.textures["tex_11223344"].shape == (8, 8, 4)
     assert scene.extras["surfaces"] == 1 and scene.extras["textures_in_map"] == 2
     assert plugin.extract(chunk("snd_alb", bytes(40)), "x.ngc", None) == []
+
+
+def build_gcm(shader_id=0x1003):
+    """A ``.gcm``: block header, the C_Object3D header at +0x10 whose +0x80 names the NGC
+    block, and there the matrix, the (ptr, count) pairs and one section / group / strip of
+    QUAD - with the models' own strip winding."""
+    hdr = bytearray(0x98)
+    ngc_block = 0x10 + len(hdr)
+    struct.pack_into(">I", hdr, 0x80, ngc_block)
+    out = bytearray(struct.pack(">II", 0x48400001, 8)) + bytes(8) + hdr
+    body = bytearray(0x9C)
+    m = np.array([[0.5, 0, 0, 1], [0, 0.5, 0, 2], [0, 0, 0.5, 3]], ">f4")
+    body[:48] = m.tobytes()
+    arrays = bytearray()
+    pos_p = 0x9C + len(arrays)
+    for x, y, z in QUAD:
+        arrays += struct.pack(">3h", x, y, z)
+    nrm_p = 0x9C + len(arrays)
+    for _ in QUAD:
+        arrays += struct.pack(">3b", 0, 0, 127)
+    st_p = 0x9C + len(arrays)
+    for i in range(4):
+        arrays += struct.pack(">2h", i * 512, 1024)
+    ev_p = 0x9C + len(arrays)
+    for i in range(4):
+        arrays += struct.pack(">3H", i, i, i)
+    idx_p = 0x9C + len(arrays)
+    arrays += struct.pack(">4H", 0, 1, 2, 3)
+    strip_p = 0x9C + len(arrays)
+    arrays += struct.pack(">3HBB", 0, 4, 0, 0, 0xFF)
+    grp_p = 0x9C + len(arrays)
+    arrays += struct.pack(">4H", 0, 0, 0, 1)
+    sec_p = 0x9C + len(arrays)
+    arrays += struct.pack(">IIHHHH", 0, shader_id, 0, 1, 2, 4)
+    pairs = [
+        (pos_p, 4),
+        (nrm_p, 4),
+        (st_p, 4),
+        (ev_p, 4),
+        (idx_p, 4),
+        (0, 0),
+        (strip_p, 1),
+        (0, 0),
+        (grp_p, 1),
+        (sec_p, 1),
+    ]
+    for k, (ptr, count) in enumerate(pairs):
+        struct.pack_into(">2I", body, 0x34 + 8 * k, ptr, count)
+    out += struct.pack(">II", 0x3ED, 8) + bytes(8) + body + arrays
+    return bytes(out)
+
+
+def build_restable(gcm: bytes):
+    names = b"models/weapons/test.gcm\0"
+    data_at = 16 + 16 + len(names)
+    data_at += -data_at % 16
+    out = bytearray(struct.pack(">4I", 1, 0, 0, 0))
+    out += struct.pack(">4I", 32, data_at, len(gcm), 0x1234)
+    out += names
+    out += bytes(data_at - len(out))
+    out += gcm
+    return bytes(out)
+
+
+def test_restable_models_read_and_bind_shaders_by_hash():
+    gcm = build_gcm()
+    mdl = auf_ngc.model(gcm, "test")
+    assert mdl is not None and mdl.warnings == [] and len(mdl.batches) == 1
+    (b,) = mdl.batches
+    assert b.shader_id == 0x1003 and len(b.indices) == 6
+    assert np.allclose(b.positions[3], [51, 52, 3]) and np.allclose(b.normals[0], [0, 0, 127 / 128])
+    assert np.allclose(b.uvs[2], [0.5, 0.5])
+    t = b.indices.reshape(-1, 3)
+    face = np.cross(
+        b.positions[t[:, 1]] - b.positions[t[:, 0]], b.positions[t[:, 2]] - b.positions[t[:, 0]]
+    )
+    assert (face[:, 2] < 0).all()  # the models wind the other way round from the world
+    assert auf_ngc.model(bytes(64)) is None
+    data = build_map() + chunk("restable", build_restable(gcm))
+    scenes = plugin.extract(data, "files/maps/dm1.ngc", None)
+    assert len(scenes) == 2 and scenes[1].name == "test" and scenes[1].extras["kind"] == "model"
+    assert scenes[0].extras["models"] == 1
+    # shader 0x1003 is index 3 in the synthetic shader table, which binds texture 0x11223344
+    assert scenes[1].materials[0].texture == "tex_11223344"

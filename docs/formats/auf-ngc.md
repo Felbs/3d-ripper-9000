@@ -97,3 +97,25 @@ Not read: the bicubic patches (surface type != 0, `R_DrawPatch`), the lightmaps 
 uv set is exported, the `ligtmaps` images are not), `bmodels` and the entity placements, and
 the `restable` models (`NGCObject3D`) - the characters, weapons and props.  Wave 57 re-rips
 the disc.
+
+## The models read too (2026-09-04, small hours)
+
+`restable` (`FS_UseResourceTable`): `u32 count, u32[3]`, then 16-byte entries `ptr name, ptr
+data, u32 size, u32 hash` - 880 members on `dm1.ngc`: 380 `.gca` animations, 225 `.men`
+effects, **124 `.gcm` models** (`models/actors/actorheads/*.gcm`, `models/weapons/*_view.gcm`,
+props), UI, fonts, scripts.  A `.gcm` is the `NGCObject3D` image: word 0's bits 20..31 are
+0x484 and byte 7 the header offset (`FixupModelData`), the `C_Object3D` header sits at
+`8 + offset` with sub-block pointers at +0x74..+0x94 (each re-pointed to `block + 8 + byte 7`
+by `FixupHeaderOff`), and +0x80 is the NGC block: a 3x4 matrix, then `(ptr, count)` pairs
+from +0x34 - positions (`s16` x3, through the matrix), normals (`s8` x3 / 128), uvs (`s16`
+x2 / 2048), 6-byte vertices (`u16` position / normal / uv indices), the `u16` index stream,
+per-vertex matrix bytes, 8-byte strips (`u16 first, u16 count, u16 matrix bytes, u8, u8
+slot`), the matrix map (`u8 bone, u8 slot`), 8-byte groups (`u16 first map, u16 maps, u16
+first strip, u16 strips`) and 16-byte sections (`u32, u32 shader id, u16 first group, u16
+groups, u16 triangles, u16 indices`) - the walk `R_DrawGeomSection` makes, with
+`R_InitEntVtxDesc`'s formats (`POS s16 frac 0, NRM s8 frac 7, TEX0 s16 frac 11`).  The
+section's shader id is looked up by hash in the `shaders` chunk (`SHDR_LookupID`) and binds
+the same way as the world's.  The strips are wound the other way round from the world's
+(0.63 signed agreement after the flip, 85% of triangles).  `dm1`: **all 124 models, 25,827
+triangles**, the Frinesi shotgun and a thug's head render textured.  The bones (`BuildViewMatrixList`,
+the per-vertex matrix bytes) are not applied - the vertices are the bind pose.

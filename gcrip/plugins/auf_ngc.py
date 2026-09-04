@@ -1,5 +1,6 @@
 """007: Agent Under Fire ``maps/*.ngc`` (gcrip.formats.auf_ngc): the level's world geometry
-as one Scene - a primitive per shader, textured from the map's own ``restxtrs`` chunk."""
+as one Scene - a primitive per shader - and every ``.gcm`` model of its ``restable`` (heads,
+weapons, props) as a Scene of its own, all textured from the map's ``restxtrs`` chunk."""
 
 from __future__ import annotations
 
@@ -17,10 +18,52 @@ def detect(path: str, head: bytes, size: int) -> bool:
     return path.lower().endswith(".ngc") and auf_ngc.is_map(head, size)
 
 
+def _bind(scene: Scene, m: auf_ngc.Map, tex_id: int | None, fallback: str) -> None:
+    key = None
+    if tex_id is not None and tex_id in m.textures:
+        key = f"tex_{tex_id:08x}"
+        if key not in scene.textures:
+            rgba = auf_ngc.decode_texture(m, m.textures[tex_id])
+            if rgba is not None:
+                scene.textures[key] = rgba
+        if key not in scene.textures:
+            key = None
+    scene.materials.append(MaterialDef(name=key or fallback, texture=key))
+
+
+def _models(m: auf_ngc.Map) -> list[Scene]:
+    out = []
+    for name, at, size in auf_ngc.resources(m.resource_chunk):
+        if not name.lower().endswith(".gcm"):
+            continue
+        mdl = auf_ngc.model(m.resource_chunk[at : at + size], name)
+        if mdl is None or not mdl.batches:
+            continue
+        scene = Scene(name=posixpath.basename(name).rsplit(".", 1)[0])
+        scene.warnings.extend(mdl.warnings)
+        for b in mdl.batches:
+            _bind(scene, m, auf_ngc.shader_by_id(m, b.shader_id), f"shader_{b.shader_id:08x}")
+            scene.primitives.append(
+                Primitive(
+                    material=len(scene.materials) - 1,
+                    positions=b.positions,
+                    indices=b.indices,
+                    normals=b.normals,
+                    uvs=b.uvs,
+                )
+            )
+        scene.extras = {"format": "auf_ngc", "kind": "model", "resource": name}
+        out.append(scene)
+    return out
+
+
 def extract(data: bytes, path: str, src) -> list[Scene]:
     m = auf_ngc.parse(data)
-    if m is None or not m.surfaces:
-        return []  # legitimate: a chunk file without an ngcsurfs lump (a sound or resource pack)
+    if m is None:
+        return []
+    models = _models(m)
+    if not m.surfaces:
+        return models  # legitimate when empty: a chunk file with neither world nor models
     stem = posixpath.basename(path).rsplit(".", 1)[0] or "map"
     scene = Scene(name=stem)
     scene.warnings.extend(m.warnings)
@@ -28,17 +71,7 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
     for s in m.surfaces:
         by_shader.setdefault(s.shader, []).append(s)
     for shader, group in sorted(by_shader.items()):
-        tex_id = m.shader_textures.get(shader)
-        key = None
-        if tex_id is not None and tex_id in m.textures:
-            key = f"tex_{tex_id:08x}"
-            if key not in scene.textures:
-                rgba = auf_ngc.decode_texture(m, m.textures[tex_id])
-                if rgba is not None:
-                    scene.textures[key] = rgba
-            if key not in scene.textures:
-                key = None
-        scene.materials.append(MaterialDef(name=key or f"shader_{shader}", texture=key))
+        _bind(scene, m, m.shader_textures.get(shader), f"shader_{shader}")
         material = len(scene.materials) - 1
         pos, uv, idx = [], [], []
         base = 0
@@ -61,5 +94,6 @@ def extract(data: bytes, path: str, src) -> list[Scene]:
         "surfaces": len(m.surfaces),
         "shaders": len(by_shader),
         "textures_in_map": len(m.textures),
+        "models": len(models),
     }
-    return [scene]
+    return [scene, *models]

@@ -94,6 +94,8 @@ class Texture:
 class Map:
     surfaces: list[Surface] = field(default_factory=list)
     shader_textures: dict[int, int] = field(default_factory=dict)  # shader index -> texture id
+    shader_ids: dict[int, int] = field(default_factory=dict)  # shader hash -> index
+    resource_chunk: bytes = b""
     textures: dict[int, Texture] = field(default_factory=dict)  # texture id -> header
     texture_chunk: bytes = b""
     chunks: list[str] = field(default_factory=list)
@@ -228,6 +230,7 @@ def _shaders(s: bytes, out: Map) -> None:
         r = shaders_at + i * SHADER
         if r + SHADER > len(s):
             break
+        out.shader_ids[struct.unpack_from(">I", s, r)[0]] = i
         body = struct.unpack_from(">I", s, r + 0xC)[0]
         if body + BODY > len(s):
             continue
@@ -272,6 +275,8 @@ def parse(data: bytes) -> Map | None:
             _shaders(blob, out)
         elif c.tag == "restxtrs":
             _textures(blob, out)
+        elif c.tag == "restable":
+            out.resource_chunk = blob
     return out
 
 
@@ -282,3 +287,155 @@ def decode_texture(m: Map, tex: Texture) -> np.ndarray | None:
     return gx.decode(
         tex.format, tex.width, tex.height, m.texture_chunk[tex.data_at : tex.data_at + need]
     )
+
+
+# -- the models in restable: .gcm NGCObject3D images ---------------------------------------------
+
+MODEL_MAGIC = 0x484  # bits 20..31 of the first word
+ENTVTX = 6
+STRIP_REC = 8
+GROUP_REC = 8
+SECTION_REC = 16
+NRM_SCALE = 1.0 / 128.0
+ST_SCALE = 1.0 / 2048.0
+
+
+@dataclass
+class ModelBatch:
+    shader_id: int
+    positions: np.ndarray
+    normals: np.ndarray
+    uvs: np.ndarray
+    indices: np.ndarray
+
+
+@dataclass
+class Model:
+    name: str
+    batches: list[ModelBatch] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+
+
+def resources(table: bytes) -> list[tuple[str, int, int]]:
+    """(name, offset, size) of every member of a ``restable`` chunk (``FS_UseResourceTable``:
+    ``u32 count, u32[3]``, then 16-byte entries ``ptr name, ptr data, u32 size, u32 hash``)."""
+    if len(table) < 16:
+        return []
+    count = struct.unpack_from(">I", table, 0)[0]
+    out = []
+    for i in range(min(count, MAX_TEXTURES * 4)):
+        e = 16 + 16 * i
+        if e + 16 > len(table):
+            break
+        name_at, data_at, size, _h = struct.unpack_from(">4I", table, e)
+        if name_at >= len(table) or data_at + size > len(table):
+            continue
+        end = table.find(b"\0", name_at)
+        name = table[name_at : end if end > 0 else name_at + 64].decode("latin-1", "replace")
+        out.append((name, data_at, size))
+    return out
+
+
+def _block(data: bytes, at: int) -> int | None:
+    """A sub-block's header start: ``at + 8 + byte 7`` (``FixupHeaderOff``)."""
+    if at + 8 > len(data):
+        return None
+    return at + 8 + data[at + 7]
+
+
+def model(data: bytes, name: str = "") -> Model | None:
+    """One ``.gcm``: the ``C_Object3D`` header's +0x80 block is the NGC geometry - a 3x4
+    matrix, then ``(ptr, count)`` pairs from +0x34: positions (s16 x3), normals (s8 x3),
+    uvs (s16 x2), 6-byte vertices (position / normal / uv indices), the u16 index stream,
+    the per-vertex matrix bytes, 8-byte strips (``u16 first, u16 count, u16 matrix bytes,
+    u8, u8 slot``), matrix map, 8-byte groups (``u16 first map, u16 maps, u16 first strip,
+    u16 strips``) and 16-byte sections (``u32, u32 shader id, u16 first group, u16 groups,
+    u16 triangles, u16 indices``) - ``R_DrawGeomSection``."""
+    if len(data) < 0x20 or (struct.unpack_from(">I", data, 0)[0] >> 20) & 0xFFF != MODEL_MAGIC:
+        return None
+    hdr = _block(data, 0)
+    if hdr is None or hdr + 0x98 > len(data):
+        return None
+    ngc_at = struct.unpack_from(">I", data, hdr + 0x80)[0]
+    base = _block(data, ngc_at) if ngc_at else None
+    if base is None or base + 0x9C > len(data):
+        return None
+    out = Model(name)
+    m = np.frombuffer(data, ">f4", 12, base).reshape(3, 4)
+    pairs = [struct.unpack_from(">2I", data, base + 0x34 + 8 * k) for k in range(10)]
+    (pos_p, npos), (nrm_p, nnrm), (st_p, nst), (ev_p, nev), (idx_p, nidx) = pairs[:5]
+    (_mtx_p, _nmtx), (strip_p, nstrip), (_mm_p, _nmm), (grp_p, ngrp), (sec_p, nsec) = pairs[5:10]
+    n = len(data)
+    if not (npos and nev and nidx and nstrip and nsec):
+        return out
+    ends = (
+        base + pos_p + npos * 6,
+        base + nrm_p + nnrm * 3,
+        base + st_p + nst * 4,
+        base + ev_p + nev * ENTVTX,
+        base + idx_p + nidx * 2,
+        base + strip_p + nstrip * STRIP_REC,
+        base + grp_p + ngrp * GROUP_REC,
+        base + sec_p + nsec * SECTION_REC,
+    )
+    if max(ends) > n:
+        out.warnings.append("arrays past the file")
+        return out
+    pos = np.frombuffer(data, ">i2", npos * 3, base + pos_p).reshape(npos, 3).astype(np.float32)
+    positions = (pos @ m[:, :3].T + m[:, 3]).astype(np.float32)
+    normals = np.frombuffer(data, np.int8, nnrm * 3, base + nrm_p).reshape(nnrm, 3)
+    normals = (normals.astype(np.float32) * NRM_SCALE).astype(np.float32)
+    uvs = np.frombuffer(data, ">i2", nst * 2, base + st_p).reshape(nst, 2).astype(np.float32)
+    uvs = (uvs * ST_SCALE).astype(np.float32)
+    ev = np.frombuffer(data, ">u2", nev * 3, base + ev_p).reshape(nev, 3).astype(np.int64)
+    if int(ev[:, 0].max()) >= npos or int(ev[:, 1].max()) >= nnrm or int(ev[:, 2].max()) >= nst:
+        out.warnings.append("vertex records index past their arrays")
+        return out
+    stream = np.frombuffer(data, ">u2", nidx, base + idx_p).astype(np.int64)
+    if int(stream.max()) >= nev:
+        out.warnings.append("index stream past the vertex records")
+        return out
+    for s in range(nsec):
+        r = base + sec_p + s * SECTION_REC
+        _owner, shader_id, first_group, ngroups = struct.unpack_from(">IIHH", data, r)
+        used: list[np.ndarray] = []
+        tris: list[tuple[int, int, int]] = []
+        corner_base = 0
+        for g in range(first_group, min(first_group + ngroups, ngrp)):
+            _fm, _nm, first_strip, nstrips = struct.unpack_from(">4H", data, base + grp_p + g * 8)
+            for t in range(first_strip, min(first_strip + nstrips, nstrip)):
+                first, count = struct.unpack_from(">2H", data, base + strip_p + t * STRIP_REC)
+                if count < 3 or first + count > nidx:
+                    continue
+                used.append(stream[first : first + count])
+                for k in range(count - 2):
+                    a, b, c = corner_base + k, corner_base + k + 1, corner_base + k + 2
+                    # the models wind their strips the other way round from the world
+                    tris.append((b, a, c) if k % 2 == 0 else (a, b, c))
+                corner_base += count
+        if not tris:
+            continue
+        corners = np.concatenate(used)
+        uniq, inverse = np.unique(corners, return_inverse=True)
+        tri = inverse.reshape(-1)[np.array(tris, np.int64)]
+        keep = (tri[:, 0] != tri[:, 1]) & (tri[:, 1] != tri[:, 2]) & (tri[:, 0] != tri[:, 2])
+        tri = tri[keep]
+        if not len(tri):
+            continue
+        v = ev[uniq]
+        out.batches.append(
+            ModelBatch(
+                shader_id,
+                np.ascontiguousarray(positions[v[:, 0]]),
+                np.ascontiguousarray(normals[v[:, 1]]),
+                np.ascontiguousarray(uvs[v[:, 2]]),
+                tri.ravel().astype(np.uint32),
+            )
+        )
+    return out
+
+
+def shader_by_id(m: Map, shader_id: int) -> int | None:
+    """The texture id a shader (by its hash) binds, through ``Map.shader_ids``."""
+    idx = m.shader_ids.get(shader_id)
+    return None if idx is None else m.shader_textures.get(idx)
