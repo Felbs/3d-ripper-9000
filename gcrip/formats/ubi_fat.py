@@ -45,7 +45,7 @@ def is_fat(head: bytes) -> bool:
     return (
         len(head) >= 32
         and head[:13] == b"\x01\x01\0\0\0\x01\0\0\0\0\0\0\0"
-        and b"/gamedata/" in head[:64]
+        and head[29:30] == b"/"  # the root directory's path, "/gamedata/" or "/ar..."
     )
 
 

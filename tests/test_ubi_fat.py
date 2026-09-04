@@ -122,3 +122,10 @@ def test_tsd_pictures_decode_in_pc_layouts():
     c4 = ubi_geoobj.tsd(build_tsd(0x07))
     assert c4[0, 0].tolist() == [255, 0, 0, 255] and c4[0, 1].tolist() == [0, 255, 0, 255]
     assert ubi_geoobj.tsd(bytes(400)) is None
+
+
+def test_tsd_members_are_textures_on_their_own():
+    data = build_tsd(ubi_geoobj.TSD_RGBA8)
+    assert geo_plugin.detect("world/graphics/textures/a/b.tsd", data[:16], len(data))
+    scenes = geo_plugin.extract(data, "world/graphics/textures/a/b.tsd", None)
+    assert scenes and scenes[0].extras["textures_only"] and "b" in scenes[0].textures

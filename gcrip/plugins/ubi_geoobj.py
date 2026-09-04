@@ -14,7 +14,21 @@ NAME = "ubi_geoobj"
 
 
 def detect(path: str, head: bytes, size: int) -> bool:
-    return path.lower().endswith("geoobj.bin") and ubi_geoobj.is_geoobj(head, size)
+    low = path.lower()
+    if low.endswith(".tsd"):
+        return ubi_geoobj.is_tsd(head, size)
+    return low.endswith("geoobj.bin") and ubi_geoobj.is_geoobj(head, size)
+
+
+def _texture_scene(data: bytes, path: str) -> list[Scene]:
+    rgba = ubi_geoobj.tsd(data)
+    if rgba is None:
+        return []
+    name = posixpath.basename(path).rsplit(".", 1)[0]
+    scene = Scene(name=name)
+    scene.textures[name[:64]] = rgba
+    scene.extras = {"textures_only": True, "format": "ubi_tsd"}
+    return [scene]
 
 
 def _stem(element: ubi_geoobj.Element) -> str:
@@ -46,6 +60,8 @@ def _picture(src, path: str, material: str, cache: dict) -> np.ndarray | None:
 
 
 def extract(data: bytes, path: str, src) -> list[Scene]:
+    if path.lower().endswith(".tsd"):
+        return _texture_scene(data, path)
     out = []
     seen: dict[str, int] = {}
     pictures: dict = {}

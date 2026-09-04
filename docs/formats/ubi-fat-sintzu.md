@@ -41,6 +41,16 @@ GX-tiled reading gives noise; the linear DXT1 reading gives the loading screen's
 cases.  Pictures are named after the materials that use them (`bikeBody2` ->
 `bikebody2.tsd`), which is how the plugin binds them.
 
+## Donald Duck: Goin' Quackers and Tarzan Untamed use the same archive
+
+27 and 3 `.fat`/`.000` pairs (`gamedata/binary/big/Azt/Ac_Bonus.fat` ...), root path `/ar...`
+rather than `/gamedata/`, the same LZO blocks, `.tsd` pictures (decoded on their own now, as
+are Vengeance's) and a `3d/gli/geoobj.bin` a level whose records are **not** Sin Tzu's: the
+vertex run is 24-byte **big-endian** `f32 x y z, f32 a b c` (a, b, c not unit - Vengeance's
+24-byte records again) behind a byte-packed header, followed by `u16` index data.  Four discs
+share that older layout (Donald Duck, Tarzan, Vengeance's `.flt`, and likely more Ubisoft
+Montreal titles of 2000-2002); reading it is the next step here.
+
 ## Open
 
 Vengeance's `.flt` flat files (`mac` header, `^VisualMaterial:` / `^GameMaterial:` names)
