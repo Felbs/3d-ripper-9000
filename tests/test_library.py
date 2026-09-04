@@ -24,7 +24,7 @@ def _write(root, gid, models, batch_extra=None):
 
 def _catalog(root):
     html = (root / "library.html").read_text(encoding="utf-8")
-    games = json.loads(re.search(r"const GAMES=(\[.*?\]), STATS=", html, re.S).group(1))
+    games = json.loads(re.search(r"GAMES=(\[.*?\]), STATS=", html, re.S).group(1))
     stats = json.loads(re.search(r"STATS=(\{.*?\});", html, re.S).group(1))
     return html, games, stats
 
@@ -80,8 +80,13 @@ def test_build_index_bakes_the_catalog(tmp_path):
     assert a["top"][0]["g"] == "AAAA/a/big.gltf"  # .gltf path for the /glb 3D viewer
     b = next(g for g in games if g["id"] == "BBBB")
     assert b["hero"] is None and b["top"] == [] and b["tris"] == 0
-    # the page is self-contained and carries the viewer + endpoint wiring
+    # the page is self-contained and carries the viewer + refresh wiring
     assert "model-viewer" in html and "/glb?path=" in html
+    assert 'id="refresh"' in html and "/catalog.json" in html
+
+    # build_catalog returns the same data the page bakes, for the served /catalog.json refresh
+    cat = library.build_catalog(tmp_path)
+    assert cat["stats"] == stats and [g["id"] for g in cat["games"]] == [g["id"] for g in games]
 
 
 def test_missing_hero_thumb_is_skipped(tmp_path):

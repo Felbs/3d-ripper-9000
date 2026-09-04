@@ -73,8 +73,9 @@ def _game_entry(root: Path, row: dict) -> dict | None:
     return entry
 
 
-def build_index(root: Path) -> Path:
-    """Write ``library.html`` into ``root`` from the metadata JSONs; return its path."""
+def build_catalog(root: Path) -> dict:
+    """The `{games, stats}` catalog from the metadata JSONs - the served ``/catalog.json``
+    body and the data baked into ``library.html``."""
     rows = []
     with (root / "batch_results.jsonl").open(encoding="utf-8") as fh:
         for line in fh:
@@ -90,8 +91,14 @@ def build_index(root: Path) -> Path:
         "tris": sum(g["tris"] for g in games),
         "tex": sum(g["textures"] for g in games),
     }
-    out = _TEMPLATE.replace("__DATA__", json.dumps(games, separators=(",", ":"))).replace(
-        "__STATS__", json.dumps(stats)
+    return {"games": games, "stats": stats}
+
+
+def build_index(root: Path) -> Path:
+    """Write ``library.html`` into ``root`` from the metadata JSONs; return its path."""
+    cat = build_catalog(root)
+    out = _TEMPLATE.replace("__DATA__", json.dumps(cat["games"], separators=(",", ":"))).replace(
+        "__STATS__", json.dumps(cat["stats"])
     )
     dest = root / "library.html"
     dest.write_text(out, encoding="utf-8")
@@ -111,10 +118,22 @@ def serve_library(root: Path, *, port: int = 8765, blender: str | None = None, o
 
     class LibraryHandler(base):  # type: ignore[valid-type,misc]
         def do_GET(self):  # noqa: N802 - redirect the root to the library, keep every endpoint
+            path = self.path.split("?", 1)[0]
             if self.path == "/" or self.path.startswith("/?"):
                 self.send_response(302)
                 self.send_header("Location", f"/library.html?fresh={int(time.time() * 1000)}")
                 self.end_headers()
+                return None
+            if path == "/catalog.json":
+                # on demand only (the page's Refresh button) - one rescan of the metadata
+                # JSONs, so it is a click, never a poll, keeping disc load off the rip
+                body = json.dumps(build_catalog(root)).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
                 return None
             return super().do_GET()
 
@@ -184,17 +203,22 @@ footer{color:#55555f;font-size:.72rem;padding:1.5rem 1.1rem;border-top:1px solid
   </select>
   <span class="chip" data-f="geo">Has models</span><span class="chip" data-f="tex">Textured</span>
   <span class="chip" data-f="skin">Skinned</span><span class="chip" data-f="anim">Animated</span>
+  <span class="chip" id="refresh" title="Rescan the dump for newly ripped games">↻ Refresh</span>
 </div></header>
 <main><div class="grid" id="grid"></div><div class="empty" id="empty" hidden>No games match.</div></main>
 <footer id="foot"></footer>
 <div id="modal"><div class="bar"><b id="mvname"></b><a id="mvdl" href="#" download>Download .glb</a><span class="x" onclick="closeMV()">×</span></div><div id="mv"></div></div>
 <script>
-const GAMES=__DATA__, STATS=__STATS__;
+let GAMES=__DATA__, STATS=__STATS__;
 const served=location.protocol==="http:"||location.protocol==="https:";
 const fmt=n=>n>=1e6?(n/1e6).toFixed(1)+"M":n>=1e3?(n/1e3).toFixed(0)+"k":(""+n);
 const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-document.getElementById("sub").textContent=`${STATS.with_geo} of ${STATS.games} discs with geometry`;
-document.getElementById("statbar").innerHTML=[["Games",STATS.games],["With geometry",STATS.with_geo],["Models",fmt(STATS.models)],["Triangles",fmt(STATS.tris)],["Textures",fmt(STATS.tex)]].map(([k,v])=>`<span class="stat">${k} <b>${v}</b></span>`).join("");
+function drawStats(){document.getElementById("sub").textContent=`${STATS.with_geo} of ${STATS.games} discs with geometry`;
+document.getElementById("statbar").innerHTML=[["Games",STATS.games],["With geometry",STATS.with_geo],["Models",fmt(STATS.models)],["Triangles",fmt(STATS.tris)],["Textures",fmt(STATS.tex)]].map(([k,v])=>`<span class="stat">${k} <b>${v}</b></span>`).join("");}
+drawStats();
+const refresh=document.getElementById("refresh");
+if(served){refresh.onclick=async()=>{refresh.textContent="↻ …";try{const r=await fetch("/catalog.json",{cache:"no-store"});const c=await r.json();GAMES=c.games;STATS=c.stats;drawStats();render();}catch(e){alert("Refresh failed: "+e);}refresh.textContent="↻ Refresh";};}
+else refresh.style.display="none";
 document.getElementById("foot").innerHTML=served?"Served locally — click any model thumbnail to preview it in 3D, or open a game's full report. Nothing is uploaded.":"Opened from disk — click a game to preview its top models, or open its full report. For live 3D preview, run <code>gcrip library</code> to serve the folder.";
 const grid=document.getElementById("grid"),empty=document.getElementById("empty"),q=document.getElementById("q"),sortSel=document.getElementById("sort");
 const filters={geo:false,tex:false,skin:false,anim:false};let expanded=null,mvLoaded=false;
