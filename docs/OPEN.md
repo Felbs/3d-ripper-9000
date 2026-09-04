@@ -15,8 +15,9 @@ a member.  The decoder that ran on from block one was inflating block two's head
 The `.bah` beside the `.bad` (`Bark 1.06`) is the directory: 2,113 / 6,796 / 2,591 named
 members, every one inflating to its declared size.  `.bog` textures (`cBogFile`, an ARGB
 palette before the GX tiles) and `.rom` models (`cModelFile`: materials by name, triangle
-meshes over f32 vertices, bicubic Bezier patches for the car bodies) ship; the `.row` worlds
-(`cWorld::Load`, a node tree of `cWorldMesh`) are next.  See
+meshes over f32 vertices, bicubic Bezier patches for the car bodies) and `.row` worlds
+(`cWorld::LoadNode`: a node tree whose leaves hold triangle meshes and track patches - the
+Hot Wheels `clng` track walks all 225 nodes to its last byte, 43,971 triangles) ship.  See
 [formats/climax-bad.md](formats/climax-bad.md).
 
 ## Closed 2026-09-03: Terminal Reality `_dfm` (BloodRayne, Blowout)

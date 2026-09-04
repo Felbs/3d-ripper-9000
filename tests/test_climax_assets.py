@@ -107,3 +107,84 @@ def test_the_rom_plugin_binds_bog_textures_by_material_name():
     (scene,) = rom_plugin.extract(files["Cars/ATC/Body.rom"], "Cars/ATC/Body.rom", Src())
     assert scene.materials[0].texture == "Tpage2ATC" and "Tpage2ATC" in scene.textures
     assert scene.extras["points"] == ["frwheelcentre"]
+
+
+# -- .row worlds ---------------------------------------------------------------------------
+
+
+def row_mesh(texture: int, tris, verts, patches=0) -> bytes:
+    from gcrip.formats import climax_row
+
+    head = struct.pack(
+        ">IiiiIIIIiiii", 0x400, texture, -1, -1, len(tris), len(verts), patches, 0, -1, -1, -1, -1
+    )
+    body = b"".join(struct.pack(">3I", *t) for t in tris)
+    for x, y, z in verts:
+        body += struct.pack(">12f", x, y, z, 0, 1, 0, x, z, 0, 0, 0, 0) + bytes([10, 20, 30, 255])
+    for _ in range(patches):
+        rec = bytearray(climax_row.PATCH)
+        grid = [(i / 3, j / 3) for i in range(4) for j in range(4)]
+        struct.pack_into(">16f", rec, 12, *(x for x, _ in grid))
+        struct.pack_into(">16f", rec, 12 + 64, *(0.0 for _ in grid))
+        struct.pack_into(">16f", rec, 12 + 128, *(z for _, z in grid))
+        struct.pack_into(">8f", rec, 12 + 192, 0, 0, 1, 0, 1, 1, 0, 1)
+        body += bytes(rec)
+    return head + body
+
+
+def row_node(meshes: bytes, children=(0, 0), nmesh=0) -> bytes:
+    return (
+        struct.pack(">I", nmesh)
+        + struct.pack(">4f", 0, 0, 0, 0)
+        + struct.pack(">6f", -1, -1, -1, 1, 1, 1)
+        + bytes(children)
+        + bytes(2)
+        + meshes
+    )
+
+
+def row() -> bytes:
+    from gcrip.formats import climax_row
+
+    head = bytearray(climax_row.HEADER)
+    head[:8] = b"ROW 2.26"
+    tex = bytearray(climax_row.TEXTURE)
+    tex[:9] = b"clng_rock"
+    anim = b"flashc".ljust(32, b"\0")
+    struct.pack_into(">10I", head, 0x10, 1, 0, 0, 0, 0, 0, 0, 0, 1, 3)
+    leaf_a = row_node(row_mesh(0, [(0, 1, 2)], [(0, 0, 0), (1, 0, 0), (0, 0, 1)]), nmesh=1)
+    leaf_b = row_node(row_mesh(0, [], [], patches=1), nmesh=1)
+    root = row_node(b"", children=(1, 1))
+    return bytes(head) + bytes(tex) + anim + root + leaf_a + leaf_b
+
+
+def test_the_world_tree_walks_to_the_last_byte():
+    from gcrip.formats import climax_row
+
+    data = row()
+    assert climax_row.is_row(data[:64], len(data))
+    w = climax_row.parse(data)
+    assert w.warnings == [] and w.nodes == 3 and w.textures == ["clng_rock"]
+    assert [m.patches for m in w.meshes] == [0, 1]
+    tri, patch = w.meshes
+    assert tri.indices.tolist() == [0, 1, 2] and tri.colors[0].tolist() == [10, 20, 30, 255]
+    assert tri.uvs[1].tolist() == [1.0, 0.0]
+    assert np.allclose(patch.uvs[0], [0, 0]) and np.allclose(patch.uvs[-1], [1, 1])
+
+
+def test_the_row_plugin_merges_meshes_by_texture():
+    from gcrip.plugins import climax_row as plugin
+
+    data = row()
+    assert plugin.detect("tracks/clng/cache/clng.row", data[:64], len(data))
+
+    class Src:
+        by_path = {}
+
+        def get(self, p):
+            raise KeyError(p)
+
+    (scene,) = plugin.extract(data, "tracks/clng/cache/clng.row", Src())
+    assert len(scene.primitives) == 1 and scene.materials[0].name == "clng_rock"
+    assert scene.extras["patches"] == 1 and scene.extras["nodes"] == 3
+    assert scene.primitives[0].colors is None  # a patch carries no colours, so none are kept

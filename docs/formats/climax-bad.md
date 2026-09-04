@@ -262,3 +262,15 @@ Bezier patches (12 bytes, f32 x[16], y[16], z[16] control points, six more zero 
 u32s and 56-byte vertices (f32 position, normal, uv, uv2, four words).  The ATV body walks
 to its last byte: 12 meshes, 1,156 triangles with the 21 patches tessellated 4x4, normal
 agreement 0.93, a quad with seat, fenders and pegs.
+
+### `.row` worlds - `cWorld::Load`, `LoadNode`, `cWorldMesh::Load`, `SetVertices(cWorldVertexFile*)`
+
+Counts from +0x10: textures (0x8c file records, the `.bog` stem first), mirrors (0x44),
+markers (0xbc, `start0`), 0x2c, 0x4c, 0x80, 0x68, projections (0x60), texture-anim names
+(0x20), and the node count.  The tree follows depth first: a 48-byte node (`u32 meshes, f32,
+centre, min, max, u8 has_child[2]`) is a leaf when it has meshes - each a 48-byte header
+(`u32 flags, i32 texture[3], u32 triangles, vertices, patches, patches2, i32 anims[4]`)
+followed by u32 triangle triples, 52-byte vertices (f32 position, normal, three uv pairs,
+RGBA bytes) and 604-byte patches (the ROM patch plus four corner uvs at +204).  Hot Wheels'
+`clng` track: 225 nodes exactly as declared, 113 leaves, 765 meshes, 10,307 triangles plus
+1,052 patches, and the walk ends on the file's last byte.
