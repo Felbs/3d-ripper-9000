@@ -202,6 +202,7 @@ flowchart LR
     end
     subgraph BLITZ["Blitz Games"]
         GCP[".gcp pack index<br/>plugins.blitz"] --> TBA["actors .tba<br/>plugins.blitz_actor"]
+        TBA --> TAZ["2002 layout (Taz: Wanted)<br/>signature-anchored DLs<br/>formats.taz_actor"]
         GCP --> TBT["textures .tbt<br/>plugins.blitz_tbt"]
     end
     subgraph BOLT["Mass Media"]

@@ -217,3 +217,76 @@ def test_format_seventeen_is_c8_over_an_rgb565_palette():
     assert blitz_actor.TEX_PALETTE[17] == (9, 1, 256)
     with pytest.raises(blitz_actor.TextureError):
         blitz_actor.texture(_indexed_texture(17)[:400])
+
+
+def _taz_actor(texture_crc: int = 0xBEEF) -> bytes:
+    """A minimal Taz-generation actor: header identity, one rigid mesh record, a batch
+    record carrying the texture CRC, and one signature-opened display list."""
+    from gcrip.formats import taz_actor
+
+    body = bytearray(0xD0)
+    body[6] = 1
+    struct.pack_into(">f", body, taz_actor.RADIUS_AT, 2.0)
+    struct.pack_into(">6f", body, taz_actor.BBOX_AT, -1, 1, -1, 1, -0.5, 0.5)
+    # batch: {prim_count, crc, 0, 0}
+    batch_at = len(body)
+    body += struct.pack(">4I", 1, texture_crc, 0, 0)
+    mesh_at = len(body)
+    body += bytes(24)  # the mesh record, patched below
+    body += b"\0" * (-len(body) % 32)
+    dl_at = len(body)
+    dl = bytearray(taz_actor.DL_SIG)  # the CP vertex-descriptor load every list opens with
+    dl += bytes([0x98]) + struct.pack(">H", 4)
+    for v in (0, 1, 3, 2):
+        dl += struct.pack(">4H", v, v, 0, v)
+    body += dl + b"\0" * (-len(dl) % 32)
+    dl_size = len(body) - dl_at
+    pos_at = len(body)
+    for p in ((-1, -1, 0), (1, -1, 0), (1, 1, 0), (-1, 1, 0)):
+        body += struct.pack(">3f", *p)
+    nrm_at = len(body)
+    for _ in range(4):
+        body += struct.pack(">3f", 0, 0, 1)
+    tex_at = len(body)
+    for uv in ((0, 0), (1, 0), (1, 1), (0, 1)):
+        body += struct.pack(">2f", *uv)
+    clr_at = len(body)
+    body += bytes([255, 255, 255, 255]) * 4
+    struct.pack_into(">6I", body, mesh_at, pos_at, nrm_at, tex_at, clr_at, dl_at, dl_size)
+    struct.pack_into(">I", body, taz_actor.SIZE_AT, len(body))
+    assert batch_at  # the batch table sits before the mesh record, as on the real discs
+    return bytes(body)
+
+
+def test_taz_actor_reads_the_2002_layout():
+    from gcrip.formats import taz_actor
+
+    data = _taz_actor()
+    assert taz_actor.looks_like(data)
+    actor = taz_actor.parse(data, {0xBEEF})
+    assert len(actor.meshes) == 1
+    md = actor.meshes[0]
+    assert md.texture == 0xBEEF  # the batch record's CRC reaches the mesh
+    assert len(md.indices) // 3 == 2  # the quad strip
+    assert md.positions.shape == (4, 3) and md.normals.shape == (4, 3)
+    assert md.uvs is not None and md.uvs.max() == 1.0
+    np.testing.assert_allclose(np.linalg.norm(md.normals, axis=1), 1.0)
+    # positions land inside the header bbox - the oracle that admitted the mesh
+    assert md.positions[:, 0].min() >= -1 and md.positions[:, 0].max() <= 1
+
+
+def test_taz_actor_rejects_non_taz():
+    from gcrip.formats import blitz_actor as ba
+    from gcrip.formats import taz_actor
+
+    assert not taz_actor.looks_like(b"\0" * 64)
+    assert not taz_actor.looks_like(_dl_actor())  # a Bratz actor is not the Taz layout
+    with pytest.raises(ba.ActorError):
+        taz_actor.parse(bytes(0x200), None)
+
+
+def test_plugin_falls_back_to_taz_layout():
+    data = _taz_actor()
+    scenes = plugin.extract(data, "objects/thing.obe.00000001.tba", None)
+    assert len(scenes) == 1 and len(scenes[0].primitives) == 1
+    assert len(scenes[0].primitives[0].indices) // 3 == 2

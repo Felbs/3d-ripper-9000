@@ -78,11 +78,21 @@ def _textures(src) -> _Textures | None:
 
 
 def extract(data: bytes, path: str, src) -> list[Scene]:
-    actor = blitz_actor.parse(data)
+    textures_early = _textures(src)
+    try:
+        actor = blitz_actor.parse(data)
+        if not actor.meshes:
+            raise blitz_actor.ActorError("no meshes in the Bratz layout")
+    except blitz_actor.ActorError:
+        # the 2002 generation (Taz: Wanted) - same engine, older resource layout
+        from gcrip.formats import taz_actor
+
+        crcs = set(textures_early._index()) if textures_early is not None else None
+        actor = taz_actor.parse(data, crcs)
     stem = posixpath.basename(path).split(".")[0]
     scene = Scene(name=stem)
     scene.warnings += actor.warnings
-    textures = _textures(src)
+    textures = textures_early
     materials: dict[tuple[int, int], int] = {}
     for md in actor.meshes:
         key = (md.texture, md.texture2)
