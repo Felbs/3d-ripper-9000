@@ -90,6 +90,35 @@ def _stem(path: str) -> str:
     return "".join(c if c.isalnum() or c in "-_" else "_" for c in leaf)[:48]
 
 
+SHADER_LINK = 4  # an rdms section's word at +4 reaches its gshd
+SURF_LINK = 0x5C  # a gshd section's word at +0x5c reaches its surf
+
+
+def shader_textures(data: bytes, found: list[Section] | None = None) -> dict[int, int]:
+    """rdms section index -> surf section index, through the shader.
+
+    Every ``rdms`` carries a **self-relative** word at +4 (the ``0xffffff1c``-looking one)
+    that lands on a ``gshd`` section - its shader - and every ``gshd`` a self-relative word at
+    +0x5c that lands on the ``surf`` it samples.  On Samurai Jack's level files 73 of 73
+    ``rdms`` resolve this way (ladder, test_bridge, test_platforms).  Characters' ``bmsh``
+    reach their ``gshd`` the same way from their batch records.
+    """
+    found = sections(data) if found is None else found
+    by_offset = {s.offset: (i, s.tag) for i, s in enumerate(found)}
+    out: dict[int, int] = {}
+    for i, s in enumerate(found):
+        if s.tag != "rdms" or s.offset + SHADER_LINK + 4 > len(data):
+            continue
+        gshd = s.offset + SHADER_LINK + struct.unpack_from(">i", data, s.offset + SHADER_LINK)[0]
+        if by_offset.get(gshd, (None, None))[1] != "gshd" or gshd + SURF_LINK + 4 > len(data):
+            continue
+        surf = gshd + SURF_LINK + struct.unpack_from(">i", data, gshd + SURF_LINK)[0]
+        hit = by_offset.get(surf)
+        if hit and hit[1] == "surf":
+            out[i] = hit[0]
+    return out
+
+
 def expand(data: bytes) -> list[tuple[str, bytes]]:
     """One member a section.
 
@@ -104,11 +133,16 @@ def expand(data: bytes) -> list[tuple[str, bytes]]:
         for mesh in link.meshes:
             owners.setdefault(mesh, link.name or f"node{link.offset}")
     out = []
-    for i, s in enumerate(sections(data)):
+    found = sections(data)
+    textures = shader_textures(data, found)
+    for i, s in enumerate(found):
         label = _stem(named[s.offset]) if s.offset in named else str(s.ident)
         if s.tag == "rdms" and s.offset in owners:
             # a mesh takes its node's name, so the parts of one object land together
             label = f"{_stem(owners[s.offset])}_{s.ident}"
+        if s.tag == "rdms" and i in textures:
+            # ... and names the surf member its shader samples, so the plugin can bind it
+            label = f"{label}_t{textures[i]:03d}"
         name = f"{i:03d}_{s.tag or 'sect'}_{label}.bin"
         out.append((name, data[s.offset : s.offset + s.size]))
     return out
@@ -163,9 +197,9 @@ def index_entries(data: bytes) -> list[IndexEntry]:
 
 @dataclass
 class NodeLink:
-    offset: int          # of the node section
-    name: str | None     # from the index, when the node is named
-    meshes: list[int]    # offsets of the rdms sections this node draws
+    offset: int  # of the node section
+    name: str | None  # from the index, when the node is named
+    meshes: list[int]  # offsets of the rdms sections this node draws
 
 
 def node_links(data: bytes) -> list[NodeLink]:

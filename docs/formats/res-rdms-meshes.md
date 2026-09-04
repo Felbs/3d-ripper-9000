@@ -142,3 +142,27 @@ that object's name.  `expand()` uses it, so the three parts of the bobblehead co
 `004_rdms_fx_hud_bobblehead_436.bin`, `005_rdms_fx_hud_bobblehead_420.bin` and
 `008_rdms_fx_hud_bobblehead_372.bin` instead of three unrelated numbers.  Assembling a level
 still needs the transform.
+
+## The textures bind (2026-09-04)
+
+The `0xffffff1c`-looking word at `rdms` +4 is not a constant: it is the format's usual
+**self-relative offset**, and it lands on a `gshd` section - the mesh's shader.  A `gshd`'s
+word at +0x5c lands the same way on the `surf` it samples.  On Samurai Jack's level files
+73 of 73 `rdms` resolve (`ladder`, `test_bridge`, `test_platforms`), and 71 of the 73 come out
+textured - the two that do not sample a 4,128-byte `surf` with one mip level and no palette
+bytes, which `res_surf` decodes to nothing.  `res.shader_textures` walks the two links,
+`expand()` suffixes the mesh member with `_tNNN` (the surf's section index) and the plugin
+binds the sibling `NNN_surf_*` member from the container.  Wave 58 re-rips the three discs.
+
+## Characters are `bmsh`, not `rdms` (2026-09-04, open)
+
+`characters/*.res` on Samurai Jack carry `surf`, `gshd`, **`bmsh`** (the skinned mesh, 7-95
+KB), `body` (248 bytes: a bone / bind block with 4x4 identity-ish matrices) and `banm`
+animations - no `rdms` at all, so the characters of all three discs are still unread.
+`bmsh` opens `u32 batches, u32 8, f32 scale (1/4096), u32 6, u32 0x28, u32 0x70, 0, 1, 0,
+u32, f32, 0` and then 0x28-byte batch records whose first word is a self-relative offset to
+the batch's `gshd` (`0xfffffcb0` from +0x30 lands on the first shader) and whose +0xc / +0x1c
+words reach tables near the section's end; after the records comes a bone-index list and
+`s16` position data with x = 0 rows.  There are **no GX display lists** in a `bmsh` (no
+`0x98` chains at any stride), so the triangles are an index list the CPU skins - the next
+thing to find.
