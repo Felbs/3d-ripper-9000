@@ -23,9 +23,12 @@ class LzoError(ValueError):
     pass
 
 
-def decompress(src: bytes, max_out: int | None = None) -> bytes:
-    """Decode one LZO1X stream. `max_out` (the known decompressed size) is only a guard."""
-    out = bytearray()
+def decompress(src: bytes, max_out: int | None = None, history: bytes = b"") -> bytes:
+    """Decode one LZO1X stream. `max_out` (the known decompressed size) is only a guard.
+    `history` is output that precedes this stream and that its matches may reach back into
+    (Ubisoft's ``deadbabe`` blocks continue each other that way)."""
+    out = bytearray(history)
+    base = len(history)
     n = len(src)
     ip = 0
     try:
@@ -127,11 +130,11 @@ def decompress(src: bytes, max_out: int | None = None) -> bytes:
                     t = src[ip]
                     ip += 1
                     state = "match"
-            if max_out is not None and len(out) > max_out:
+            if max_out is not None and len(out) - base > max_out:
                 raise LzoError("output exceeds expected size")
     except IndexError:
         raise LzoError(f"truncated LZO stream at byte {ip} of {n}") from None
-    return bytes(out)
+    return bytes(out[base:])
 
 
 def decompress_segmented(src: bytes, total: int, segment: int = 0x4000) -> bytes:
