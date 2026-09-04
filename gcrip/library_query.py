@@ -9,6 +9,7 @@ file's mtime so repeated queries in one session do not re-scan every game.
 from __future__ import annotations
 
 import json
+import threading as _threading
 import time as _time
 from pathlib import Path
 
@@ -17,13 +18,20 @@ from gcrip.library import build_catalog, game_models
 _cache: dict[str, object] = {"root": None, "mtime": None, "cat": None}
 
 
+_cat_lock = _threading.Lock()
+
+
 def catalog(root: Path) -> dict:
-    """The ``{games, stats}`` catalog, cached until ``batch_results.jsonl`` changes."""
+    """The ``{games, stats}`` catalog, cached until ``batch_results.jsonl`` changes.  The
+    rebuild is serialized: concurrent callers wait for one rebuild instead of stacking
+    full re-scans against a drive a rip may be using."""
     root = Path(root)
     batch = root / "batch_results.jsonl"
     mtime = batch.stat().st_mtime if batch.exists() else None
     if _cache["root"] != str(root) or _cache["mtime"] != mtime or _cache["cat"] is None:
-        _cache.update(root=str(root), mtime=mtime, cat=build_catalog(root))
+        with _cat_lock:
+            if _cache["root"] != str(root) or _cache["mtime"] != mtime or _cache["cat"] is None:
+                _cache.update(root=str(root), mtime=mtime, cat=build_catalog(root))
     return _cache["cat"]  # type: ignore[return-value]
 
 
@@ -116,11 +124,12 @@ def list_models(root: Path, game_id_or_title: str, *, limit: int = 100, offset: 
     }
 
 
-_model_cache: dict[str, tuple[float | None, list[dict]]] = {}
+_model_cache: dict[str, tuple[float | None, dict]] = {}
 
 
-def _models_cached(root: Path, gid: str) -> list[dict]:
-    """One game's model cards, cached against its ``rip_results.json`` mtime."""
+def game_models_cached(root: Path, gid: str) -> dict:
+    """One game's ``{id, models, total}``, cached against its ``rip_results.json`` mtime -
+    what the served ``/models.json`` returns, without re-reading an unchanged game."""
     rr = Path(root) / gid / "rip_results.json"
     try:
         mtime = rr.stat().st_mtime
@@ -128,9 +137,13 @@ def _models_cached(root: Path, gid: str) -> list[dict]:
         mtime = None
     hit = _model_cache.get(gid)
     if hit is None or hit[0] != mtime:
-        hit = (mtime, game_models(root, gid)["models"])
+        hit = (mtime, game_models(root, gid))
         _model_cache[gid] = hit
     return hit[1]
+
+
+def _models_cached(root: Path, gid: str) -> list[dict]:
+    return game_models_cached(root, gid)["models"]
 
 
 def search_models(

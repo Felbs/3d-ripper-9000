@@ -177,7 +177,9 @@ def serve_library(root: Path, *, port: int = 8765, blender: str | None = None, o
                 if not gid or not (root / gid).is_dir():
                     body = b'{"models":[],"total":0}'
                 else:
-                    body = json.dumps(game_models(root, gid)).encode()
+                    from gcrip import library_query as _lq
+
+                    body = json.dumps(_lq.game_models_cached(root, gid)).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
@@ -238,9 +240,12 @@ def serve_library(root: Path, *, port: int = 8765, blender: str | None = None, o
                 self.wfile.write(body)
                 return None
             if path == "/catalog.json":
-                # on demand only (the page's Refresh button) - one rescan of the metadata
-                # JSONs, so it is a click, never a poll, keeping disc load off the rip
-                body = json.dumps(build_catalog(root)).encode()
+                # served from the mtime cache: instant unless batch_results.jsonl changed,
+                # and a changed library rebuilds once behind a lock - repeated Refresh
+                # clicks can no longer stack full re-scans against a mid-rip drive
+                from gcrip import library_query as _lq
+
+                body = json.dumps(_lq.catalog(root)).encode()
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))
@@ -291,6 +296,18 @@ select{padding:.5rem;border-radius:8px;border:1px solid var(--edge);background:v
 .fl{float:right;cursor:pointer;opacity:.35;font-size:.8rem;line-height:1}
 .fl:hover{opacity:.9}.fl.on{opacity:1}
 .mcard.flagged{border-color:#7a3a3a}
+.dash{grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:.8rem}
+.panel{background:var(--panel);border:1px solid var(--edge);border-radius:11px;padding:.8rem .9rem}
+.panel h3{margin:.1rem 0 .6rem;font-size:.88rem;color:var(--txt)}
+.hbar{display:flex;align-items:center;gap:.5rem;margin:.22rem 0;font-size:.72rem;color:var(--dim)}
+.hbar .lbl{width:11em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;cursor:pointer}
+.hbar .lbl:hover{color:var(--accent)}
+.hbar .bar{height:.72rem;border-radius:4px;background:linear-gradient(90deg,#3c5686,#7fb4ff);min-width:2px}
+.hbar .val{color:var(--txt)}
+.bignum{font-size:1.6rem;font-weight:700;color:var(--txt)}
+.bignum small{font-size:.7rem;font-weight:400;color:var(--dim);display:block}
+.numgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:.7rem}
+#mpie svg{max-width:100%;height:auto}
 main{padding:1rem 1.1rem 4rem}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.8rem}
 .card{background:var(--panel);border:1px solid var(--edge);border-radius:11px;overflow:hidden;cursor:pointer;transition:border-color .12s,transform .12s}
@@ -322,7 +339,7 @@ footer{color:#55555f;font-size:.72rem;padding:1.5rem 1.1rem;border-top:1px solid
 <h1>GameCube 3D Model Library <small id="sub"></small></h1>
 <div class="stats" id="statbar"></div>
 <div class="controls">
-  <span class="seg"><span class="chip on" id="modeGames" data-mode="games">Games</span><span class="chip" id="modeModels" data-mode="models">Models</span></span>
+  <span class="seg"><span class="chip on" id="modeGames" data-mode="games">Games</span><span class="chip" id="modeModels" data-mode="models">Models</span><span class="chip" id="modeStats" data-mode="stats">📊 Stats</span></span>
   <input id="q" placeholder="Search games…  (title or disc filename)" autocomplete="off">
   <select id="sort">
     <option value="tris">Sort: most triangles</option><option value="models">Sort: most models</option>
@@ -363,11 +380,11 @@ function drawCats(){
 }
 drawCats();
 document.querySelectorAll(".chip[data-f]").forEach(c=>c.onclick=()=>{filters[c.dataset.f]=!filters[c.dataset.f];c.classList.toggle("on");render();});
-const modeG=document.getElementById("modeGames"),modeM=document.getElementById("modeModels");
-function setMode(m){mode=m;if(gameFromHash())history.replaceState(null,"",location.pathname+location.search);modeG.classList.toggle("on",m==="games");modeM.classList.toggle("on",m==="models");
+const modeG=document.getElementById("modeGames"),modeM=document.getElementById("modeModels"),modeS=document.getElementById("modeStats");
+function setMode(m){mode=m;if(gameFromHash())history.replaceState(null,"",location.pathname+location.search);modeG.classList.toggle("on",m==="games");modeM.classList.toggle("on",m==="models");modeS.classList.toggle("on",m==="stats");
   q.placeholder=m==="models"?"Search models…  (character / weapon / part names across every game)":"Search games…  (title or disc filename)";
   render();}
-modeG.onclick=()=>setMode("games");modeM.onclick=()=>setMode("models");
+modeG.onclick=()=>setMode("games");modeM.onclick=()=>setMode("models");modeS.onclick=()=>setMode("stats");
 q.oninput=render;sortSel.onchange=render;
 function card(g){
   const icons=(g.skinned?"⤳":"")+(g.clips>0?" ▶":"");
@@ -397,7 +414,7 @@ function modelKindOK(m){const kc=kindCats();if(cats.has("rigged")&&!m.r)return f
 function gameHasFlag(g){for(const k of Object.keys(FLAGS))if(k.startsWith(g.id+"/"))return true;return false;}
 function catGameOK(g){for(const k of cats){if(k==="rigged"){if(!(g.rigged>0))return false;}else if(k==="flagged"){if(!gameHasFlag(g))return false;}else if(!(g.kinds&&g.kinds[k]>0))return false;}return true;}
 function gameFromHash(){const m=location.hash.match(/^#g=(.+)$/);return m?decodeURIComponent(m[1]):null;}
-function render(){const gid=gameFromHash();if(gid)return renderGame(gid);if(mode==="models")return renderModels();renderGames();}
+function render(){const gid=gameFromHash();if(gid)return renderGame(gid);if(mode==="models")return renderModels();if(mode==="stats")return renderStats();renderGames();}
 addEventListener("hashchange",()=>{q.value="";render();});
 async function renderGame(gid){
   const g=GAMES.find(x=>x.id===gid);
@@ -462,6 +479,53 @@ async function renderModels(){
   grid.querySelectorAll(".mcard").forEach(c=>{c.onclick=()=>{if(served&&c.classList.contains("v"))openMV(list[+c.dataset.i]);};});
   grid.querySelectorAll(".gjump").forEach(t=>t.onclick=e=>{e.stopPropagation();location.hash="g="+encodeURIComponent(t.dataset.g);});
   grid.querySelectorAll(".fl").forEach(el=>{el.onclick=e=>{e.stopPropagation();const card=el.closest(".mcard");toggleFlag(list[+card.dataset.i],el);};});
+}
+let mermaidLoaded=false;
+function ensureMermaid(cb){
+  if(mermaidLoaded)return cb();
+  const sc=document.createElement("script");
+  sc.src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js";
+  sc.onload=()=>{mermaidLoaded=true;window.mermaid.initialize({startOnLoad:false,theme:"dark",themeVariables:{pie1:"#7fb4ff",pie2:"#e08a8a",pie3:"#ffd98a",pie4:"#8ad0a0",pie5:"#c9a0e8",pie6:"#8ab6bd",pie7:"#b0b0be",pie8:"#6a7ba0",darkMode:true,fontFamily:"system-ui"}});cb();};
+  sc.onerror=()=>{};/* the CSS bars beside it carry the same numbers */
+  document.head.appendChild(sc);
+}
+function hbar(label,val,max,onclick){const w=max?Math.max(1,Math.round(val/max*100)):1;
+  return `<div class=hbar><span class=lbl title="${esc(label)}" ${onclick?`data-go="${esc(onclick)}"`:""}>${esc(label)}</span><span class=bar style="width:${w}%"></span><span class=val>${fmt(val)}</span></div>`;}
+function renderStats(){
+  empty.hidden=true;
+  const K=STATS.kinds||{},nf=Object.keys(FLAGS).length;
+  const geo=GAMES.filter(g=>g.tris>0);
+  const kindOrder=Object.entries(K).sort((a,b)=>b[1]-a[1]);
+  const kmax=kindOrder.length?kindOrder[0][1]:1;
+  const topG=[...GAMES].sort((a,b)=>b.tris-a.tris).slice(0,15);
+  const topM=[...GAMES].sort((a,b)=>b.models-a.models).slice(0,15);
+  const rigG=[...GAMES].filter(g=>g.rigged>0).sort((a,b)=>b.rigged-a.rigged).slice(0,15);
+  const pieRows=kindOrder.map(([k,v])=>`    "${k}" : ${v}`).join(String.fromCharCode(10));
+  grid.innerHTML=`<div class=dash>
+  <div class=panel><h3>The lake</h3><div class=numgrid>
+    <div class=bignum>${fmt(STATS.games)}<small>discs indexed</small></div>
+    <div class=bignum>${fmt(STATS.with_geo)}<small>with geometry</small></div>
+    <div class=bignum>${fmt(STATS.models)}<small>models</small></div>
+    <div class=bignum>${fmt(STATS.tris)}<small>triangles</small></div>
+    <div class=bignum>${fmt(STATS.tex)}<small>textures</small></div>
+    <div class=bignum>${fmt(STATS.rigged||0)}<small>rigged models</small></div>
+    <div class=bignum>${nf}<small>🚩 flagged for review</small></div>
+  </div>
+  <div style="margin-top:.8rem"><div class=hbar><span class=lbl>coverage</span><span class=bar style="width:${Math.round(STATS.with_geo/STATS.games*100)}%"></span><span class=val>${Math.round(STATS.with_geo/STATS.games*100)}%</span></div></div></div>
+  <div class=panel><h3>Models by kind — mermaid</h3><div id=mpie style="min-height:200px;color:var(--dim);font-size:.75rem">rendering…</div></div>
+  <div class=panel><h3>Models by kind — counts</h3>${kindOrder.map(([k,v])=>hbar(k,v,kmax)).join("")}</div>
+  <div class=panel><h3>Top games by triangles</h3>${topG.map(g=>hbar(g.title,g.tris,topG[0].tris,g.id)).join("")}</div>
+  <div class=panel><h3>Top games by model count</h3>${topM.map(g=>hbar(g.title,g.models,topM[0].models,g.id)).join("")}</div>
+  <div class=panel><h3>Most rigged characters</h3>${rigG.map(g=>hbar(g.title,g.rigged,rigG[0]?.rigged||1,g.id)).join("")}</div>
+  </div>`;
+  grid.querySelectorAll(".lbl[data-go]").forEach(el=>el.onclick=()=>{location.hash="g="+encodeURIComponent(el.dataset.go);});
+  ensureMermaid(async()=>{
+    try{
+      const src="pie showData"+String.fromCharCode(10)+pieRows;
+      const {svg}=await window.mermaid.render("piechart",src);
+      const el=document.getElementById("mpie");if(el)el.innerHTML=svg;
+    }catch(e){const el=document.getElementById("mpie");if(el)el.textContent="mermaid failed: "+e;}
+  });
 }
 function ensureMV(cb){
   if(mvLoaded)return cb();

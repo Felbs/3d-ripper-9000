@@ -77,3 +77,20 @@ count) filters models AND games to the flagged set.  `library_query.read_flags/s
 flagged_models` is the API - `flagged_models` joins flags with live catalog data and keeps
 orphaned flags visible as "(no longer in catalog)".  The MCP server exposes `flagged_models`
 so a session starts by reading the audit list and grouping it by game/format.
+
+## Stats dashboard + the frozen-Refresh fix (2026-09-04 night)
+
+**The freeze**: /catalog.json rebuilt the whole catalog per request (638 rip_results reads
+from D:) - minutes while a rip wave holds the drive, and repeated Refresh clicks stacked
+rebuilds.  Fixed: /catalog.json and /models.json now serve from `library_query`'s mtime
+caches (instant unless batch_results.jsonl / the game's rip_results.json changed) and the
+catalog rebuild is serialized behind a lock.  Measured: first call 18.8 s mid-cascade, then
+20 ms.
+
+**📊 Stats tab** ("the Palantir view"): headline telemetry (discs / with-geometry / models /
+triangles / textures / rigged / flagged + a coverage bar), a **mermaid pie** of models by
+kind (mermaid@10.9.1 via jsDelivr, dark theme, CSS-bar fallback numbers beside it), and
+top-15 bars for triangles, model count and rigged characters - every game bar clicks
+through to that game's page.  All computed client-side from the baked catalog: zero extra
+server load.  Template-escaping gotcha: JS template literals in the Python template must not
+contain real newlines - use String.fromCharCode(10) when building mermaid source.
