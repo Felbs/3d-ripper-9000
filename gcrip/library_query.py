@@ -114,6 +114,74 @@ def list_models(root: Path, game_id_or_title: str, *, limit: int = 100, offset: 
     }
 
 
+_model_cache: dict[str, tuple[float | None, list[dict]]] = {}
+
+
+def _models_cached(root: Path, gid: str) -> list[dict]:
+    """One game's model cards, cached against its ``rip_results.json`` mtime."""
+    rr = Path(root) / gid / "rip_results.json"
+    try:
+        mtime = rr.stat().st_mtime
+    except OSError:
+        mtime = None
+    hit = _model_cache.get(gid)
+    if hit is None or hit[0] != mtime:
+        hit = (mtime, game_models(root, gid)["models"])
+        _model_cache[gid] = hit
+    return hit[1]
+
+
+def search_models(
+    root: Path,
+    query: str = "",
+    *,
+    kind: str | None = None,
+    rigged: bool | None = None,
+    animated: bool | None = None,
+    game: str | None = None,
+    min_triangles: int = 0,
+    limit: int = 200,
+) -> dict:
+    """Model-level search across the whole library - "every sword", "rigged characters".
+
+    Matches the query against model names and game titles, filters by classified ``kind``
+    (:data:`gcrip.model_tags.KINDS`), rig/animation flags and triangle count, and returns flat
+    model cards each tagged with its game (``gid`` / ``title``).  Reads each game's cached
+    model list through :func:`gcrip.library.game_models`, so it touches only metadata JSONs.
+    """
+    from gcrip.model_tags import KINDS
+
+    q = query.strip().lower()
+    if kind is not None and kind not in KINDS:
+        return {"error": f"kind must be one of {', '.join(KINDS)}", "models": []}
+    out = []
+    games = catalog(root)["games"]
+    if game:
+        g = find_game(root, game)
+        games = [g] if g else []
+    for g in games:
+        if not g.get("nmodels"):
+            continue
+        title = g["title"]
+        title_hit = q and q in title.lower()
+        for m in _models_cached(root, g["id"]):
+            if kind is not None and m.get("k") != kind:
+                continue
+            if rigged is not None and bool(m.get("r")) != rigged:
+                continue
+            if animated is not None and bool(m.get("a")) != animated:
+                continue
+            if m.get("tris", 0) < min_triangles:
+                continue
+            if q and not title_hit and q not in m["n"].lower():
+                continue
+            out.append({**m, "gid": g["id"], "title": title})
+            if len(out) >= max(1, limit) * 4:
+                break
+    out.sort(key=lambda m: -m["tris"])
+    return {"models": out[: max(1, limit)], "total": len(out)}
+
+
 def pack_glb(root: Path, rel_gltf: str, dest: str | None = None) -> dict:
     """Pack ``<root>/<rel_gltf>`` (a model's ``g`` path) into a self-contained ``.glb`` and
     return where it was written."""

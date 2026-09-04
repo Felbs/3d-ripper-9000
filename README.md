@@ -55,11 +55,15 @@ In Blender the default *Solid* viewport shading hides textures - press **Z > Mat
 - `gcrip library "D:/3d dump/GameCube"` builds one page over **every** ripped game and serves
   it: search / sort / filter across the whole library, a hero thumbnail per game, and a click
   on any model thumbnail previews it **in 3D** in the browser (through the same on-the-fly
-  `.glb` packing). `--build-only` just writes `library.html` (works from `file://`, minus the
-  live 3D viewer).
+  `.glb` packing). Models are auto-classified into **categories** (characters / weapons /
+  vehicles / levels / props / UI / FX, plus a rigged facet) from their names and rigs
+  (`gcrip/model_tags.py`), and a **Models mode** searches every model across every game at
+  once (`/search_models.json`) - "every sword", "rigged characters". `--build-only` just
+  writes `library.html` (works from `file://`, minus the live 3D viewer and cross-game
+  search).
 - **MCP server** (`tools/library_mcp.py`, registered as `gcrip-library` in `.mcp.json`) exposes
-  the same library to an assistant as tools: `library_stats`, `search_games` (query + textured/
-  skinned/animated/has_models filters + sort), `list_models` (a game's models with thumbnail and
+  the same library to an assistant as tools: `library_stats`, `search_games`, `search_models` (cross-game model search with kind/
+  rig/animation filters), `list_models` (a game's models with thumbnail and
   glTF paths, paginated) and `model_glb` (pack one model into a self-contained `.glb`). Point it
   at a dump root with `GCRIP_DUMP_ROOT`; it reads only the metadata JSONs, so it is safe to query
   while a rip is running. The query logic lives in `gcrip/library_query.py`.

@@ -69,7 +69,9 @@ def test_build_index_bakes_the_catalog(tmp_path):
     assert dest.name == "library.html"
     html, games, stats = _catalog(tmp_path)
 
-    assert stats == {"games": 2, "with_geo": 1, "models": 2, "tris": 510, "tex": 2}
+    assert stats["games"] == 2 and stats["with_geo"] == 1 and stats["models"] == 2
+    assert stats["tris"] == 510 and stats["tex"] == 2
+    assert stats["rigged"] == 1  # big.gma is skinned
     a = next(g for g in games if g["id"] == "AAAA")
     # sorted most-triangles first, the geometry game leads
     assert games[0]["id"] == "AAAA"
@@ -162,7 +164,8 @@ def test_query_search_and_list(tmp_path):
     from gcrip import library_query as lq
 
     root = _mini_dump(tmp_path)
-    assert lq.stats(root) == {"games": 3, "with_geo": 2, "models": 3, "tris": 1240, "tex": 4}
+    st = lq.stats(root)
+    assert (st["games"], st["with_geo"], st["models"], st["tris"], st["tex"]) == (3, 2, 3, 1240, 4)
     # search by id/title and filters
     assert [g["id"] for g in lq.search_games(root, "wind")] == ["WIND"]
     assert [g["id"] for g in lq.search_games(root, "", skinned=True)] == ["WIND"]
@@ -187,3 +190,50 @@ def test_query_pack_glb_guards(tmp_path):
     assert "error" in lq.pack_glb(root, "../secret.gltf")
     assert "error" in lq.pack_glb(root, "WIND/a/link.png")
     assert "error" in lq.pack_glb(root, "WIND/a/nope.gltf")
+
+
+def test_model_tags_classifier():
+    from gcrip.model_tags import KINDS, classify, tags
+
+    assert classify("gun_pistol") == "weapon"
+    assert classify("steelsword.gs") == "weapon"  # compound names hit via substrings
+    assert classify("level3_terrain.bsp") == "level"
+    assert classify("hud_icon_health") == "ui"
+    assert classify("racecar_01") == "vehicle"
+    assert classify("particle_flame_fx") == "effect"
+    assert classify("coin_gold") == "prop"
+    # precision: short ambiguous fragments must not fire inside other words
+    assert classify("command_center") != "weapon"
+    # the rig is a character signal when the name says nothing
+    assert classify("block0123.bin", skinned=True) == "character"
+    assert classify("block0123.bin") == "unknown"
+    # a skinned mesh with a weak level/prop name hit is still a character
+    assert classify("stage_actor_body", skinned=True) == "character"
+    t = tags("boss_dragon", skinned=True, animated=True)
+    assert t == {"kind": "character", "rigged": True, "animated": True}
+    assert t["kind"] in KINDS
+
+
+def test_query_search_models(tmp_path):
+    from gcrip import library_query as lq
+
+    root = _mini_dump(tmp_path)
+    # model cards carry the classification facets
+    lm = lq.list_models(root, "WIND")
+    assert {m["n"]: m["k"] for m in lm["models"]} == {
+        "link.bdl": "character",
+        "boat.bdl": "vehicle",
+    }
+    assert lm["models"][0]["r"] is True  # link is rigged
+    # search across every game, tagged with the owning game
+    r = lq.search_models(root, "boat")
+    assert r["total"] == 1 and r["models"][0]["gid"] == "WIND" and r["models"][0]["k"] == "vehicle"
+    # kind and rig filters
+    assert lq.search_models(root, "", kind="vehicle")["total"] == 1
+    assert lq.search_models(root, "", rigged=True)["models"][0]["n"] == "link.bdl"
+    assert lq.search_models(root, "", kind="nonsense").get("error")
+    # a game-title query returns that game's models
+    assert lq.search_models(root, "game wind")["total"] == 2
+    # per-game kind counts reach the catalog for the page's category chips
+    g = lq.find_game(root, "WIND")
+    assert g["kinds"] == {"character": 1, "vehicle": 1} and g["rigged"] == 1

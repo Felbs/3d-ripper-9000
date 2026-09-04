@@ -36,3 +36,22 @@ it into assistant tools:
   (the only writing tool); guards the path to inside the dump root and to a real `.gltf`.
 
 All reads hit only the metadata JSONs, so it is safe to query while a rip is running.
+
+## Faceted model search (2026-09-04, evening)
+
+`gcrip/model_tags.py` classifies every model into a **kind** - character / weapon / vehicle /
+level / prop / ui / effect / unknown - from its name+path tokens (whole-word keyword tables,
+plus substring matches for long unambiguous tokens so `steelsword` hits) and the rig: a skinned
+or animated mesh with no name signal is a character, and a rig outweighs a weak level/prop name
+hit.  Precision over recall: ~36% of models classify on the real library (29% character, and
+weapons/vehicles/levels/ui in the hundreds), the numeric-named rest stay `unknown` rather than
+guessed.
+
+Model cards gain `k` (kind), `r` (rigged), `a` (animated); game entries gain per-game `kinds`
+counts + `rigged`/`animated` totals; stats gains library-wide `kinds`.  The page gains a
+**Games | Models mode toggle**, category chips with live counts (chips AND together; rigged is
+its own facet), kind badges on model cards, and Models mode searches the whole library through
+the served `/search_models.json` (query + kind + rigged + animated + game + min_tris; from
+`file://` it degrades to searching the baked top-24 strips).  `library_query.search_models`
+is the same engine for the MCP server (`search_models` tool) - per-game model lists cached on
+each `rip_results.json` mtime (first scan ~30 s over 638 games, then ~30 ms).

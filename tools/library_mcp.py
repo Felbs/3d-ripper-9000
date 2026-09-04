@@ -66,6 +66,34 @@ def list_models(game: str, limit: int = 100, offset: int = 0) -> dict:
 
 
 @mcp.tool()
+def search_models(
+    query: str = "",
+    kind: str | None = None,
+    rigged: bool | None = None,
+    animated: bool | None = None,
+    game: str | None = None,
+    min_triangles: int = 0,
+    limit: int = 100,
+) -> dict:
+    """Search MODELS across every game - "every sword", "rigged characters", "level pieces".
+
+    ``kind`` is one of character | weapon | vehicle | level | prop | ui | effect | unknown
+    (heuristic, classified from the model's name plus its rig).  ``rigged``/``animated`` filter
+    on the skeleton and clips.  ``query`` matches model names and game titles; ``game`` limits
+    to one game (id or title).  Results are flat model cards tagged with their game."""
+    return lq.search_models(
+        ROOT,
+        query,
+        kind=kind,
+        rigged=rigged,
+        animated=animated,
+        game=game,
+        min_triangles=min_triangles,
+        limit=limit,
+    )
+
+
+@mcp.tool()
 def model_glb(gltf_path: str, dest: str | None = None) -> dict:
     """Pack one model (its ``g`` path from list_models) into a self-contained ``.glb`` on disk.
 

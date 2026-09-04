@@ -21,18 +21,25 @@ import time
 import webbrowser
 from pathlib import Path
 
+from gcrip.model_tags import KINDS, classify
+
 TOP_MODELS = 24  # inline model thumbnails baked per game
 ALL_MODELS_CAP = 600  # most models the served /models.json returns for one game
 
 
 def _model_card(root: Path, gid: str, m: dict, thumb: str, tris: int) -> dict:
     out_rel = m.get("out_rel")
+    skinned = bool(m.get("skinned"))
+    animated = bool(m.get("animations"))
     return {
         "n": (m.get("path") or out_rel or "model").split("/")[-1],
         "t": f"{gid}/{thumb}",
         "tris": tris,
         "tex": int(m.get("textures") or 0),
         "g": f"{gid}/{out_rel}" if out_rel and out_rel.endswith(".gltf") else None,
+        "k": classify(m.get("path") or out_rel or "", skinned=skinned, animated=animated),
+        "r": skinned,  # rigged
+        "a": animated,
     }
 
 
@@ -78,12 +85,19 @@ def _game_entry(root: Path, row: dict) -> dict | None:
         return entry
     models = rr.get("models", []) if isinstance(rr, dict) else rr
     have = []
+    kinds = dict.fromkeys(KINDS, 0)
+    rigged = animated = 0
     for m in models:
         thumb, tris = m.get("thumb"), int(m.get("triangles") or 0)
         if not thumb or tris <= 0 or m.get("duplicate_of") or m.get("error"):
             continue
         if m.get("skinned"):
             entry["skinned"] = True
+            rigged += 1
+        if m.get("animations"):
+            animated += 1
+        kinds[classify(m.get("path") or m.get("out_rel") or "", skinned=bool(m.get("skinned")),
+                       animated=bool(m.get("animations")))] += 1
         have.append((tris, m, thumb))
     have.sort(key=lambda x: -x[0])
     for tris, m, thumb in have:
@@ -92,6 +106,10 @@ def _game_entry(root: Path, row: dict) -> dict | None:
         if len(entry["top"]) < TOP_MODELS:
             entry["top"].append(_model_card(root, gid, m, thumb, tris))
     entry["nmodels"] = len(have)  # thumbnailed models available for "Show all"
+    # per-game kind counts (only kinds that occur) drive the catalog's category filters
+    entry["kinds"] = {k: n for k, n in kinds.items() if n}
+    entry["rigged"] = rigged
+    entry["animated"] = animated
     return entry
 
 
@@ -106,12 +124,18 @@ def build_catalog(root: Path) -> dict:
                 rows.append(json.loads(line))
     games = [g for g in (_game_entry(root, r) for r in rows) if g]
     games.sort(key=lambda g: -g["tris"])
+    kind_totals = dict.fromkeys(KINDS, 0)
+    for g in games:
+        for k, n in g.get("kinds", {}).items():
+            kind_totals[k] += n
     stats = {
         "games": len(games),
         "with_geo": sum(1 for g in games if g["tris"] > 0),
         "models": sum(g["models"] for g in games),
         "tris": sum(g["tris"] for g in games),
         "tex": sum(g["textures"] for g in games),
+        "kinds": {k: n for k, n in kind_totals.items() if n},
+        "rigged": sum(g.get("rigged", 0) for g in games),
     }
     return {"games": games, "stats": stats}
 
@@ -161,6 +185,32 @@ def serve_library(root: Path, *, port: int = 8765, blender: str | None = None, o
                 self.end_headers()
                 self.wfile.write(body)
                 return None
+            if path == "/search_models.json":
+                import urllib.parse as _up
+
+                from gcrip import library_query as _lq
+
+                qs = _up.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+                one = lambda k, d=None: qs.get(k, [d])[0]  # noqa: E731
+                body = json.dumps(
+                    _lq.search_models(
+                        root,
+                        one("q", "") or "",
+                        kind=one("kind"),
+                        rigged=True if one("rigged") == "1" else None,
+                        animated=True if one("animated") == "1" else None,
+                        game=one("game"),
+                        min_triangles=int(one("min_tris", "0") or 0),
+                        limit=min(2000, int(one("limit", "600") or 600)),
+                    )
+                ).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
+                return None
             if path == "/catalog.json":
                 # on demand only (the page's Refresh button) - one rescan of the metadata
                 # JSONs, so it is a click, never a poll, keeping disc load off the rip
@@ -202,6 +252,16 @@ h1{margin:0;font-size:1.15rem}h1 small{color:var(--dim);font-weight:400;font-siz
 select{padding:.5rem;border-radius:8px;border:1px solid var(--edge);background:var(--panel);color:var(--txt);font-size:.82rem}
 .chip{cursor:pointer;user-select:none;padding:.38rem .6rem;border-radius:20px;border:1px solid var(--edge);background:var(--panel);color:var(--dim);font-size:.76rem}
 .chip.on{background:#26324a;border-color:#3c5686;color:#cfe0ff}
+.seg{display:inline-flex;border:1px solid var(--edge);border-radius:20px;overflow:hidden}
+.seg .chip{border:0;border-radius:0;margin:0}
+.cats{margin-top:.5rem;gap:.4rem}
+.cats .chip{font-size:.75rem}
+.cats .chip .c{color:var(--dim);font-weight:400;margin-left:.28rem}
+.kb{display:inline-block;border-radius:4px;padding:.05rem .3rem;font-size:.6rem;margin-top:.2rem;background:#23232b;color:#b9b9c8}
+.kb.character{background:#2b3a55;color:#cfe0ff}.kb.weapon{background:#4a2b2b;color:#ffd0d0}
+.kb.vehicle{background:#3a3320;color:#ffe6a8}.kb.level{background:#243a2c;color:#bfe8cd}
+.kb.prop{background:#3a2b45;color:#e6cff5}.kb.ui{background:#2a2a33;color:#b9b9c8}
+.kb.effect{background:#183a3f;color:#b8ecf2}.rg{color:var(--good)}
 main{padding:1rem 1.1rem 4rem}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.8rem}
 .card{background:var(--panel);border:1px solid var(--edge);border-radius:11px;overflow:hidden;cursor:pointer;transition:border-color .12s,transform .12s}
@@ -233,6 +293,7 @@ footer{color:#55555f;font-size:.72rem;padding:1.5rem 1.1rem;border-top:1px solid
 <h1>GameCube 3D Model Library <small id="sub"></small></h1>
 <div class="stats" id="statbar"></div>
 <div class="controls">
+  <span class="seg"><span class="chip on" id="modeGames" data-mode="games">Games</span><span class="chip" id="modeModels" data-mode="models">Models</span></span>
   <input id="q" placeholder="Search games…  (title or disc filename)" autocomplete="off">
   <select id="sort">
     <option value="tris">Sort: most triangles</option><option value="models">Sort: most models</option>
@@ -241,7 +302,8 @@ footer{color:#55555f;font-size:.72rem;padding:1.5rem 1.1rem;border-top:1px solid
   <span class="chip" data-f="geo">Has models</span><span class="chip" data-f="tex">Textured</span>
   <span class="chip" data-f="skin">Skinned</span><span class="chip" data-f="anim">Animated</span>
   <span class="chip" id="refresh" title="Rescan the dump for newly ripped games">↻ Refresh</span>
-</div></header>
+</div>
+<div class="controls cats" id="cats"></div></header>
 <main><div class="grid" id="grid"></div><div class="empty" id="empty" hidden>No games match.</div></main>
 <footer id="foot"></footer>
 <div id="modal"><div class="bar"><b id="mvname"></b><a id="mvdl" href="#" download>Download .glb</a><span class="x" onclick="closeMV()">×</span></div><div id="mv"></div></div>
@@ -254,12 +316,27 @@ function drawStats(){document.getElementById("sub").textContent=`${STATS.with_ge
 document.getElementById("statbar").innerHTML=[["Games",STATS.games],["With geometry",STATS.with_geo],["Models",fmt(STATS.models)],["Triangles",fmt(STATS.tris)],["Textures",fmt(STATS.tex)]].map(([k,v])=>`<span class="stat">${k} <b>${v}</b></span>`).join("");}
 drawStats();
 const refresh=document.getElementById("refresh");
-if(served){refresh.onclick=async()=>{refresh.textContent="↻ …";try{const r=await fetch("/catalog.json",{cache:"no-store"});const c=await r.json();GAMES=c.games;STATS=c.stats;drawStats();render();}catch(e){alert("Refresh failed: "+e);}refresh.textContent="↻ Refresh";};}
+if(served){refresh.onclick=async()=>{refresh.textContent="↻ …";try{const r=await fetch("/catalog.json",{cache:"no-store"});const c=await r.json();GAMES=c.games;STATS=c.stats;modelCacheKey="\x00";drawStats();drawCats();render();}catch(e){alert("Refresh failed: "+e);}refresh.textContent="↻ Refresh";};}
 else refresh.style.display="none";
 document.getElementById("foot").innerHTML=served?"Served locally — click any model thumbnail to preview it in 3D, or open a game's full report. Nothing is uploaded.":"Opened from disk — click a game to preview its top models, or open its full report. For live 3D preview, run <code>gcrip library</code> to serve the folder.";
 const grid=document.getElementById("grid"),empty=document.getElementById("empty"),q=document.getElementById("q"),sortSel=document.getElementById("sort");
-const filters={geo:false,tex:false,skin:false,anim:false};let expanded=null,mvLoaded=false;
-document.querySelectorAll(".chip").forEach(c=>c.onclick=()=>{filters[c.dataset.f]=!filters[c.dataset.f];c.classList.toggle("on");render();});
+const filters={geo:false,tex:false,skin:false,anim:false};let expanded=null,mvLoaded=false,mode="games";
+const cats=new Set();  // active category kinds (and the pseudo-kind "rigged")
+const CATS=[["character","Characters"],["weapon","Weapons"],["vehicle","Vehicles"],["level","Levels"],["prop","Props"],["ui","UI"],["effect","FX"]];
+function drawCats(){
+  const K=STATS.kinds||{};
+  let h=CATS.filter(([k])=>K[k]).map(([k,label])=>`<span class="chip cat" data-k="${k}">${label}<span class=c>${fmt(K[k])}</span></span>`).join("");
+  if(STATS.rigged)h+=`<span class="chip cat" data-k="rigged" title="characters with a skeleton/rig">⤳ Rigged<span class=c>${fmt(STATS.rigged)}</span></span>`;
+  document.getElementById("cats").innerHTML=h;
+  document.querySelectorAll("#cats .cat").forEach(c=>c.onclick=()=>{const k=c.dataset.k;cats.has(k)?cats.delete(k):cats.add(k);c.classList.toggle("on");render();});
+}
+drawCats();
+document.querySelectorAll(".chip[data-f]").forEach(c=>c.onclick=()=>{filters[c.dataset.f]=!filters[c.dataset.f];c.classList.toggle("on");render();});
+const modeG=document.getElementById("modeGames"),modeM=document.getElementById("modeModels");
+function setMode(m){mode=m;modeG.classList.toggle("on",m==="games");modeM.classList.toggle("on",m==="models");
+  q.placeholder=m==="models"?"Search models…  (character / weapon / part names across every game)":"Search games…  (title or disc filename)";
+  render();}
+modeG.onclick=()=>setMode("games");modeM.onclick=()=>setMode("models");
 q.oninput=render;sortSel.onchange=render;
 function card(g){
   const icons=(g.skinned?"⤳":"")+(g.clips>0?" ▶":"");
@@ -267,7 +344,9 @@ function card(g){
   const b=[`<span class="badge${g.tris>0?" g":""}">${fmt(g.models)} mdl</span>`,g.tris>0?`<span class="badge">△ ${fmt(g.tris)}</span>`:"",g.textures>0?`<span class="badge">▦ ${fmt(g.textures)}</span>`:"",`<span class="icons">${icons}</span>`].join("");
   return `<div class="card" data-id="${g.id}">${hero}<div class="body"><div class="title" title="${esc(g.title)}">${esc(g.title)}</div><div class="meta">${b}</div></div></div>`;
 }
-function mcard(gid,m,i){return `<div class="mcard${served&&m.g?" v":""}" data-id="${gid}" data-i="${i}"><img loading=lazy src="${m.t}" alt=""><div class=mn title="${esc(m.n)}">${esc(m.n)}</div>△ ${fmt(m.tris)}${m.tex?` · ▦${m.tex}`:""}</div>`;}
+function kbadge(m){const k=m.k&&m.k!=="unknown"?`<span class="kb ${m.k}">${m.k}</span>`:"";return k+(m.r?`<span class="kb rg" title=rigged>⤳</span>`:"")+(m.a?`<span class="kb" title=animated>▶</span>`:"");}
+function mcard(gid,m,i){return `<div class="mcard${served&&m.g?" v":""}" data-id="${gid}" data-i="${i}"><img loading=lazy src="${m.t}" alt=""><div class=mn title="${esc(m.n)}">${esc(m.n)}</div>△ ${fmt(m.tris)}${m.tex?` · ▦${m.tex}`:""}<div>${kbadge(m)}</div></div>`;}
+function mcardG(m,i){/* model card in library-wide models mode, tagged with its game */return `<div class="mcard${served&&m.g?" v":""}" data-id="${m.gid}" data-i="${i}" data-flat="1"><img loading=lazy src="${m.t}" alt=""><div class=mn title="${esc(m.n)}">${esc(m.n)}</div><div class=mn style="color:var(--dim)" title="${esc(m.title||"")}">${esc(m.title||"")}</div>△ ${fmt(m.tris)}${m.tex?` · ▦${m.tex}`:""}<div>${kbadge(m)}</div></div>`;}
 const fullModels={};  // gid -> loaded full list
 function expandBlock(g){
   const link=g.report?`<a href="${g.report}" target="_blank">Open full report ↗</a>`:"";
@@ -278,11 +357,16 @@ function expandBlock(g){
   const shown=full?`all ${fmt(full.length)}`:`top ${g.top.length} of ${fmt(g.models)}`;
   return `<div class="expand"><h3>${esc(g.title)} — ${shown} models ${more} ${link}</h3><div class=mstrip>${strip}</div></div>`;
 }
-function render(){
+const kindCats=()=>[...cats].filter(k=>k!=="rigged");
+function modelKindOK(m){const kc=kindCats();if(cats.has("rigged")&&!m.r)return false;if(kc.length&&!kc.includes(m.k))return false;return true;}
+function catGameOK(g){for(const k of cats){if(k==="rigged"){if(!(g.rigged>0))return false;}else if(!(g.kinds&&g.kinds[k]>0))return false;}return true;}
+function render(){if(mode==="models")return renderModels();renderGames();}
+function renderGames(){
   const term=q.value.trim().toLowerCase();
   let list=GAMES.filter(g=>{
     if(filters.geo&&g.tris<=0)return false;if(filters.tex&&g.textures<=0)return false;
     if(filters.skin&&!g.skinned)return false;if(filters.anim&&g.clips<=0)return false;
+    if(!catGameOK(g))return false;
     if(term&&!(g.title.toLowerCase().includes(term)||g.disc.toLowerCase().includes(term)||g.id.toLowerCase().includes(term)))return false;
     return true;});
   const k=sortSel.value,key=k==="models"?"models":k==="tex"?"textures":"tris";
@@ -293,6 +377,25 @@ function render(){
   grid.querySelectorAll(".card").forEach(c=>c.onclick=()=>{expanded=expanded===c.dataset.id?null:c.dataset.id;render();});
   grid.querySelectorAll(".mcard.v").forEach(c=>c.onclick=e=>{e.stopPropagation();const gid=c.dataset.id,i=+c.dataset.i;const src=fullModels[gid]||GAMES.find(x=>x.id===gid).top;openMV(src[i]);});
   grid.querySelectorAll(".showall").forEach(a=>a.onclick=async e=>{e.preventDefault();e.stopPropagation();const gid=a.dataset.id;a.textContent="loading…";try{const r=await fetch("/models.json?game="+encodeURIComponent(gid),{cache:"no-store"});fullModels[gid]=(await r.json()).models;render();}catch(err){a.textContent="load failed";}});
+}
+let modelCache=[],modelCacheKey="\x00";
+async function renderModels(){
+  const term=q.value.trim().toLowerCase(),kc=kindCats();
+  let pool;
+  if(served){
+    const key=term+"|"+kc.join(",")+"|"+(cats.has("rigged")?1:0);
+    if(key!==modelCacheKey){grid.innerHTML=`<div class=empty>searching…</div>`;
+      const p=new URLSearchParams();if(term)p.set("q",term);if(kc.length===1)p.set("kind",kc[0]);if(cats.has("rigged"))p.set("rigged","1");p.set("limit","600");
+      try{const r=await fetch("/search_models.json?"+p.toString(),{cache:"no-store"});modelCache=(await r.json()).models||[];}catch(e){modelCache=[];}
+      modelCacheKey=key;}
+    pool=modelCache;
+  }else{pool=[];for(const g of GAMES)for(const m of (g.top||[]))pool.push(Object.assign({gid:g.id,title:g.title},m));}
+  let list=pool.filter(m=>{if(!modelKindOK(m))return false;if(term&&!((m.n||"").toLowerCase().includes(term)||(m.title||"").toLowerCase().includes(term)))return false;return true;});
+  const k=sortSel.value;list.sort((a,b)=>k==="tex"?b.tex-a.tex:k==="title"?(a.n||"").localeCompare(b.n||""):b.tris-a.tris);
+  list=list.slice(0,600);
+  empty.hidden=list.length>0;
+  grid.innerHTML=list.length?`<div class=mstrip style="grid-column:1/-1">${list.map((m,i)=>mcardG(m,i)).join("")}</div>`:"";
+  grid.querySelectorAll(".mcard").forEach(c=>{c.onclick=()=>{if(served&&c.classList.contains("v"))openMV(list[+c.dataset.i]);};});
 }
 function ensureMV(cb){
   if(mvLoaded)return cb();
