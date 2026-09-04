@@ -271,7 +271,7 @@ flowchart LR
         DAS["RE4 DAS / DRS<br/>plugins.re4"]
         BF["Jade .bf<br/>plugins.jade"]
         PRE["Neversoft PRE<br/>plugins.neversoft"]
-        BIG["Crystal Dynamics bigfile.dat<br/>hash table + sector offsets<br/>plugins.cd_bigfile"] -.->|payloads open| GX
+        BIG["Crystal Dynamics bigfile.dat<br/>hash table + sector offsets<br/>plugins.cd_bigfile"] --> DRM["DRM units 00 00 00 0e<br/>sections + relocations + GX display lists<br/>plugins.tr_legend"]
         TIM2["Sony TIM2 in AFS<br/>offset table -> pictures<br/>plugins.tim2"]
         SHOC["EA SHOC .hog<br/>SHDR + Zdat/SDAT/Rdat<br/>plugins.shoc"] --> TXG["TXG texture groups<br/>TXHE headers + TXDA pixels<br/>plugins.ea_txg"] --> OBG["OBG terrain<br/>ARRA arrays + ELDA strips<br/>plugins.ea_obg"]
         BAD["Climax .bad + .bah<br/>a block a member, LZSS or raw<br/>plugins.climax_bad"] --> CROM["`.rom` cModelFile<br/>triangles + Bezier patches<br/>plugins.climax_rom"] & CROW["`.row` node tree worlds<br/>triangles + Bezier patches<br/>plugins.climax_row"] & CBOG["`.bog` GX tiles + ARGB palette<br/>plugins.climax_bog"] & GX
