@@ -49,7 +49,11 @@ are Vengeance's) and a `3d/gli/geoobj.bin` a level whose records are **not** Sin
 vertex run is 24-byte **big-endian** `f32 x y z, f32 a b c` (a, b, c not unit - Vengeance's
 24-byte records again) behind a byte-packed header, followed by `u16` index data.  Four discs
 share that older layout (Donald Duck, Tarzan, Vengeance's `.flt`, and likely more Ubisoft
-Montreal titles of 2000-2002); reading it is the next step here.
+Montreal titles of 2000-2002); reading it is the next step here.  Donald Duck's DOL names
+the classes - `GeoObj`, `ExternGeoObj`, `VisualMaterial`, `DeformationVertex`, `3d/gli` - so
+this is **CPA / OpenSpace** (the Rayman 2 engine, `gcrip/formats/openspace.py` reads Rayman
+3's memory-image form) serialised by the PC tool rather than dumped from memory; the
+GeometricObject / element structures there are the map for the 24-byte records.
 
 ## Open
 
