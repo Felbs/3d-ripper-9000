@@ -313,6 +313,21 @@ def blender_hold_prop(
 
 
 @mcp.tool()
+def blender_attach_model(
+    gid: str = "",
+    name: str = "",
+    gltf: str = "",
+    object: str = "",  # noqa: A002
+    bone: str = "mixamorig:Head",
+) -> dict:
+    """Hang another rip on a character's bone: games often ship heads, faces or hands as
+    separate models (Twilight Princess Link = Kmdl/al + Kmdl/al_head + Bmdl/al_face).  The
+    part's matching bone (same original joint name, else its root) is aligned onto the
+    character's ``bone`` at rest and follows it."""
+    return call("attach_model", gid=gid, name=name, gltf=gltf, object=object, bone=bone)
+
+
+@mcp.tool()
 def blender_python(code: str) -> dict:
     """Run Python inside Blender (bpy + the add-on's functions are in scope).  Returns the
     captured stdout and repr() of a variable named `result` if you set one."""

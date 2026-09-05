@@ -2492,16 +2492,47 @@ def hold_prop(
         sc.frame_set(f)
         return arm.matrix_world @ pb.matrix
 
-    # attach: the prop sits at the hand's tail, following the hand exactly
+    # attach: the prop stands upright against the palm, wrapped by the fingers.  The palm
+    # normal is the thinnest axis of the hand mesh (PCA of the vertices weighted to the
+    # hand bone), signed towards the body; the prop's up axis = fingers x palm normal.
     m0 = hand_matrix(f0)
-    grip = Matrix.Translation((0, pb.length, 0))  # bone-local Y runs head -> tail
-    prop.matrix_world = m0 @ grip @ Matrix.Diagonal((s, s, s, 1))
+    tail = np.array(m0 @ Vector((0, pb.length, 0)))
+    fingers = _unit(tail - np.array(m0.translation))
+    pts = []
+    for o in fam:
+        if o.type != "MESH" or hand_bone not in o.vertex_groups:
+            continue
+        gi = o.vertex_groups[hand_bone].index
+        for v in o.data.vertices:
+            if any(g.group == gi and g.weight > 0.3 for g in v.groups):
+                pts.append(np.array(o.matrix_world @ v.co))
+    if len(pts) >= 12:
+        P = np.array(pts) - np.mean(pts, axis=0)
+        _w, vecs = np.linalg.eigh(P.T @ P)
+        normal = _unit(vecs[:, 0])  # least-variance axis = across the palm
+    else:
+        normal = _unit(np.cross(fingers, (0, 0, 1)))
+    body = np.array(arm.matrix_world @ arm.pose.bones["mixamorig:Hips"].head)
+    if np.dot(normal, body - tail) < 0:
+        normal = -normal
+    up = _unit(np.cross(fingers, normal))
+    if up[2] < 0:
+        up = -up
+    side = _unit(np.cross(fingers, up))
+    R = Matrix(
+        ((side[0], fingers[0], up[0]), (side[1], fingers[1], up[1]), (side[2], fingers[2], up[2]))
+    )
+    width = min(phi[0] - plo[0], phi[1] - plo[1]) * s
+    centre = tail + normal * (0.55 * width)
+    world0 = Matrix.Translation(centre) @ R.to_4x4()
+    grip = m0.inverted() @ world0  # hand-relative pose; hand_matrix(f) @ grip follows it
+    prop.matrix_world = world0 @ Matrix.Diagonal((s, s, s, 1))
     con = prop.constraints.new("CHILD_OF")
     con.target, con.subtarget = arm, hand_bone
     con.inverse_matrix = m0.inverted()
     prop.rotation_mode = "XYZ"
-    prop.location = (m0 @ grip).translation
-    prop.rotation_euler = (m0 @ grip).to_euler()
+    prop.location = world0.translation
+    prop.rotation_euler = world0.to_euler()
     out = {"prop": prop.name, "hand": hand, "attached_to": hand_bone, "scale": round(s, 4)}
     if release_frame:
         fr = int(release_frame)
@@ -2560,6 +2591,76 @@ def hold_prop(
         )
         sc.frame_set(f0)
     return out
+
+
+@rpc
+def attach_model(gid="", name="", gltf="", object="", bone="mixamorig:Head"):  # noqa: A002
+    """Hang another rip on a character's bone - games often keep heads, faces or hands as
+    separate models (Twilight Princess Link: Kmdl/al + Kmdl/al_head + Bmdl/al_face).  The
+    attachment's own bone with the same original name as ``bone`` (or its root bone) is
+    aligned onto the character's bone in the rest pose and follows it from then on."""
+    arm, _fam = _resolve_armature(object)
+    if bone not in arm.pose.bones:
+        raise KeyError(f"{arm.name} has no bone {bone}")
+    if gltf:
+        rec = next((r for r in _ensure_index() if r[4].lower() == gltf.lower()), None)
+        rec = rec or (
+            gid or "PART",
+            "",
+            "CREATURE",
+            name or os.path.basename(gltf),
+            gltf,
+            "",
+            "",
+            "",
+        )
+    else:
+        recs = _find_records(gid=gid or None, name=name) or _find_records(
+            gid=gid or None, query=name, limit=1
+        )
+        if not recs:
+            raise KeyError(f"no library model {name!r} in game {gid or 'any'}")
+        rec = recs[0]
+    new, _pick = spawn_model(rec[0], "CREATURE", rec[4], at=None, mixamo=False)
+    roots = [o for o in new if o.parent is None]
+    if not roots:
+        raise RuntimeError("import produced no objects")
+    part = next((o for o in roots if o.type == "ARMATURE"), roots[0])
+    for o in roots:
+        if o is not part:
+            o.parent = part
+    sc = bpy.context.scene
+    sc.frame_set(sc.frame_start)
+    body_pb = arm.pose.bones[bone]
+    wb = arm.matrix_world @ body_pb.matrix
+    # which bone of the part corresponds: same original joint name, else its root bone
+    orig = arm.data.bones[bone].get(ORIG_KEY) or bone.split(":")[-1].lower()
+    local = Matrix.Identity(4)
+    matched = None
+    if part.type == "ARMATURE":
+        cands = [b for b in part.data.bones if b.name.lower() == str(orig).lower()]
+        if not cands:
+            cands = [
+                b
+                for b in part.data.bones
+                if b.name.lower().endswith(("head", "atama")) and "hair" not in b.name.lower()
+            ]
+        if not cands:
+            cands = [b for b in part.data.bones if b.parent is None]
+        if cands:
+            matched = cands[0].name
+            local = cands[0].matrix_local
+    part.matrix_world = wb @ local.inverted()
+    con = part.constraints.new("CHILD_OF")
+    con.target, con.subtarget = arm, bone
+    con.inverse_matrix = wb.inverted()
+    return {
+        "part": part.name,
+        "objects": [o.name for o in new],
+        "bone": bone,
+        "part_bone": matched,
+        "gltf": rec[4],
+    }
 
 
 @rpc

@@ -346,10 +346,15 @@ def mocap_take(
     start_frames: list[int] | None = None,
     audio: str = "",
     positions_m: list[float] | None = None,
+    heights: list[float] | None = None,
+    attachments: list[dict] | None = None,
 ) -> dict:
     """BVH files -> characters animated in a saved .blend (and optionally an MP4), through
     the gcrip-blender control channel.  ``characters`` = one "GAMEID:name" per BVH as
     listed by blender_library (e.g. "GZLE01:link/cl", "G6FE69:m200__"), or a glTF path.
+    ``heights`` = scene units per character (100 = 1 m): each rig is scaled to that
+    height (0 keeps its native size).  ``attachments`` hang separate rips on a bone, e.g.
+    [{"person": 1, "gid": "GZ2E01", "name": "Kmdl/al_head", "bone": "mixamorig:Head"}].
     Characters stand ``spacing`` units apart along X; each gets its BVH on NLA track MOCAP;
     a camera looks at all of them.  ``start_frames`` (comfy_mocap's ``start_frames``) =
     the clip frame each person first appears: capture before that is skipped and the strip
@@ -395,6 +400,20 @@ def mocap_take(
             raise RuntimeError(f"{ch}: no armature")
         if not sp.get("mocap_ready", True):
             raise RuntimeError(f"{ch}: {sp.get('warning') or sp.get('missing_core')}")
+        if heights and k < len(heights) and heights[k]:
+            sp["height_scale"] = bm.call(
+                "python",
+                code=(
+                    "import bpy, numpy as np\nfrom mathutils import Vector\n"
+                    f"root=bpy.data.objects[{sp['root']!r}]\n"
+                    "objs=[root]; st=list(root.children)\n"
+                    "while st:\n    c=st.pop(); objs.append(c); st.extend(c.children)\n"
+                    "zs=[(o.matrix_world @ Vector(c)).z for o in objs if o.type=='MESH'"
+                    " and not o.hide_render for c in o.bound_box]\n"
+                    f"f={float(heights[k])}/max(max(zs)-min(zs),1e-3)\n"
+                    "root.scale=(f,f,f)\nbpy.context.view_layer.update()\nresult=round(f,4)"
+                ),
+            )["result"]
         skip = int(start_frames[k]) if start_frames and k < len(start_frames) else 0
         rt = bm.call(
             "retarget",
@@ -442,6 +461,21 @@ def mocap_take(
     cam = bm.call("camera", target=arms[0]["armature"], azimuth=-10)
     h = cam["target_height"]  # back off enough that raised arms and hats stay in frame
     bm.call("camera", target=arms[0]["armature"], azimuth=-10, distance=3.6 * h, height=0.5 * h)
+    parts = []
+    for a in attachments or []:
+        k = int(a.get("person", 1)) - 1
+        if not 0 <= k < len(arms):
+            raise ValueError(f"attachment person {k + 1} out of range")
+        parts.append(
+            bm.call(
+                "attach_model",
+                gid=a.get("gid", ""),
+                name=a.get("name", ""),
+                gltf=a.get("gltf", ""),
+                object=arms[k]["armature"],
+                bone=a.get("bone", "mixamorig:Head"),
+            )
+        )
     # frame everything the characters do over the whole take (they may walk metres apart)
     # from the +Y side, where the phone was (GVHMR's world: screen-right = -X)
     names = [a["armature"] for a in arms]
@@ -498,7 +532,7 @@ def mocap_take(
             "result=n-len(bpy.data.actions)"
         ),
     )
-    out = {"characters": arms, "frames": last, "props": held}
+    out = {"characters": arms, "frames": last, "props": held, "attachments": parts}
     if audio:
         if not os.path.isfile(audio):
             raise FileNotFoundError(audio)
