@@ -1130,6 +1130,8 @@ def spawn_model(gid, category, gltf, at=None, mixamo=True):
             c.objects.unlink(o)
         col.objects.link(o)
     roots = [o for o in new if o.parent is None]
+    for o in roots:
+        o["gcrip_gltf"] = gltf  # so later steps (attach_model) can read the joint tree
     if at is not None and category != "LEVEL":
         for o in roots:
             o.location = at
@@ -1221,7 +1223,7 @@ class GCRIP_PT_library(bpy.types.Panel):
 import math  # noqa: E402
 
 import numpy as np  # noqa: E402
-from mathutils import Matrix  # noqa: E402
+from mathutils import Matrix, Quaternion  # noqa: E402
 
 _MOCAP_MAP = {
     "Hips": "mixamorig:Hips",
@@ -2524,7 +2526,10 @@ def hold_prop(
     )
     width = min(phi[0] - plo[0], phi[1] - plo[1]) * s
     centre = tail + normal * (0.55 * width)
-    world0 = Matrix.Translation(centre) @ R.to_4x4()
+    # the model's origin is wherever the game put it (a bottle's is at its base): grip
+    # the mesh 45% up its height, not the origin
+    g = Vector(((plo[0] + phi[0]) / 2, (plo[1] + phi[1]) / 2, plo[2] + 0.45 * (phi[2] - plo[2])))
+    world0 = Matrix.Translation(centre) @ R.to_4x4() @ Matrix.Translation(-g * s)
     grip = m0.inverted() @ world0  # hand-relative pose; hand_matrix(f) @ grip follows it
     prop.matrix_world = world0 @ Matrix.Diagonal((s, s, s, 1))
     con = prop.constraints.new("CHILD_OF")
@@ -2593,8 +2598,57 @@ def hold_prop(
     return out
 
 
+_GLTF_YUP = Matrix(((1, 0, 0, 0), (0, 0, -1, 0), (0, 1, 0, 0), (0, 0, 0, 1)))
+
+
+def _gltf_node_world(path, name):
+    """Rest-pose world matrix (Blender axes) of the glTF node called ``name`` - or of the
+    skin's root joint when ``name`` is None - straight from the file's node tree.  None when
+    the file or node is not there."""
+    if not path or not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as fh:
+            g = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    nodes = g.get("nodes", [])
+    parent = {}
+    for i, n in enumerate(nodes):
+        for c in n.get("children", []):
+            parent[c] = i
+    if name is None:
+        joints = (g.get("skins") or [{}])[0].get("joints") or []
+        idx = next((j for j in joints if j not in parent), None)
+        if idx is None:
+            idx = next((i for i in range(len(nodes)) if i not in parent), None)
+    else:
+        idx = next((i for i, n in enumerate(nodes) if n.get("name") == name), None)
+    if idx is None:
+        return None
+
+    def local(n):
+        if "matrix" in n:
+            m = n["matrix"]  # column-major
+            return Matrix([[m[c * 4 + r] for c in range(4)] for r in range(4)])
+        t = n.get("translation", [0, 0, 0])
+        q = n.get("rotation", [0, 0, 0, 1])  # x y z w
+        s = n.get("scale", [1, 1, 1])
+        rot = Quaternion((q[3], q[0], q[1], q[2])).to_matrix().to_4x4()
+        return Matrix.Translation(t) @ rot @ Matrix.Diagonal((s[0], s[1], s[2], 1))
+
+    m = Matrix.Identity(4)
+    i = idx
+    while i is not None:
+        m = local(nodes[i]) @ m
+        i = parent.get(i)
+    return _GLTF_YUP @ m @ _GLTF_YUP.transposed()
+
+
 @rpc
-def attach_model(gid="", name="", gltf="", object="", bone="mixamorig:Head"):  # noqa: A002
+def attach_model(  # noqa: A002
+    gid="", name="", gltf="", object="", bone="mixamorig:Head", orient="auto", skin="auto"
+):
     """Hang another rip on a character's bone - games often keep heads, faces or hands as
     separate models (Twilight Princess Link: Kmdl/al + Kmdl/al_head + Bmdl/al_face).  The
     attachment's own bone with the same original name as ``bone`` (or its root bone) is
@@ -2629,36 +2683,99 @@ def attach_model(gid="", name="", gltf="", object="", bone="mixamorig:Head"):  #
     for o in roots:
         if o is not part:
             o.parent = part
+    # a face rip carries its expression clips as NLA tracks - all playing at once they
+    # mangle the mesh; park the part in its rest pose (unmute a track to use a clip)
+    for o in new:
+        if o.animation_data:
+            o.animation_data.action = None
+            for tr in o.animation_data.nla_tracks:
+                tr.mute = True
+    # some rips' skin weights are wrong (TP's al_face folds half the face away even at
+    # rest): when the skinned rest shape strays from the raw mesh, attach it rigid
+    rigid = []
+    bpy.context.view_layer.update()
+    dg = bpy.context.evaluated_depsgraph_get()
+    for o in new:
+        if o.type != "MESH" or not any(m.type == "ARMATURE" for m in o.modifiers):
+            continue
+        raw = np.array([v.co for v in o.data.vertices])
+        ev = o.evaluated_get(dg)
+        skinned = np.array([v.co for v in ev.data.vertices])
+        if len(raw) and len(raw) == len(skinned):
+            size = max(np.ptp(raw, axis=0).max(), 1e-6)
+            stray = np.abs(skinned - raw).max() / size
+            if skin == "rigid" or (skin == "auto" and stray > 0.15):
+                for m in o.modifiers:
+                    if m.type == "ARMATURE":
+                        m.show_render = m.show_viewport = False
+                rigid.append((o.name, round(float(stray), 2)))
     sc = bpy.context.scene
     sc.frame_set(sc.frame_start)
     body_pb = arm.pose.bones[bone]
+    # everything below is measured in the character's REST pose (a strip may already be
+    # playing at frame_start)
+    arm.data.pose_position = "REST"
+    bpy.context.view_layer.update()
     wb = arm.matrix_world @ body_pb.matrix
-    # which bone of the part corresponds: same original joint name, else its root bone
-    orig = arm.data.bones[bone].get(ORIG_KEY) or bone.split(":")[-1].lower()
-    local = Matrix.Identity(4)
+    orig = arm.data.bones[bone].get(ORIG_KEY) or bone.split(":")[-1]
+    # Align with the game's own joint frames from the glTF node trees, not Blender's bone
+    # axes: the importer points each bone at its children, so the same joint ends up with
+    # different bone axes in two rigs.  The part was authored in the joint's frame, so its
+    # root joint goes exactly where the character's joint is.
+    node_m = _gltf_node_world(arm.get("gcrip_gltf"), str(orig))
     matched = None
-    if part.type == "ARMATURE":
-        cands = [b for b in part.data.bones if b.name.lower() == str(orig).lower()]
-        if not cands:
-            cands = [
-                b
-                for b in part.data.bones
-                if b.name.lower().endswith(("head", "atama")) and "hair" not in b.name.lower()
-            ]
-        if not cands:
-            cands = [b for b in part.data.bones if b.parent is None]
-        if cands:
-            matched = cands[0].name
-            local = cands[0].matrix_local
-    part.matrix_world = wb @ local.inverted()
+    if node_m is not None:
+        root_m = _gltf_node_world(rec[4], None) or Matrix.Identity(4)
+        part.matrix_world = arm.matrix_world @ node_m @ root_m.inverted()
+        matched = f"joint {orig}"
+    else:  # no glTF at hand: fall back to matching bone axes
+        local = Matrix.Identity(4)
+        if part.type == "ARMATURE":
+            cands = [b for b in part.data.bones if b.name.lower() == str(orig).lower()]
+            if not cands:
+                cands = [b for b in part.data.bones if b.parent is None]
+            if cands:
+                matched = cands[0].name
+                local = cands[0].matrix_local
+        part.matrix_world = wb @ local.inverted()
+    turned = 0.0
+    if orient == "forward" or (orient == "auto" and "face" in (name or rec[3]).lower()):
+        # face parts are not always authored in the head joint's frame: turn the part about
+        # the vertical axis through its root until its mesh (which lies in front of the
+        # root) points the way the character faces
+        bpy.context.view_layer.update()
+        pb = arm.pose.bones
+        lr = np.array(arm.matrix_world @ pb["mixamorig:LeftUpLeg"].head) - np.array(
+            arm.matrix_world @ pb["mixamorig:RightUpLeg"].head
+        )
+        fwd = np.cross(lr, (0, 0, 1))
+        pts = [
+            np.array(o.matrix_world @ v.co)
+            for o in new
+            if o.type == "MESH"
+            for v in o.data.vertices
+        ]
+        if len(pts) and np.linalg.norm(fwd[:2]) > 1e-6:
+            root_p = np.array(part.matrix_world.translation)
+            d = np.mean(pts, axis=0) - root_p
+            a = math.atan2(fwd[1], fwd[0]) - math.atan2(d[1], d[0])
+            rot = Matrix.Rotation(a, 4, "Z")
+            part.matrix_world = (
+                Matrix.Translation(root_p) @ rot @ Matrix.Translation(-root_p) @ part.matrix_world
+            )
+            turned = round(math.degrees(a), 1)
     con = part.constraints.new("CHILD_OF")
     con.target, con.subtarget = arm, bone
     con.inverse_matrix = wb.inverted()
+    arm.data.pose_position = "POSE"
+    bpy.context.view_layer.update()
     return {
         "part": part.name,
         "objects": [o.name for o in new],
         "bone": bone,
         "part_bone": matched,
+        "turned_degrees": turned,
+        "rigid": rigid,
         "gltf": rec[4],
     }
 

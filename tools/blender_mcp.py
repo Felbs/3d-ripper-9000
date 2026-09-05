@@ -319,12 +319,17 @@ def blender_attach_model(
     gltf: str = "",
     object: str = "",  # noqa: A002
     bone: str = "mixamorig:Head",
+    orient: str = "auto",
 ) -> dict:
     """Hang another rip on a character's bone: games often ship heads, faces or hands as
     separate models (Twilight Princess Link = Kmdl/al + Kmdl/al_head + Bmdl/al_face).  The
-    part's matching bone (same original joint name, else its root) is aligned onto the
-    character's ``bone`` at rest and follows it."""
-    return call("attach_model", gid=gid, name=name, gltf=gltf, object=object, bone=bone)
+    part is placed in the character's joint frame (from both glTF node trees) at rest and
+    follows the bone.  ``orient``: 'forward' turns the part about the vertical axis until
+    its mesh points the way the character faces (for face models that are not authored in
+    the head's frame); 'auto' does that for parts named *face*; 'keep' never."""
+    return call(
+        "attach_model", gid=gid, name=name, gltf=gltf, object=object, bone=bone, orient=orient
+    )
 
 
 @mcp.tool()

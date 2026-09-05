@@ -474,6 +474,7 @@ def mocap_take(
                 gltf=a.get("gltf", ""),
                 object=arms[k]["armature"],
                 bone=a.get("bone", "mixamorig:Head"),
+                orient=a.get("orient", "auto"),
             )
         )
     # frame everything the characters do over the whole take (they may walk metres apart)
