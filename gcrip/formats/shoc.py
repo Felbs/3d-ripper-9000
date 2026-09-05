@@ -142,6 +142,12 @@ def members(data: bytes) -> list[Member]:
                 else:
                     pieces.append(payload[RAW_PREFIX:])
             blob = b"".join(pieces)
+            # a stored tail block is padded to a word boundary, so a mixed Rdat/SDAT member
+            # can come out up to 3 bytes long: Frodo's main `rcb` assembles to 34,335 of a
+            # declared 34,332, its relocation table ending exactly on the declared byte with
+            # the 3 spare bytes junk past it.  Trim the pad rather than dropping the member.
+            if unpacked and 0 < len(blob) - unpacked < 4:
+                blob = blob[:unpacked]
             if len(blob) == unpacked and unpacked:
                 out.append(Member(kind, index, blob))
             return

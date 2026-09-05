@@ -142,3 +142,55 @@ def test_named_elements_read_rotk_strips():
     assert len(sc.primitives[0].indices) == 6 and len(sc.primitives[1].indices) == 3
     assert np.allclose(sc.primitives[0].uvs[3], (1.0, 1.0))  # corner 3 is vertex 2
     assert sc.primitives[0].colors[0].tolist() == [1.0, 0.0, 0.0, 1.0]
+
+
+def build_object(fmt=3, ident=bytes(range(8)), pad=b"\0\0"):
+    """A Third Age-shaped member (OBG 01 07): the same typed arrays, a HEAD that declares
+    16 bytes less than it occupies, and one ELDA whose element is introduced by an 8-byte
+    material id rather than a name.  Corner width varies with the format word."""
+    pos = struct.pack(">12f", 0, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1)
+    uv = struct.pack(">8h", 0, 0, 1024, 0, 1024, 1024, 0, 1024)
+    col = bytes([255, 0, 0, 255] * 4)
+    head = b"HEAD" + struct.pack(">I", 8) + bytes(8) + bytes(ea_obg.HEAD_SLACK)
+    words = ea_obg.GEOMETRY_WORDS[fmt]
+    corners = b"".join(struct.pack(f">{words}H", *([i] * words)) for i in (0, 1, 3, 2))
+    el = bytes(0x20) + b"\x00\x02" + ident + b"\x00\x03\x0f\x0f"
+    el += ea_obg.GEOMETRY + struct.pack(">2H", fmt, 4) + corners + pad
+    elda = b"ELDA" + struct.pack(">I", len(el)) + el
+    body = _arra(0, 4, 1, col) + _arra(1, 4, 1, uv) + _arra(2, 4, 3, pos)
+    if fmt == 0:
+        body += _arra(16, 4, 3, bytes(48))  # the second colour set
+    return b"OBG \x01\x07\x00\x00" + body + head + elda
+
+
+def test_the_walk_resyncs_after_the_object_head_slack():
+    """01 07's HEAD (like 01 05's) occupies 16 bytes more than it declares; the walk must
+    resync and still land on the member's last byte - 38 of 38 on The Third Age do."""
+    data = build_object()
+    found = ea_obg.chunks(data)
+    assert [c.tag for c in found].count(b"ELDA") == 1
+    assert found[-1].at + 8 + found[-1].size == len(data)
+
+
+def test_object_elements_carry_an_id_and_the_rotk_corner_triple():
+    data = build_object()
+    (e,) = ea_obg.named_elements(data)
+    assert e.name == bytes(range(8)).hex()
+    assert e.corners.tolist() == [[i] * 3 for i in (0, 1, 3, 2)]
+
+
+def test_object_corner_width_follows_the_format_word():
+    """Format 0 is four words a corner (a second colour set, its column always equal to the
+    first), format 4 two (no uv - that index is 0).  Both normalise to (pos, uv, colour)."""
+    (e,) = ea_obg.named_elements(build_object(fmt=0))
+    assert e.corners.tolist() == [[i] * 3 for i in (0, 1, 3, 2)]
+    (e,) = ea_obg.named_elements(build_object(fmt=4, pad=b""))
+    assert e.corners.tolist() == [[0, 0, 0], [1, 0, 1], [3, 0, 3], [2, 0, 2]]
+
+
+def test_the_plugin_reads_a_third_age_object_end_to_end():
+    (sc,) = plugin.extract(build_object(), "Cobj_10", None)
+    assert sc.extras["named"] and len(sc.primitives) == 1
+    assert len(sc.primitives[0].indices) == 6
+    assert sc.primitives[0].colors[0].tolist() == [1.0, 0.0, 0.0, 1.0]
+    assert np.allclose(sc.primitives[0].uvs[3], (1.0, 1.0))

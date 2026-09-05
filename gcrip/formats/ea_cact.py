@@ -126,6 +126,22 @@ class Actor:
     resources: list[tuple[str, int]]
 
 
+@dataclass
+class RigJoint:
+    parent: int  # -1 for the root
+    translation: tuple[float, float, float]
+    rotation: tuple[float, float, float, float]  # quaternion x y z w
+    scale: tuple[float, float, float]
+    world: np.ndarray  # (3,) bind-pose position, model space - the validation oracle
+
+
+@dataclass
+class Rig:
+    """The render skeleton of an ``rcb`` member - the joints the scbm's bone bytes index."""
+
+    joints: list[RigJoint]
+
+
 def is_character(head: bytes) -> bool:
     return head[:4] == MAGIC and head[4:6] == CHARACTER_VERSION
 
@@ -147,6 +163,102 @@ def actor(data: bytes) -> Actor | None:
         out.resources.append((kind, struct.unpack_from(">I", data, at + 4)[0]))
         at += 8
     return out
+
+
+RCB_KIND = 0x14
+SKELETON_AT = 0x64
+MAX_JOINTS = 512
+
+
+def is_rig(data: bytes) -> bool:
+    """An ``rcb`` member: ``u32`` relocation-table offset, ``u32 0x14``, ``u32`` id."""
+    if len(data) < SKELETON_AT + 28:
+        return False
+    reloc, kind = struct.unpack_from(">2I", data, 0)
+    return kind == RCB_KIND and 0 < reloc <= len(data)
+
+
+def _quat(r: np.ndarray) -> tuple[float, float, float, float]:
+    """Unit quaternion (x, y, z, w) of a proper rotation matrix (column convention)."""
+    m00, m01, m02 = r[0]
+    m10, m11, m12 = r[1]
+    m20, m21, m22 = r[2]
+    t = m00 + m11 + m22
+    if t > 0:
+        s = np.sqrt(t + 1.0) * 2
+        q = ((m21 - m12) / s, (m02 - m20) / s, (m10 - m01) / s, s / 4)
+    elif m00 >= m11 and m00 >= m22:
+        s = np.sqrt(1.0 + m00 - m11 - m22) * 2
+        q = (s / 4, (m01 + m10) / s, (m02 + m20) / s, (m21 - m12) / s)
+    elif m11 >= m22:
+        s = np.sqrt(1.0 + m11 - m00 - m22) * 2
+        q = ((m01 + m10) / s, s / 4, (m12 + m21) / s, (m02 - m20) / s)
+    else:
+        s = np.sqrt(1.0 + m22 - m00 - m11) * 2
+        q = ((m02 + m20) / s, (m12 + m21) / s, s / 4, (m10 - m01) / s)
+    n = float(np.sqrt(sum(c * c for c in q))) or 1.0
+    return (q[0] / n, q[1] / n, q[2] / n, q[3] / n)
+
+
+def rig(data: bytes) -> Rig | None:
+    """The render skeleton of an ``rcb`` collision/rig member.
+
+    The rcb is a pointer-serialized blob (its first word is the offset of the relocation
+    table that ends the file).  At ``0x64`` sits the render-skeleton block: ``u32`` joint
+    count - exactly the scbm's highest bone byte plus one, 49 on Frodo and 60 on Gimli -
+    then five pointers, of which the first two matter here::
+
+        +0x68  (s32 parent, u32 flag) pairs, parents strictly before their children
+        +0x6c  f32 4x4 matrices, row-vector convention (translation in the last row) -
+               the INVERSE bind: inverting one puts every joint of Frodo and Gimli inside
+               the mesh bounding box (109 of 109), and single-bone vertex centroids land
+               within 0.35 of their joint (62 of 62)
+
+    The rest pose is what the mesh was baked at, so ``inv(M_i)`` is the joint's world rest
+    matrix and the local rest is ``inv(M_i) @ M_parent`` (row convention).  The remaining
+    pointers (per-joint 20-byte records, collision-sphere names) are not read.
+    """
+    if not is_rig(data):
+        return None
+    count = struct.unpack_from(">I", data, SKELETON_AT)[0]
+    if not 0 < count <= MAX_JOINTS:
+        return None
+    p_pair, p_mat = struct.unpack_from(">2I", data, SKELETON_AT + 4)
+    if p_pair + 8 * count > len(data) or p_mat + 64 * count > len(data):
+        return None
+    pairs = np.frombuffer(data, ">i4", count * 2, p_pair).reshape(count, 2)
+    parents = pairs[:, 0]
+    if int(parents[0]) != -1 or not all(-1 <= int(parents[i]) < i for i in range(count)):
+        return None
+    mats = np.frombuffer(data, ">f4", count * 16, p_mat).reshape(count, 4, 4).astype(np.float64)
+    if not np.isfinite(mats).all():
+        return None
+    try:
+        world = np.array([np.linalg.inv(m) for m in mats])
+    except np.linalg.LinAlgError:
+        return None
+    joints: list[RigJoint] = []
+    for i in range(count):
+        p = int(parents[i])
+        local_row = world[i] @ mats[p] if p >= 0 else world[i]
+        local = local_row.T  # column convention for the TRS decomposition
+        a = local[:3, :3]
+        scale = np.linalg.norm(a, axis=0)
+        if not (np.isfinite(scale).all() and (scale > 1e-6).all()):
+            return None
+        r = a / scale
+        if np.linalg.det(r) < 0:  # a mirrored joint is not a rest pose we can express
+            return None
+        joints.append(
+            RigJoint(
+                parent=p,
+                translation=tuple(float(x) for x in local[:3, 3]),
+                rotation=_quat(r),
+                scale=tuple(float(x) for x in scale),
+                world=world[i][3, :3].copy(),
+            )
+        )
+    return Rig(joints)
 
 
 def _gcsk_at(data: bytes) -> int | None:

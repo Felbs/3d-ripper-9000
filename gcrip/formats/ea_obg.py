@@ -37,6 +37,7 @@ import numpy as np
 
 MAGIC = b"OBG "
 HEADER = 8
+HEAD_SLACK = 16
 RESTART = 0xFFFF
 ELDA_HEADER = 8
 POS_TYPE = 2
@@ -55,15 +56,29 @@ def is_obg(head: bytes) -> bool:
     return head[:4] == MAGIC
 
 
+def _tag_at(data: bytes, at: int) -> bool:
+    if at + HEADER > len(data):
+        return False
+    tag = data[at : at + 4]
+    size = struct.unpack_from(">I", data, at + 4)[0]
+    return all(32 <= c < 127 for c in tag) and at + HEADER + size <= len(data)
+
+
 def chunks(data: bytes) -> list[Chunk]:
     out: list[Chunk] = []
     at = HEADER
     while at + HEADER <= len(data):
-        tag = data[at : at + 4]
-        size = struct.unpack_from(">I", data, at + 4)[0]
-        if not all(32 <= c < 127 for c in tag) or at + HEADER + size > len(data):
+        if not _tag_at(data, at):
+            # The RotK / Third Age character and object flavours (01 05 / 01 07) declare
+            # 16 bytes less for HEAD than it occupies, which desynchronises the walk right
+            # after it.  Resync by the slack: 38 of 38 Third Age members then walk to
+            # exactly their last byte.  Tiger Woods (01 04) never takes this branch.
+            if _tag_at(data, at + HEAD_SLACK):
+                at += HEAD_SLACK
+                continue
             break
-        out.append(Chunk(tag, at, size))
+        size = struct.unpack_from(">I", data, at + 4)[0]
+        out.append(Chunk(data[at : at + 4], at, size))
         at += HEADER + size
     return out
 
@@ -126,6 +141,17 @@ NAMED_SEARCH = 48
 UV_TYPE = 1
 COLOR_TYPE = 0
 UV_SCALE = 1.0 / 1024.0
+OBJECT_VERSION = b"\x01\x07"
+#: the geometry record: ``00 01`` ends the element's property list, ``00 03`` opens the
+#: corner data - ``u16 format | u16 corners``, then the corners
+GEOMETRY = b"\x00\x01\x00\x03"
+GEOMETRY_SEARCH = 64
+#: corner width in u16 words by format code, read off The Third Age by byte-exact tiling:
+#: every one of e98c02.scg's 38 ``OBG 01 07`` members admits exactly one width that lands
+#: the corner data on its ELDA's last byte (minus 0 or 2 pad).  Format 3 is (position, uv,
+#: colour) - the RotK layout; format 0 adds a second colour set (its two extra columns
+#: always equal column 2's twin); format 4 drops the uv (its members' uv array has 1 entry).
+GEOMETRY_WORDS = {3: 3, 0: 4, 4: 2}
 
 
 @dataclass
@@ -134,13 +160,59 @@ class NamedElement:
     corners: np.ndarray  # (n, 3) u16: position, uv, colour indices - one strip
 
 
+def _object_elements(data: bytes, found: list[Chunk]) -> list[NamedElement]:
+    """The Third Age ``OBG 01 07`` ``ELDA``: elements introduced by ``00 02`` and an 8-byte
+    material id (a hash, not a name - the sibling ``txfx`` textures are all named
+    ``textureN``, so there is nothing to bind by name), a property list (``00 03 <mask>``,
+    sometimes ``00 05 ...``), then the geometry record ``00 01 00 03 | u16 format |
+    u16 corners`` and the corner strip.  Corners normalise to the RotK (position, uv,
+    colour) triple: format 0's two colour columns are always equal (206 of 206 corners on
+    e98c02.scg) and format 4's missing uv column is index 0 (its uv array has one entry)."""
+    out: list[NamedElement] = []
+    for c in found:
+        if c.tag != b"ELDA":
+            continue
+        p = data[c.at + HEADER : c.at + HEADER + c.size]
+        at = 0
+        while True:
+            head = p.find(NAMED_HEAD, at)
+            if head < 0:
+                break
+            rec = p.find(GEOMETRY, head + 2, head + 2 + GEOMETRY_SEARCH)
+            if rec < 0:
+                at = head + 2
+                continue
+            fmt, count = struct.unpack_from(">2H", p, rec + 4)
+            words = GEOMETRY_WORDS.get(fmt)
+            start = rec + 8
+            if words is None or count < 3 or start + 2 * words * count > len(p):
+                at = head + 2
+                continue
+            name = p[head + 2 : head + 10].hex()
+            got = np.frombuffer(p, ">u2", words * count, start).reshape(count, words)
+            corners = np.zeros((count, 3), ">u2")
+            corners[:, 0] = got[:, 0]
+            if words > 2:
+                corners[:, 1] = got[:, 1]
+            corners[:, 2] = got[:, words - 1] if words == 2 else got[:, 2]
+            out.append(NamedElement(name, corners))
+            at = start + 2 * words * count
+    return out
+
+
 def named_elements(data: bytes, found: list[Chunk] | None = None) -> list[NamedElement]:
     """RotK / Third Age ``ELDA``: elements introduced by ``00 02 <material>\0``, a short
     property list, ``00 03 00 03``, ``u16 corners`` and corners of three ``u16`` indices -
     position, uv (the type-1 array of packed ``s16`` pairs) and colour (the type-0 RGBA
-    array) - forming one triangle strip.  Tiger Woods' ``ELDA`` carries none of this."""
+    array) - forming one triangle strip.  Tiger Woods' ``ELDA`` carries none of this.
+    The Third Age's ``01 07`` members swap the name for an 8-byte id and vary the corner
+    width - those go through :func:`_object_elements`."""
+    if found is None:
+        found = chunks(data)
+    if data[4:6] == OBJECT_VERSION:
+        return _object_elements(data, found)
     out: list[NamedElement] = []
-    for c in found if found is not None else chunks(data):
+    for c in found:
         if c.tag != b"ELDA":
             continue
         p = data[c.at + HEADER : c.at + HEADER + c.size]

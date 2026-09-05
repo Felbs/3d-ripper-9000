@@ -135,3 +135,79 @@ def test_the_plugin_builds_a_scene_with_per_corner_attributes():
 
 def test_terrain_obg_is_not_claimed():
     assert not plugin.detect("ter_1", b"OBG \x01\x04\x00\x00" + bytes(56), 64)
+
+
+STEPS = ((0, 0, 0), (0, 0.4, 0), (0, 0.3, 0), (0.2, 0, 0))
+
+
+def build_rig(parents=(-1, 0, 1, 2), steps=STEPS, kind=None):
+    """A minimal rcb: the pointer-serialized header, the render-skeleton block at 0x64 -
+    joint count, then (parent, flag) pairs and the 4x4 inverse-bind matrices (row-vector
+    convention).  Joints are pure translation chains, so the inverse's last row is the
+    negated bind position."""
+    world = []
+    for p, t in zip(parents, steps, strict=True):
+        base = world[p] if 0 <= p < len(world) else np.zeros(3)
+        world.append(base + np.asarray(t))
+    p_pair = 0x80
+    p_mat = p_pair + 8 * len(parents)
+    out = bytearray(p_mat + 64 * len(parents))
+    struct.pack_into(">2I", out, 0, len(out), ea_cact.RCB_KIND if kind is None else kind)
+    struct.pack_into(">I", out, ea_cact.SKELETON_AT, len(parents))
+    struct.pack_into(">5I", out, ea_cact.SKELETON_AT + 4, p_pair, p_mat, 0, 0, 0)
+    for i, p in enumerate(parents):
+        struct.pack_into(">iI", out, p_pair + 8 * i, p, 1)
+        m = np.eye(4)
+        m[3, :3] = -world[i]  # inverse of a pure translation, translation in the last row
+        struct.pack_into(">16f", out, p_mat + 64 * i, *m.ravel())
+    return bytes(out), world
+
+
+def test_the_rig_reads_parents_and_rest_pose():
+    data, world = build_rig()
+    rig = ea_cact.rig(data)
+    assert [j.parent for j in rig.joints] == [-1, 0, 1, 2]
+    for j, t in zip(rig.joints, STEPS, strict=True):
+        assert np.allclose(j.translation, t) and np.allclose(j.rotation, (0, 0, 0, 1))
+        assert np.allclose(j.scale, 1)
+    assert np.allclose([j.world for j in rig.joints], world)
+
+
+def test_a_rig_with_a_forward_parent_is_refused():
+    data, _ = build_rig(parents=(-1, 2, 1, 0))  # joint 1's parent comes after it
+    assert ea_cact.rig(data) is None
+    data, _ = build_rig(kind=0x15)
+    assert ea_cact.rig(data) is None
+
+
+class _RigSrc:
+    def __init__(self, rig_blob):
+        self.by_path = {"x.scg/scbm_35001": b"", "x.scg/rcb_35001": rig_blob}
+
+    def get(self, p):
+        return self.by_path[p]
+
+
+def test_the_plugin_attaches_a_rig_that_lands_inside_the_mesh():
+    rig_blob, _ = build_rig()
+    (scene,) = plugin.extract(build(), "x.scg/scbm_35001", _RigSrc(rig_blob))
+    assert scene.extras["rigged"] and len(scene.joints) == 4
+    (prim,) = scene.primitives
+    assert prim.joints is not None and prim.joints[:, 0].tolist() == [3, 3, 3, 3]
+    assert np.allclose(prim.weights.sum(axis=1), 1.0)
+    assert np.allclose(prim.weights[:, 0], 1.0)  # bone B is 0xff - bone A alone
+
+
+def test_a_rig_outside_the_mesh_is_dropped_not_the_render():
+    """The baked mesh renders correctly with no rig, so a wrong skeleton must never
+    regress it: joints outside the padded bounding box leave the scene unrigged."""
+    rig_blob, _ = build_rig(steps=((0, 0, 0), (0, 40, 0), (0, 3, 0), (2, 0, 0)))
+    (scene,) = plugin.extract(build(), "x.scg/scbm_35001", _RigSrc(rig_blob))
+    assert scene.extras["rigged"] is False and scene.joints == []
+    assert scene.primitives and scene.primitives[0].joints is None
+
+
+def test_a_rig_short_of_the_bone_bytes_is_dropped():
+    rig_blob, _ = build_rig(parents=(-1, 0), steps=((0, 0, 0), (0, 0.4, 0)))
+    (scene,) = plugin.extract(build(), "x.scg/scbm_35001", _RigSrc(rig_blob))
+    assert scene.extras["rigged"] is False  # the mesh binds bone 3; the rig has 2 joints

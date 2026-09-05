@@ -97,3 +97,27 @@ def test_shoc_declines_an_rdat_member_whose_blocks_do_not_reconcile():
         + wrap(chunk(shoc.EALZ, bytes(40) + struct.pack(">I", 812) + lit(b"x" * 100)))
     )
     assert shoc.members(data) == []
+
+
+def test_a_word_padded_stored_tail_is_trimmed_to_the_declared_size():
+    """Frodo's main rcb: two Rdat blocks and a stored tail whose payload is padded to a word
+    boundary, assembling to 34,335 of a declared 34,332.  The member is byte-perfect up to
+    the declared size (its relocation table ends exactly there), so the pad is trimmed
+    rather than the member dropped."""
+    part = b"skeleton" * 4
+    tail = b"reloc table!"
+    data = (
+        shoc.MAGIC
+        + struct.pack(">I", 16)
+        + bytes(8)
+        + shdr(b"rcb ", 35001, len(part) + len(tail))
+        + wrap(
+            chunk(
+                shoc.EALZ,
+                bytes(40) + struct.pack(">I", len(part)) + lit(part[:11]) + copy(8, 21),
+            )
+        )
+        + wrap(chunk(shoc.STORED, bytes(40) + tail + b"\xb5\xa7\xbd"))
+    )
+    (m,) = shoc.members(data)
+    assert m.kind == "rcb" and m.data == part + tail
