@@ -43,8 +43,25 @@ Outputs consumed by tooling:
 - **EA ball-sports family (FIFA 04/05/06/07/WC06, UEFA, NHL 2003, NBA Street 2): the same
   few meshes garbage in every title** (`pitchdetail__detail__model1020314988__`, `m48__`,
   arena/`2dc_lowersides`). One EAGL pitch/arena sub-format bug repeated across ~10 games.
+  **FIXED 2026-09-04**: world packets store f32 positions (element size from the stream
+  gap), read as s16/256 they saturate into +-128 clouds - that recurring "extent ~440" in
+  the worst lists was the s16 diagonal, the audit signature of this exact bug. Plus a
+  per-model s16 quantization recovered from `__BBOX` (stadium stands are 1 fraction bit,
+  players 8). 100/100 flagged FIFA 2004 stadium models fixed, 0 clean regressed, players
+  byte-identical; discs pending re-rip. See
+  [ea-eagl-gamecube.md](ea-eagl-gamecube.md).
 - **GCJE41 Splinter Cell Chaos Theory: 51 of 53 models garbage** - the whole export is a
-  bad decode, not individual models.
+  bad decode, not individual models.  **FIXED 2026-09-04**: the 51 "models" were
+  `screens/<lang>/*_loading*.tga` **loading-screen pictures** (type-1 color-mapped TGA,
+  640x448) that no plugin claimed, so the `gx` fallback scanned their palette-indexed
+  pixel data for display lists and exported noise (`autocrack.probe` on the source bytes
+  rates the GX evidence "WEAK - sparse accidental-looking chains, no CP/XF setup").
+  `gcrip/formats/tga.py` + `gcrip/plugins/tga.py` now decode them as textures-only
+  scenes (a recognizable loading screen each), and claiming them keeps the scanner off
+  the class entirely.  Both discs re-ripped: disc 1 now exports 462 tga + 2 tpl, 0
+  failed, and re-auditing scores **462 models, 0 garbage / 0 suspect / 0 flagged**
+  (disc 2's 26 gx-noise "models" were the same class).  One other title shipped
+  gx-claimed `.tga` sources - GSGE5D MLB Slugfest 2003, 5 models - queued for re-rip.
 - **GMHE52 Mat Hoffman Pro BMX 2: 472 of 533 flagged** - park chunk models
   (`chchunk19`, `poground21`), another whole-format failure.
 - Untextured hotspots (Sims 2 Pets 2364, NHL 2003 1212, PoP:SoT 859) are texture-pipeline

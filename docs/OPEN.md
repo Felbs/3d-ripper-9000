@@ -6,6 +6,45 @@ textures through the plugin chain.
 
 Companion to [FORMATS.md](FORMATS.md), which lists what already works.
 
+## Closed 2026-09-04: EAGL world packets - the EA ball-sports garbage cluster (~900 models, 10+ discs)
+
+The audit's #6-#15 cluster (FIFA 04/05/06/07, UEFA CL 04-05, NHL 2003, NBA Street V2:
+`pitchdetail`, `m48__`, `sky_*`, `track_*`, `*shadow*`, `2dc_lowersides`, `phillyo`) was one
+wrong branch in `gcrip/formats/eagl.py`: stadium / arena / court packets store positions as
+**big-endian f32 xyz**, and the reader hardcoded s16/256 - full-range +-128 saturation
+clouds, the audit's "spaghetti" (and, where the floats varied slowly, NBA Street's 98%
+degenerate edges).  Nothing in the packet declares the element size, but the streams are
+packed back to back, so it follows from the gap to the next pointer: `pitchdetail`'s
+19008-byte gap is 1584 x 12 exactly.  UVs are f32 st or s16/256 the same way; the middle
+stream is f32 normals (NHL, unit length), RGBA8 (NBA Street) or RGBA4 colours (the
+"0x77 0x7f constant" of the 08-28 note = mid-gray shadow tint).  Bonus identity: the s16
+quantization is per model, not global - Old Trafford's stands are 1 fraction bit, players 8 -
+and `__BBOX` span / raw span recovers it (0.50002 / 0.00391, power of two to 4 decimals), so
+skeleton-less objects are now rescaled to world units and mixed stadium files assemble.
+FIFA 2004's zdata_06: 100/100 flagged models fixed, 0 regressed, players byte-identical
+(hibody4 197 + medbody 87 packets); renders show the pitch grid, the track oval, the NHL lower
+bowl and the Philly court.  Re-rip of the ten discs is the remaining chore.  See the
+2026-09-04 section of [formats/ea-eagl-gamecube.md](formats/ea-eagl-gamecube.md).
+
+## Closed 2026-09-04: GCJE41 Splinter Cell Chaos Theory - 51 of 53 models garbage
+
+Not a reader bug and not geometry at all: the 51 "models" were the disc's loose
+`screens/<lang>/*_loading*.tga` / `SaveLoadScreens/*.tga` **loading-screen pictures**
+(462 on disc 1: type-1 color-mapped TGA, 256 x 24-bit palette, 8 bpp, 640x448).  Nothing
+claimed `.tga`, so the `gx` fallback scanned their palette-indexed pixel data for display
+lists and shipped noise meshes (66-74% degenerate edges, wireframe = tangle;
+`autocrack.probe` on the source bytes calls the GX evidence "WEAK - sparse
+accidental-looking chains, no CP/XF setup").  It also burned the scanner's whole 900 s
+disc budget - the old rip took 949 s.  Fix: a real TGA decoder (`gcrip/formats/tga.py`,
+`gcrip/plugins/tga.py`, strict header sniff because TGA has no magic; Kashmir's
+`RPMOC3S`-tagged ".tga" repacks stay with their reader).  The screens now export as
+textures-only scenes - recognizable loading screens - and the plugin claim keeps the
+scanner off the class.  Both discs re-ripped (`GCJE41`, `GCJE41_disc2`).  A library-wide
+scan of every `rip_results.json` finds one other title with gx-claimed `.tga` sources -
+GSGE5D MLB Slugfest 2003, 5 models - queued for its next re-rip wave.  Splinter Cell
+CT's *real* geometry (the `.lin`/`.umd` Unreal bundles) remains tracked in the Ubisoft
+UE2 row below - this closes the garbage, not the game.
+
 ## Closed 2026-09-04: Krome MDL3 world-chunk garbage (Ty 2 / Ty 3 / Spyro ANB / King Arthur)
 
 The quality audit's #1-#4 garbage cluster (~2,044 models: GIZE52 707, GYTE69 609, G6SE7D

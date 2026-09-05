@@ -523,3 +523,51 @@ T-pose for the create-a-fighter - with textures bound by `SHAPENAME`.  The 15 wi
 Open: the v2 skeleton header (`3f 25 00 82` where v1 has `c0da 01fe`) is not read, so these
 export without joints; the `SHAPENAME` a packet binds can be a generic shape (`cm_m`) rather
 than the object's own `.gsh`.
+
+## World packets: f32 streams inside the v1 layout (2026-09-04)
+
+The 2026-09-04 quality audit's EA ball-sports cluster - ~900 garbage models across FIFA
+04/05/06/07, UEFA CL 04-05, NHL 2003 and NBA Street V2, always the same few meshes
+(`pitchdetail`, `m48__`, `sky_*`, `track_*`, `*shadow*`, `2dc_lowersides`, `phillyo`) - was
+one wrong assumption in the v1 packet reader: **the stadium / arena / court packets keep the
+v1 layout but store positions as big-endian f32 xyz**, not s16.  Read as s16 they saturate
+into +-128 point clouds (extent 340-443 = the s16/256 diagonal - that recurring "extent ~440"
+in the audit *was* the signature), which scores as spaghetti; where the floats vary slowly
+(NBA Street's courts) consecutive vertices collapse instead and it scores as 85-98%
+degenerate edges.  Same bug, two statistical faces.
+
+Nothing in the packet declares the element size - the GX vertex descriptor lives in game
+code - but the streams are packed back to back, padded to at most a 32-byte boundary, so
+**each stream's element size follows from the gap to the next counted pointer**:
+
+* `pitchdetail` positions at `0x20`, next stream `0x4a60`: `0x4a40 = 1584 x 12` exactly.
+  Decoded f32 it is a flat plane (`|y| <= 7.6e-4`) spanning +-5862 x +-7467 - equal to its
+  `__BBOX` to the bit, and the render is a regular triangulated pitch grid.
+* UVs: 8 = f32 st pairs (FIFA pitch tiling -0.88..1.88, NHL, NBA Street), 4 = s16/256.
+* middle stream: 12 = f32 normals (NHL arenas: unit length, p5=p50=p95=1.0), 4 = RGBA8
+  colours (NBA Street courts, alpha 255), 2 = **RGBA4 colours** - the "attr1 2 B/vertex
+  constant `0x77 0x7f` (not weights)" noted on 08-28 is mid-gray at full alpha, the FIFA
+  shadow/track tint - expanded x17.  3 stays s8 normals.
+
+`_world_positions` accepts the f32 reading only when the gap fits 12, the floats are finite
+with a 98th-percentile magnitude in 1e-3..1e6, and at least two positions differ (FIFA 2004's
+`amsterdamshadow` placeholder is four identical vertices at x=150047 - no evidence, legacy
+read kept).  Everything else keeps the s16 path byte for byte: FIFA 2004's player bodies
+(197 + 87 packets) verified unchanged against the old reader.
+
+**The s16 quantization is per model, and `__BBOX` recovers it.**  The bowl of Old Trafford
+mixes both forms in one file, and its s16 stands read at 1/256 sat 128x too small inside
+their own f32 pitch.  The `__BBOX` symbol's first six floats are the model's world bbox, and
+`bbox span / raw s16 span` lands on a power of two to four decimals on every axis: players
+0.00391 (= the shipped 1/256, so they are untouched), the bowl 0.50002/0.50011/0.50002
+(= 1 fraction bit).  `_rescale_s16` applies the snap on skeleton-less objects when all
+well-measured axes agree within 5%; skinned objects are never rescaled (positions must keep
+matching their inverse binds).  The reassembled stadium renders as one coherent building -
+pitch, track, stands, roof.
+
+Measured on FIFA 2004's `zdata_06.big` (the stadium container): **100 of 100 garbage-flagged
+models fixed** (median edge ratio 0.31-0.47 before, 0.002-0.092 after; degenerate edges 0%),
+**0 of 168 clean models regressed**.  NHL 2003's `2dc_lowersides` becomes the arena's lower
+seating bowl, NBA Street V2's `phillyo` the Philadelphia court block.  Tests:
+`tests/test_eagl_world.py` (synthetic fixture of both packet kinds + the bbox rescale).
+Left: re-rip the ten discs; the audit's `SPAGHETTI` counts for them date from the s16 reads.

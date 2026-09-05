@@ -21,6 +21,16 @@ the same count = vertex count; the first is positions as s16 xyz, the last is UV
 pairs) and finally the GX display list (count = byte size).  Display-list vertices are
 ``[posmtx u8][texmtx u8][u16 index per attribute stream]`` - the two matrix bytes are the
 skinning slots (multiples of 3 = GX position-matrix indices).
+
+**World packets** (FIFA pitch / sky / track / stadium shadows, NHL arena bowls, NBA Street
+courts) use the same packet layout with *wider elements*: positions are big-endian f32 xyz
+(12 bytes), UVs f32 st (8) or s16/256 (4), and the middle stream is f32 normals (12), s8
+normals (3), RGBA8 (4) or RGBA4 (2) vertex colours.  Nothing in the packet declares this -
+the GX vertex descriptor lives in game code - but the streams are packed back to back
+(padded to at most a 32-byte boundary), so each stream's element size follows from the gap
+to the next pointer.  Reading these as s16 produced full-range +-128 point clouds: the
+whole EA-ball-sports garbage cluster (~900 models over 10+ discs) of the 2026-09-04
+quality audit.
 """
 
 from __future__ import annotations
@@ -54,7 +64,8 @@ class Packet:
     joints: np.ndarray | None  # (N,4) u16 bone record indices (skinned packets)
     weights: np.ndarray | None  # (N,4) f32
     textures: list[str]  # SHAPENAME shape ids (4-char names) referenced, in order
-    colors: np.ndarray | None = None  # (N,4) u8 RGBA (EA LA static meshes)
+    colors: np.ndarray | None = None  # (N,4) u8 RGBA (EA LA static meshes, world packets)
+    world: bool = False  # positions were f32 (stadium/arena/court world packet)
 
 
 @dataclass
@@ -360,6 +371,106 @@ def _display_list_index(streams, d) -> int | None:
     return None
 
 
+#: Attribute streams are packed back to back; the padding between one stream's end and the
+#: next pointer stays under a 32-byte boundary (measured 0-24 across FIFA 04-07, UEFA, NHL
+#: 2003 and NBA Street V2 world packets).  A candidate element size only counts as a fit
+#: when the gap leaves less than this.
+_STREAM_PAD = 32
+
+
+def _stream_gap(d: bytes, ents, ptr: int) -> int:
+    """Bytes from ``ptr`` to the next counted pointer of the packet (or the end of .data)."""
+    nxt = min((q for _c, q, x in ents if x is None and q is not None and q > ptr), default=len(d))
+    return nxt - ptr
+
+
+def _fits(gap: int, count: int, es: int) -> bool:
+    return 0 <= gap - count * es < _STREAM_PAD
+
+
+def _world_positions(d: bytes, ents, nv: int, ptr: int) -> np.ndarray | None:
+    """Positions of a world packet - big-endian f32 xyz - or None when the stream is not one.
+
+    The gap to the next stream has to fit 12-byte elements AND the floats have to read as
+    plausible coordinates (finite, 98th percentile between 1e-3 and 1e6).  Both gates matter:
+    an s16 stream's gap fits 6, not 12, except on packets of five vertices or fewer, and there
+    the float test decides - s16 words reinterpreted as f32 exponents land in denormal or
+    astronomic territory, real world meshes (pitches at +-7400, courts at +-80) do not.
+    """
+    if nv < 3 or ptr + nv * 12 > len(d) or not _fits(_stream_gap(d, ents, ptr), nv, 12):
+        return None
+    pos = np.frombuffer(d, ">f4", nv * 3, ptr).reshape(nv, 3).astype(np.float32)
+    if not np.isfinite(pos).all():
+        return None
+    p98 = float(np.percentile(np.abs(pos), 98))
+    if not 1e-3 < p98 < 1e6:
+        return None
+    if not (pos != pos[0]).any():
+        # every vertex identical is no evidence of world geometry (FIFA 2004's
+        # amsterdamshadow placeholder reads as one point at x=150047): keep the legacy read
+        return None
+    return pos
+
+
+def _world_attributes(d: bytes, ents, attrs, rows, idx, nv: int, f0: int):
+    """(uvs, normals, colors) of a world packet, each stream decoded by its element size.
+
+    The UV stream (last) is f32 st pairs (8) or s16/256 (4); the middle stream is f32
+    normals (12: NHL arenas, unit length), s8 normals (3), RGBA8 (4: NBA Street courts,
+    alpha 255) or RGBA4 (2: FIFA track/shadow overlays - the '0x77 0x7f constant' of the
+    2026-08-28 note was mid-gray at full alpha).  Ambiguity between sizes is resolved by
+    the smallest padding, and a stream that fits nothing yields None rather than a guess.
+    """
+    nattr = len(attrs)
+    uvs = normals = colors = None
+    if nattr >= 2:
+        uv_ptr = attrs[-1][1]
+        k = f0 + 2 * (nattr - 1)
+        uv_idx = (rows[:, k].astype(np.uint32) << 8) | rows[:, k + 1]
+        gap = _stream_gap(d, ents, uv_ptr)
+        if uv_idx.max() < nv:
+            uv_all = None
+            if _fits(gap, nv, 8) and uv_ptr + nv * 8 <= len(d):
+                uv_all = np.frombuffer(d, ">f4", nv * 2, uv_ptr).reshape(nv, 2).astype(np.float32)
+            elif _fits(gap, nv, 4) and uv_ptr + nv * 4 <= len(d):
+                uv_all = np.frombuffer(d, ">i2", nv * 2, uv_ptr).reshape(nv, 2).astype(np.float32)
+                uv_all *= UV_SCALE
+            if uv_all is not None:
+                uvs = np.zeros((nv, 2), np.float32)
+                uvs[idx] = uv_all[uv_idx]
+    if nattr >= 3:
+        m_ptr = attrs[-2][1]
+        k = f0 + 2 * (nattr - 2)
+        m_idx = (rows[:, k].astype(np.uint32) << 8) | rows[:, k + 1]
+        gap = _stream_gap(d, ents, m_ptr)
+        sizes = sorted(
+            (gap - nv * es, es)
+            for es in (12, 4, 3, 2)
+            if _fits(gap, nv, es) and m_ptr + nv * es <= len(d)
+        )
+        if m_idx.max() < nv and sizes:
+            es = sizes[0][1]
+            if es == 12:
+                n_all = np.frombuffer(d, ">f4", nv * 3, m_ptr).reshape(nv, 3).astype(np.float32)
+                normals = np.zeros((nv, 3), np.float32)
+                normals[idx] = n_all[m_idx]
+            elif es == 3:
+                n_all = np.frombuffer(d, np.int8, nv * 3, m_ptr).reshape(nv, 3)
+                normals = np.zeros((nv, 3), np.float32)
+                normals[idx] = n_all[m_idx].astype(np.float32) / 127.0
+            else:
+                if es == 4:
+                    c_all = np.frombuffer(d, np.uint8, nv * 4, m_ptr).reshape(nv, 4)
+                else:  # RGBA4: RRRRGGGGBBBBAAAA, expanded x17 to 8 bits
+                    w = np.frombuffer(d, ">u2", nv, m_ptr).astype(np.uint16)
+                    c_all = (
+                        np.stack([(w >> 12) & 15, (w >> 8) & 15, (w >> 4) & 15, w & 15], 1) * 17
+                    ).astype(np.uint8)
+                colors = np.zeros((nv, 4), np.uint8)
+                colors[idx] = c_all[m_idx]
+    return uvs, normals, colors
+
+
 def _decode_packet(elf: _Elf, o_shader: int, shader: str, warn: list[str]) -> Packet | None:
     d = elf.data
     ents = _packet_entries(elf, o_shader)
@@ -448,30 +559,40 @@ def _decode_packet(elf: _Elf, o_shader: int, shader: str, warn: list[str]) -> Pa
     if idx.max() >= nv or pos_ptr + nv * 6 > len(d):
         warn.append(f"packet @{o_shader:#x}: index {int(idx.max())} outside {nv} vertices")
         return None
-    pos = np.frombuffer(d, ">i2", nv * 3, pos_ptr).reshape(nv, 3).astype(np.float32) * POS_SCALE
+    # World packets (pitch / sky / track / arena / court) carry f32 positions; everything
+    # else keeps the s16/256 read, byte for byte.  Reading the f32 family as s16 gave the
+    # +-128 saturation clouds of the EA ball-sports garbage cluster (quality audit #6-#15).
+    pos = _world_positions(d, ents, nv, pos_ptr)
+    world = pos is not None
+    if not world:
+        pos = np.frombuffer(d, ">i2", nv * 3, pos_ptr).reshape(nv, 3).astype(np.float32)
+        pos *= POS_SCALE
     tri = _triangulate(prims, idx)
-    uvs = normals = None
-    if nattr >= 2:
-        uv_ptr = attrs[-1][1]
-        if uv_ptr + nv * 4 <= len(d):
-            k = f0 + 2 * (nattr - 1)
-            uv_idx = (rows[:, k].astype(np.uint32) << 8) | rows[:, k + 1]
-            uv_all = np.frombuffer(d, ">i2", nv * 2, uv_ptr).reshape(nv, 2).astype(np.float32)
-            uv_all *= UV_SCALE
-            if uv_idx.max() < nv:
-                # per-vertex UV lookup must follow the position index: rebuild per position
-                uvs = np.zeros((nv, 2), np.float32)
-                uvs[idx] = uv_all[uv_idx]
-    if nattr >= 3:
-        n_ptr = attrs[-2][1]
-        if n_ptr + nv * 3 <= len(d):
-            k = f0 + 2 * (nattr - 2)
-            n_idx = (rows[:, k].astype(np.uint32) << 8) | rows[:, k + 1]
-            n_all = np.frombuffer(d, np.int8, nv * 3, n_ptr).reshape(nv, 3).astype(np.float32)
-            n_all /= 127.0
-            if n_idx.max() < nv:
-                normals = np.zeros((nv, 3), np.float32)
-                normals[idx] = n_all[n_idx]
+    uvs = normals = colors = None
+    if world:
+        uvs, normals, colors = _world_attributes(d, ents, attrs, rows, idx, nv, f0)
+    else:
+        if nattr >= 2:
+            uv_ptr = attrs[-1][1]
+            if uv_ptr + nv * 4 <= len(d):
+                k = f0 + 2 * (nattr - 1)
+                uv_idx = (rows[:, k].astype(np.uint32) << 8) | rows[:, k + 1]
+                uv_all = np.frombuffer(d, ">i2", nv * 2, uv_ptr).reshape(nv, 2).astype(np.float32)
+                uv_all *= UV_SCALE
+                if uv_idx.max() < nv:
+                    # per-vertex UV lookup must follow the position index: rebuild per position
+                    uvs = np.zeros((nv, 2), np.float32)
+                    uvs[idx] = uv_all[uv_idx]
+        if nattr >= 3:
+            n_ptr = attrs[-2][1]
+            if n_ptr + nv * 3 <= len(d):
+                k = f0 + 2 * (nattr - 2)
+                n_idx = (rows[:, k].astype(np.uint32) << 8) | rows[:, k + 1]
+                n_all = np.frombuffer(d, np.int8, nv * 3, n_ptr).reshape(nv, 3).astype(np.float32)
+                n_all /= 127.0
+                if n_idx.max() < nv:
+                    normals = np.zeros((nv, 3), np.float32)
+                    normals[idx] = n_all[n_idx]
     textures = []
     for _, _, x in ents:
         m = _SHAPENAME.search(x) if x and "TAR" in x else None
@@ -484,7 +605,7 @@ def _decode_packet(elf: _Elf, o_shader: int, shader: str, warn: list[str]) -> Pa
         weights = np.zeros((nv, 4), np.float32)
         joints[idx] = slot_bones[slot]
         weights[idx] = slot_weights[slot]
-    return Packet(shader, stride, pos, tri, uvs, normals, joints, weights, textures)
+    return Packet(shader, stride, pos, tri, uvs, normals, joints, weights, textures, colors, world)
 
 
 # ---------------------------------------------------------------------------
@@ -961,6 +1082,54 @@ def _parse_skeleton(elf: _Elf, warn: list[str]) -> list[Bone]:
     return bones
 
 
+def _model_bbox(elf: _Elf) -> tuple[float, ...] | None:
+    """min xyz, max xyz from the ``__BBOX`` symbol (the first 6 floats; the rest is runtime
+    scratch).  Verified against the geometry: FIFA 2004's pitchline f32 span equals it to the
+    bit, and the player bodies' raw s16 span x 1/256 does too."""
+    for n, v, _s, sh in elf.syms:
+        if n.startswith("__BBOX") and sh and v + 24 <= len(elf.data):
+            box = struct.unpack_from(">6f", elf.data, v)
+            if all(np.isfinite(b) for b in box) and any(box[i + 3] > box[i] for i in range(3)):
+                return box
+    return None
+
+
+def _rescale_s16(packets, elf: _Elf) -> None:
+    """Fix the s16 quantization of static world objects against the model's ``__BBOX``.
+
+    The GX fraction shift is set by game code per mesh class, not stored in the object:
+    player bodies use 8 bits (the shipped ``POS_SCALE`` 1/256), but stadium files quantize
+    coarser - Old Trafford's bowl uses **1 bit** (scale 1/2), and reading it at 1/256 left
+    the stands 128x too small next to their own f32 pitch and track.  The scale is
+    recoverable: ``bbox span / raw s16 span``, which lands on a power of two to 4 decimal
+    places on every axis (players 0.00391 x3, the bowl 0.50002/0.50011/0.50002).
+
+    Applied only when every well-measured axis agrees on the same power of two within 5%
+    and that power is not 1/256 - so player-class objects (and anything ambiguous) are left
+    byte-for-byte alone.  Skinned objects never reach here (the caller gates on an empty
+    skeleton): their positions must keep matching the inverse-bind matrices.
+    """
+    s16 = [pk for pk in packets if not pk.world and len(pk.positions)]
+    box = _model_bbox(elf)
+    if not s16 or box is None:
+        return
+    lo = np.min([pk.positions.min(0) for pk in s16], axis=0)
+    hi = np.max([pk.positions.max(0) for pk in s16], axis=0)
+    raw_span = (hi - lo) / POS_SCALE
+    box_span = np.array(box[3:]) - np.array(box[:3])
+    ok = (raw_span > 256.0) & (box_span > 0)  # axes with over a unit of raw geometry
+    if not ok.any():
+        return
+    ratio = box_span[ok] / raw_span[ok]
+    if ratio.max() > ratio.min() * 1.05:
+        return
+    snapped = float(2.0 ** np.round(np.log2(np.median(ratio))))
+    if abs(np.median(ratio) / snapped - 1.0) > 0.05 or snapped == POS_SCALE:
+        return
+    for pk in s16:
+        pk.positions *= snapped / POS_SCALE
+
+
 def parse(data: bytes) -> EaglObject:
     elf = _Elf(data)
     warn: list[str] = []
@@ -987,4 +1156,6 @@ def parse(data: bytes) -> EaglObject:
     if models:
         models[0].variations = variations
     skeleton = _parse_skeleton(elf, warn)
+    if not skeleton and packets:
+        _rescale_s16(packets.values(), elf)
     return EaglObject(models, [b.name for b in skeleton], warn, skeleton)

@@ -34,6 +34,13 @@ Status 2026-08-29: `gcrip/formats/unreal.py` + `gcrip/plugins/unreal.py`.
   Agent blocks are `u32 0 | u32 csize | zlib`.  A segment inflates to entries `u32 hash |
   FString name (0_0_2.unr, Index.unr, Abstract.u, Engine.u ...) | 0x6818-byte level summary
   | package`.  `plugins/unreal.py` expands them to the member packages.
+- **Loose `.tga` loading screens** (Chaos Theory 462 on disc 1, Double Agent the same
+  layout: `screens/<lang>/*_loading*.tga`, `SaveLoadScreens/*.tga` - type-1 color-mapped
+  TGA, 256 x 24-bit palette, 8 bpp, 640x448/640x96): real Truevision TGA, decoded by
+  `gcrip/formats/tga.py` + `gcrip/plugins/tga.py` since 2026-09-04.  Before that nothing
+  claimed them and the `gx` fallback scanned their pixel data into 51 noise meshes per
+  disc - the GCJE41 quality-audit finding (see
+  [quality-audit.md](quality-audit.md)).
 - **Open**: the big-endian map packages (SC1 `.unr`, Pandora `.lin`, XIII) parse names fine
   but their import / export tables are not the standard layout (regular 8-byte-ish records
   such as `fd 34 ff ce fe 07 00 00`; not compressed - entropy 6.1); Ghost Recon 2's
