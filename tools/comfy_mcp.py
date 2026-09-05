@@ -334,6 +334,7 @@ def mocap_take(
     background: bool = True,
     props: list[dict] | None = None,
     start_frames: list[int] | None = None,
+    audio: str = "",
 ) -> dict:
     """BVH files -> characters animated in a saved .blend (and optionally an MP4), through
     the gcrip-blender control channel.  ``characters`` = one "GAMEID:name" per BVH as
@@ -345,6 +346,8 @@ def mocap_take(
     hands: each entry {"person": 1-based index into ``characters``, "gid": ..., "name": ...
     (or "gltf"), "hand": "auto"|"left"|"right", "release_frame": clip frame from
     comfy_mocap's ``throw`` (or null to keep holding), "flight_frames": 0, "size": 0.16}.
+    ``audio`` = the source video (or any audio file): its sound goes in as a sequencer
+    strip at frame 1, so the .blend plays it and the MP4 carries it.
     Launches a headless Blender if none is listening."""
     sys.path.insert(0, str(HERE))
     import blender_mcp as bm
@@ -475,6 +478,22 @@ def mocap_take(
         ),
     )
     out = {"characters": arms, "frames": last, "props": held}
+    if audio:
+        if not os.path.isfile(audio):
+            raise FileNotFoundError(audio)
+        out["audio"] = bm.call(
+            "python",
+            code=(
+                "import bpy\nsc=bpy.context.scene\n"
+                "if not sc.sequence_editor: sc.sequence_editor_create()\n"
+                "se=sc.sequence_editor\n"
+                "seqs=se.sequences if hasattr(se,'sequences') else se.strips\n"
+                "for s in list(seqs):\n    if s.type=='SOUND': seqs.remove(s)\n"
+                f"snd=seqs.new_sound('original audio', {audio!r}, 1, 1)\n"
+                "sc.render.ffmpeg.audio_codec='AAC'\nsc.render.ffmpeg.audio_bitrate=160\n"
+                "result=dict(strip=snd.name, frames=snd.frame_final_duration)\n"
+            ),
+        )["result"]
     if render_mp4:
         out["mp4"] = bm.call(
             "render", path=render_mp4, animation=True, start=1, end=last, width=960, height=540
