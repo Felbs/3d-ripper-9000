@@ -6,6 +6,38 @@ textures through the plugin chain.
 
 Companion to [FORMATS.md](FORMATS.md), which lists what already works.
 
+## Closed 2026-09-05: the three highest garbage-share discs were three unclaimed formats
+
+The quality audit's worst *shares* - Kelly Slater's Pro Surfer (36 of 42 garbage), Freestyle
+Street Soccer (25 of 33), Mat Hoffman's Pro BMX 2 (472 of 533 flagged) - had one cause in
+common and none of it was a decoder branch: **nothing claimed the games' files, so the `gx`
+fallback scanned them whole** and its platform-neutral pass paired f32 tables with the wrong
+u16 runs (77-100% zero-length edges, or every vertex on a line).  Each is now a real reader:
+
+- **GKSE52** - Treyarch `.ST2` stashes (container) with version-0xA `GCNM` meshes and the
+  `GCNT` textures Ultimate Spider-Man still uses; every mesh reproduces its declared triangle
+  count, 44 ok / 0 flagged from seven stashes, a surfer, a board, a beach and a flip phone in
+  the renders.  [formats/treyarch-st2.md](formats/treyarch-st2.md).  Open: texture binding
+  (no name in the part header), bone hierarchy, `ANMX`.
+- **GMHE52** - Runecraft `.gcg` (GX display lists, one u16 index per attribute, s16
+  positions / 2^frac) + `.gct` + `.gcm`; 401/401 files byte-exact, the Portland park 393 ok /
+  0 flagged with 321 textured; T-posed rider, BMX, ground chunks in the renders.
+  [formats/runecraft-gcg.md](formats/runecraft-gcg.md).  Open: `.MOT` animations, `.col`.
+- **GUVE51** - Gusto / Silicon Dreams `SDASSETF` `.ast` (Nintendo's audio extension, so the
+  classifier called them audio): LE model files / BE texture files of byte-swapped chunk
+  tags, `MDL > DATA (interleaved f32 vertices) + WGHT + WDGE + MESH (strips, one index per
+  attribute) + LOD`, `SKEL` with world bind matrices, `BMAP > IMAG` GX tiles.  The walk
+  tiles every cached file to EOF; `thestreet-kai_models` goes from 2 unique positions /
+  99.7% degenerate to four skinned, textured footballers (3,612-3,969 tris each), the
+  basketball court to 66 models / 13,985 tris / 74 textures, all ok.
+  [formats/sdasset-proteus.md](formats/sdasset-proteus.md).  Open: crowd single-strip
+  winding, `.fab` / `.bvd` animation.
+- **The scanner** now refuses the audit signature at the source (`gxscan._degenerate`: a
+  line, or more than 30% zero-length edges) and no longer scans `sys/fst.bin`; on the
+  cached noise sources it yields nothing where it used to yield 1-5 "meshes" a file.
+
+All three discs need re-ripping.
+
 ## Closed 2026-09-05: Edge of Reality - Shark Tale 158 garbage, The Sims 2 Pets 162 garbage / 2,364 untextured
 
 The audit's #8 and #9 were five things.  **Shark Tale**: a 12-byte position record is

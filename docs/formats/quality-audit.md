@@ -91,7 +91,25 @@ Outputs consumed by tooling:
   is in an unread animation).  See [edge-of-reality-arc.md](edge-of-reality-arc.md);
   discs pending re-rip.
 - **GMHE52 Mat Hoffman Pro BMX 2: 472 of 533 flagged** - park chunk models
-  (`chchunk19`, `poground21`), another whole-format failure.
+  (`chchunk19`, `poground21`), another whole-format failure.  **FIXED 2026-09-05**: `.gcg`
+  was an unclaimed Runecraft format; `gcrip/formats/gcg.py` parses all 401 cached files
+  byte-exact, the 6 worst models go garbage -> ok (0% degenerate edges;
+  `sf_bridge_cable01` keeps a legitimate *shattered* - 168 separate cable strands), the
+  whole Portland park scores 393 ok / 0 flagged with 321 textured.  Disc pending re-rip.
+  See [runecraft-gcg.md](runecraft-gcg.md).
+- **The three highest garbage *shares* (GKSE52 Kelly Slater 36/42, GUVE51 Freestyle
+  Street Soccer 25/33, GMHE52) were all the same class as Chaos Theory**: an unclaimed
+  private format scanned whole by the `gx` fallback, whose platform-neutral pass paired the
+  files' f32 tables with the wrong u16 runs.  The signature in the metrics is
+  `degenerate_edge_pct` 77-100 with a plausible extent (Mat Hoffman), or an extent that is
+  the same symmetric box on unrelated models (Kelly Slater's ±7760 / ±400 bbox tables), or
+  `[0.12, y, 0.12]` positions collapsed to a line (Freestyle's `.fab` keyframes).
+  **FIXED 2026-09-05** on all three: GKSE52 through `gcrip/formats/treyarch_st2.py` (44
+  meshes / 575 textures from seven stashes, 44 ok, every mesh at its declared triangle
+  count - [treyarch-st2.md](treyarch-st2.md)); GUVE51 through `gcrip/formats/sdasset.py`;
+  and the scanner itself now refuses that signature (`gxscan._degenerate`: a line, or more
+  than 30% zero-length edges) so the class cannot recur under a new extension.  All three
+  discs pending re-rip.
 - Untextured hotspots (Sims 2 Pets 2364, NHL 2003 1212, PoP:SoT 859) are texture-pipeline
   gaps, not geometry bugs - different work queue.
 

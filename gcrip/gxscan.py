@@ -407,16 +407,43 @@ def _salvage_rank(blob: _Blob, dl: DisplayList) -> float:
     return len(dl.prims) * (1.0 + (1.0 - hi))
 
 
+#: A found "mesh" whose triangle edges are mostly zero-length is a table read through the
+#: wrong index stream (Mat Hoffman's `.gcg` chunks: 77-83%, Freestyle Street Soccer's
+#: `.fab` animation tables: 83-100%, Treyarch stash bbox tables: 39%), and one whose
+#: vertices all lie on a line is a keyframe column, not geometry (the `.fab` finds:
+#: `[0.12, y, 0.12]`).  Real decodes sit near 0% on both (quality-audit calibration on
+#: Wind Waker / Melee / Tiger Woods), so these are rejected outright rather than scored.
+MAX_ZERO_EDGE_SHARE = 0.30
+MIN_AXIS_RATIO = 0.01  # second-largest extent / largest
+
+
+def _degenerate(pos: np.ndarray, tri: np.ndarray) -> bool:
+    """True when the mesh is a line or its edges are mostly zero-length."""
+    t = tri.reshape(-1, 3)
+    if len(t) == 0:
+        return True
+    used = pos[np.unique(t)]
+    ext = np.sort(used.max(0) - used.min(0))[::-1]
+    if not ext[0] > 0 or ext[1] < ext[0] * MIN_AXIS_RATIO:
+        return True
+    e = np.concatenate([t[:, [0, 1]], t[:, [1, 2]], t[:, [2, 0]]])
+    zero = np.all(pos[e[:, 0]] == pos[e[:, 1]], axis=1)
+    return float(np.mean(zero)) > MAX_ZERO_EDGE_SHARE
+
+
 def _accept(m: Mesh) -> bool:
     """Tiny meshes and s16 arrays are where noise can pass the score: any bytes read as
     plausible s16, so an *indexed* s16 mesh must be big, multi-primitive and tight (the
     Crash Tag Team Racing smoke run exported 12 sliver false positives of exactly this
-    kind from whole-archive blobs); inline s16 carries opcode evidence and stays looser."""
+    kind from whole-archive blobs); inline s16 carries opcode evidence and stays looser.
+    Whatever the kind, a line or a mostly-zero-length mesh is refused (`_degenerate`)."""
     if m.triangles < 20:
         return False
     if m.pos_kind == "s16":
-        return m.triangles >= 200 and len(m.dl.prims) >= 3 and m.compactness < 1.2
-    return m.compactness < 2.2
+        ok = m.triangles >= 200 and len(m.dl.prims) >= 3 and m.compactness < 1.2
+    else:
+        ok = m.compactness < 2.2
+    return ok and not _degenerate(m.positions, m.indices)
 
 
 def scan_blob(data: bytes, max_lists: int = 2000, budget: float | None = None) -> list[Mesh]:

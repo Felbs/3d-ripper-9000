@@ -215,6 +215,16 @@ flowchart LR
         AMALGA["amalga_gc.pak<br/>plugins.treyarch_pak"] --> GCNM["GCNM mesh files .gcmesh<br/>plugins.ngl_mesh"]
         AMALGA --> GCNT["GCNT textures .gct / .ifl<br/>formats.ngl_gc"] -.->|"by name hash"| GCNM
         AMALGA --> GCMAT["material files .gcmat"] -.-> GCNM
+        ST2[".ST2 stashes (Kelly Slater 2002)<br/>plugins.treyarch_st2"] --> GCNM0A["GCNM v0xA parts + per-bone batches<br/>plugins.ngl"]
+        ST2 --> GCNT
+    end
+    subgraph RUNECRAFT["Runecraft"]
+        GCG["gcg\\0 nodes + GX display lists<br/>plugins.gcg"]
+        GCM[".gcm INI materials"] -.->|"TextureMap_1"| GCG
+        GCTR[".gct mip chains (smallest first)<br/>formats.gcg"] -.-> GCG
+    end
+    subgraph GUSTO["Gusto / Silicon Dreams (Proteus)"]
+        SDA["SDASSETF .ast (LE models, BE textures)<br/>plugins.sdasset"]
     end
     subgraph EALA["EA Los Angeles"]
         MSH[".msh / .cpt 2002<br/>plugins.ea_la"] -.->|"SHPG in the material tables"| MSH

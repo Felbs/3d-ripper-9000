@@ -28,7 +28,14 @@ def begin_disc() -> None:
     _disc_deadline = time.monotonic() + DISC_BUDGET if DISC_BUDGET > 0 else None
 
 
+#: Disc system files never hold models; scanning them only ever produced one noise mesh a
+#: disc (Freestyle Street Soccer's `sys/fst.gltf`: 85 "triangles" of file-table entries).
+SYSTEM_FILES = ("sys/boot.bin", "sys/bi2.bin", "sys/apploader.img", "sys/fst.bin")
+
+
 def detect(path: str, head: bytes, size: int) -> bool:
+    if path.replace("\\", "/").lower().endswith(SYSTEM_FILES):
+        return False
     return MIN_SIZE <= size <= MAX_SIZE and generic.worth_trying(head)
 
 

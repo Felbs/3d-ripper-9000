@@ -49,6 +49,9 @@ _MAGICS: list[tuple[bytes, Classification]] = [
     (b"Yaz0", Classification("compressed", "Yaz0", "magic")),
     (b"Yay0", Classification("compressed", "Yay0", "magic")),
     (b"STRM", Classification("audio", "AST", "magic")),
+    # Silicon Dreams / Gusto "Proteus" asset files share Nintendo's .ast extension
+    (b"SDASSETF", Classification("model", "SDASSET", "magic")),
+    (b"SADSFTES", Classification("model", "SDASSET", "magic")),
     (b" HALPST", Classification("audio", "HPS", "magic")),
     (b"RIFF", Classification("audio", "RIFF", "magic")),
     (b"AA_<", Classification("audio", "BAA", "magic")),
