@@ -83,14 +83,24 @@ def _block(g: bytes, off: int, rigged: bool):
     pidx = (rows[:, 0].astype(np.uint32) << 8) | rows[:, 1]
     cidx = (rows[:, 5].astype(np.uint32) << 8) | rows[:, 6]
     uidx = (rows[:, 7].astype(np.uint32) << 8) | rows[:, 8]
-    # rigged models store 16-byte records, but single-bone props keep 12-byte ones: take the
-    # first record size the position indices fit
-    for rec in (16, 12) if rigged else (12, 16):
-        nv = pos_size // rec
-        if nv and pidx.max() < nv:
+    # The position section holds exactly max(position index) + 1 records, padded to a
+    # 32-byte boundary: ``pos_size == align32(nv * rec)`` byte-exact on every block of
+    # every sampled Ty3 world chunk (1543/1543).  Deriving the count as ``pos_size //
+    # rec`` instead read the pad as 1-2 extra "vertices" per block - NaN / 1e38 floats
+    # that never hit a triangle but blew the bbox of ~2,000 Krome world models.
+    # Rigged models store 16-byte records, but single-bone props keep 12-byte ones:
+    # take the record size whose padded section matches, else the first the indices fit.
+    nv = int(pidx.max()) + 1
+    order = (16, 12) if rigged else (12, 16)
+    for rec in order:
+        if (nv * rec + 31) & ~31 == pos_size:
             break
     else:
-        return None
+        for rec in order:
+            if pos_size // rec >= nv:
+                break
+        else:
+            return None
     rigged = rigged and rec == 16
     pos_off = base + dl_size + col_size
     recs = np.frombuffer(g, np.uint8, nv * rec, pos_off).reshape(nv, rec)

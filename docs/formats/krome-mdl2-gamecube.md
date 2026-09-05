@@ -92,6 +92,17 @@ record, 16-byte records `xyz | u8 bone a, u8 bone b, u8 weight (a), 0` when the 
 bones (single-bone props still use 12-byte records - pick the size the indices fit),
 otherwise 12. Colours RGBA8. UVs s16 / 4096 (tiling allowed: torch -0.6..1.85).
 
+**Position count (2026-09-04 fix):** the position section holds exactly
+`max(position index) + 1` records; `position size` is that padded to the 32-byte
+boundary, and the pad bytes are junk (NaN / 1e38 float patterns), NOT zeros.
+`pos_size // rec` (record size verifies as `align32(nv * rec) == pos_size`, byte-exact
+on 1543/1543 Ty 3 world-chunk blocks) over-counted by 1-2 "vertices" per block; those
+junk vertices never hit a triangle, so renders looked fine, but they blew the bounding
+box (extent 1e37-1e38) of ~2,044 world models across GIZE52 Ty 3 / GYTE69 Ty 2 /
+G6SE7D Spyro ANB / GKHEA4 King Arthur - the entire #1-#4 garbage cluster of the
+2026-09-04 quality audit. RR3_01 after the fix: extent 58442, median edge ratio
+0.0039, 0 NaN, score ok.
+
 ## Open
 
 - `.bad` (Ty 1) / `.bni`? skeleton hierarchy -> proper joint tree; `.anm`/`.ang` animations.

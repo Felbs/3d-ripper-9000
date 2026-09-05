@@ -6,6 +6,19 @@ textures through the plugin chain.
 
 Companion to [FORMATS.md](FORMATS.md), which lists what already works.
 
+## Closed 2026-09-04: Krome MDL3 world-chunk garbage (Ty 2 / Ty 3 / Spyro ANB / King Arthur)
+
+The quality audit's #1-#4 garbage cluster (~2,044 models: GIZE52 707, GYTE69 609, G6SE7D
+478, GKHEA4 250) was one line in `gcrip/formats/mdl3.py`: the position-record count was
+derived as `pos_size // rec`, but the `.mdg` position section is padded to a 32-byte
+boundary with junk bytes (NaN / 1e38 float patterns, not zeros), so every world-chunk
+block gained 1-2 phantom vertices.  They never hit a triangle - the renders were always
+correct - but they blew the bounding box to 1e38, which reads as 100% degenerate edges.
+The real count is `max(position index) + 1`: `align32(nv * rec) == pos_size` holds
+byte-exact on 1543/1543 sampled Ty 3 world blocks.  Fixed, regression-tested, rigged
+actors (Ty, 87 bones) verified unchanged.  Re-rip / re-export of the four discs is the
+remaining chore.  See [formats/krome-mdl2-gamecube.md](formats/krome-mdl2-gamecube.md).
+
 ## Closed 2026-09-03: 007 Agent Under Fire maps (the world)
 
 `Bond.elf` ships a symtab, the engine is Quake III with EA's chunk stream on top: BOA

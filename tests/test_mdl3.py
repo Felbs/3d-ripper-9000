@@ -8,8 +8,12 @@ from gcrip.formats import mdl3
 from gcrip.plugins import mdl3 as plug
 
 
-def build_pair(rigged: bool) -> tuple[bytes, bytes]:
-    """One subobject, one texture, one block: a quad as a 4-vertex strip."""
+def build_pair(rigged: bool, pad: bytes = b"\0") -> tuple[bytes, bytes]:
+    """One subobject, one texture, one block: a quad as a 4-vertex strip.
+
+    *pad* fills the 32-byte alignment tail of the position section - the shipped
+    archives leave junk there (NaN / 1e38 float patterns), not zeros.
+    """
     # .mdg: magic + pad, block header at 0x20, sections
     dl = bytes([0x98, 0, 4])
     for i in range(4):
@@ -22,7 +26,7 @@ def build_pair(rigged: bool) -> tuple[bytes, bytes]:
         pos += struct.pack(">3f", x, y, 0)
         if rigged:
             pos += bytes([0, 1, 255, 0])
-    pos += bytes((-len(pos)) % 32)
+    pos += (pad * 32)[: (-len(pos)) % 32]
     uvs = b"".join(
         struct.pack(">2h", x * 4096, y * 4096) for x, y in ((0, 0), (1, 0), (0, 1), (1, 1))
     )
@@ -68,6 +72,23 @@ def test_mdl3_parse_static():
     m = mdl3.parse(mdl, mdg, "quad")
     assert len(m.parts) == 1 and len(m.bones) == 0 and m.parts[0].joints is None
     assert np.allclose(m.parts[0].positions[3], [1, 1, 0])
+
+
+def test_mdl3_alignment_pad_is_not_vertices():
+    """The Krome world-chunk bug: the position section is padded to 32 bytes and the
+    shipped pad bytes are junk (NaN / huge-float patterns).  ``pos_size // rec`` used
+    to read that pad as 1-2 extra vertices, blowing the bbox of ~2,000 world models
+    (Ty2/Ty3/Spyro06/King Arthur).  Only max(index)+1 records are real."""
+    mdl, mdg = build_pair(False, pad=b"\x7f\xc0\xff\xee")  # NaN-patterned junk
+    m = mdl3.parse(mdl, mdg, "quad")
+    p = m.parts[0]
+    assert p.positions.shape == (4, 3)  # exactly the referenced records, no pad tail
+    assert np.isfinite(p.positions).all()
+    # rigged records (16 B) still parse whole, with the same pad rule
+    mdl, mdg = build_pair(True, pad=b"\x7f\xc0\xff\xee")
+    p = mdl3.parse(mdl, mdg, "quad").parts[0]
+    assert p.positions.shape == (4, 3) and np.isfinite(p.positions).all()
+    assert p.joints is not None
 
 
 class Src:
