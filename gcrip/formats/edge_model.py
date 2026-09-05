@@ -43,7 +43,12 @@ palette, 0x85 / 1 RGBA8, 0x89 C4 and 0x8a C8 over a 32-bit palette.  The pixels 
 A 32-bit palette on disc (flags bit 7) is two IA8 TLUTs: ``(B, R)`` words then ``(A, G)``.
 
 Shader payload (``EShaderDef``): u8 textures, u8, u16, u32 x 3, 48 bytes, 9 x u32, then 64-byte
-layers whose first u32 is the texture's name hash - the same hash the index files it under.
+layers whose first u32 is the texture's name hash - the same hash the index files it under
+(``crc32`` of the upper-cased name).  Pets' version 0x18 starts its 48-byte layers at 0x3b.
+
+Texture format 0x88 (Shark Tale / Over the Hedge) is a CMPR colour image followed by a CMPR
+image whose grey level is the alpha.  A face template (``af_ft_chin_strong``: per-vertex
+position deltas, mostly zero) is applied over its base face by ``apply_morph``.
 """
 
 from __future__ import annotations
@@ -64,8 +69,13 @@ F_UV, F_COLOR, F_NORMAL, F_PACKED, F_DL, F_UV4 = 2, 4, 8, 0x10, 0x20, 0x40
 UV_SCALE = 1.0 / 4096.0
 NORMAL_SCALE = 1.0 / 64.0
 
-TEX_FORMATS = {0x81: 0xE, 0x82: 5, 0x83: 8, 0x84: 9, 0x85: 6, 1: 6, 0x89: 8, 0x8A: 9}
+TEX_FORMATS = {0x81: 0xE, 0x82: 5, 0x83: 8, 0x84: 9, 0x85: 6, 1: 6, 0x88: 0xE, 0x89: 8, 0x8A: 9}
+CMPR_ALPHA = 0x88  # Shark Tale / Over the Hedge: a CMPR colour image, then a CMPR alpha image
 PRE_SPLIT_PALETTE = 0x80
+
+# EShaderDef layouts by member version: (bytes before the first layer, bytes a layer); the
+# layer's first u32 is the texture's name hash.  The Sims 2 writes 0x16, Pets 0x18.
+SHADER_LAYOUTS = ((0x18, (0x3B, 0x30)), (0, (0x64, 0x40)))
 
 
 class EdgeError(ValueError):
@@ -175,6 +185,7 @@ class Strip:
     uvs: np.ndarray | None
     indices: np.ndarray  # (M,) u32 triangles
     skinned: bool
+    ordinal: int = 0  # position among the model's strip tokens, in file order
 
 
 @dataclass
@@ -259,7 +270,11 @@ def _read_strip(
     version: int,
     name: str,
     warnings: list[str],
+    keep_all: bool = False,
 ) -> Strip | None:
+    """One strip token.  ``keep_all`` returns a Strip with no triangles where a strip holds
+    none (fewer than three vertices, or degenerate joins only) instead of dropping it, so a
+    morph target's per-strip deltas stay aligned with its base."""
     n = r.u32()
     if flags & F_PACKED:
         pos = (
@@ -323,14 +338,12 @@ def _read_strip(
             return None
         tri = idx[tri]
     else:
-        if n < 3:
-            return None  # legitimate: a strip needs three vertices to hold a triangle
-        tri = _strip_triangles(n)
+        tri = _strip_triangles(n)  # fewer than three vertices: no triangle, legitimately
     # strip joins repeat a vertex by index or by position; either way it is not a triangle
     a, b, c = pos[tri[:, 0]], pos[tri[:, 1]], pos[tri[:, 2]]
     good = ~(np.all(a == b, axis=1) | np.all(b == c, axis=1) | np.all(a == c, axis=1))
     tri = tri[good]
-    if not len(tri):
+    if not len(tri) and not keep_all:
         return None  # legitimate: a strip of degenerate joins only
     return Strip(shader, flags, pos, nrm, clr, uv, tri.reshape(-1).astype(np.uint32), skinned)
 
@@ -352,14 +365,17 @@ def parse_payload(
     leading_name: bool = False,
     node_arrays: bool = True,
     extra_word: bool = True,
+    keep_all: bool = False,
 ) -> Model:
     """The model data behind a header.
 
     ``leading_name``: The Urbz writes the model's name as a NUL-terminated string in front
     (its dataset entries have an empty header name).  ``node_arrays``: The Sims (2003) has no
     attachment / spline / dummy / camera / light arrays and no 48-byte block, only the flag and
-    the scale.  ``extra_word``: the u32 after the strip count that The Sims (2003) lacks."""
+    the scale.  ``extra_word``: the u32 after the strip count that The Sims (2003) lacks.
+    ``keep_all``: keep triangle-less strips too (see ``_read_strip``)."""
     r = _Reader(payload)
+    ordinal = 0
     if leading_name:
         end = payload.find(b"\0")
         if end < 0:
@@ -390,10 +406,12 @@ def parse_payload(
                     break
                 if op == 0:
                     strip = _read_strip(
-                        r, flags, shader, skinned, scale, version, name, model.warnings
+                        r, flags, shader, skinned, scale, version, name, model.warnings, keep_all
                     )
                     if strip is not None:
+                        strip.ordinal = ordinal
                         model.strips.append(strip)
+                    ordinal += 1
                 elif op == 1:
                     r.u16()
                     r.u8()
@@ -407,6 +425,54 @@ def parse_payload(
     if len(payload) - r.p > 8:
         model.warnings.append(f"{name}: {len(payload) - r.p} bytes after the bounds")
     return model
+
+
+# ---------------------------------------------------------------- morph targets
+
+MORPH_ZERO_SHARE = 0.5
+MORPH_MATCH_SHARE = 0.8
+
+
+def is_morph_target(model: Model) -> bool:
+    """A face template (The Sims 2 / Pets ``af_ft_chin_strong``, ``d_fmt_Growl`` ...) is a
+    model whose strips hold per-vertex position *deltas* over a base face: most of them are
+    exactly zero.  Needs a ``keep_all`` parse so every strip is seen."""
+    total = sum(len(s.positions) for s in model.strips)
+    if not total:
+        return False
+    zero = sum(int(np.all(s.positions == 0, axis=1).sum()) for s in model.strips)
+    return zero / total >= MORPH_ZERO_SHARE
+
+
+def apply_morph(base: Model, morph: Model) -> Model | None:
+    """``base`` with ``morph``'s deltas added strip by strip (matched by ordinal and vertex
+    count), named after the morph; None when fewer than MORPH_MATCH_SHARE of the base's
+    strips have a delta of the same size."""
+    deltas = {s.ordinal: s.positions for s in morph.strips}
+    matched = {
+        s.ordinal
+        for s in base.strips
+        if s.ordinal in deltas and len(deltas[s.ordinal]) == len(s.positions)
+    }
+    if not base.strips or len(matched) < MORPH_MATCH_SHARE * len(base.strips):
+        return None
+    out = Model(morph.name, base.version, base.scale, warnings=list(base.warnings))
+    for s in base.strips:
+        pos = s.positions
+        if s.ordinal in matched:
+            pos = (pos + deltas[s.ordinal]).astype(np.float32)
+        out.strips.append(
+            Strip(
+                s.shader, s.flags, pos, s.normals, s.colors, s.uvs, s.indices, s.skinned, s.ordinal
+            )
+        )
+    out.warnings.append(f"{morph.name}: morph target applied over {base.name}")
+    if len(matched) < len(base.strips):
+        out.warnings.append(
+            f"{morph.name}: {len(base.strips) - len(matched)} of {len(base.strips)} strips "
+            f"have no matching delta in the morph"
+        )
+    return out
 
 
 # ---------------------------------------------------------------- textures and shaders
@@ -467,7 +533,16 @@ def _texture(name: str, d: bytes) -> Texture:
     need = gx_texture.encoded_size(gx, w, h_)
     if len(pixels) * 8 < w * h_ * gx_texture.BITS_PER_PIXEL[gx]:
         raise EdgeError(f"{name}: {len(pixels)} bytes for a {w}x{h_} level")
-    return Texture(name, w, h_, fmt, gx_texture.decode(gx, w, h_, pixels[:need], palette))
+    rgba = gx_texture.decode(gx, w, h_, pixels[:need], palette)
+    if fmt == CMPR_ALPHA:
+        # the second half of the payload is a second CMPR image whose (grey) texels are the
+        # alpha - CMPR itself only carries one bit of it
+        half = len(pixels) // 2
+        if half < need:
+            raise EdgeError(f"{name}: {len(pixels)} bytes for a {w}x{h_} colour + alpha pair")
+        rgba = rgba.copy()
+        rgba[..., 3] = gx_texture.decode(gx, w, h_, pixels[half : half + need], None)[..., 1]
+    return Texture(name, w, h_, fmt, rgba)
 
 
 def shader_textures(data: bytes) -> list[int]:
@@ -478,18 +553,20 @@ def shader_textures(data: bytes) -> list[int]:
     h = header(data)
     if h is not None and h.tag == SHADER:
         d = h.payload
+        version = h.version
     elif len(data) > 20 and data[4:16] == bytes(12) and data[:4] != bytes(4):
-        size = struct.unpack_from(">I", data, 16)[0]
+        version, size = struct.unpack_from(">I", data, 0)[0], struct.unpack_from(">I", data, 16)[0]
         end = data.find(bytes(1), 20)
         if end < 0 or 20 + size > len(data):
             raise EdgeError("shader name runs off the entry")
         d = data[end + 1 : 20 + size]
     else:
         raise EdgeError("not an Edge of Reality shader")
+    head, layer = next(lay for least, lay in SHADER_LAYOUTS if version >= least)
     count = d[0] if d else 0
     out = []
     for i in range(min(count, 2)):
-        at = 0x64 + i * 0x40
+        at = head + i * layer
         if at + 4 > len(d):
             break
         ref = struct.unpack_from(">I", d, at)[0]
@@ -565,26 +642,29 @@ def parse_entry_texture(payload: bytes) -> Texture:
 
 # ---------------------------------------------------------------- Shark Tale / Over the Hedge
 
-HEDGE_ARRAY_REG = {"nrm": 0xA1, "clr": 0xA2, "clr1": 0xA3, "tex": 0xA4}
-HEDGE_SLOTS = ((1, "nrm"), (2, "clr"), (3, "clr1"), (4, "tex"))
+# The record's five array offsets: position (always 0), texcoords, colour, colour 1, and the
+# two-bone skin weights (u8 pairs summing to 256; not exported).  The CP stride registers in
+# the first chunk give the element widths (0xB2 colour, 0xB4 texcoord).
+HEDGE_ARRAY_REG = {"clr": 0xB2, "clr1": 0xB3, "tex": 0xB4}
+HEDGE_SLOTS = ((1, "tex"), (2, "clr"), (3, "clr1"))
+HEDGE_TOKENS = {0x45: 8, 0x46: 12, 0x50: 16, 0x51: 0, 0x52: 0}  # bytes after each token
+
+
+def _hedge_positions(seg: bytes, stride: int, scale: float) -> tuple[np.ndarray, np.ndarray | None]:
+    """(positions, normals) of the position array.  A 12-byte record is ``s16 xyz`` and then
+    an ``s16`` unit vector quantised like the positions (its length is ``1 / scale``): the
+    vertex normal, which is why the corners' normal index equals their position index."""
+    if stride == 6:
+        return np.frombuffer(seg, dtype=">i2").reshape(-1, 3).astype(np.float32) * scale, None
+    if stride == 12:
+        rec = np.frombuffer(seg, dtype=">i2").reshape(-1, 6).astype(np.float32)
+        nrm = rec[:, 3:6] * scale
+        length = np.linalg.norm(nrm, axis=1, keepdims=True)
+        return rec[:, :3] * scale, nrm / np.where(length > 0, length, 1.0)
+    raise EdgeError(f"position stride {stride}")
 
 
 def _hedge_array(key: str, seg: bytes, stride: int) -> np.ndarray:
-    if key == "pos":
-        if stride == 6:
-            return np.frombuffer(seg, dtype=">i2").reshape(-1, 3).astype(np.float32)
-        if stride == 12:
-            return np.frombuffer(seg, dtype=">f4").reshape(-1, 3).astype(np.float32)
-        raise EdgeError(f"position stride {stride}")
-    if key == "nrm":
-        if stride in (3, 4):
-            v = np.frombuffer(seg, dtype=np.int8).reshape(-1, stride)[:, :3]
-            return v.astype(np.float32) / 64.0
-        if stride == 6:
-            return np.frombuffer(seg, dtype=">i2").reshape(-1, 3).astype(np.float32) / 16384.0
-        if stride == 12:
-            return np.frombuffer(seg, dtype=">f4").reshape(-1, 3).astype(np.float32)
-        raise EdgeError(f"normal stride {stride}")
     if key in ("clr", "clr1"):
         if stride == 2:
             return gx_texture._rgb565_to_rgba(np.frombuffer(seg, dtype=">u2").astype(np.uint16))
@@ -602,23 +682,22 @@ def _hedge_array(key: str, seg: bytes, stride: int) -> np.ndarray:
 
 
 def _hedge_arrays(
-    block: bytes, offsets: tuple[int, ...], strides: dict[int, int], nverts: int
+    block: bytes, offsets: tuple[int, ...], strides: dict[int, int]
 ) -> dict[str, np.ndarray]:
-    """The attribute arrays of a strip: positions at 0, the rest at their offsets, each
-    running to the next offset (or the block's end), decoded by the CP stride register."""
-    order = [("pos", 0, strides.get(0xA0, 6))]
-    for slot, key in HEDGE_SLOTS:
-        if offsets[slot]:
-            order.append((key, offsets[slot], strides.get(HEDGE_ARRAY_REG[key], 0)))
-    order.sort(key=lambda t: t[1])
+    """The texcoord and colour arrays of a strip at their offsets, each running to the next
+    offset (or the block's end), decoded by the CP stride register."""
+    order = [
+        (key, offsets[slot], strides.get(HEDGE_ARRAY_REG[key], 0))
+        for slot, key in HEDGE_SLOTS
+        if offsets[slot]
+    ]
+    ends = sorted(o for o in offsets[1:] if o) + [len(block)]
     arrays: dict[str, np.ndarray] = {}
-    for i, (key, at, stride) in enumerate(order):
-        end = order[i + 1][1] if i + 1 < len(order) else len(block)
+    for key, at, stride in order:
+        end = next(e for e in ends if e > at)
         if not stride:
             continue
         n = len(block[at:end]) // stride
-        if key == "pos":
-            n = min(n, nverts)
         arrays[key] = _hedge_array(key, block[at : at + n * stride], stride)
     return arrays
 
@@ -654,30 +733,36 @@ def _hedge_display_list(dl: bytes):
             if width == 0 or p + 3 + count * width > len(dl):
                 break
             rec = np.frombuffer(dl[p + 3 : p + 3 + count * width], dtype=np.uint8)
-            prims.append((op & 0xF8, rec.reshape(count, width)))
+            prims.append((op & 0xF8, rec.reshape(count, width), lo, hi))
             p += 3 + count * width
         else:
             break
     return regs, lo, hi, prims
 
 
-def _hedge_columns(lo: int, hi: int, rec: np.ndarray) -> dict[str, np.ndarray]:
-    """Corner columns in VCD order: position, normal, colour 0, colour 1, texcoords 0..7."""
-    keys = []
-    for key, s in (("pos", 9), ("nrm", 11), ("clr", 13), ("clr1", 15)):
-        keys.append((key, (lo >> s) & 3))
-    for t in range(8):
-        keys.append((f"tex{t}", (hi >> (2 * t)) & 3))
-    cols: dict[str, np.ndarray] = {}
-    at = 0
-    for key, kind in keys:
-        if kind == 3:
-            cols[key] = rec[:, at].astype(np.int64) << 8 | rec[:, at + 1]
-            at += 2
-        elif kind == 2:
-            cols[key] = rec[:, at].astype(np.int64)
-            at += 1
-    return cols
+def _hedge_columns(prims: list) -> dict[str, np.ndarray]:
+    """Corner columns over every primitive, in VCD order: position, normal, colour 0,
+    colour 1, texcoords 0..7.  The VCD can change between primitives of one chunk (Shark
+    Tale's HUD characters drop the normal mid-chunk), so each primitive is split under the
+    descriptor that was live when it was drawn."""
+    parts: dict[str, list[np.ndarray]] = {}
+    for _op, rec, lo, hi in prims:
+        keys = [
+            (key, (lo >> s) & 3) for key, s in (("pos", 9), ("nrm", 11), ("clr", 13), ("clr1", 15))
+        ]
+        keys += [(f"tex{t}", (hi >> (2 * t)) & 3) for t in range(8)]
+        at = 0
+        for key, kind in keys:
+            if kind == 3:
+                parts.setdefault(key, []).append(rec[:, at].astype(np.int64) << 8 | rec[:, at + 1])
+                at += 2
+            elif kind == 2:
+                parts.setdefault(key, []).append(rec[:, at].astype(np.int64))
+                at += 1
+    n = sum(len(rec) for _op, rec, _lo, _hi in prims)
+    # an attribute a primitive lacks cannot be indexed for it: only columns present on every
+    # primitive line up with the corners
+    return {k: np.concatenate(v) for k, v in parts.items() if sum(map(len, v)) == n}
 
 
 def parse_hedge_payload(payload: bytes, name: str, start: int) -> Model:
@@ -703,36 +788,35 @@ def parse_hedge_payload(payload: bytes, name: str, start: int) -> Model:
             r.u32()  # corners in total
             chunk2 = r.raw(n2)
             r.raw(words[2])  # a byte a strip
-            # then tokens to the 6: 0x45 (two words), 0x46 (three), 0x51 / 0x52 (none)
+            # then tokens to the 6: 0x45 (two words), 0x46 (three), 0x50 (four, the whale),
+            # 0x51 / 0x52 (none)
             while True:
                 token = r.u8()
                 if token == 6:
                     break
-                if token == 0x45:
-                    r.raw(8)
-                elif token == 0x46:
-                    r.raw(12)
-                elif token not in (0x51, 0x52):
+                if token not in HEDGE_TOKENS:
                     raise EdgeError(f"{name}: token {token:#x} after a shader record")
+                r.raw(HEDGE_TOKENS[token])
             regs, _lo, _hi, _prims = _hedge_display_list(chunk1)
             _regs, lo, hi, prims = _hedge_display_list(chunk2)
             if not prims:
                 model.warnings.append(f"{name}: display list holds no primitive")
                 continue
-            strides = {0xA0 + (reg - 0xB0): val for reg, val in regs.items() if 0xB0 <= reg <= 0xBF}
-            arrays = _hedge_arrays(block, words[4:9], strides, nverts)
-            cols = _hedge_columns(lo, hi, np.concatenate([rec for _, rec in prims]))
+            stride = regs.get(0xB0, 6)
+            positions, normals = _hedge_positions(block[: nverts * stride], stride, scale)
+            arrays = _hedge_arrays(block, words[4:9], regs)
+            cols = _hedge_columns(prims)
             pidx = cols.get("pos")
-            if pidx is None or pidx.max(initial=0) >= len(arrays.get("pos", ())):
+            if pidx is None or pidx.max(initial=0) >= len(positions):
                 model.warnings.append(f"{name}: position index past the array")
                 continue
             tris = []
             base = 0
-            for op, prim in prims:
+            for op, prim, _lo, _hi in prims:
                 tris.append(_triangles(op, len(prim)) + base)
                 base += len(prim)
             tri = np.concatenate(tris)
-            pos = arrays["pos"][pidx] * scale
+            pos = positions[pidx]
             a, b, c = pos[tri[:, 0]], pos[tri[:, 1]], pos[tri[:, 2]]
             good = ~(np.all(a == b, axis=1) | np.all(b == c, axis=1) | np.all(a == c, axis=1))
             tri = tri[good]
@@ -753,7 +837,7 @@ def parse_hedge_payload(payload: bytes, name: str, start: int) -> Model:
                     shader,
                     words[0],
                     pos.astype(np.float32),
-                    gather("nrm", "nrm"),
+                    None if normals is None else normals[pidx].astype(np.float32),
                     None if clr is None else clr.astype(np.uint8),
                     gather("tex", "tex0"),
                     tri.reshape(-1).astype(np.uint32),

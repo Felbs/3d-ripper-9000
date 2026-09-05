@@ -1,10 +1,18 @@
 """Edge of Reality models - ``MODL`` members (``Models/<hash>.bin`` out of ``models.arc``), the
 older discs' bare ``models.arc`` members and dataset entries (``.eorm``) - one Scene a model,
-textures bound through the disc's ``Shaders`` and ``Textures`` categories by name hash."""
+textures bound through the disc's ``Shaders`` and ``Textures`` categories by name hash.
+
+The hash is ``crc32`` of the upper-cased name (``l_hqcf_spanielcut_leanfighter`` ->
+``00048712``), which is also how a face template (``af_ft_chin_strong``, ``d_fmt_Growl``: a
+model of per-vertex position deltas, mostly zero) finds the base face it deforms
+(``af_ft_base_lod``, ``d_ft_base``) and goes out as the deformed face instead of as a
+collapsed cloud of deltas."""
 
 from __future__ import annotations
 
 import posixpath
+import re
+import zlib
 
 import numpy as np
 
@@ -12,6 +20,22 @@ from gcrip.formats import edge_model
 from ripcore.scene import MaterialDef, Primitive, Scene
 
 NAME = "edge_model"
+
+MORPH_NAME = re.compile(r"^(?P<prefix>[a-z]+)_(?:ft|fmt)_(?P<feature>.+?)(?P<lod>_lod)?$")
+MORPH_BASES = ("base", "bases2c", "base_s2c")  # ``af_ft_base`` is not shipped, its s2c is
+
+
+def name_hash(name: str) -> int:
+    return zlib.crc32(name.upper().encode("latin-1")) & 0xFFFFFFFF
+
+
+def morph_base_names(name: str) -> list[str]:
+    """Base-face names a face template of this name may deform, in the order to try."""
+    m = MORPH_NAME.match(name)
+    if m is None or m["feature"].startswith("base"):
+        return []
+    lod = m["lod"] or ""
+    return [f"{m['prefix']}_ft_{base}{lod}" for base in MORPH_BASES]
 
 
 def detect(path: str, head: bytes, size: int) -> bool:
@@ -24,10 +48,12 @@ def detect(path: str, head: bytes, size: int) -> bool:
     return edge_model.is_model(head[:8]) or ("/models/" in lower and edge_model.is_old_model(head))
 
 
-def _parse(data: bytes, path: str) -> edge_model.Model:
+def _parse(data: bytes, path: str, keep_all: bool = False) -> edge_model.Model:
     if path.lower().endswith(".eorm") or not edge_model.is_model(data[:8]):
         return edge_model.parse_entry_model(data)
-    return edge_model.parse_model(data)
+    h = edge_model.header(data)
+    assert h is not None
+    return edge_model.parse_payload(h.payload, h.version, h.name, keep_all=keep_all)
 
 
 class _Resources:
@@ -39,6 +65,7 @@ class _Resources:
         self.textures: dict[int, str] = {}
         self.cache: dict[int, edge_model.Texture | None] = {}
         self.shader_cache: dict[int, list[int]] = {}
+        self.bases: dict[str, edge_model.Model | None] = {}
 
     def _index(self) -> None:
         if self.shaders is not None:
@@ -86,10 +113,28 @@ class _Resources:
                 out = edge_model.any_texture(self.src.get(path))
             except Exception:  # noqa: BLE001 - one bad texture must not stop the model
                 out = None
+        if out is not None and not out.rgba[..., 3].any():
+            # ``af_hh_dummy``, the 8x8 fully transparent stand-in the runtime composites
+            # over: binding it would make the model invisible
+            out = None
         if len(self.cache) > 256:
             self.cache.clear()
         self.cache[ref] = out
         return out
+
+    def base_model(self, folder: str, name: str) -> edge_model.Model | None:
+        """The sibling ``MODL`` member of this name (by its hash), parsed, or None."""
+        key = f"{folder}/{name_hash(name):08x}.bin"
+        if key not in self.bases:
+            model = None
+            if key in self.src.by_path:
+                try:
+                    data = self.src.get(key)
+                    model = edge_model.parse_model(data)
+                except Exception:  # noqa: BLE001 - an unreadable base leaves the morph as is
+                    model = None
+            self.bases[key] = model
+        return self.bases[key]
 
 
 _cache: dict[int, _Resources] = {}
@@ -106,14 +151,38 @@ def _resources(src) -> _Resources | None:
     return t
 
 
+def _morphed(data: bytes, path: str, model: edge_model.Model, res: _Resources | None):
+    """The base face deformed by this morph target, or None when this is not one."""
+    if res is None or not edge_model.is_model(data[:8]):
+        return None
+    bases = morph_base_names(model.name)
+    if not bases:
+        return None
+    deltas = _parse(data, path, keep_all=True)
+    if not edge_model.is_morph_target(deltas):
+        return None
+    folder = posixpath.dirname(path)
+    for name in bases:
+        base = res.base_model(folder, name)
+        if base is None:
+            continue
+        out = edge_model.apply_morph(base, deltas)
+        if out is not None:
+            return out
+    return None
+
+
 def extract(data: bytes, path: str, src) -> list[Scene]:
     model = _parse(data, path)
+    res = _resources(src)
+    model = _morphed(data, path, model, res) or model
     stem = posixpath.basename(path).split(".")[0]
     scene = Scene(name=model.name or stem)
     scene.warnings += model.warnings
-    res = _resources(src)
     materials: dict[int, int] = {}
     for strip in model.strips:
+        if not len(strip.indices):
+            continue
         if strip.shader not in materials:
             tex_key = None
             tex = res.texture_of(strip.shader) if res is not None else None

@@ -126,24 +126,20 @@ def stem_of(category: str) -> str:
     return category.lower()[:STEM]
 
 
-PAD_ALLOWANCE = 1 << 16
-
-
 def fits(entries: list[Entry], archive_size: int) -> bool:
-    """The category's entries have to account for the archive, give or take its padding.
+    """The category's entries have to lie inside the archive and account for most of it.
 
-    Eleven of the sixteen category/archive pairs across the three discs land on the byte; the
-    other five stop 156 to 64,357 bytes short of a padded tail, the worst being 0.73% of an
-    8.7 MB archive.  Demanding an exact match - which Over the Hedge happens to give on all
-    five of its archives - silently rejects both of the other discs.
+    Eleven of the sixteen category/archive pairs across the three older discs land on the
+    byte; the other five stop 156 to 64,357 bytes short of a padded tail.  The Sims 2 Pets
+    goes further: its ``shaders.arc`` (955,866 bytes) carries a 203,562-byte tail past the
+    last entry - 21%, a name table the index does not point at - and a padding-sized
+    allowance rejected the whole archive, so no shader on the disc was ever read and 2,364
+    models went untextured.
 
-    The allowance stays a real check because a *wrong* pairing misses by a different order of
-    magnitude entirely: Over the Hedge's ``Models`` ends at 73 MB against a 399 MB
-    ``datasets.arc``.
+    Half is still a real check: a *wrong* pairing misses by a different order of magnitude,
+    Over the Hedge's ``Models`` ending at 73 MB against a 399 MB ``datasets.arc``.
     """
     if not entries:
         return False
     end = max(e.offset + e.size for e in entries)
-    if end > archive_size:
-        return False
-    return archive_size - end <= max(PAD_ALLOWANCE, archive_size // 64)
+    return end <= archive_size and end * 2 >= archive_size

@@ -325,7 +325,91 @@ models (its 1,647 sit in the level packs) - the wave will tell.
 
 ### Still open
 
-* Over the Hedge texture format 0x88 (4 bpp, no palette, twice the bytes of a 64x64 4-bpp
-  image; neither I4 nor IA4 nor two I4 frames) - 3 of 38 sampled textures.
+* ~~Over the Hedge texture format 0x88~~ - read 2026-09-05, below.
 * The Sims (2003) `rletextu.arc` (377 RLE textures) and every disc's `Characters` (skeletons)
   and `Animations`.
+
+## The quality-audit cluster - Pets 162 garbage / 2,364 untextured, Shark Tale 158 garbage (2026-09-05)
+
+Five separate causes, none of them the container.  Everything below was worked on members
+pulled from the two ISOs (double-read; `quality_report.json` named the models) and proven
+against the old reader before the change.
+
+**The name hash is `crc32` of the upper-cased name.**  `L_HQCF_SPANIELCUT_LEANFIGHTER` ->
+`00048712`, `D_BOD_SM_CCREAM_CRD` -> `1a4e9f77`, `P_KELPSHORTPURPLE_MODEL` -> `1875c468` - 9
+of 9 model, shader and texture names across both discs.  Anything on these discs can now be
+looked up by name (`gcrip.plugins.edge_model.name_hash`).
+
+### Shark Tale: the 12-byte position record is s16, not f32 (158 garbage -> 0)
+
+Every garbage model on the disc (`nan_positions`, extent 1e36, denormals like `2.68e-38`)
+had `0xB0 = 12` in its CP chunk, and the reader took a 12-byte stride for `f32 xyz`.  The
+bytes are **`s16 xyz` then an `s16` triple whose length is exactly `1 / scale`** (kelp 62.4
+at scale 1/64, the whale 7.3 at 1/8, the HUD glass 63 / 127 / 255) - a unit vector in the
+positions' own quantisation, and it agrees with the face normal (median `|dot|` 0.96-1.00
+on the whale, the turtle, the sign, the spinning kelp), which is also why the corners' normal
+index equals their position index.  So the record is *position + normal*, and models with
+`flags & 0x8` and a 6-byte stride have no normals at all.
+
+**The five array offsets are not (pos, nrm, clr, clr1, tex).**  The coral's slot 1 holds
+`(-36, 8192), (2703, 8192), (2703, 6144) ...` - `s16 / 4096` texcoords with `v` in steps of
+0.5 - and the whale's slot 4 holds u8 pairs `(21, 235), (129, 127), (103, 153)` that sum to
+256: two-bone skin weights.  The slots are **position, texcoords, colour, colour 1,
+weights**; the old mapping read weights as UVs and UVs as normals, so the "kelp textured"
+of 09-03 had garbage UVs.  The VCD can also change between primitives of one chunk (the
+HUD characters drop the normal mid-chunk), so corner columns are now split per primitive.
+Token **`0x50` carries four words** (the whale's 18 of them); 243 "token 0x50" failures on
+the disc, `whale_model` among them, now read - the whale is a whale (thumb in the audit
+scratch).  Stride-6 models are byte-identical to the old reader: 70 of 70 in the four
+datasets pulled; 25 of 25 flagged garbage there now score ok / untextured, 0 regressed.
+
+**Texture format 0x88 is CMPR colour followed by CMPR alpha** - exactly twice
+`encoded_size(CMPR)`, the second image grey (its green channel is the alpha: `d_hud_arrow_d`
+is a purple arrow beside its own green silhouette).  1,951 "texture format 0x88" failures on
+Shark Tale decode now; Over the Hedge's are the same.
+
+### The Sims 2 Pets: shaders never opened (2,364 untextured), and morph targets (138 garbage)
+
+`shaders.arc` is 955,866 bytes and the `Shaders` table ends at 752,304 - a 21% tail of name
+strings the index does not point at - so `edge_ind.fits`' padding allowance rejected the
+archive and **no shader on the disc was read**; texture binding fell through to "a texture
+under the model's own hash", which is why only same-named pairs (`af_base_face`) ever bound.
+`fits` now asks the table to lie inside the archive and cover at least half of it (the
+wrong-pairing case it guards, 73 MB vs 399 MB, is still refused).  Pets also writes
+**`EShaderDef` version 0x18: the 48-byte layers start at 0x3b** (0x16 on The Sims 2: 64-byte
+layers at 0x64) - `d_bod_sm_ccream_crd` closes at `0x3b + 2 x 0x30 = 155` bytes exactly and
+its two hashes are both in the `Textures` table.  Reading all 4,993 shaders against the 2,364
+untextured models' shader hashes: **774 bind a real texture now**, 1,587 reference only
+`af_hh_dummy` (an 8x8 fully transparent stand-in the runtime composites the Sim's skin and
+clothes over - legitimately untextured, and the plugin refuses to bind a texture with no
+alpha at all), 3 have no layers.  The most-bound texture is `d_hed_sm_beardsalpha`, the dog
+bodies' alpha mask: faithful to the shader, but it is a mask, not fur.
+
+The 138 `collapsed_positions` models are **face templates**: `af_ft_chin_strong`,
+`am_ft_eyes_connery`, `d_fmt_Growl`, `f_fmt_Smile` - 48 `_ft_` and 90 `_fmt_` names, every one
+with the same 28 (human) / 8-9 (dog, cat) strips, bone tokens and vertex counts as
+`af_ft_base_lod` / `d_ft_base` / `f_ft_base`, and 66-100% of their positions exactly zero.
+They are per-vertex deltas.  `plugins/edge_model` now finds the base by name
+(`<prefix>_ft_base`, `bases2c` for the non-LOD humans - `af_ft_base` is not shipped - with
+the morph's `_lod`), requires the structure to match on 80% of the strips, and exports the
+**deformed base** under the morph's name (a warning records the base).  A real face of the
+same naming (`af_ft_alien`, 942 vertices, none zero) is left alone.  Two other groups stay
+flagged and are not reader bugs: the 14 `scenery_outerlot_*` "clouds" are 95-132 identical
+17-vertex puff sprites, each bound by token 1 to a bone of the `CHRC` character of the same
+name (`cloud_puff_base01..88`, 183-byte records: `name\0, u32 children, ids, identity
+transforms`) whose rest translations are all zero - their placement is in the
+`animation_cloud` clip, and `Animations` are unread; `placeholder_01` and
+`l_flc_spanielcut_sprinter` are the same bone-placed shape.
+
+**Pets' `Datasets` are `DTST` EDataHeader members** (version 0xa) whose payload is the Urbz
+layout without the leading `u32 9`: `name[64], u32 count, count x (category[32], u32 hash,
+u32 size, u32 pad, size + pad bytes)`, closing on the byte (`housepre01b`: 112 entries,
+1,896,404 of 1,896,404).  The entries are whole `MODL` / `TXFL` / `SHDR` members
+(`lu_shadow`, `TRACKING_CURSOR`, `bed_double_mission_ep3_left`, 7 models / 12 textures / 10
+shaders a house), and the `Datasets` entries nested inside carry their data in the *pad*
+half behind `size` zero bytes.  `plugins/edge_dataset` opens them and hands the three
+readable categories on as `.bin`; the six datasets the display-list scanner had turned into
+`gx000_neutral` noise (4 garbage, 2 suspect) are claimed away from it.
+
+Re-rip needed: **G9TE52 Shark Tale, G4OE69 The Sims 2 Pets**; Over the Hedge (`GO8E69`)
+and The Sims 2 (`G4ZE69`) share the record / texture / dataset changes.

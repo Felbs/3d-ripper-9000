@@ -8,6 +8,8 @@ Three layouts of the same idea::
   Sims / Bustin' Out    name\\0, u32 sections, sections x (name\\0, u32 count, entries)
   Shark Tale / Hedge    12 zero bytes, u8 sections, name\\0, sections as above
   The Urbz              u32 9, name[64], u32 count, count x (category[32], entry)
+  The Sims 2 / Pets     an EDataHeader ("DTST") whose payload is the Urbz layout without
+                        the leading u32; its members are whole MODL / TXFL / SHDR members
   entry                 u32 name hash, u32 size, u32 padding, size + padding bytes
 
 The entry payload is wrapped per game (``wrapper`` below), and the reader in
@@ -27,11 +29,12 @@ from __future__ import annotations
 import struct
 from dataclasses import dataclass
 
-SIMS, HEDGE, URBZ = "sims", "hedge", "urbz"
+SIMS, HEDGE, URBZ, PETS = "sims", "hedge", "urbz", "pets"
 MAX_SECTIONS = 64
 MAX_ENTRIES = 1 << 16
 CATEGORY = 32
 URBZ_NAME = 64
+DTST = b"DTST"  # The Sims 2 / Pets: an EDataHeader member whose payload is the Urbz layout
 
 
 class DatasetError(ValueError):
@@ -60,6 +63,8 @@ def style(head: bytes) -> str | None:
     """Which layout a member follows, from its first bytes, or None."""
     if len(head) < 24:
         return None
+    if head[4:8] == DTST:
+        return PETS
     if head[:4] == b"\0\0\0\x09" and _printable(head[4:6]):
         end = head.find(b"\0", 4, 4 + URBZ_NAME)
         if end > 4 and all(c == 0 for c in head[end : min(len(head), 4 + URBZ_NAME)]):
@@ -103,31 +108,47 @@ def _sectioned(data: bytes, p: int, sections: int) -> list[Entry]:
     return out
 
 
+def _named_entries(data: bytes, p: int) -> tuple[str, list[Entry]]:
+    """The Urbz / Pets layout from ``p``: ``name[64], u32 count, count x (category[32],
+    u32 hash, u32 size, u32 pad, size + pad bytes)``.  Pets' nested ``Datasets`` entries
+    keep their data in the *pad* half behind ``size`` zero bytes; they are carried whole."""
+    name = data[p : p + URBZ_NAME].split(b"\0")[0].decode("latin-1")
+    count = struct.unpack_from(">I", data, p + URBZ_NAME)[0]
+    if count > MAX_ENTRIES:
+        raise DatasetError(f"{count} entries")
+    p += 4 + URBZ_NAME
+    out: list[Entry] = []
+    for _ in range(count):
+        if p + CATEGORY + 12 > len(data):
+            raise DatasetError("entry header past the end")
+        category = data[p : p + CATEGORY].split(b"\0")[0].decode("latin-1")
+        h, size, pad = struct.unpack_from(">III", data, p + CATEGORY)
+        p += CATEGORY + 12
+        if p + size + pad > len(data):
+            raise DatasetError(f"entry {h:08x} of {size} bytes past the end")
+        out.append(Entry(category, h, data[p : p + size]))
+        p += size + pad
+    if p != len(data):
+        raise DatasetError(f"{len(data) - p} bytes after the last entry")
+    return name, out
+
+
 def entries(data: bytes) -> tuple[str, str, list[Entry]]:
     """(style, dataset name, entries) of a member."""
     kind = style(data[:96])
     if kind is None:
         raise DatasetError("not an Edge of Reality dataset")
     if kind == URBZ:
-        name = data[4 : 4 + URBZ_NAME].split(b"\0")[0].decode("latin-1")
-        count = struct.unpack_from(">I", data, 4 + URBZ_NAME)[0]
-        if count > MAX_ENTRIES:
-            raise DatasetError(f"{count} entries")
-        p = 8 + URBZ_NAME
-        out: list[Entry] = []
-        for _ in range(count):
-            if p + CATEGORY + 12 > len(data):
-                raise DatasetError("entry header past the end")
-            category = data[p : p + CATEGORY].split(b"\0")[0].decode("latin-1")
-            h, size, pad = struct.unpack_from(">III", data, p + CATEGORY)
-            p += CATEGORY + 12
-            if p + size + pad > len(data):
-                raise DatasetError(f"entry {h:08x} of {size} bytes past the end")
-            out.append(Entry(category, h, data[p : p + size]))
-            p += size + pad
-        if p != len(data):
-            raise DatasetError(f"{len(data) - p} bytes after the last entry")
-        return kind, name, out
+        return kind, *_named_entries(data, 4)
+    if kind == PETS:
+        # EDataHeader: u32 version, "DTST", u32 -1, u32 n, name[n], u32 size, then the payload
+        n = struct.unpack_from(">I", data, 12)[0]
+        if n > 256 or 20 + n > len(data):
+            raise DatasetError("dataset header runs off the member")
+        size = struct.unpack_from(">I", data, 16 + n)[0]
+        if 20 + n + size > len(data):
+            raise DatasetError("dataset payload runs off the member")
+        return kind, *_named_entries(data[20 + n : 20 + n + size], 0)
     if kind == HEDGE:
         sections = data[12]
         s = _cstring(data, 13)

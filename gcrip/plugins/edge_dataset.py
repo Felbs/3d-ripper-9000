@@ -1,6 +1,11 @@
 """Edge of Reality ``Datasets`` members (gcrip.formats.edge_dataset) as a container: every
 entry becomes ``<Category>/<hash>.eorm`` (a model), ``.eort`` (a texture), ``.eors`` (a shader)
-or ``.bin``, for ``edge_model`` / ``edge_tex`` to claim."""
+or ``.bin``, for ``edge_model`` / ``edge_tex`` to claim.
+
+The Sims 2 / Pets ``DTST`` members hold whole ``MODL`` / ``TXFL`` / ``SHDR`` members, which go
+out as ``.bin`` under their category so the archive readers take them as they are; their
+``Characters`` / ``Animations`` (unread) and nested ``Datasets`` (zero-filled) are left out
+rather than handed to the display-list scanner."""
 
 from __future__ import annotations
 
@@ -9,6 +14,7 @@ from gcrip.formats import edge_dataset
 NAME = "edge_dataset"
 
 EXT = {"Models": "eorm", "Textures": "eort", "Shaders": "eors"}
+PETS_KEEP = frozenset(EXT)
 
 
 def detect(path: str, head: bytes, size: int) -> bool:
@@ -25,7 +31,7 @@ def is_container(name: str, head: bytes) -> bool:
 
 def expand(data: bytes) -> list[tuple[str, bytes]]:
     try:
-        _kind, _name, entries = edge_dataset.entries(data)
+        kind, _name, entries = edge_dataset.entries(data)
     except edge_dataset.DatasetError:
         return []
     out = []
@@ -33,7 +39,12 @@ def expand(data: bytes) -> list[tuple[str, bytes]]:
     for e in entries:
         if not e.payload:
             continue
-        ext = EXT.get(e.category, "bin")
+        if kind == edge_dataset.PETS:
+            if e.category not in PETS_KEEP:
+                continue
+            ext = "bin"
+        else:
+            ext = EXT.get(e.category, "bin")
         stem = f"{e.category}/{e.hash:08x}"
         n = seen.get(stem, 0)
         seen[stem] = n + 1

@@ -6,6 +6,25 @@ textures through the plugin chain.
 
 Companion to [FORMATS.md](FORMATS.md), which lists what already works.
 
+## Closed 2026-09-05: Edge of Reality - Shark Tale 158 garbage, The Sims 2 Pets 162 garbage / 2,364 untextured
+
+The audit's #8 and #9 were five things.  **Shark Tale**: a 12-byte position record is
+`s16 xyz` + the `s16` vertex normal (length `1/scale`, agrees with the face normal at 0.96+),
+not `f32` - every NaN model on the disc; the record's array slots are (position, texcoords,
+colour, colour 1, skin weights), not (.., normal, .., texcoords); token `0x50` carries four
+words (243 failures, the whale reads); texture 0x88 is CMPR colour + CMPR alpha (1,951
+failures).  25/25 flagged models in four datasets now ok, 70/70 stride-6 models byte-identical.
+**Pets**: `shaders.arc` was never opened (`fits` refused a 21% name-table tail, so nothing on
+the disc had a shader) and its `EShaderDef` is version 0x18 (48-byte layers from 0x3b) -
+774 of the 2,364 untextured models bind now, the other 1,587 reference only the transparent
+`af_hh_dummy` the runtime composites over; the 138 `collapsed_positions` models are face
+templates (per-vertex deltas, 66-100% zero) and export as the deformed base face, found by
+name (the hash is crc32 of the upper-cased name); Pets' `DTST` datasets open (Urbz layout
+behind an EDataHeader) and stop the scanner's noise.  Left flagged on purpose: 16 bone-placed
+sprite models (`scenery_outerlot_*` clouds) whose placement is in an unread animation.  See
+the 2026-09-05 section of [formats/edge-of-reality-arc.md](formats/edge-of-reality-arc.md).
+Re-rip: G9TE52, G4OE69 (Over the Hedge and The Sims 2 share the reader changes).
+
 ## Closed 2026-09-04: EAGL world packets - the EA ball-sports garbage cluster (~900 models, 10+ discs)
 
 The audit's #6-#15 cluster (FIFA 04/05/06/07, UEFA CL 04-05, NHL 2003, NBA Street V2:

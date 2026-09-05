@@ -79,6 +79,17 @@ Outputs consumed by tooling:
   non-lightmap grass / ivy alpha cards (`*Gazon*`, `*Herbe*`, `*Liere*`, `*ALPHA*`) that
   match their triangle list - faithful billboards, an audit false positive.  Disc pending
   re-rip.  See [ubisoft-gamecube.md](ubisoft-gamecube.md).
+- **Edge of Reality (#8 G4OE69 The Sims 2 Pets, #9 G9TE52 Shark Tale) - FIXED 2026-09-05.**
+  Shark Tale's `nan_positions` (extent 1e36, denormal floats - the audit signature of s16
+  read as f32) was the 12-byte position record: s16 xyz + s16 normal; its array slots were
+  mislabelled (weights read as UVs), token `0x50` and texture 0x88 (CMPR + CMPR alpha) were
+  unread.  Pets' `collapsed_positions` (dup_top_share 0.7-0.99, extent 0.01) were face
+  morph targets - per-vertex deltas over `af_ft_base_lod` / `d_ft_base` - now exported as the
+  deformed face; its 2,364 untextured were `shaders.arc` never being opened (a 21% tail
+  failed the fit check) plus a version-0x18 shader layout - 774 bind now, 1,587 reference
+  only a transparent runtime stand-in.  16 bone-placed cloud sprites stay flagged (placement
+  is in an unread animation).  See [edge-of-reality-arc.md](edge-of-reality-arc.md);
+  discs pending re-rip.
 - **GMHE52 Mat Hoffman Pro BMX 2: 472 of 533 flagged** - park chunk models
   (`chchunk19`, `poground21`), another whole-format failure.
 - Untextured hotspots (Sims 2 Pets 2364, NHL 2003 1212, PoP:SoT 859) are texture-pipeline

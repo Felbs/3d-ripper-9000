@@ -305,6 +305,102 @@ def test_bustin_out_wrapper_and_urbz_layout():
     assert edge_dataset.entries(hedge)[2][0].category == "Occluders"
 
 
+def test_pets_shader_layout_and_index_tail():
+    # Pets' EShaderDef (version 0x18) starts its 48-byte layers at 0x3b, not 0x64 / 64
+    body = bytes([2]) + bytes(0x3A) + struct.pack(">I", 0x51CE29C7) + bytes(0x2C)
+    body += struct.pack(">I", 0x4CC81175) + bytes(0x2C)
+    assert edge_model.shader_textures(_member(edge_model.SHADER, 0x18, "d_bod", body)) == [
+        0x51CE29C7,
+        0x4CC81175,
+    ]
+    assert edge_model.shader_textures(_shader_member("old", 0xBBBB)) == [0xBBBB]
+    # Pets' shaders.arc: the table ends 203,562 bytes (21%) before the archive does
+    ents = [edge_ind.Entry(1, 0, 752_304)]
+    assert edge_ind.fits(ents, 955_866)
+    assert not edge_ind.fits(ents, 752_303)  # runs past the archive
+    assert not edge_ind.fits([edge_ind.Entry(1, 0, 73 << 20)], 399 << 20)  # the wrong archive
+
+
+def _cmpr_block(color: int, w: int = 8, h: int = 8) -> bytes:
+    px = bytearray(gx_texture.encoded_size(0xE, w, h))
+    for at in range(0, len(px), 8):
+        struct.pack_into(">HHI", px, at, color, color, 0)
+    return bytes(px)
+
+
+def test_texture_0x88_is_cmpr_colour_then_cmpr_alpha():
+    # green colour block, then an alpha block whose grey level (its green) is the alpha
+    t = edge_model.parse_entry_texture(
+        _old_texture("kelp", 0x88, 8, 8, _cmpr_block(0x07E0) + _cmpr_block(0xFFFF))
+    )
+    assert tuple(t.rgba[0, 0]) == (0, 255, 0, 255)
+    t = edge_model.parse_entry_texture(
+        _old_texture("kelp", 0x88, 8, 8, _cmpr_block(0x07E0) + _cmpr_block(0x0000))
+    )
+    assert tuple(t.rgba[0, 0]) == (0, 255, 0, 0)
+    with pytest.raises(edge_model.EdgeError):
+        edge_model.parse_entry_texture(_old_texture("short", 0x88, 8, 8, _cmpr_block(0x07E0)))
+
+
+def test_morph_target_is_exported_as_its_deformed_base():
+    base = _model("af_ft_base_lod", [_strip_tokens(0x1E, QUAD)], shader=0xAAAA, version=0x3E)
+    delta = [(0, 0, 0), (0, 0, 0), (0, 0, 0), (0, 0, 4096)]
+    morph = _model("af_ft_chin_strong_lod", [_strip_tokens(0x1E, delta)], version=0x3E)
+    folder = "files/DATA/models.arc/Models"
+    members = {
+        f"{folder}/{plugin.name_hash('af_ft_base_lod'):08x}.bin": base,
+        f"{folder}/{plugin.name_hash('af_ft_chin_strong_lod'):08x}.bin": morph,
+    }
+    assert plugin.name_hash("l_hqcf_spanielcut_leanfighter") == 0x00048712  # crc32, upper-cased
+
+    class Src:
+        by_path = {k: None for k in members}
+
+        def get(self, p):
+            return members[p]
+
+    morph_path = f"{folder}/{plugin.name_hash('af_ft_chin_strong_lod'):08x}.bin"
+    (scene,) = plugin.extract(morph, morph_path, Src())
+    assert scene.name == "af_ft_chin_strong_lod"
+    assert scene.primitives[0].positions[3].tolist() == [1.0, 1.0, 1.0]  # base + delta
+    assert scene.primitives[0].positions[0].tolist() == [-1.0, -1.0, 0.0]
+    assert any("morph target applied over af_ft_base_lod" in w for w in scene.warnings)
+    # a real face of the same naming is not a morph: its positions are not mostly zero
+    (scene,) = plugin.extract(base, f"{folder}/{plugin.name_hash('af_ft_base_lod'):08x}.bin", Src())
+    assert scene.name == "af_ft_base_lod" and not scene.warnings
+    assert plugin.morph_base_names("d_fmt_Growl") == ["d_ft_base", "d_ft_bases2c", "d_ft_base_s2c"]
+    assert plugin.morph_base_names("af_ft_bases2c_lod") == []
+
+
+def test_pets_dtst_dataset_container():
+    from gcrip.formats import edge_dataset
+    from gcrip.plugins import edge_dataset as container
+
+    model = _model("lu_shadow", [_strip_tokens(0x1E, QUAD)], version=0x3E)
+    px = _cmpr_block(0xF800)
+    texture = _texture_member("black", 0x81, 8, 8, px)
+    payload = b"housepre01b".ljust(64, b"\0") + struct.pack(">I", 3)
+    payload += (
+        b"Datasets".ljust(32, b"\0") + struct.pack(">III", 0x5060C44B, 8, 4) + bytes(8) + b"ANIM"
+    )
+    payload += b"Models".ljust(32, b"\0") + struct.pack(">III", 0x22B86449, len(model), 0) + model
+    payload += b"Textures".ljust(32, b"\0") + struct.pack(">III", 0x7ED17898, len(texture), 0)
+    payload += texture
+    data = _member(edge_model.DATASET, 0xA, "housepre01b", payload)
+    assert edge_dataset.style(data[:96]) == edge_dataset.PETS
+    kind, name, entries = edge_dataset.entries(data)
+    assert name == "housepre01b" and [e.category for e in entries] == [
+        "Datasets",
+        "Models",
+        "Textures",
+    ]
+    assert container.is_container("05914164.bin", data[:64])
+    members = dict(container.expand(data))
+    assert sorted(members) == ["Models/22b86449.bin", "Textures/7ed17898.bin"]
+    assert plugin.detect("x/Models/22b86449.bin", members["Models/22b86449.bin"][:64], len(model))
+    assert edge_tex.detect("x/Textures/7ed17898.bin", texture[:64], len(texture))
+
+
 def test_shark_tale_record_with_cp_display_lists():
     """Shark Tale / Over the Hedge: a name hash, nine words, the arrays, a CP chunk, an
     attribute table, a primitive chunk, a byte a strip and the 6."""
@@ -339,3 +435,46 @@ def test_shark_tale_record_with_cp_display_lists():
     assert s.shader == 0xCAFEBABE and s.indices.size == 6
     assert s.positions.max() == 2048.0 and tuple(s.colors[0]) == (255, 0, 0, 255)
     assert tuple(s.colors[2]) == (0, 255, 0, 255)
+
+
+def test_shark_tale_stride12_record_texcoords_weights_and_token_0x50():
+    """The whale / kelp record: 12-byte positions (s16 xyz then the s16 normal quantised like
+    the positions), texcoords at the first offset, skin weights at the last, a 0x50 token
+    with four words, and a VCD that changes between two primitives of one chunk."""
+    scale = 0.125
+    pos = b"".join(struct.pack(">3h3h", x, y, z, 0, 0, 8) for x, y, z in QUAD)  # 48 bytes
+    tex = b"".join(
+        struct.pack(">2h", u, v) for u, v in ((0, 0), (4096, 0), (0, 4096), (4096, 4096))
+    )
+    weights = bytes([255, 1] * 4)
+    block = pos + tex + weights  # tex at 48, weights at 64
+    chunk1 = b"".join(
+        struct.pack(">BBI", 8, reg, val)
+        for reg, val in ((0xA0, 0), (0xB0, 12), (0xA4, 0), (0xB4, 4), (0xA1, 0), (0xB1, 4))
+    )
+    chunk1 += bytes(-len(chunk1) % 32)
+    # VCD: position, normal and tex0 as index8; then the normal dropped for the second triangle
+    chunk2 = struct.pack(">BBI", 8, 0x50, 0x1400) + struct.pack(">BBI", 8, 0x60, 0x2)
+    chunk2 += bytes([0x90]) + struct.pack(">H", 3) + bytes([0, 0, 0, 1, 1, 1, 2, 2, 2])
+    chunk2 += struct.pack(">BBI", 8, 0x50, 0x400)
+    chunk2 += bytes([0x90]) + struct.pack(">H", 3) + bytes([1, 1, 3, 3, 2, 2])
+    chunk2 += bytes(-len(chunk2) % 32)
+    rec = struct.pack(">I", 0xCAFEBABE) + struct.pack(
+        ">9I", 0xC000007A, 4, 1, len(block), 0, 48, 0, 0, 64
+    )
+    rec += block + struct.pack(">I", len(chunk1)) + chunk1 + bytes([0])
+    rec += struct.pack(">II", len(chunk2), 6) + chunk2 + bytes(1)
+    rec += bytes([0x50]) + bytes(16) + bytes([0x46]) + bytes(12) + bytes([6])
+    body = bytes(4) + bytes(2) + b"whale\0" + bytes([0]) + struct.pack(">fI", scale, 1)
+    body += struct.pack(">II", 0xFFFFFFFF, 1) + rec + bytes(4) + bytes(16 + 24 + 24 + 4)
+    m = edge_model.parse_entry_model(body)
+    assert m.name == "whale" and not m.warnings and len(m.strips) == 1
+    s = m.strips[0]
+    assert s.indices.size == 6 and s.positions.max() == 512.0
+    assert s.normals.shape == (6, 3) and s.normals[0].tolist() == [0.0, 0.0, 1.0]
+    assert s.uvs[1].tolist() == [1.0, 0.0] and s.uvs[3].tolist() == [1.0, 0.0]
+    assert s.colors is None
+    with pytest.raises(edge_model.EdgeError):
+        edge_model.parse_entry_model(
+            body.replace(bytes([0x50]) + bytes(16), bytes([0x4F]) + bytes(16))
+        )
