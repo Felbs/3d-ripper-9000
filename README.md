@@ -125,6 +125,23 @@ bones** button in the GCRip panel does the same for a rig imported some other wa
 whose exporter dropped the skin weights (the Radical p3d games) is refused with a plain
 message, since its body would not follow the skeleton.
 
+### Your own footage: ComfyUI node + workflow + `gcrip-comfy` MCP
+
+`comfyui/gcrip_mocap/` is a ComfyUI custom node, **GCRip Person Masks**: one clip of
+several people in, one white-on-black mask video per person out, which is what
+ComfyUI-MotionCapture's GVHMR Inference needs per person. It finds people with the
+YOLOv8 segmentation model the Impact subpack ships and follows each one through the
+clip, so person 1 stays person 1 (leftmost at the start, or largest). Install with a
+junction: `mklink /J ComfyUI\custom_nodes\gcrip_mocap "Z:\3d ripper\comfyui\gcrip_mocap"`.
+`python comfyui/make_workflow.py --people 2` writes `comfyui/workflows/
+gcrip_multi_person_mocap.json` (drop it on the ComfyUI canvas: Load Video > Person Masks >
+GVHMR per person > SMPL to BVH per person) and an API twin. `tools/comfy_mcp.py`
+(`gcrip-comfy` in `.mcp.json`) drives it headless: `comfy_mocap(video, people)` returns
+one BVH per person, `mocap_take(bvh, characters, out_blend, render_mp4)` puts them on
+ripped characters through the Blender control channel, `comfy_launch` starts ComfyUI.
+Filming rules: static phone, whole bodies in frame, people not overlapping in the first
+frame.
+
 ### Drive Blender from an assistant (GCRip Server panel, `gcrip-blender` MCP)
 
 **GCRip Server** (N sidebar > GCRip tab) starts a JSON-lines control channel on

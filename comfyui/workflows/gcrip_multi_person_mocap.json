@@ -1,0 +1,925 @@
+{
+ "id": "gcrip-multi-person-mocap",
+ "revision": 0,
+ "last_node_id": 11,
+ "last_link_id": 12,
+ "nodes": [
+  {
+   "type": "Note",
+   "inputs": [],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "Note"
+   },
+   "widgets_values": [
+    "GCRip: footage of several people -> one BVH per person.\n1. Load Video: pick your clip (drop it on the node). Static phone, whole bodies in frame, people not overlapping at the first frame.\n2. GCRip Person Masks: set 'people' to how many are in the shot; person 1 = leftmost at the start (or 'largest_first'). Check the preview image.\n3. Run. BVH files land in ComfyUI/output as <name>_p1.bvh, <name>_p2.bvh ...\n4. Blender: GCRip Library > spawn a character per person > GCRip Mocap > pick the BVH > Retarget. Or the gcrip-comfy MCP tool mocap_take does it all."
+   ],
+   "size": [
+    520,
+    210
+   ],
+   "id": 1,
+   "pos": [
+    -560,
+    -260
+   ],
+   "order": 0,
+   "mode": 0,
+   "flags": {},
+   "color": "#432",
+   "bgcolor": "#653"
+  },
+  {
+   "id": 2,
+   "type": "LoadVideo",
+   "pos": [
+    -560,
+    0
+   ],
+   "size": [
+    282.798828125,
+    323.5283777573529
+   ],
+   "flags": {},
+   "order": 1,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "file",
+     "name": "file",
+     "type": "COMBO",
+     "widget": {
+      "name": "file"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "choose file to upload",
+     "name": "upload",
+     "type": "IMAGEUPLOAD",
+     "widget": {
+      "name": "upload"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "VIDEO",
+     "name": "VIDEO",
+     "type": "VIDEO",
+     "links": [
+      1,
+      3,
+      8
+     ]
+    }
+   ],
+   "properties": {
+    "cnr_id": "comfy-core",
+    "ver": "0.13.0",
+    "Node name for S&R": "LoadVideo"
+   },
+   "widgets_values": [
+    "backyard_test.mp4",
+    "image"
+   ]
+  },
+  {
+   "type": "GCRipPersonMasks",
+   "inputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "link": 1
+    }
+   ],
+   "outputs": [
+    {
+     "name": "mask_1",
+     "type": "VIDEO",
+     "links": [
+      4
+     ]
+    },
+    {
+     "name": "mask_2",
+     "type": "VIDEO",
+     "links": [
+      9
+     ]
+    },
+    {
+     "name": "mask_3",
+     "type": "VIDEO",
+     "links": []
+    },
+    {
+     "name": "mask_4",
+     "type": "VIDEO",
+     "links": []
+    },
+    {
+     "name": "preview",
+     "type": "IMAGE",
+     "links": [
+      2
+     ]
+    },
+    {
+     "name": "info",
+     "type": "STRING",
+     "links": []
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "GCRipPersonMasks"
+   },
+   "widgets_values": [
+    2,
+    "left_to_right",
+    "person_yolov8m-seg.pt",
+    0.4,
+    6,
+    "backyard_test"
+   ],
+   "size": [
+    330,
+    260
+   ],
+   "id": 3,
+   "pos": [
+    -220,
+    0
+   ],
+   "order": 2,
+   "mode": 0,
+   "flags": {}
+  },
+  {
+   "type": "PreviewImage",
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 2
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "PreviewImage"
+   },
+   "widgets_values": [],
+   "size": [
+    330,
+    260
+   ],
+   "id": 4,
+   "pos": [
+    -220,
+    320
+   ],
+   "order": 3,
+   "mode": 0,
+   "flags": {}
+  },
+  {
+   "id": 5,
+   "type": "LoadGVHMRModels",
+   "pos": [
+    -220,
+    -260
+   ],
+   "size": [
+    276.740234375,
+    130
+   ],
+   "flags": {},
+   "order": 4,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "model_path_override",
+     "name": "model_path_override",
+     "shape": 7,
+     "type": "STRING",
+     "widget": {
+      "name": "model_path_override"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "precision",
+     "name": "precision",
+     "shape": 7,
+     "type": "COMBO",
+     "widget": {
+      "name": "precision"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "attention",
+     "name": "attention",
+     "shape": 7,
+     "type": "COMBO",
+     "widget": {
+      "name": "attention"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "load_dpvo",
+     "name": "load_dpvo",
+     "shape": 7,
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "load_dpvo"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "config",
+     "name": "config",
+     "type": "GVHMR_CONFIG",
+     "links": [
+      5,
+      10
+     ]
+    }
+   ],
+   "properties": {
+    "cnr_id": "comfyui-motioncapture",
+    "ver": "0a313b6cbd87f105051ef640ca981340f3b76587",
+    "Node name for S&R": "LoadGVHMRModels",
+    "aux_id": "PozzettiAndrea/ComfyUI-MotionCapture"
+   },
+   "widgets_values": [
+    "",
+    "auto",
+    "auto",
+    false
+   ]
+  },
+  {
+   "id": 6,
+   "type": "GVHMRInference",
+   "pos": [
+    180,
+    0
+   ],
+   "size": [
+    272.578125,
+    262
+   ],
+   "flags": {},
+   "order": 5,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "video",
+     "name": "video",
+     "type": "VIDEO",
+     "link": 3
+    },
+    {
+     "localized_name": "video_mask",
+     "name": "video_mask",
+     "type": "VIDEO",
+     "link": 4
+    },
+    {
+     "localized_name": "config",
+     "name": "config",
+     "type": "GVHMR_CONFIG",
+     "link": 5
+    },
+    {
+     "localized_name": "intrinsics",
+     "name": "intrinsics",
+     "shape": 7,
+     "type": "INTRINSICS",
+     "link": null
+    },
+    {
+     "localized_name": "moving_camera",
+     "name": "moving_camera",
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "moving_camera"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "focal_length_mm",
+     "name": "focal_length_mm",
+     "shape": 7,
+     "type": "INT",
+     "widget": {
+      "name": "focal_length_mm"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "bbox_scale",
+     "name": "bbox_scale",
+     "shape": 7,
+     "type": "FLOAT",
+     "widget": {
+      "name": "bbox_scale"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "vo_method",
+     "name": "vo_method",
+     "shape": 7,
+     "type": "COMBO",
+     "widget": {
+      "name": "vo_method"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "vo_scale",
+     "name": "vo_scale",
+     "shape": 7,
+     "type": "FLOAT",
+     "widget": {
+      "name": "vo_scale"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "vo_step",
+     "name": "vo_step",
+     "shape": 7,
+     "type": "INT",
+     "widget": {
+      "name": "vo_step"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "chunk_size",
+     "name": "chunk_size",
+     "shape": 7,
+     "type": "INT",
+     "widget": {
+      "name": "chunk_size"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "npz_path",
+     "name": "npz_path",
+     "type": "STRING",
+     "links": [
+      6
+     ]
+    },
+    {
+     "localized_name": "camera_npz_path",
+     "name": "camera_npz_path",
+     "type": "STRING",
+     "links": []
+    },
+    {
+     "localized_name": "info",
+     "name": "info",
+     "type": "STRING",
+     "links": []
+    }
+   ],
+   "properties": {
+    "cnr_id": "comfyui-motioncapture",
+    "ver": "ff2f8ab242e09125ed640b4b944aeca76be4d2fb",
+    "Node name for S&R": "GVHMRInference"
+   },
+   "widgets_values": [
+    false,
+    0,
+    1.2,
+    "simple_vo",
+    0.5,
+    8,
+    32
+   ],
+   "title": "GVHMR Inference - person 1"
+  },
+  {
+   "id": 7,
+   "type": "SMPLtoBVH",
+   "pos": [
+    520,
+    0
+   ],
+   "size": [
+    270,
+    170
+   ],
+   "flags": {},
+   "order": 6,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "npz_path",
+     "name": "npz_path",
+     "type": "STRING",
+     "widget": {
+      "name": "npz_path"
+     },
+     "link": 6
+    },
+    {
+     "localized_name": "filename",
+     "name": "filename",
+     "type": "STRING",
+     "widget": {
+      "name": "filename"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "fps",
+     "name": "fps",
+     "type": "INT",
+     "widget": {
+      "name": "fps"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "scale",
+     "name": "scale",
+     "type": "FLOAT",
+     "widget": {
+      "name": "scale"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "bvh_data",
+     "name": "bvh_data",
+     "type": "BVH_DATA",
+     "links": [
+      7
+     ]
+    },
+    {
+     "localized_name": "file_path",
+     "name": "file_path",
+     "type": "STRING",
+     "links": []
+    },
+    {
+     "localized_name": "info",
+     "name": "info",
+     "type": "STRING",
+     "links": []
+    }
+   ],
+   "properties": {
+    "cnr_id": "comfyui-motioncapture",
+    "ver": "5fb550a9fdd709693e02ded817bae55ae7b9a461",
+    "Node name for S&R": "SMPLtoBVH"
+   },
+   "widgets_values": [
+    "",
+    "backyard_test_p1.bvh",
+    30,
+    1.0
+   ],
+   "title": "SMPL to BVH - person 1"
+  },
+  {
+   "id": 8,
+   "type": "BVHViewer",
+   "pos": [
+    820,
+    0
+   ],
+   "size": [
+    400,
+    720
+   ],
+   "flags": {},
+   "order": 7,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "bvh_data",
+     "name": "bvh_data",
+     "type": "BVH_DATA",
+     "link": 7
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "info",
+     "name": "info",
+     "type": "STRING",
+     "links": []
+    }
+   ],
+   "properties": {
+    "cnr_id": "comfyui-motioncapture",
+    "ver": "5fb550a9fdd709693e02ded817bae55ae7b9a461",
+    "Node name for S&R": "BVHViewer"
+   },
+   "widgets_values": [
+    ""
+   ]
+  },
+  {
+   "id": 9,
+   "type": "GVHMRInference",
+   "pos": [
+    180,
+    340
+   ],
+   "size": [
+    272.578125,
+    262
+   ],
+   "flags": {},
+   "order": 8,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "video",
+     "name": "video",
+     "type": "VIDEO",
+     "link": 8
+    },
+    {
+     "localized_name": "video_mask",
+     "name": "video_mask",
+     "type": "VIDEO",
+     "link": 9
+    },
+    {
+     "localized_name": "config",
+     "name": "config",
+     "type": "GVHMR_CONFIG",
+     "link": 10
+    },
+    {
+     "localized_name": "intrinsics",
+     "name": "intrinsics",
+     "shape": 7,
+     "type": "INTRINSICS",
+     "link": null
+    },
+    {
+     "localized_name": "moving_camera",
+     "name": "moving_camera",
+     "type": "BOOLEAN",
+     "widget": {
+      "name": "moving_camera"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "focal_length_mm",
+     "name": "focal_length_mm",
+     "shape": 7,
+     "type": "INT",
+     "widget": {
+      "name": "focal_length_mm"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "bbox_scale",
+     "name": "bbox_scale",
+     "shape": 7,
+     "type": "FLOAT",
+     "widget": {
+      "name": "bbox_scale"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "vo_method",
+     "name": "vo_method",
+     "shape": 7,
+     "type": "COMBO",
+     "widget": {
+      "name": "vo_method"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "vo_scale",
+     "name": "vo_scale",
+     "shape": 7,
+     "type": "FLOAT",
+     "widget": {
+      "name": "vo_scale"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "vo_step",
+     "name": "vo_step",
+     "shape": 7,
+     "type": "INT",
+     "widget": {
+      "name": "vo_step"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "chunk_size",
+     "name": "chunk_size",
+     "shape": 7,
+     "type": "INT",
+     "widget": {
+      "name": "chunk_size"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "npz_path",
+     "name": "npz_path",
+     "type": "STRING",
+     "links": [
+      11
+     ]
+    },
+    {
+     "localized_name": "camera_npz_path",
+     "name": "camera_npz_path",
+     "type": "STRING",
+     "links": []
+    },
+    {
+     "localized_name": "info",
+     "name": "info",
+     "type": "STRING",
+     "links": []
+    }
+   ],
+   "properties": {
+    "cnr_id": "comfyui-motioncapture",
+    "ver": "ff2f8ab242e09125ed640b4b944aeca76be4d2fb",
+    "Node name for S&R": "GVHMRInference"
+   },
+   "widgets_values": [
+    false,
+    0,
+    1.2,
+    "simple_vo",
+    0.5,
+    8,
+    32
+   ],
+   "title": "GVHMR Inference - person 2"
+  },
+  {
+   "id": 10,
+   "type": "SMPLtoBVH",
+   "pos": [
+    520,
+    340
+   ],
+   "size": [
+    270,
+    170
+   ],
+   "flags": {},
+   "order": 9,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "npz_path",
+     "name": "npz_path",
+     "type": "STRING",
+     "widget": {
+      "name": "npz_path"
+     },
+     "link": 11
+    },
+    {
+     "localized_name": "filename",
+     "name": "filename",
+     "type": "STRING",
+     "widget": {
+      "name": "filename"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "fps",
+     "name": "fps",
+     "type": "INT",
+     "widget": {
+      "name": "fps"
+     },
+     "link": null
+    },
+    {
+     "localized_name": "scale",
+     "name": "scale",
+     "type": "FLOAT",
+     "widget": {
+      "name": "scale"
+     },
+     "link": null
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "bvh_data",
+     "name": "bvh_data",
+     "type": "BVH_DATA",
+     "links": [
+      12
+     ]
+    },
+    {
+     "localized_name": "file_path",
+     "name": "file_path",
+     "type": "STRING",
+     "links": []
+    },
+    {
+     "localized_name": "info",
+     "name": "info",
+     "type": "STRING",
+     "links": []
+    }
+   ],
+   "properties": {
+    "cnr_id": "comfyui-motioncapture",
+    "ver": "5fb550a9fdd709693e02ded817bae55ae7b9a461",
+    "Node name for S&R": "SMPLtoBVH"
+   },
+   "widgets_values": [
+    "",
+    "backyard_test_p2.bvh",
+    30,
+    1.0
+   ],
+   "title": "SMPL to BVH - person 2"
+  },
+  {
+   "id": 11,
+   "type": "BVHViewer",
+   "pos": [
+    820,
+    340
+   ],
+   "size": [
+    400,
+    720
+   ],
+   "flags": {},
+   "order": 10,
+   "mode": 0,
+   "inputs": [
+    {
+     "localized_name": "bvh_data",
+     "name": "bvh_data",
+     "type": "BVH_DATA",
+     "link": 12
+    }
+   ],
+   "outputs": [
+    {
+     "localized_name": "info",
+     "name": "info",
+     "type": "STRING",
+     "links": []
+    }
+   ],
+   "properties": {
+    "cnr_id": "comfyui-motioncapture",
+    "ver": "5fb550a9fdd709693e02ded817bae55ae7b9a461",
+    "Node name for S&R": "BVHViewer"
+   },
+   "widgets_values": [
+    ""
+   ]
+  }
+ ],
+ "links": [
+  [
+   1,
+   2,
+   0,
+   3,
+   0,
+   "VIDEO"
+  ],
+  [
+   2,
+   3,
+   4,
+   4,
+   0,
+   "IMAGE"
+  ],
+  [
+   3,
+   2,
+   0,
+   6,
+   0,
+   "VIDEO"
+  ],
+  [
+   4,
+   3,
+   0,
+   6,
+   1,
+   "VIDEO"
+  ],
+  [
+   5,
+   5,
+   0,
+   6,
+   2,
+   "GVHMR_CONFIG"
+  ],
+  [
+   6,
+   6,
+   0,
+   7,
+   0,
+   "STRING"
+  ],
+  [
+   7,
+   7,
+   0,
+   8,
+   0,
+   "BVH_DATA"
+  ],
+  [
+   8,
+   2,
+   0,
+   9,
+   0,
+   "VIDEO"
+  ],
+  [
+   9,
+   3,
+   1,
+   9,
+   1,
+   "VIDEO"
+  ],
+  [
+   10,
+   5,
+   0,
+   9,
+   2,
+   "GVHMR_CONFIG"
+  ],
+  [
+   11,
+   9,
+   0,
+   10,
+   0,
+   "STRING"
+  ],
+  [
+   12,
+   10,
+   0,
+   11,
+   0,
+   "BVH_DATA"
+  ]
+ ],
+ "groups": [],
+ "config": {},
+ "extra": {
+  "ds": {
+   "scale": 0.8,
+   "offset": [
+    80,
+    120
+   ]
+  }
+ },
+ "version": 0.4
+}

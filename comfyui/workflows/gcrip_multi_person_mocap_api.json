@@ -1,0 +1,113 @@
+{
+ "2": {
+  "class_type": "LoadVideo",
+  "inputs": {
+   "file": "backyard_test.mp4"
+  }
+ },
+ "3": {
+  "class_type": "GCRipPersonMasks",
+  "inputs": {
+   "video": [
+    "2",
+    0
+   ],
+   "people": 2,
+   "order": "left_to_right",
+   "model": "person_yolov8m-seg.pt",
+   "confidence": 0.4,
+   "dilate": 6,
+   "name": "backyard_test"
+  }
+ },
+ "4": {
+  "class_type": "PreviewImage",
+  "inputs": {
+   "images": [
+    "3",
+    4
+   ]
+  }
+ },
+ "5": {
+  "class_type": "LoadGVHMRModels",
+  "inputs": {
+   "model_path_override": "",
+   "precision": "auto",
+   "attention": "auto",
+   "load_dpvo": false
+  }
+ },
+ "6": {
+  "class_type": "GVHMRInference",
+  "inputs": {
+   "video": [
+    "2",
+    0
+   ],
+   "video_mask": [
+    "3",
+    0
+   ],
+   "config": [
+    "5",
+    0
+   ],
+   "moving_camera": false,
+   "focal_length_mm": 0,
+   "bbox_scale": 1.2,
+   "vo_method": "simple_vo",
+   "vo_scale": 0.5,
+   "vo_step": 8,
+   "chunk_size": 32
+  }
+ },
+ "7": {
+  "class_type": "SMPLtoBVH",
+  "inputs": {
+   "npz_path": [
+    "6",
+    0
+   ],
+   "filename": "backyard_test_p1.bvh",
+   "fps": 30,
+   "scale": 1.0
+  }
+ },
+ "9": {
+  "class_type": "GVHMRInference",
+  "inputs": {
+   "video": [
+    "2",
+    0
+   ],
+   "video_mask": [
+    "3",
+    1
+   ],
+   "config": [
+    "5",
+    0
+   ],
+   "moving_camera": false,
+   "focal_length_mm": 0,
+   "bbox_scale": 1.2,
+   "vo_method": "simple_vo",
+   "vo_scale": 0.5,
+   "vo_step": 8,
+   "chunk_size": 32
+  }
+ },
+ "10": {
+  "class_type": "SMPLtoBVH",
+  "inputs": {
+   "npz_path": [
+    "9",
+    0
+   ],
+   "filename": "backyard_test_p2.bvh",
+   "fps": 30,
+   "scale": 1.0
+  }
+ }
+}

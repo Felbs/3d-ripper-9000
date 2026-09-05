@@ -2192,8 +2192,15 @@ def camera(target="", distance=None, height=None, azimuth=-30.0, track=True, nam
     if not any(o.type == "LIGHT" for o in scene.objects):  # headless scenes start unlit
         sun = bpy.data.objects.new("GCRipSun", bpy.data.lights.new("GCRipSun", "SUN"))
         sun.data.energy = 3.0
-        sun.rotation_euler = (0.9, 0.2, a + 0.6)
         scene.collection.objects.link(sun)
+        # ride on the camera (slightly from above-left) so it always lights what is framed
+        sun.parent = cam
+        sun.matrix_parent_inverse.identity()
+        sun.location = (0, 0, 0)
+        sun.rotation_euler = (0.35, 0.25, 0)
+        if scene.world is None:
+            scene.world = bpy.data.worlds.new("World")
+        scene.world.color = (0.30, 0.33, 0.38)
     if track:
         con = cam.constraints.new("TRACK_TO")
         con.track_axis, con.up_axis = "TRACK_NEGATIVE_Z", "UP_Y"
