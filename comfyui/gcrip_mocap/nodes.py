@@ -295,6 +295,21 @@ class GCRipPersonMasks:
             f"{len(tracks)} tracks, kept {len(keep)}, {time.time() - t0:.0f}s\n" + "\n".join(lines)
         )
         print("[gcrip] person masks:\n" + info)
+
+        def _first_pose(tr):
+            """Where (normalised x, foot y) and how tall (px) the person is when first seen -
+            enough to place them in the scene relative to each other."""
+            f = min(tr["masks"])
+            m = np.unpackbits(tr["masks"][f])[: meta["w"] * meta["h"]].reshape(meta["h"], meta["w"])
+            ys, xs = np.nonzero(m)
+            if not len(xs):
+                return {"first_x": 0.5, "first_foot_y": 1.0, "height_px": 0}
+            return {
+                "first_x": round(float(xs.mean()) / meta["w"], 4),
+                "first_foot_y": round(float(ys.max()) / meta["h"], 4),
+                "height_px": int(ys.max() - ys.min()),
+            }
+
         people_doc = {
             "video": src,
             "frames": meta["frames"],
@@ -308,6 +323,7 @@ class GCRipPersonMasks:
                     "seen": int(tracks[tid]["n"]),
                     "mean_x": round(tracks[tid]["cx"] / max(meta["w"], 1), 3),
                     "mask": os.path.join(out_dir, f"{stem}_p{k}.mp4"),
+                    **_first_pose(tracks[tid]),
                 }
                 for k, tid in enumerate(keep, 1)
             ],

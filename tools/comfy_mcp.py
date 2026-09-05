@@ -244,6 +244,16 @@ def comfy_mocap(
         out["people"] = people_doc.get("people", [])
         # where each person's capture is real: pass as mocap_take(start_frames=...)
         out["start_frames"] = [p["first"] for p in out["people"]]
+        # where each person stands when first seen, in metres along the capture's X axis
+        # (screen-right is -X in GVHMR's camera-aligned world; depth from their pixel
+        # height, ~1.75 m tall): pass as mocap_take(positions_m=...)
+        w_px = (people_doc.get("size") or [1920, 1080])[0]
+        pos = []
+        for p in out["people"]:
+            hp = p.get("height_px") or 0
+            px_per_m = hp / 1.75 if hp else w_px / 4.5
+            pos.append(round(-(p.get("first_x", 0.5) - 0.5) * w_px / px_per_m, 2))
+        out["positions_m"] = pos
     tj = out_dir / "gcrip_masks" / f"{name}_throws.json"
     if track_throw and tj.is_file():
         doc = json.loads(tj.read_text(encoding="utf-8"))
@@ -335,6 +345,7 @@ def mocap_take(
     props: list[dict] | None = None,
     start_frames: list[int] | None = None,
     audio: str = "",
+    positions_m: list[float] | None = None,
 ) -> dict:
     """BVH files -> characters animated in a saved .blend (and optionally an MP4), through
     the gcrip-blender control channel.  ``characters`` = one "GAMEID:name" per BVH as
@@ -366,13 +377,20 @@ def mocap_take(
             raise RuntimeError(f"Blender did not start: {st}")
     t0 = time.time()
     arms = []
-    x0 = -spacing * (len(bvh) - 1) / 2
+    # GVHMR gives every person their own origin, and its world has screen-right = -X.
+    # Place people where the footage shows them (positions_m, metres along that axis,
+    # 100 units per metre); without that, line them up left-to-right = +X to -X.
+    x0 = spacing * (len(bvh) - 1) / 2
     for k, (clip, ch) in enumerate(zip(bvh, characters, strict=True)):
+        if positions_m and k < len(positions_m):
+            at = [float(positions_m[k]) * 100.0, 0, 0]
+        else:
+            at = [x0 - k * spacing, 0, 0]
         if ch.lower().endswith((".gltf", ".glb")):
-            sp = bm.call("spawn", gltf=ch, at=[x0 + k * spacing, 0, 0])
+            sp = bm.call("spawn", gltf=ch, at=at)
         else:
             gid, _, name = ch.partition(":")
-            sp = bm.call("spawn", gid=gid, name=name, at=[x0 + k * spacing, 0, 0])
+            sp = bm.call("spawn", gid=gid, name=name, at=at)
         if not sp.get("armature"):
             raise RuntimeError(f"{ch}: no armature")
         if not sp.get("mocap_ready", True):
@@ -385,6 +403,9 @@ def mocap_take(
             max_frames=max_frames,
             skip=skip,
             start=skip + 1,
+            # with real start positions, keep ground travel in scene metres for everyone
+            # so the pair stay as far apart as in the footage (a giant will shuffle)
+            motion_scale=100.0 if positions_m else 0.0,
         )
         arms.append(
             {
@@ -421,8 +442,8 @@ def mocap_take(
     cam = bm.call("camera", target=arms[0]["armature"], azimuth=-10)
     h = cam["target_height"]  # back off enough that raised arms and hats stay in frame
     bm.call("camera", target=arms[0]["armature"], azimuth=-10, distance=3.6 * h, height=0.5 * h)
-    # frame everything the characters do over the whole take (they may walk metres apart),
-    # from the -Y side: +X is screen-right, as in the footage
+    # frame everything the characters do over the whole take (they may walk metres apart)
+    # from the +Y side, where the phone was (GVHMR's world: screen-right = -X)
     names = [a["armature"] for a in arms]
     bm.call(
         "python",
@@ -450,7 +471,7 @@ def mocap_take(
             "if mid.name not in sc.collection.objects: sc.collection.objects.link(mid)\n"
             "mid.location=((lo[0]+hi[0])/2, (lo[1]+hi[1])/2, (lo[2]+hi[2])/2)\n"
             "for c in cam.constraints: c.target=mid; c.subtarget=''\n"
-            "cam.location=((lo[0]+hi[0])/2, lo[1]-d, lo[2]+0.6*h)\n"
+            "cam.location=((lo[0]+hi[0])/2, hi[1]+d, lo[2]+0.6*h)\n"
             "sc.frame_set(sc.frame_start)\n"
             "result=dict(extent=[lo.round(0).tolist(), hi.round(0).tolist()],\n"
             "            distance=round(float(d)))\n"

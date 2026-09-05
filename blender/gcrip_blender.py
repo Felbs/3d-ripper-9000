@@ -1508,11 +1508,14 @@ def missing_core_bones(arm):
     return [_MOCAP_MAP[j] for j in _MOCAP_CORE if _MOCAP_MAP[j] not in arm.data.bones]
 
 
-def retarget_bvh(arm, bvh_path, ref=0, max_frames=0, name=None, skip=0):
+def retarget_bvh(arm, bvh_path, ref=0, max_frames=0, name=None, skip=0, motion_scale=0.0):
     """Bake the BVH onto `arm` (Mixamo-named bones) as a new action.
 
     Only the core (hips, arms + hands, legs + feet) must exist on both sides; spine
     chain, neck, head, shoulders and toes are used when present and skipped when not.
+    Ground travel is scaled to the character's leg length (no foot sliding) unless
+    ``motion_scale`` gives scene units per capture unit (e.g. 100 for metres -> cm), which
+    keeps several characters' positions consistent with the footage instead.
     ``skip`` drops that many leading BVH frames (a person who walks into shot later);
     ``ref`` is the frame (after the skip) whose pose anchors the alignment - a degenerate
     one (the capture flailing before the person was visible) is stepped past automatically.
@@ -1668,7 +1671,7 @@ def retarget_bvh(arm, bvh_path, ref=0, max_frames=0, name=None, skip=0):
                 desired[:3, :3] = src_rot(t, j) @ src_rot(ref, j).T @ W_ref[n]
                 if n == "mixamorig:Hips":
                     sp_t = lambda k: src_pos(t, k)  # noqa: B023, E731
-                    drive = (thighs(sp_t) - origin) * scale
+                    drive = (thighs(sp_t) - origin) * (motion_scale or scale)
                     # height from the feet, not from the capture's world Y: video mocap
                     # drifts upward by metres as a person walks in, feet never lie
                     low = min(sp_t(k)[2] for k in feet if k in src_have)
@@ -1745,7 +1748,9 @@ class GCRIP_OT_mocap_retarget(bpy.types.Operator):
         return {"FINISHED"}
 
 
-def mocap_retarget(arm, family, bvh_path, start=1, max_frames=0, mute_game=True, skip=0):
+def mocap_retarget(
+    arm, family, bvh_path, start=1, max_frames=0, mute_game=True, skip=0, motion_scale=0.0
+):
     """Retarget a BVH onto `arm` as a strip on NLA track MOCAP (appended after existing
     strips).  Maps + renames bones to Mixamo names first when needed.  Raises RuntimeError
     with a plain message when the rig or the clip is not a biped."""
@@ -1767,7 +1772,9 @@ def mocap_retarget(arm, family, bvh_path, start=1, max_frames=0, mute_game=True,
         for tr in arm.animation_data.nla_tracks:
             if tr.name != "MOCAP":
                 tr.mute = True
-    act, slot, n, fps = retarget_bvh(arm, bvh_path, max_frames=max_frames, skip=skip)
+    act, slot, n, fps = retarget_bvh(
+        arm, bvh_path, max_frames=max_frames, skip=skip, motion_scale=motion_scale
+    )
     track = next((t for t in arm.animation_data.nla_tracks if t.name == "MOCAP"), None)
     if track is None:
         track = arm.animation_data.nla_tracks.new()
@@ -2143,14 +2150,23 @@ def map_bones(object="", force=False):  # noqa: A002
 
 
 @rpc
-def retarget(bvh, object="", start=1, max_frames=0, mute_game=True, skip=0):  # noqa: A002
+def retarget(  # noqa: A002
+    bvh, object="", start=1, max_frames=0, mute_game=True, skip=0, motion_scale=0.0
+):
     """Retarget a BVH clip onto a character (the active one, the only armature, or
     ``object``) as an NLA strip on track MOCAP."""
     if not os.path.isfile(bvh):
         raise FileNotFoundError(bvh)
     arm, fam = _resolve_armature(object)
     return mocap_retarget(
-        arm, fam, bvh, start=start, max_frames=max_frames, mute_game=mute_game, skip=skip
+        arm,
+        fam,
+        bvh,
+        start=start,
+        max_frames=max_frames,
+        mute_game=mute_game,
+        skip=skip,
+        motion_scale=motion_scale,
     )
 
 
