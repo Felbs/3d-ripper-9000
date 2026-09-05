@@ -1,37 +1,32 @@
-"""Truevision TGA images: Splinter Cell Chaos Theory's loading screens.
+"""Truevision TGA: the lenient decoder (RenderWare loose textures, Kashmir pictures)
+and the strict ``claimable`` sniff behind the ``tga`` plugin.
 
-The GCJE41 regression this guards: 462 loose ``screens/<lang>/*_loading*.tga`` pictures
-were claimed by nothing, so the ``gx`` fallback scanned their palette-indexed pixel
-data and shipped 51 noise meshes (66-74% degenerate edges) - the whole game scored
-garbage in the quality audit.  A ``.tga`` with a coherent header must be claimed as a
-picture, keeping the scanner off it.
+The GCJE41 regression the plugin guards: 462 loose ``screens/<lang>/*_loading*.tga``
+pictures on Splinter Cell Chaos Theory were claimed by nothing, so the ``gx`` fallback
+scanned their palette-indexed pixel data and shipped 51 noise meshes (66-74% degenerate
+edges) - the whole game scored garbage in the quality audit.  A ``.tga`` with a coherent
+header must be claimed as a picture, keeping the scanner off it.  The decode side must
+stay lenient: clipped palettes and zero-filled truncation are what shipped SlugFest /
+Outlaw Golf / RedCard / City Racer textures.
 """
 
 import struct
 
 import numpy as np
+import pytest
 
 from gcrip.formats import tga
 from gcrip.plugins import tga as plugin
 
 
-def build(
-    width=4,
-    height=2,
-    image_type=1,
-    bits=8,
-    top_down=False,
-    palette=None,
-    cmap_bits=24,
-    footer=True,
-):
+def build(width=4, height=2, image_type=1, bits=8, top_down=False, palette=None):
     head = bytearray(tga.HEADER)
     table = b""
     if image_type in (1, 9):
         entries = palette or [(0, 0, 255), (0, 255, 0), (255, 0, 0), (255, 255, 255)]
         head[1] = 1
         struct.pack_into("<H", head, 5, len(entries))
-        head[7] = cmap_bits
+        head[7] = 24
         table = b"".join(bytes((b, g, r)) for r, g, b in entries)
     head[2] = image_type
     struct.pack_into("<2H", head, 12, width, height)
@@ -49,14 +44,13 @@ def build(
     if image_type in (9, 10, 11):  # one raw packet holding every pixel (count <= 128)
         assert width * height <= 128
         pixels = bytes([width * height - 1]) + pixels
-    tail = b"\0" * 8 + b"TRUEVISION-XFILE.\0" if footer else b""
-    return bytes(head) + table + pixels + tail
+    return bytes(head) + table + pixels
 
 
 def chaos_theory_screen():
     """The exact header shape of the 462 GCJE41 screens: type 1, 256 x 24-bit palette,
     8 bpp, 640x448, descriptor 0x08 - plus a low-entropy body the gx scanner used to
-    chew on."""
+    chew on, and the TRUEVISION-XFILE footer the discs carry."""
     head = bytearray(tga.HEADER)
     head[1], head[2] = 1, 1
     struct.pack_into("<H", head, 5, 256)
@@ -68,9 +62,12 @@ def chaos_theory_screen():
     return bytes(head) + table + body + b"\0" * 8 + b"TRUEVISION-XFILE.\0"
 
 
-def test_detects_the_chaos_theory_header():
+# --- the strict claim sniff -----------------------------------------------------------
+
+
+def test_claims_the_chaos_theory_header():
     data = chaos_theory_screen()
-    assert tga.is_tga(data[:64], len(data))
+    assert tga.claimable(data[:64], len(data))
     assert tga.decode(data).shape == (448, 640, 4)
 
 
@@ -84,24 +81,27 @@ def test_gcje41_screens_route_to_tga_not_the_gx_fallback():
     assert names == ["tga"]
 
 
-def test_headers_without_a_tga_shape_are_refused():
-    assert not tga.is_tga(bytes(18))  # image_type 0
-    assert not tga.is_tga(b"\0" + b"RPMOC3S" + bytes(10))  # kashmir's GC repack
+def test_claimable_refuses_headers_without_a_tga_shape():
+    assert not tga.claimable(bytes(18))  # image_type 0
+    assert not tga.claimable(b"\0" + b"RPMOC3S" + bytes(10))  # kashmir's GC repack
     bad = bytearray(build())
-    bad[2] = 2  # truecolor claiming a colormap
-    assert not tga.is_tga(bytes(bad))
+    bad[2] = 2  # true-colour claiming a colormap
+    assert not tga.claimable(bytes(bad))
     bad = bytearray(build())
     bad[17] = 0xC0  # interleave bits are never set
-    assert not tga.is_tga(bytes(bad))
+    assert not tga.claimable(bytes(bad))
     big = bytearray(build())
     struct.pack_into("<2H", big, 12, 8500, 8500)
-    assert not tga.is_tga(bytes(big))
+    assert not tga.claimable(bytes(big))
 
 
-def test_an_uncompressed_file_shorter_than_its_pixels_is_refused():
+def test_claimable_refuses_an_uncompressed_file_shorter_than_its_pixels():
     data = build(width=8, height=8)
-    assert not tga.is_tga(data[:18], len(data) // 2)
-    assert tga.decode(data[: len(data) // 2]) is None
+    assert tga.claimable(data[:18], len(data))
+    assert not tga.claimable(data[:18], len(data) // 2)
+
+
+# --- the lenient decoder (behaviour shipped for RenderWare / Kashmir - keep it) -------
 
 
 def test_a_colormap_entry_is_bgr():
@@ -110,11 +110,17 @@ def test_a_colormap_entry_is_bgr():
     assert tuple(got[0, 2]) == (255, 0, 0, 255)
 
 
-def test_an_index_past_the_colormap_is_refused():
-    data = bytearray(build(width=4, height=1))
-    struct.pack_into("<H", data, 5, 2)  # claim two entries for indices up to three
-    data = bytes(data[: tga.HEADER + 2 * 3]) + bytes(data[tga.HEADER + 4 * 3 :])
-    assert tga.decode(data) is None
+def test_an_index_past_the_colormap_is_clipped_not_refused():
+    data = bytearray(build(width=4, height=1, palette=[(0, 0, 255), (0, 255, 0)]))
+    got = tga.decode(bytes(data))  # indices 2 and 3 exceed the two entries
+    assert tuple(got[0, 3]) == tuple(got[0, 1])  # clipped to the last entry
+
+
+def test_a_truncated_file_decodes_zero_filled():
+    data = build(width=8, height=8, image_type=2, bits=24)
+    got = tga.decode(data[: len(data) // 2])
+    assert got.shape == (8, 8, 4)
+    assert (got[0, :, :3] == 0).all()  # bottom-up: the lost rows are the top ones
 
 
 def test_rows_run_bottom_up_unless_descriptor_bit5():
@@ -150,17 +156,18 @@ def test_rle_matches_the_uncompressed_decode():
 
 def test_an_rle_run_packet_repeats_one_pixel():
     head = bytearray(tga.HEADER)
-    head[2], head[16], head[17] = 11, 8, 0x20  # grayscale RLE
+    head[2], head[16], head[17] = 11, 8, 0x20  # greyscale RLE
     struct.pack_into("<2H", head, 12, 4, 1)
     got = tga.decode(bytes(head) + bytes([0x83, 0x55]))  # run of four 0x55
     assert np.array_equal(got[0, :, 0], [0x55] * 4)
 
 
-def test_a_truncated_rle_stream_is_refused():
-    head = bytearray(tga.HEADER)
-    head[2], head[16], head[17] = 11, 8, 0x20
-    struct.pack_into("<2H", head, 12, 4, 1)
-    assert tga.decode(bytes(head) + bytes([0x03, 0x55])) is None  # raw packet cut short
+def test_not_a_tga_raises():
+    with pytest.raises(tga.TgaError):
+        tga.decode(bytes(18))
+
+
+# --- the plugin ------------------------------------------------------------------------
 
 
 def test_plugin_wants_both_the_extension_and_the_header():

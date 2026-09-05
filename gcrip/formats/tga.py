@@ -1,31 +1,27 @@
-"""Truevision ``TGA`` images, shipped loose on Ubisoft's UE2 GameCube discs - Splinter
-Cell Chaos Theory / Double Agent carry hundreds of ``*.tga`` loading screens and menu
-plates (``screens/<lang>/*_loading*.tga``, ``SaveLoadScreens/*.tga``).  Before this
-decoder existed nothing claimed them, so the ``gx`` fallback scanned their pixel data
-for display lists and shipped 51 noise meshes per disc (the GCJE41 quality-audit
-finding); a loading screen is a picture, not a model.
+"""Truevision TGA images, as shipped loose beside RenderWare models (MLB SlugFest, Outlaw
+Golf, ...) and as Ubisoft's loading screens (Splinter Cell Chaos Theory / Double Agent -
+hundreds of ``screens/<lang>/*_loading*.tga``, type 1, 256 x 24-bit palette, 640x448).
 
-The classic 18-byte header, little-endian::
+Header: ``u8 id length | u8 colour-map type | u8 image type | u16 map first | u16 map length |
+u8 map entry bits | u16 x | u16 y | u16 width | u16 height | u8 bits | u8 descriptor``, then
+the id field, the colour map and the pixels.  Image types 1 / 9 are colour-mapped, 2 / 10
+true-colour and 3 / 11 greyscale; the 8+ variants are RLE (``u8 count | pixel`` runs, the top
+bit marking a repeat).  Rows run bottom-up unless bit 5 of the descriptor is set.
 
-    +0   u8  id_length          bytes of free-form id after the header
-    +1   u8  colormap_type      0 none, 1 present
-    +2   u8  image_type         1/2/3 uncompressed cmap/truecolor/gray, 9/10/11 the RLE twins
-    +3   u16 cmap_first | u16 cmap_length | u8 cmap_entry_bits (15/16/24/32)
-    +8   u16 x_origin | u16 y_origin
-    +12  u16 width | u16 height
-    +16  u8  bits_per_pixel     8 (cmap/gray), 15/16 (ARGB1555), 24, 32
-    +17  u8  descriptor         bit5 = top-down rows; bits 6-7 (interleave) always 0
+Two levels of recognition, on purpose:
 
-then the id, the colormap (entries packed like pixels), and the rows - bottom-up unless
-descriptor bit 5.  16-bit is ARGB1555; 24/32-bit are BGR(A).  RLE packets are a count
-byte (bit7 = run) followed by one pixel (run) or ``count+1`` pixels (raw).  A footer
-(``TRUEVISION-XFILE.``) may trail the pixels; it is ignored.
-
-TGA has **no magic number**, so ``is_tga`` is deliberately strict - a consistent header
-alone (all Chaos Theory screens: type 1, 256 x 24-bit palette, 8 bpp, 640x448) - and the
-plugin additionally requires the ``.tga`` file name.  Kashmir's GameCube-repacked
-".tga" pictures (``RPMOC3S`` tag at +1) fail the colormap_type check here and keep
-their own reader.
+- ``is_tga`` / ``decode`` are **lenient** - a caller that already knows the bytes are meant
+  to be a picture (RenderWare's loose-texture binding, Kashmir's embedded pictures) wants
+  the image even when the file is truncated (zero-filled), the palette is short (indices
+  clipped) or the size is odd.  This behaviour shipped SlugFest / Outlaw Golf / RedCard /
+  City Racer textures and must not tighten.
+- ``claimable`` is **strict** - the plugin sniff that *claims* loose ``*.tga`` files off a
+  disc has only the name and 64 bytes to go on (TGA has **no magic number**), and a false
+  claim hides the file from every other reader.  It demands a coherent header (type /
+  colormap / bit-depth arithmetic, sane dimensions, zero interleave bits) and, for the
+  uncompressed types, that the pixels actually fit the file.  Before the plugin existed
+  nothing claimed the Chaos Theory screens and the ``gx`` fallback scanned their pixel
+  data into 51 noise meshes (the GCJE41 quality-audit finding).
 """
 
 from __future__ import annotations
@@ -35,123 +31,133 @@ import struct
 import numpy as np
 
 HEADER = 18
-MAX_DIM = 4096
-UNCOMPRESSED = (1, 2, 3)
-RLE = (9, 10, 11)
+MAX_CLAIM_DIM = 4096  # claimable(): bigger than any GameCube picture; decode allows 8192
 CMAP_BITS = (15, 16, 24, 32)
 
 
-def is_tga(head: bytes, size: int | None = None) -> bool:
-    if len(head) < HEADER:
+class TgaError(ValueError):
+    pass
+
+
+def is_tga(data: bytes) -> bool:
+    if len(data) < HEADER:
         return False
-    cmap_type, image_type = head[1], head[2]
+    cmap, kind, bits = data[1], data[2], data[16]
+    return cmap in (0, 1) and kind in (1, 2, 3, 9, 10, 11) and bits in (8, 15, 16, 24, 32)
+
+
+def claimable(head: bytes, size: int | None = None) -> bool:
+    """Strict sniff for *claiming* a file as a TGA picture (see the module docstring)."""
+    if not is_tga(head):
+        return False
+    kind = head[2]
+    cmap_type = head[1]
     cmap_length, cmap_bits = struct.unpack_from("<H", head, 5)[0], head[7]
     width, height = struct.unpack_from("<2H", head, 12)
     bits, descriptor = head[16], head[17]
-    if image_type not in UNCOMPRESSED + RLE or descriptor & 0xC0:
+    if descriptor & 0xC0:  # interleave bits are never set in practice
         return False
-    if not (0 < width <= MAX_DIM and 0 < height <= MAX_DIM):
+    if not (0 < width <= MAX_CLAIM_DIM and 0 < height <= MAX_CLAIM_DIM):
         return False
-    if image_type in (1, 9):  # color-mapped: a palette and 8-bit indices
+    if kind in (1, 9):  # colour-mapped: a palette and 8-bit indices
         if cmap_type != 1 or bits != 8:
             return False
         if not (0 < cmap_length <= 256 and cmap_bits in CMAP_BITS):
             return False
-    elif image_type in (2, 10):  # truecolor
-        if cmap_type != 0 or bits not in (15, 16, 24, 32):
+    elif kind in (2, 10):  # true-colour
+        if cmap_type != 0 or bits not in CMAP_BITS:
             return False
-    else:  # grayscale
+    else:  # greyscale
         if cmap_type != 0 or bits != 8:
             return False
-    if size is not None and image_type in UNCOMPRESSED:
-        need = HEADER + head[0] + cmap_length * ((cmap_bits + 7) // 8 if cmap_type else 0)
-        if need + width * height * ((bits + 7) // 8) > size:
+    if size is not None and kind in (1, 2, 3):  # uncompressed: the pixels must fit
+        cmap_bytes = cmap_length * (max(cmap_bits, 8) // 8) if cmap_type else 0
+        need = HEADER + head[0] + cmap_bytes + width * height * (max(bits, 8) // 8)
+        if need > size:
             return False
     return True
 
 
-def _rle(data: bytes, at: int, count: int, step: int) -> bytes | None:
-    """Un-RLE ``count`` pixels of ``step`` bytes each starting at ``at``."""
-    out = bytearray()
-    want = count * step
-    n = len(data)
-    while len(out) < want:
-        if at >= n:
-            return None
-        packet = data[at]
-        at += 1
-        repeat = (packet & 0x7F) + 1
-        if packet & 0x80:  # run: one pixel, repeated
-            if at + step > n:
-                return None
-            out += data[at : at + step] * repeat
-            at += step
-        else:  # raw: repeat pixels verbatim
-            if at + repeat * step > n:
-                return None
-            out += data[at : at + repeat * step]
-            at += repeat * step
-    return bytes(out[:want])
-
-
-def _rgba(px: np.ndarray, bits: int) -> np.ndarray:
-    """(N, step) raw pixels -> (N, 4) RGBA."""
-    out = np.empty((len(px), 4), np.uint8)
-    if bits in (15, 16):  # ARGB1555, little-endian
-        v = px[:, 0].astype(np.uint16) | (px[:, 1].astype(np.uint16) << 8)
-        out[:, 0] = ((v >> 10) & 0x1F) * 255 // 31
-        out[:, 1] = ((v >> 5) & 0x1F) * 255 // 31
-        out[:, 2] = (v & 0x1F) * 255 // 31
-        out[:, 3] = ((v >> 15) * 255).astype(np.uint8) if bits == 16 else 255
-        if bits == 16 and not out[:, 3].any():
-            # a zeroed attribute bit throughout means "no alpha", not "all invisible"
-            out[:, 3] = 255
-    else:  # BGR(A)
+def _expand(px: np.ndarray, bits: int) -> np.ndarray:
+    """(N, bytes) pixels -> (N, 4) RGBA."""
+    n = len(px)
+    out = np.empty((n, 4), np.uint8)
+    if bits == 32:
+        out[:, 0], out[:, 1], out[:, 2], out[:, 3] = px[:, 2], px[:, 1], px[:, 0], px[:, 3]
+    elif bits == 24:
         out[:, 0], out[:, 1], out[:, 2] = px[:, 2], px[:, 1], px[:, 0]
-        out[:, 3] = px[:, 3] if px.shape[1] == 4 else 255
+        out[:, 3] = 255
+    elif bits in (15, 16):
+        v = px[:, 0].astype(np.uint16) | (px[:, 1].astype(np.uint16) << 8)
+        r = ((v >> 10) & 31) * 255 // 31
+        g = ((v >> 5) & 31) * 255 // 31
+        b = (v & 31) * 255 // 31
+        out[:, 0], out[:, 1], out[:, 2] = r, g, b
+        out[:, 3] = np.where((v & 0x8000) != 0, 255, 255 if bits == 15 else 0).astype(np.uint8)
+    else:  # 8-bit grey
+        out[:, 0] = out[:, 1] = out[:, 2] = px[:, 0]
+        out[:, 3] = 255
     return out
 
 
-def decode(data: bytes) -> np.ndarray | None:
-    """RGBA (height, width, 4), top row first."""
-    if not is_tga(data[:HEADER], len(data)):
-        return None
-    cmap_type, image_type = data[1], data[2]
-    cmap_length, cmap_bits = struct.unpack_from("<H", data, 5)[0], data[7]
-    width, height = struct.unpack_from("<2H", data, 12)
-    bits, descriptor = data[16], data[17]
+def _rle(data: bytes, start: int, count: int, stride: int) -> np.ndarray:
+    out = np.empty((count, stride), np.uint8)
+    p = start
+    n = 0
+    while n < count and p < len(data):
+        packet = data[p]
+        p += 1
+        run = (packet & 0x7F) + 1
+        run = min(run, count - n)
+        if packet & 0x80:
+            if p + stride > len(data):
+                break
+            out[n : n + run] = np.frombuffer(data, np.uint8, stride, p)
+            p += stride
+        else:
+            if p + run * stride > len(data):
+                break
+            out[n : n + run] = np.frombuffer(data, np.uint8, run * stride, p).reshape(run, stride)
+            p += run * stride
+        n += run
+    if n < count:
+        out[n:] = 0
+    return out
 
-    at = HEADER + data[0]  # skip the id
+
+def decode(data: bytes) -> np.ndarray:
+    """RGBA (h, w, 4) uint8."""
+    if not is_tga(data):
+        raise TgaError("not a TGA image")
+    idlen, cmap_type, kind = data[0], data[1], data[2]
+    map_first, map_len, map_bits = struct.unpack_from("<HHB", data, 3)
+    width, height, bits, desc = struct.unpack_from("<HHBB", data, 12)
+    if not (0 < width <= 8192 and 0 < height <= 8192):
+        raise TgaError("implausible size")
+    p = HEADER + idlen
     palette = None
-    if cmap_type:
-        entry = (cmap_bits + 7) // 8
-        table = data[at : at + cmap_length * entry]
-        if len(table) < cmap_length * entry:
-            return None
-        palette = _rgba(np.frombuffer(table, np.uint8).reshape(cmap_length, entry), cmap_bits)
-        at += cmap_length * entry
-
-    step = (bits + 7) // 8
-    if image_type in RLE:
-        raw = _rle(data, at, width * height, step)
-        if raw is None:
-            return None
+    if cmap_type and map_len:
+        entry = max(map_bits, 8) // 8
+        have = min(map_len * entry, max(len(data) - p, 0)) // entry * entry
+        raw = np.frombuffer(data, np.uint8, have, p)
+        p += map_len * entry
+        if have:
+            palette = _expand(raw.reshape(-1, entry), map_bits)
+    stride = max(bits, 8) // 8
+    count = width * height
+    if kind >= 9:
+        px = _rle(data, p, count, stride)
     else:
-        raw = data[at : at + width * height * step]
-        if len(raw) < width * height * step:
-            return None
-    px = np.frombuffer(raw, np.uint8).reshape(width * height, step)
-
-    if image_type in (1, 9):
-        index = px[:, 0].astype(np.int32)
-        if index.max() >= len(palette):
-            return None
-        rgba = palette[index]
-    elif image_type in (3, 11):
-        rgba = np.empty((width * height, 4), np.uint8)
-        rgba[:, 0] = rgba[:, 1] = rgba[:, 2] = px[:, 0]
-        rgba[:, 3] = 255
+        have = min(count * stride, max(len(data) - p, 0))
+        px = np.zeros((count, stride), np.uint8)
+        px.reshape(-1)[:have] = np.frombuffer(data, np.uint8, have, p)
+    if palette is not None and kind in (1, 9):
+        idx = px[:, 0].astype(np.int32) - map_first
+        np.clip(idx, 0, len(palette) - 1, out=idx)
+        rgba = palette[idx]
     else:
-        rgba = _rgba(px, bits)
-    out = rgba.reshape(height, width, 4)
-    return out if descriptor & 0x20 else out[::-1]
+        rgba = _expand(px, bits)
+    img = rgba.reshape(height, width, 4)
+    if not desc & 0x20:  # origin at the bottom left
+        img = img[::-1]
+    return np.ascontiguousarray(img)
