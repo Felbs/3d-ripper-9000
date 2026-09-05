@@ -105,7 +105,7 @@ def plain_node(type_, inputs, outputs, widgets, title=None):
     return n
 
 
-def build(video: str, people: int, name: str, throw: bool = True):
+def build(video: str, people: int, name: str, throw: bool = True, hands: bool = True):
     tpl = load_templates()
     g = Graph()
     note = g.add(
@@ -175,6 +175,23 @@ def build(video: str, people: int, name: str, throw: bool = True):
             plain_node("PreviewImage", [("images", "IMAGE")], [], []), (-220, 860), size=[330, 260]
         )
         g.link(thr, "preview", tprev, "images")
+    if hands:
+        hnd = g.add(
+            plain_node(
+                "GCRipHandPose",
+                [("video", "VIDEO"), ("tracks", "GCRIP_TRACKS")],
+                [("hands_json", "STRING"), ("preview", "IMAGE"), ("info", "STRING")],
+                [2],
+            ),
+            (-560, 620),
+            size=[330, 160],
+        )
+        g.link(vid, "VIDEO", hnd, "video")
+        g.link(masks, "tracks", hnd, "tracks")
+        hprev = g.add(
+            plain_node("PreviewImage", [("images", "IMAGE")], [], []), (-560, 820), size=[330, 260]
+        )
+        g.link(hnd, "preview", hprev, "images")
     cfg = g.add(tpl["LoadGVHMRModels"], (-220, -260), widgets=["", "auto", "auto", False])
     for k in range(1, people + 1):
         y = (k - 1) * 340
@@ -224,6 +241,7 @@ def to_api(doc: dict) -> dict:
         plain = {
             "GCRipPersonMasks": ["people", "order", "model", "confidence", "dilate", "name"],
             "GCRipThrowTracker": ["colour", "person_height_m", "max_events"],
+            "GCRipHandPose": ["stride"],
         }
         if n["type"] in plain:
             inputs.update(dict(zip(plain[n["type"]], widgets, strict=True)))

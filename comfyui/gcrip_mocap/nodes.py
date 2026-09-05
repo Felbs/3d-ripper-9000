@@ -464,8 +464,106 @@ class GCRipThrowTracker:
         )
 
 
-NODE_CLASS_MAPPINGS = {"GCRipPersonMasks": GCRipPersonMasks, "GCRipThrowTracker": GCRipThrowTracker}
+class GCRipHandPose:
+    """Track every person's hands with WiLoR (wrist orientation + 21 joints per hand)."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "video": ("VIDEO",),
+                "tracks": ("GCRIP_TRACKS", {"tooltip": "From GCRip Person Masks."}),
+                "stride": (
+                    "INT",
+                    {"default": 2, "min": 1, "max": 8, "tooltip": "Run on every Nth frame."},
+                ),
+            }
+        }
+
+    RETURN_TYPES = ("STRING", "IMAGE", "STRING")
+    RETURN_NAMES = ("hands_json", "preview", "info")
+    FUNCTION = "run"
+    CATEGORY = "GCRip/mocap"
+    DESCRIPTION = (
+        "WiLoR hand pose for each tracked person: wrist orientation and 21 joints per hand "
+        "in camera space, assigned to person + side. The Blender side uses it to drive the "
+        "hand bones (body mocap cannot see the wrist twist). Writes <name>_hands.json."
+    )
+
+    def run(self, video, tracks, stride):
+        import cv2
+        import torch
+        from comfy.utils import ProgressBar
+
+        from . import hands
+
+        src = tracks.get("video") or _video_path(video)
+        meta = tracks["meta"]
+        people = tracks["people"]
+        w, h = meta["w"], meta["h"]
+        state = [None] * len(people)
+
+        def person_mask(t, k):
+            if not 1 <= k <= len(people):
+                return None
+            tr = people[k - 1]
+            if t in tr["masks"]:
+                state[k - 1] = tr["masks"][t]
+            elif state[k - 1] is None and tr["masks"]:
+                state[k - 1] = tr["masks"][min(tr["masks"])]
+            if state[k - 1] is None:
+                return None
+            return np.unpackbits(state[k - 1])[: w * h].reshape(h, w)
+
+        bar = ProgressBar(max(1, meta["frames"]))
+        t0 = time.time()
+        doc = hands.track_hands(
+            src,
+            person_mask,
+            meta["frames"],
+            stride=stride,
+            progress=lambda i, n: bar.update_absolute(i),
+        )
+        path = ""
+        if tracks.get("out_dir") and tracks.get("name"):
+            path = os.path.join(tracks["out_dir"], tracks["name"] + "_hands.json")
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(doc, fh)
+        # preview: the frame with the most hands
+        best_t, best_n = 0, -1
+        for frames in doc["people"].values():
+            for fs in frames:
+                n = sum(len(f2.get(fs, {})) for f2 in doc["people"].values())
+                if n > best_n:
+                    best_t, best_n = int(fs), n
+        cap = cv2.VideoCapture(src)
+        cap.set(cv2.CAP_PROP_POS_FRAMES, best_t)
+        ok, frame = cap.read()
+        cap.release()
+        if ok:
+            for frames in doc["people"].values():
+                hands.draw_hands(frame, frames.get(str(best_t), {}))
+            preview = torch.from_numpy(
+                cv2.cvtColor(frame, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+            )[None]
+        else:
+            preview = torch.zeros((1, 64, 64, 3))
+        info = (
+            f"{doc['hands']} hands over {doc['frames']} frames (stride {stride}), "
+            + ", ".join(f"person {k}: {len(v)} frames" for k, v in doc["people"].items())
+            + f", {time.time() - t0:.0f}s -> {path}"
+        )
+        print("[gcrip] hands: " + info)
+        return (path, preview, info)
+
+
+NODE_CLASS_MAPPINGS = {
+    "GCRipPersonMasks": GCRipPersonMasks,
+    "GCRipThrowTracker": GCRipThrowTracker,
+    "GCRipHandPose": GCRipHandPose,
+}
 NODE_DISPLAY_NAME_MAPPINGS = {
     "GCRipPersonMasks": "GCRip Person Masks (track people)",
     "GCRipThrowTracker": "GCRip Throw Tracker (thrown object)",
+    "GCRipHandPose": "GCRip Hand Pose (WiLoR)",
 }

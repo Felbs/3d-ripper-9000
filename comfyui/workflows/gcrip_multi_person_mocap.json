@@ -1,8 +1,8 @@
 {
  "id": "gcrip-multi-person-mocap",
  "revision": 0,
- "last_node_id": 11,
- "last_link_id": 12,
+ "last_node_id": 15,
+ "last_link_id": 18,
  "nodes": [
   {
    "type": "Note",
@@ -71,7 +71,9 @@
      "links": [
       1,
       3,
-      8
+      6,
+      9,
+      14
      ]
     }
    ],
@@ -99,14 +101,14 @@
      "name": "mask_1",
      "type": "VIDEO",
      "links": [
-      4
+      10
      ]
     },
     {
      "name": "mask_2",
      "type": "VIDEO",
      "links": [
-      9
+      15
      ]
     },
     {
@@ -130,6 +132,14 @@
      "name": "info",
      "type": "STRING",
      "links": []
+    },
+    {
+     "name": "tracks",
+     "type": "GCRIP_TRACKS",
+     "links": [
+      4,
+      7
+     ]
     }
    ],
    "properties": {
@@ -184,7 +194,177 @@
    "flags": {}
   },
   {
+   "type": "GCRipThrowTracker",
+   "inputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "link": 3
+    },
+    {
+     "name": "tracks",
+     "type": "GCRIP_TRACKS",
+     "link": 4
+    }
+   ],
+   "outputs": [
+    {
+     "name": "throws_json",
+     "type": "STRING",
+     "links": []
+    },
+    {
+     "name": "preview",
+     "type": "IMAGE",
+     "links": [
+      5
+     ]
+    },
+    {
+     "name": "release_frame",
+     "type": "INT",
+     "links": []
+    },
+    {
+     "name": "person",
+     "type": "INT",
+     "links": []
+    },
+    {
+     "name": "flight_frames",
+     "type": "INT",
+     "links": []
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "GCRipThrowTracker"
+   },
+   "widgets_values": [
+    "bright",
+    1.75,
+    3
+   ],
+   "size": [
+    330,
+    200
+   ],
    "id": 5,
+   "pos": [
+    -220,
+    620
+   ],
+   "order": 4,
+   "mode": 0,
+   "flags": {}
+  },
+  {
+   "type": "PreviewImage",
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 5
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "PreviewImage"
+   },
+   "widgets_values": [],
+   "size": [
+    330,
+    260
+   ],
+   "id": 6,
+   "pos": [
+    -220,
+    860
+   ],
+   "order": 5,
+   "mode": 0,
+   "flags": {}
+  },
+  {
+   "type": "GCRipHandPose",
+   "inputs": [
+    {
+     "name": "video",
+     "type": "VIDEO",
+     "link": 6
+    },
+    {
+     "name": "tracks",
+     "type": "GCRIP_TRACKS",
+     "link": 7
+    }
+   ],
+   "outputs": [
+    {
+     "name": "hands_json",
+     "type": "STRING",
+     "links": []
+    },
+    {
+     "name": "preview",
+     "type": "IMAGE",
+     "links": [
+      8
+     ]
+    },
+    {
+     "name": "info",
+     "type": "STRING",
+     "links": []
+    }
+   ],
+   "properties": {
+    "Node name for S&R": "GCRipHandPose"
+   },
+   "widgets_values": [
+    2
+   ],
+   "size": [
+    330,
+    160
+   ],
+   "id": 7,
+   "pos": [
+    -560,
+    620
+   ],
+   "order": 6,
+   "mode": 0,
+   "flags": {}
+  },
+  {
+   "type": "PreviewImage",
+   "inputs": [
+    {
+     "name": "images",
+     "type": "IMAGE",
+     "link": 8
+    }
+   ],
+   "outputs": [],
+   "properties": {
+    "Node name for S&R": "PreviewImage"
+   },
+   "widgets_values": [],
+   "size": [
+    330,
+    260
+   ],
+   "id": 8,
+   "pos": [
+    -560,
+    820
+   ],
+   "order": 7,
+   "mode": 0,
+   "flags": {}
+  },
+  {
+   "id": 9,
    "type": "LoadGVHMRModels",
    "pos": [
     -220,
@@ -195,7 +375,7 @@
     130
    ],
    "flags": {},
-   "order": 4,
+   "order": 8,
    "mode": 0,
    "inputs": [
     {
@@ -245,8 +425,8 @@
      "name": "config",
      "type": "GVHMR_CONFIG",
      "links": [
-      5,
-      10
+      11,
+      16
      ]
     }
    ],
@@ -264,7 +444,7 @@
    ]
   },
   {
-   "id": 6,
+   "id": 10,
    "type": "GVHMRInference",
    "pos": [
     180,
@@ -275,26 +455,26 @@
     262
    ],
    "flags": {},
-   "order": 5,
+   "order": 9,
    "mode": 0,
    "inputs": [
     {
      "localized_name": "video",
      "name": "video",
      "type": "VIDEO",
-     "link": 3
+     "link": 9
     },
     {
      "localized_name": "video_mask",
      "name": "video_mask",
      "type": "VIDEO",
-     "link": 4
+     "link": 10
     },
     {
      "localized_name": "config",
      "name": "config",
      "type": "GVHMR_CONFIG",
-     "link": 5
+     "link": 11
     },
     {
      "localized_name": "intrinsics",
@@ -379,7 +559,7 @@
      "name": "npz_path",
      "type": "STRING",
      "links": [
-      6
+      12
      ]
     },
     {
@@ -412,7 +592,7 @@
    "title": "GVHMR Inference - person 1"
   },
   {
-   "id": 7,
+   "id": 11,
    "type": "SMPLtoBVH",
    "pos": [
     520,
@@ -423,7 +603,7 @@
     170
    ],
    "flags": {},
-   "order": 6,
+   "order": 10,
    "mode": 0,
    "inputs": [
     {
@@ -433,7 +613,7 @@
      "widget": {
       "name": "npz_path"
      },
-     "link": 6
+     "link": 12
     },
     {
      "localized_name": "filename",
@@ -469,7 +649,7 @@
      "name": "bvh_data",
      "type": "BVH_DATA",
      "links": [
-      7
+      13
      ]
     },
     {
@@ -499,7 +679,7 @@
    "title": "SMPL to BVH - person 1"
   },
   {
-   "id": 8,
+   "id": 12,
    "type": "BVHViewer",
    "pos": [
     820,
@@ -510,14 +690,14 @@
     720
    ],
    "flags": {},
-   "order": 7,
+   "order": 11,
    "mode": 0,
    "inputs": [
     {
      "localized_name": "bvh_data",
      "name": "bvh_data",
      "type": "BVH_DATA",
-     "link": 7
+     "link": 13
     }
    ],
    "outputs": [
@@ -538,7 +718,7 @@
    ]
   },
   {
-   "id": 9,
+   "id": 13,
    "type": "GVHMRInference",
    "pos": [
     180,
@@ -549,26 +729,26 @@
     262
    ],
    "flags": {},
-   "order": 8,
+   "order": 12,
    "mode": 0,
    "inputs": [
     {
      "localized_name": "video",
      "name": "video",
      "type": "VIDEO",
-     "link": 8
+     "link": 14
     },
     {
      "localized_name": "video_mask",
      "name": "video_mask",
      "type": "VIDEO",
-     "link": 9
+     "link": 15
     },
     {
      "localized_name": "config",
      "name": "config",
      "type": "GVHMR_CONFIG",
-     "link": 10
+     "link": 16
     },
     {
      "localized_name": "intrinsics",
@@ -653,7 +833,7 @@
      "name": "npz_path",
      "type": "STRING",
      "links": [
-      11
+      17
      ]
     },
     {
@@ -686,7 +866,7 @@
    "title": "GVHMR Inference - person 2"
   },
   {
-   "id": 10,
+   "id": 14,
    "type": "SMPLtoBVH",
    "pos": [
     520,
@@ -697,7 +877,7 @@
     170
    ],
    "flags": {},
-   "order": 9,
+   "order": 13,
    "mode": 0,
    "inputs": [
     {
@@ -707,7 +887,7 @@
      "widget": {
       "name": "npz_path"
      },
-     "link": 11
+     "link": 17
     },
     {
      "localized_name": "filename",
@@ -743,7 +923,7 @@
      "name": "bvh_data",
      "type": "BVH_DATA",
      "links": [
-      12
+      18
      ]
     },
     {
@@ -773,7 +953,7 @@
    "title": "SMPL to BVH - person 2"
   },
   {
-   "id": 11,
+   "id": 15,
    "type": "BVHViewer",
    "pos": [
     820,
@@ -784,14 +964,14 @@
     720
    ],
    "flags": {},
-   "order": 10,
+   "order": 14,
    "mode": 0,
    "inputs": [
     {
      "localized_name": "bvh_data",
      "name": "bvh_data",
      "type": "BVH_DATA",
-     "link": 12
+     "link": 18
     }
    ],
    "outputs": [
@@ -833,79 +1013,127 @@
    3,
    2,
    0,
-   6,
+   5,
    0,
    "VIDEO"
   ],
   [
    4,
    3,
-   0,
    6,
+   5,
    1,
-   "VIDEO"
+   "GCRIP_TRACKS"
   ],
   [
    5,
    5,
+   1,
+   6,
    0,
+   "IMAGE"
+  ],
+  [
    6,
    2,
-   "GVHMR_CONFIG"
-  ],
-  [
-   6,
-   6,
    0,
    7,
-   0,
-   "STRING"
-  ],
-  [
-   7,
-   7,
-   0,
-   8,
-   0,
-   "BVH_DATA"
-  ],
-  [
-   8,
-   2,
-   0,
-   9,
    0,
    "VIDEO"
   ],
   [
-   9,
+   7,
    3,
+   6,
+   7,
    1,
+   "GCRIP_TRACKS"
+  ],
+  [
+   8,
+   7,
+   1,
+   8,
+   0,
+   "IMAGE"
+  ],
+  [
    9,
-   1,
+   2,
+   0,
+   10,
+   0,
    "VIDEO"
   ],
   [
    10,
-   5,
+   3,
    0,
-   9,
-   2,
-   "GVHMR_CONFIG"
+   10,
+   1,
+   "VIDEO"
   ],
   [
    11,
    9,
    0,
    10,
-   0,
-   "STRING"
+   2,
+   "GVHMR_CONFIG"
   ],
   [
    12,
    10,
    0,
    11,
+   0,
+   "STRING"
+  ],
+  [
+   13,
+   11,
+   0,
+   12,
+   0,
+   "BVH_DATA"
+  ],
+  [
+   14,
+   2,
+   0,
+   13,
+   0,
+   "VIDEO"
+  ],
+  [
+   15,
+   3,
+   1,
+   13,
+   1,
+   "VIDEO"
+  ],
+  [
+   16,
+   9,
+   0,
+   13,
+   2,
+   "GVHMR_CONFIG"
+  ],
+  [
+   17,
+   13,
+   0,
+   14,
+   0,
+   "STRING"
+  ],
+  [
+   18,
+   14,
+   0,
+   15,
    0,
    "BVH_DATA"
   ]

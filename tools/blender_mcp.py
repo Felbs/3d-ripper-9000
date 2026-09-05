@@ -340,6 +340,33 @@ def blender_attach_model(
 
 
 @mcp.tool()
+def blender_apply_hands(
+    hands_json: str,
+    camera_json: str = "",
+    object: str = "",  # noqa: A002
+    person: int = 1,
+    sides: str = "LR",
+    palm: str = "auto",
+    max_gap: int = 15,
+) -> dict:
+    """Drive a character's hand bones from WiLoR hand tracking (comfy_mocap's hands_json /
+    camera_json): each detected frame orients the hand bone by the tracked palm normal and
+    finger direction, gaps up to ``max_gap`` frames are interpolated, elsewhere the body
+    capture's wrist stays.  ``person`` = index in the hands file; ``palm="flip"`` when a
+    rig's palm side is guessed wrong."""
+    return call(
+        "apply_hands",
+        hands_json=hands_json,
+        camera_json=camera_json,
+        object=object,
+        person=person,
+        sides=sides,
+        palm=palm,
+        max_gap=max_gap,
+    )
+
+
+@mcp.tool()
 def blender_python(code: str) -> dict:
     """Run Python inside Blender (bpy + the add-on's functions are in scope).  Returns the
     captured stdout and repr() of a variable named `result` if you set one."""

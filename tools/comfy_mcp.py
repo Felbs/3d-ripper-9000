@@ -100,6 +100,42 @@ def _output_dir() -> Path:
     return COMFY / "output"
 
 
+def _camera_from_npz(out_dir: Path, since: float = 0.0) -> dict | None:
+    """R_world_from_cam from a GVHMR smpl_params npz (its world root orientation vs the
+    in-camera one, averaged over the clip): the static phone's tilt, needed to bring
+    WiLoR's camera-space hands into the mocap world.  Uses the newest npz written after
+    ``since`` (all people share the camera)."""
+    import numpy as np
+
+    files = [
+        p for p in glob.glob(str(out_dir / "smpl_params_*.npz")) if os.path.getmtime(p) >= since
+    ]
+    if not files:
+        return None
+    p = max(files, key=os.path.getmtime)
+
+    def rot(v):
+        th = float(np.linalg.norm(v))
+        if th < 1e-8:
+            return np.eye(3)
+        k = v / th
+        K = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
+        return np.eye(3) + np.sin(th) * K + (1 - np.cos(th)) * K @ K
+
+    d = np.load(p)
+    if "global_orient" not in d.files or "global_orient_incam" not in d.files:
+        return None
+    n = len(d["global_orient"])
+    rs = [
+        rot(d["global_orient"][t]) @ rot(d["global_orient_incam"][t]).T
+        for t in range(0, n, max(1, n // 60))
+    ]
+    u, _s, vt = np.linalg.svd(np.mean(rs, axis=0))
+    r = u @ vt
+    dev = max(np.degrees(np.arccos(np.clip((np.trace(x @ r.T) - 1) / 2, -1, 1))) for x in rs)
+    return {"R_world_from_cam": r.tolist(), "source": p, "max_dev_deg": round(float(dev), 1)}
+
+
 @mcp.tool()
 def comfy_status() -> dict:
     """Is ComfyUI up?  Version, GPU, queue length, and whether the GCRip Person Masks node
@@ -194,6 +230,7 @@ def comfy_mocap(
     confidence: float = 0.4,
     track_throw: bool = True,
     throw_colour: str = "bright",
+    track_hands: bool = True,
     wait_s: int = 1800,
 ) -> dict:
     """Footage -> one BVH per person.  ``video`` = a file name in ComfyUI/input (see
@@ -208,7 +245,7 @@ def comfy_mocap(
     if os.path.isabs(video) or os.sep in video:
         video = comfy_upload(video)["input_name"]
     wf = _wf()
-    doc = wf.build(video, people, name, throw=track_throw)
+    doc = wf.build(video, people, name, throw=track_throw, hands=track_hands)
     prompt = wf.to_api(doc)
     for node in prompt.values():
         if node["class_type"] == "GVHMRInference":
@@ -261,6 +298,15 @@ def comfy_mocap(
         out["throw"] = {k: v for k, v in ev[0].items() if k != "path"} if ev else None
         out["throws_json"] = str(tj)
         out["throw_preview"] = str(tj.with_name(f"{name}_throw.png"))
+    hj = out_dir / "gcrip_masks" / f"{name}_hands.json"
+    if track_hands and hj.is_file():
+        out["hands_json"] = str(hj)
+        # camera -> world rotation from this run's GVHMR files, for the hand orientations
+        cj = out_dir / "gcrip_masks" / f"{name}_camera.json"
+        cam = _camera_from_npz(out_dir, since=t0)
+        if cam:
+            cj.write_text(json.dumps(cam, indent=1), encoding="utf-8")
+            out["camera_json"] = str(cj)
     return out
 
 
@@ -348,10 +394,17 @@ def mocap_take(
     positions_m: list[float] | None = None,
     heights: list[float] | None = None,
     attachments: list[dict] | None = None,
+    hands: str = "",
+    camera: str = "",
+    palms: list[str] | None = None,
 ) -> dict:
     """BVH files -> characters animated in a saved .blend (and optionally an MP4), through
     the gcrip-blender control channel.  ``characters`` = one "GAMEID:name" per BVH as
     listed by blender_library (e.g. "GZLE01:link/cl", "G6FE69:m200__"), or a glTF path.
+    ``hands`` / ``camera`` (comfy_mocap's ``hands_json`` / ``camera_json``) drive every
+    character's hand bones from the WiLoR hand tracking - real wrist orientation instead
+    of the body capture's guess; ``palms`` = per character "auto" | "flip" when a rig's
+    palm side is guessed wrong.  Props are then placed on the tracked palm (grasp off).
     ``heights`` = scene units per character (100 = 1 m): each rig is scaled to that
     height (0 keeps its native size).  ``attachments`` hang separate rips on a bone, e.g.
     [{"person": 1, "gid": "GZ2E01", "name": "Kmdl/al_head", "bone": "mixamorig:Head"}].
@@ -438,6 +491,22 @@ def mocap_take(
         )
     last = max(a["end"] for a in arms)
     bm.call("frame", start=1, end=last)
+    tracked = []
+    if hands:
+        if not os.path.isfile(hands):
+            raise FileNotFoundError(hands)
+        for k, a in enumerate(arms):
+            tracked.append(
+                bm.call(
+                    "apply_hands",
+                    hands_json=hands,
+                    camera_json=camera,
+                    object=a["armature"],
+                    person=k + 1,
+                    sides="LR",
+                    palm=(palms[k] if palms and k < len(palms) else "auto"),
+                )
+            )
     held = []
     for p in props or []:
         k = int(p.get("person", 1)) - 1
@@ -456,7 +525,7 @@ def mocap_take(
                 flight_frames=int(p.get("flight_frames", 0) or 0),
                 size=float(p.get("size", 0.16)),
                 toss=float(p.get("toss", 1.4)),
-                grasp=bool(p.get("grasp", True)),
+                grasp=bool(p.get("grasp", not hands)),
                 palm=p.get("palm", "auto"),
             )
         )
@@ -535,7 +604,13 @@ def mocap_take(
             "result=n-len(bpy.data.actions)"
         ),
     )
-    out = {"characters": arms, "frames": last, "props": held, "attachments": parts}
+    out = {
+        "characters": arms,
+        "frames": last,
+        "props": held,
+        "attachments": parts,
+        "hands": tracked,
+    }
     if audio:
         if not os.path.isfile(audio):
             raise FileNotFoundError(audio)

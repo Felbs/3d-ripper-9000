@@ -2888,6 +2888,170 @@ def attach_model(  # noqa: A002
     }
 
 
+_CAM_TO_BL = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]], dtype=float)  # Y-up world -> Z-up
+_MANO_WRIST, _MANO_INDEX, _MANO_MIDDLE, _MANO_PINKY = 0, 5, 9, 17
+
+
+def _palm_normal_local(arm, fam, hand_bone, palm="auto"):
+    """The palm normal of a hand bone in bone-local space at rest: thinnest axis of the
+    hand mesh (PCA of vertices weighted to the bone), signed by a thumb bone, else finger
+    curl, else 'towards the body'; ``palm="flip"`` reverses.  Returns (n_local, how)."""
+    sc = bpy.context.scene
+    arm.data.pose_position = "REST"
+    bpy.context.view_layer.update()
+    pb = arm.pose.bones[hand_bone]
+    m0 = arm.matrix_world @ pb.matrix
+    head_p = np.array(m0.translation)
+    tail = np.array(m0 @ Vector((0, pb.length, 0)))
+    fingers = _unit(tail - head_p)
+    pts = []
+    for o in fam:
+        if o.type != "MESH" or hand_bone not in o.vertex_groups:
+            continue
+        gi = o.vertex_groups[hand_bone].index
+        for v in o.data.vertices:
+            if any(g.group == gi and g.weight > 0.3 for g in v.groups):
+                pts.append(np.array(o.matrix_world @ v.co))
+    curl = 0.0
+    thickness = 1.0
+    if len(pts) >= 12:
+        P = np.array(pts)
+        C = P - P.mean(axis=0)
+        _w, vecs = np.linalg.eigh(C.T @ C)
+        normal = _unit(vecs[:, 0])
+        proj = (P - head_p) @ normal
+        thickness = float(np.ptp(proj))
+        along = (P - head_p) @ fingers
+        far = along > 0.7 * along.max()
+        if far.sum() >= 4:
+            curl = float(np.mean(proj[far]) - np.mean(proj))
+    else:
+        normal = _unit(np.cross(fingers, (0, 0, 1)))
+    side_key = "l" if "Left" in hand_bone else "r"
+    thumb = next(
+        (
+            b
+            for b in arm.pose.bones
+            if any(k in b.name.lower() for k in ("thumb", "oya"))
+            and b.name.lower().rstrip("0123456789").endswith(side_key)
+        ),
+        None,
+    )
+    if thumb is not None:
+        tip = np.array(arm.matrix_world @ thumb.tail)
+        if np.dot(normal, tip - (head_p + fingers * (0.5 * pb.length))) < 0:
+            normal = -normal
+        how = f"thumb {thumb.name}"
+    elif abs(curl) > 0.02 * thickness:
+        if curl < 0:
+            normal = -normal
+        how = "finger curl"
+    else:
+        body = np.array(arm.matrix_world @ arm.pose.bones["mixamorig:Hips"].head)
+        if np.dot(normal, body - tail) < 0:
+            normal = -normal
+        how = "body guess"
+    if palm == "flip":
+        normal = -normal
+        how += " (flipped)"
+    n_local = (m0.to_3x3().inverted() @ Vector(normal)).normalized()
+    arm.data.pose_position = "POSE"
+    bpy.context.view_layer.update()
+    sc.frame_set(sc.frame_start)
+    return Vector(n_local), how
+
+
+@rpc
+def apply_hands(  # noqa: A002
+    hands_json, camera_json="", object="", person=1, sides="LR", palm="auto", max_gap=15
+):
+    """Drive a character's hand bones from tracked hands (WiLoR, see comfyui/gcrip_mocap/
+    hands.py): each detected frame gives the palm normal and finger direction in camera
+    space; ``camera_json`` (R_world_from_cam from the GVHMR file) turns them into the
+    mocap world, and the hand bone is rotated so its own palm normal and finger axis
+    match.  Frames without a detection are interpolated over gaps up to ``max_gap``
+    frames; elsewhere the body capture's wrist stays.  Keys land in the armature's active
+    action on top of the MOCAP strip.  ``person`` = the person index in the hands file."""
+    arm, fam = _resolve_armature(object)
+    with open(hands_json, encoding="utf-8") as fh:
+        doc = json.load(fh)
+    people = doc.get("people", {})
+    rec = people.get(str(person))
+    if not rec:
+        raise KeyError(f"no person {person} in {hands_json} (has {sorted(people)})")
+    R_wc = np.eye(3)
+    if camera_json and os.path.isfile(camera_json):
+        with open(camera_json, encoding="utf-8") as fh:
+            R_wc = np.array(json.load(fh)["R_world_from_cam"], dtype=float)
+    R_bl = _CAM_TO_BL @ R_wc  # camera -> Blender world (direction vectors only)
+    sc = bpy.context.scene
+    out = {}
+    for side in sides:
+        hand_bone = "mixamorig:LeftHand" if side == "L" else "mixamorig:RightHand"
+        if hand_bone not in arm.pose.bones:
+            continue
+        pb = arm.pose.bones[hand_bone]
+        n_local, how = _palm_normal_local(arm, fam, hand_bone, palm)
+        side_local = Vector((0, 1, 0)).cross(n_local).normalized()
+        L = Matrix(
+            (
+                (side_local.x, 0.0, n_local.x),
+                (side_local.y, 1.0, n_local.y),
+                (side_local.z, 0.0, n_local.z),
+            )
+        )
+        # target world rotation per detected frame (scene frame = clip frame + 1)
+        targets = {}
+        for fs, hands_at in rec.items():
+            h = hands_at.get(side)
+            if not h:
+                continue
+            kp = np.array(h["kp3d"], dtype=float)
+            fingers = kp[_MANO_MIDDLE] - kp[_MANO_WRIST]
+            span = np.cross(kp[_MANO_INDEX] - kp[_MANO_WRIST], kp[_MANO_PINKY] - kp[_MANO_WRIST])
+            normal = -span if side == "R" else span  # cross(index, pinky) = back of a right hand
+            f_w = _unit(R_bl @ fingers)
+            n_w = _unit(R_bl @ normal)
+            n_w = _unit(n_w - f_w * np.dot(n_w, f_w))
+            s_w = np.cross(f_w, n_w)
+            W = Matrix(
+                ((s_w[0], f_w[0], n_w[0]), (s_w[1], f_w[1], n_w[1]), (s_w[2], f_w[2], n_w[2]))
+            )
+            targets[int(fs) + 1] = (W @ L.inverted()).to_quaternion()
+        if not targets:
+            out[side] = {"bone": hand_bone, "frames": 0}
+            continue
+        keys = sorted(targets)
+        # pass 1: the capture's own hand matrices (an active action would mask the NLA)
+        mocap = {}
+        for f in range(sc.frame_start, sc.frame_end + 1):
+            sc.frame_set(f)
+            mocap[f] = (arm.matrix_world @ pb.matrix).copy()
+        applied = 0
+        for f in range(sc.frame_start, sc.frame_end + 1):
+            sc.frame_set(f)
+            M = mocap[f]
+            q = None
+            if f in targets:
+                q = targets[f]
+            else:
+                lo = max((k for k in keys if k < f), default=None)
+                hi = min((k for k in keys if k > f), default=None)
+                if lo is not None and hi is not None and hi - lo <= max_gap:
+                    q = targets[lo].slerp(targets[hi], (f - lo) / (hi - lo))
+            if q is not None:
+                rot = q.to_matrix()
+                # the world rotation includes the armature object's rotation/scale: the
+                # bone matrix we set is armature-space, so strip the object part
+                M = Matrix.Translation(M.translation) @ rot.to_4x4()
+                applied += 1
+            pb.matrix = arm.matrix_world.inverted() @ M
+            pb.keyframe_insert("rotation_quaternion", frame=f)
+        out[side] = {"bone": hand_bone, "detected": len(targets), "frames": applied, "palm": how}
+    sc.frame_set(sc.frame_start)
+    return out
+
+
 @rpc
 def python(code):
     """Run Python inside Blender with `bpy` and this add-on's globals; returns captured
