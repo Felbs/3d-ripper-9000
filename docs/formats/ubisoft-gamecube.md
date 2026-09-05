@@ -98,6 +98,35 @@ already rip through the jade plugin (`files/prince.bf` BIG file -> ~2.5k `.bin` 
 Warrior Within check 2026-08-29: 301 members -> 3,067 scenes / 4.19 M triangles). Peter
 Jackson's King Kong (GWKE41) is textures-only: its later Jade build is not decoded yet.
 
+### PoP SoT GC display lists: the lightmap point layout (fixed 2026-09-04)
+
+The quality audit ranked GPTE41 #5 (214 garbage / 316 suspect of 10,624): level
+architecture (`*_mur`, `*_VIS`, `Aviary_FenceDoor`, `Colonnes_mur` ...) came out as
+spike-balls.  Every PoP GEO carries both the platform-neutral triangle list and a
+GameCube copy (`GEO_GeoObject_GC_Content`: `DEADBABE | u32 flags | per element u16
+strips, u16 | per strip u16 length + points`), and the exporter prefers the strips.  A
+point is `index, [normal if flags & 1], colour, uv` (u8 each with `Index8Bits` = bit 20,
+else u16) **then, with `HasLightMap` = bit 21, two u16 lightmap indices per point**
+(Ray1Map `DisplayList_Point`: Index / Normal / Col / Tex / LM1 / LM2).  `parse_geo` had
+skipped the lightmap data as one `4 * length` block after the strip: same byte budget
+(so the exact-size check passed) but every point after the first was read 4 bytes
+early, giving out-of-range indices that the exporter's `np.clip` silently folded onto
+vertex 0 / the last vertex.  Affected GEOs are the ones with GC flags `0x?08084`
+(bits 2, 7, 15 + 21 - lit level geometry); plain `0x4` / `0x100004` props were right all
+along.
+
+Proof on 7 level packs read from the disc (6101_Tour, 2201_Aviary, 0103_Colonnes,
+3101_TowerExit, 3501_HaremAccess, 1401_Cour, 2101_Start; 557 GEOs with strips, 135
+lightmapped): with the per-point layout the strips triangulate to exactly the GEO's own
+triangle list for 557 / 557 (before: 422, and all 135 lightmapped GEOs indexed past their
+vertex pool); `gcrip.quality` on the same GEOs goes 53 garbage / 43 suspect -> 0 / 26.
+The 26 left are non-lightmap grass / ivy alpha cards (`*Gazon*`, `*Herbe*`, `*Liere*`,
+`*ALPHA*`) whose strips already matched their triangle list - faithful vegetation
+billboards, an audit false positive.  The 86 "GEOs" that fail to parse per pack are
+21 / 30-byte keyed lists that merely start with the type word 1.  Open: the lightmap
+UV pool the LM1 / LM2 indices address (not exported), and the 859 untextured models.
+GPTE41 needs a re-rip.
+
 ## Level assembly (2026-08-29)
 
 The "big-endian map tables" were a red herring. Pandora Tomorrow's `.lin` files are plain

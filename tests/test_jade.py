@@ -99,6 +99,34 @@ def montreal_geo() -> bytes:
     return b
 
 
+def montreal_geo_lightmap(index8: bool = False) -> bytes:
+    """A PoP GEO with HasLightMap set (GC flags bit 21): every display-list point
+    carries two u16 lightmap indices after its vertex / colour / uv indices.  Two
+    triangles as one 4-point strip; the triangle list is the ground truth."""
+    flags = (1 << 21) | (1 << 20 if index8 else 0)
+    b = struct.pack("<II", jade.GRO_GEO, 7)
+    b += struct.pack("<II", flags, 2)
+    b += struct.pack("<IIIII", 4, 0, 0, 4, 1)
+    b += struct.pack("<II", 0, 0)
+    for i in range(4):
+        b += struct.pack("<3f", float(i), float(i % 2), 0.0)
+    for i in range(4):
+        b += struct.pack("<2f", i / 4.0, 0.5)
+    b += struct.pack("<II", 2, 0)
+    b += struct.pack("<6H", 0, 1, 2, 0, 1, 2) + struct.pack("<I", 0)
+    b += struct.pack("<6H", 1, 3, 2, 1, 3, 2) + struct.pack("<I", 0)
+    b += struct.pack("<II", 0, 0)
+    b += struct.pack("<II", 1, 0)
+    b += struct.pack("<II", jade.DEADBABE, flags)
+    b += struct.pack("<HH", 1, 0)
+    b += struct.pack("<H", 4)
+    idx = "B" if index8 else "H"
+    for v in (0, 1, 2, 3):
+        # index, colour, uv, then the lightmap pair - per point, not per strip
+        b += struct.pack(f"<3{idx}", v, 0, v) + struct.pack("<HH", 0x1111, 0x2222)
+    return b
+
+
 def montreal_entry(key: int, body: bytes) -> bytes:
     return struct.pack("<I", len(body)) + jade.MARK + struct.pack("<I", key) + body
 
@@ -173,6 +201,28 @@ def test_montreal_textures_jtx_and_geo_with_display_list():
     scene = plug.geo_to_scene(g, "geo")
     assert scene.triangles == 1 and scene.vertices == 3
     assert scene.materials[0].name == "mat2"
+
+
+@pytest.mark.parametrize("index8", [False, True])
+def test_montreal_lightmap_strip_points_carry_their_lightmap_indices(index8):
+    # PoP SoT level walls (GC flags 0x?08084 + bit 21): the old decoder skipped the
+    # lightmap pairs as a 4*len block after the strip, shearing every point after
+    # the first (out-of-range indices, "spaghetti" walls in the quality audit)
+    g = jade.parse_geo(montreal_geo_lightmap(index8), montreal=True)
+    strip = g.elements[0].strips[0]
+    assert strip.shape == (4, 4)
+    assert strip[:, 0].tolist() == [0, 1, 2, 3]
+    assert strip[:, 3].tolist() == [0, 1, 2, 3]
+    scene = plug.geo_to_scene(g, "wall")
+    assert scene.triangles == 2 and scene.vertices == 4
+    prim = scene.primitives[0]
+
+    def key(pts, tri):
+        return tuple(sorted(tuple(pts[i].tolist()) for i in tri))
+
+    got = {key(prim.positions, tri) for tri in prim.indices.reshape(-1, 3)}
+    truth = {key(plug._to_yup(g.vertices), tri) for tri in [(0, 1, 2), (1, 3, 2)]}
+    assert got == truth
 
 
 def test_montpellier_geo_signature_scan_and_scene():

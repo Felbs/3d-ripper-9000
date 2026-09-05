@@ -773,6 +773,19 @@ def _parse_gc(r: _R, elements: list[GeoElement], flags_sot: int, warnings: list[
     use_normals = bool(flags & 1)
     index8 = bool(flags & (1 << 20))
     lightmap = bool(flags & (1 << 21))
+    # DisplayList_Point (Ray1Map GEO_GeoObject_GC_Content): index, [normal], colour,
+    # uv - u8 each with Index8Bits, else u16 - then, with HasLightMap, two u16
+    # lightmap indices *per point*.  Skipping them as a 4*len block after the strip
+    # has the same byte budget but shears every point after the first: that was the
+    # PoP SoT "spaghetti walls" (0x?08084 flags, 2026-09-04).
+    ib = "u1" if index8 else "<u2"
+    dt = [("v", ib)]
+    if use_normals:
+        dt.append(("n", ib))
+    dt += [("c", ib), ("t", ib)]
+    if lightmap:
+        dt += [("l1", "<u2"), ("l2", "<u2")]
+    dt = np.dtype(dt)
     if not elements and n:
         elements.extend(GeoElement(m, np.zeros((0, 6), np.uint16)) for m in mats)
     for i in range(n):
@@ -783,21 +796,13 @@ def _parse_gc(r: _R, elements: list[GeoElement], flags_sot: int, warnings: list[
         for _ in range(nstrips):
             ln = r.u16()
             _sane(ln)
-            fields = 3 + (1 if use_normals else 0)
-            if index8:
-                raw = r.array("u1", ln * fields).reshape(ln, fields).astype(np.int64)
-            else:
-                raw = r.array("<u2", ln * fields).reshape(ln, fields).astype(np.int64)
-            if lightmap:
-                r.skip(4 * ln)
+            raw = r.array(dt, ln)
             pts = np.zeros((ln, 4), np.int64)
-            pts[:, 0] = raw[:, 0]
-            k = 1
+            pts[:, 0] = raw["v"]
             if use_normals:
-                pts[:, 1] = raw[:, 1]
-                k = 2
-            pts[:, 2] = raw[:, k]
-            pts[:, 3] = raw[:, k + 1]
+                pts[:, 1] = raw["n"]
+            pts[:, 2] = raw["c"]
+            pts[:, 3] = raw["t"]
             strips.append(pts)
         if i < len(elements):
             elements[i].strips = strips

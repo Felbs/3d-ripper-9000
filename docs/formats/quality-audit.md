@@ -62,6 +62,23 @@ Outputs consumed by tooling:
   failed, and re-auditing scores **462 models, 0 garbage / 0 suspect / 0 flagged**
   (disc 2's 26 gx-noise "models" were the same class).  One other title shipped
   gx-claimed `.tga` sources - GSGE5D MLB Slugfest 2003, 5 models - queued for re-rip.
+- **GPTE41 Prince of Persia: The Sands of Time (#5): 214 garbage / 316 suspect, all
+  `*_wow_*#<geo>_<name>` level architecture** (`6101_Tour_VIS`, `Aviary_FenceDoor`,
+  `Colonnes_mur`, walls / stairs / arches).  **FIXED 2026-09-04**: a jade decoder bug,
+  not scanner noise (every model is a `format: jade` claim).  PoP GEOs ship a GameCube
+  display-list copy that the exporter prefers; with the `HasLightMap` flag (GC flags bit
+  21, the `0x?08084` lit-level-geometry class) each strip point carries two u16 lightmap
+  indices *per point*, which `parse_geo` skipped as one `4 * len` block *after* the strip
+  - identical byte budget, so the exact-size check passed, but every point after the
+  first was sheared 4 bytes and the indices ran past the vertex pool (the exporter's
+  `np.clip` hid it; the audit signature is "spaghetti with a clean triangle count").
+  Ground truth was inside the file: the same GEO's platform-neutral triangle list.  On 7
+  level packs (557 strip GEOs, 135 lightmapped) the fixed strips reproduce the triangle
+  list exactly for 557 / 557 (before 422, all 135 lightmapped ones out of range);
+  `gcrip.quality` on those GEOs: 53 garbage / 43 suspect -> 0 / 26, the 26 being
+  non-lightmap grass / ivy alpha cards (`*Gazon*`, `*Herbe*`, `*Liere*`, `*ALPHA*`) that
+  match their triangle list - faithful billboards, an audit false positive.  Disc pending
+  re-rip.  See [ubisoft-gamecube.md](ubisoft-gamecube.md).
 - **GMHE52 Mat Hoffman Pro BMX 2: 472 of 533 flagged** - park chunk models
   (`chchunk19`, `poground21`), another whole-format failure.
 - Untextured hotspots (Sims 2 Pets 2364, NHL 2003 1212, PoP:SoT 859) are texture-pipeline

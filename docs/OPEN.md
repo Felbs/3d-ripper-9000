@@ -45,6 +45,25 @@ GSGE5D MLB Slugfest 2003, 5 models - queued for its next re-rip wave.  Splinter 
 CT's *real* geometry (the `.lin`/`.umd` Unreal bundles) remains tracked in the Ubisoft
 UE2 row below - this closes the garbage, not the game.
 
+## Closed 2026-09-04: GPTE41 Prince of Persia: The Sands of Time - the Jade lightmap strip layout (214 garbage / 316 suspect)
+
+The audit's #5 cluster (`6101_Tour_VIS`, `2201_Aviary_FenceDoor`, `0103_Colonnes_mur` and
+every other `*_wow_*#<geo>_<name>` wall / stair / arch) was one strip-point layout in
+`gcrip/formats/jade.py::_parse_gc`.  PoP GEOs carry a GameCube display-list copy that the
+exporter prefers; with `HasLightMap` (GC flags bit 21 - the `0x?08084` lit level geometry)
+each point is `index, colour, uv, LM1, LM2` (u16 each; u8 indices with bit 20), and the
+reader skipped the lightmap pairs as one `4 * len` block *after* the strip.  Same byte
+budget, so the exact-size parse passed, but every point after the first was read 4 bytes
+early and the indices ran off the vertex pool - the exporter's `np.clip` turned that into
+spike-balls instead of an error.  The proof needed no disc guessing: the same GEO also
+stores its platform-neutral triangle list, and the fixed strips reproduce it exactly for
+557 / 557 strip GEOs across 7 level packs (before: 422 / 557, all 135 lightmapped ones out
+of range); quality verdicts on those GEOs 53 garbage / 43 suspect -> 0 / 26, the 26 being
+grass / ivy alpha cards that were right all along.  Regression test in
+`tests/test_jade.py` (u16 and u8 index variants).  Re-rip of GPTE41 is the remaining
+chore; still open for Jade: the lightmap UV pool itself (LM1 / LM2 are not exported) and
+PoP's 859 untextured models.  See [formats/ubisoft-gamecube.md](formats/ubisoft-gamecube.md).
+
 ## Closed 2026-09-04: Krome MDL3 world-chunk garbage (Ty 2 / Ty 3 / Spyro ANB / King Arthur)
 
 The quality audit's #1-#4 garbage cluster (~2,044 models: GIZE52 707, GYTE69 609, G6SE7D
