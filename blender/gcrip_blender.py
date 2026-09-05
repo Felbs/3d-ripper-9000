@@ -27,6 +27,15 @@ What it adds
   ComfyUI-MotionCapture SMPLtoBVH output, Mixamo/Rokoko exports) and retarget it onto
   the selected character as an NLA strip. No T-pose needed in the source: the
   retarget builds anatomical frames from joint positions at the first frame.
+* Any rig, not just Nintendo's: when a rip carries no bone map (every non-J3D format)
+  the add-on guesses the humanoid core from the joint names + hierarchy (the same
+  structural mapper as gcrip/humanoid.py) before renaming to Mixamo names, so the
+  Library's "mocap-ready" filter and the retarget cover EA / Radical / Maya-style rigs.
+* Sidebar > GCRip tab > "GCRip Server": a JSON-lines control channel on 127.0.0.1
+  (port 8788) so an assistant can drive this Blender through the MCP bridge in
+  tools/blender_mcp.py: browse the library, spawn models, retarget clips, place a
+  camera, render, save. Start it from the panel, or launch Blender with
+  blender/gcrip_server_boot.py (headless too).
 
 The add-on only uses the custom properties gcrip writes into the glTF
 (gcrip_variant_of, gcrip_texture, gcrip_std_bone, gcrip_joint), so it works on
@@ -36,15 +45,16 @@ any gcrip output.
 bl_info = {
     "name": "GCRip glTF helpers",
     "author": "gcrip",
-    "version": (0, 3, 0),
+    "version": (0, 4, 0),
     "blender": (4, 2, 0),
     "location": "File > Import > GCRip glTF; 3D View > Sidebar > GCRip",
     "description": "Import gcrip glTF rips with hidden expression meshes, Mixamo bone names, "
-    "expression switch panel",
+    "expression switch panel, library browser, mocap retarget, control server",
     "category": "Import-Export",
 }
 
 import contextlib  # noqa: E402
+import re  # noqa: E402
 
 import bpy  # noqa: E402
 from bpy.props import BoolProperty, FloatProperty, StringProperty  # noqa: E402
@@ -100,10 +110,295 @@ def _armatures(objects):
     return [o for o in objects if o.type == "ARMATURE"]
 
 
+# ---- humanoid mapper: verbatim copy of gcrip/humanoid.py (tests/test_humanoid.py checks)
+# BEGIN HUMANOID
+_ROLES: dict[str, str] = {}
+for _role, _toks in {
+    "hand": ("hand", "wrist", "palm", "te", "tekubi"),
+    "foot": ("foot", "ankle", "asi", "ashi", "asikubi", "ashikubi"),
+    "toe": ("toe", "toes", "toebase", "ball", "tsumasaki", "tumasaki"),
+    "head": ("head", "atama"),
+    "neck": ("neck", "kubi"),
+    "clavicle": ("clavicle", "clav", "collar", "collarbone", "kata", "sakotu"),
+    "shoulder": ("shoulder",),
+    "upperarm": ("upperarm", "uparm", "humerus", "bicep", "biceps", "arm", "ude"),
+    "forearm": ("forearm", "forarm", "lowerarm", "loarm", "elbow", "hiji", "radius", "ulna"),
+    "hips": ("hips", "pelvis", "koshi", "waist"),
+    "spine": ("spine", "chest", "torso", "mune", "abdomen", "stomach", "belly", "sternum", "body"),
+    "upleg": ("thigh", "upleg", "upperleg", "femur", "momo", "leg", "hip"),
+    "lowerleg": ("knee", "shin", "calf", "lowerleg", "loleg", "tibia", "hiza", "sune"),
+}.items():
+    for _t in _toks:
+        _ROLES[_t] = _role
+
+_HELPER = {
+    "twist", "roll", "con", "off", "handle", "ik", "fk", "pole", "target", "nub", "end",
+    "eff", "effector", "helper", "attach", "dummy", "null", "locator", "top", "tip", "hoop",
+    "shape", "mesh", "geo",
+}  # fmt: skip
+_SIDE = {"left": "L", "right": "R", "l": "L", "r": "R", "lt": "L", "rt": "R"}
+_CORE = {"Hips", "LeftArm", "LeftForeArm", "LeftHand", "RightArm", "RightForeArm", "RightHand",
+         "LeftUpLeg", "LeftLeg", "LeftFoot", "RightUpLeg", "RightLeg", "RightFoot"}  # fmt: skip
+_TORSO = {"hips", "spine", "neck", "head"}
+
+_SPLIT = re.compile(
+    r"[^A-Za-z0-9]+|(?<=[a-z])(?=[A-Z])|(?<=[A-Za-z])(?=[0-9])|(?<=[0-9])(?=[A-Za-z])"
+)
+
+
+def tokens(name: str) -> list[str]:
+    """'LCollarBone' -> ['l', 'collar', 'bone']; 'J_Leg_L2_Knee' -> ['j','leg','l','2','knee']."""
+    out = []
+    for t in _SPLIT.split(name):
+        if not t:
+            continue
+        t = t.lower()
+        # 'larm', 'rhand', 'lfoot': side letter glued to a keyword
+        if t not in _ROLES and t[:1] in ("l", "r") and t[1:] in _ROLES:
+            out += [t[0], t[1:]]
+        else:
+            out.append(t)
+    return out
+
+
+class _J:
+    __slots__ = ("i", "name", "parent", "children", "toks", "side", "roles", "helper", "depth")
+
+    def __init__(self, i, name, parent):
+        self.i, self.name, self.parent, self.children = i, name, parent, []
+        self.toks = tokens(name)
+        sides = [_SIDE[t] for t in self.toks if t in _SIDE]
+        self.side = sides[0] if sides else None
+        self.roles = {_ROLES[t] for t in self.toks if t in _ROLES}
+        if "hip" in self.toks:  # 'HipR' is a thigh, 'Hip' is the pelvis
+            self.roles.discard("upleg")
+            self.roles.add("upleg" if self.side else "hips")
+        self.helper = any(t in _HELPER for t in self.toks)
+        self.depth = 0
+
+
+def _build(names, parents):
+    js = [_J(i, n, p) for i, (n, p) in enumerate(zip(names, parents, strict=True))]
+    for j in js:
+        if j.parent is not None and 0 <= j.parent < len(js) and j.parent != j.i:
+            js[j.parent].children.append(j.i)
+        else:
+            j.parent = None
+    for j in js:  # depth (parents may come after children in node order)
+        d, p = 0, j.parent
+        while p is not None and d < len(js):
+            d, p = d + 1, js[p].parent
+        j.depth = d
+    return js
+
+
+def _ancestors(js, i):
+    out, p = [], js[i].parent
+    while p is not None and len(out) < len(js):
+        out.append(p)
+        p = js[p].parent
+    return out
+
+
+def _pick_end(js, role, side, prefer):
+    """The hand / foot joint of one side: a sided, non-helper joint carrying ``role``.
+    Of a parent/child pair (Wrist > Palm) the parent wins; then the one at the end of the
+    longest same-side chain (the real ankle sits under Hip_L/Knee_L, an IK handle named
+    Left_Foot hangs off the root), then the one under a torso joint, then the preferred
+    keyword, then the shallower one."""
+    cands = [j for j in js if role in j.roles and j.side == side and not j.helper]
+    if not cands:
+        return None
+    anc = {j.i: _ancestors(js, j.i) for j in cands}
+    cands = [j for j in cands if not any(o.i in anc[j.i] for o in cands)]
+
+    def key(j):
+        sided = sum(1 for a in anc[j.i] if js[a].side == side)
+        torso = any(js[a].roles & {"hips", "spine"} for a in anc[j.i])
+        return (-sided, not torso, not any(t in prefer for t in j.toks), j.depth, j.i)
+
+    cands.sort(key=key)
+    return cands[0]
+
+
+def _nca(js, idxs):
+    """Nearest common ancestor (or self) of the given joints, or None."""
+    paths = [[i, *_ancestors(js, i)] for i in idxs]
+    common = set(paths[0])
+    for p in paths[1:]:
+        common &= set(p)
+    return next((js[i] for i in paths[0] if i in common), None)
+
+
+def _chain(js, start, side):
+    """Non-helper ancestors of ``start`` up to (excluding) the torso / the other side."""
+    out = []
+    for a in _ancestors(js, start.i):
+        j = js[a]
+        if j.roles & _TORSO or (j.side and j.side != side):
+            break
+        if not j.helper:
+            out.append(j)
+        if len(out) >= 6:
+            break
+    return out
+
+
+def guess_bones(names: list[str], parents: list[int | None]) -> dict[int, str]:
+    """{joint index: Mixamo bone name (no prefix)} for the humanoid core, or as much of it
+    as the skeleton exposes; ``{}`` when it is clearly not a biped."""
+    js = _build(list(names), list(parents))
+    if len(js) < 8:
+        return {}
+    out: dict[int, str] = {}
+    uplegs = []
+    for side, word in (("L", "Left"), ("R", "Right")):
+        hand = _pick_end(js, "hand", side, ("hand", "wrist"))
+        if hand is not None:
+            out[hand.i] = f"{word}Hand"
+            chain = _chain(js, hand, side)
+            fore = next((j for j in chain if "elbow" in j.toks), None) or next(
+                (j for j in chain if "forearm" in j.roles), None
+            )
+            if fore is None and chain:
+                fore = chain[0]
+            if fore is not None:
+                out[fore.i] = f"{word}ForeArm"
+                rest = chain[chain.index(fore) + 1 :]
+                # the upper arm: next plain joint; on joint-named rigs the sided shoulder
+                # joint itself is where the upper arm starts
+                arm = next((j for j in rest if "clavicle" not in j.roles), None) or next(
+                    (j for j in rest if j.side == side), None
+                )
+                if arm is not None:
+                    out[arm.i] = f"{word}Arm"
+                    after = rest[rest.index(arm) + 1 :]
+                    sh = next(
+                        (j for j in after if j.roles & {"clavicle", "shoulder"} and j.i not in out),
+                        None,
+                    )
+                    if sh is not None:
+                        out[sh.i] = f"{word}Shoulder"
+        foot = _pick_end(js, "foot", side, ("foot", "ankle"))
+        if foot is not None:
+            out[foot.i] = f"{word}Foot"
+            toe = next((js[c] for c in foot.children if "toe" in js[c].roles), None)
+            if toe is not None:
+                out[toe.i] = f"{word}ToeBase"
+            chain = _chain(js, foot, side)
+            low = next((j for j in chain if "knee" in j.toks), None) or next(
+                (j for j in chain if "lowerleg" in j.roles), None
+            )
+            if low is None and chain:
+                low = chain[0]
+            if low is not None:
+                out[low.i] = f"{word}Leg"
+                rest = chain[chain.index(low) + 1 :]
+                up = next((j for j in rest if "upleg" in j.roles), None) or (
+                    rest[0] if rest else None
+                )
+                if up is not None:
+                    out[up.i] = f"{word}UpLeg"
+                    uplegs.append(up)
+    # head + neck
+    heads = [j for j in js if "head" in j.roles and not j.helper and not j.side]
+    # the body's head hangs under a neck/spine/hips joint; a mesh node called
+    # "headShape" at the root does not
+    heads.sort(
+        key=lambda j: (not any(js[a].roles & _TORSO for a in _ancestors(js, j.i)), j.depth, j.i)
+    )
+    head = heads[0] if heads else None
+    neck = None
+    if head is not None:
+        out[head.i] = "Head"
+        neck = next((js[a] for a in _ancestors(js, head.i) if "neck" in js[a].roles), None)
+        if neck is not None:
+            out[neck.i] = "Neck"
+    top = neck or head
+    # hips = where the legs and the torso meet (Mixamo: Hips parents Spine + both UpLegs);
+    # without legs, the joint named pelvis/hips
+    hips = None
+    if len(uplegs) == 2:
+        hips = _nca(js, [u.i for u in uplegs] + ([top.i] if top is not None else []))
+        if hips is not None and hips.i in out:  # one thigh parents the other: use its parent
+            hips = js[hips.parent] if hips.parent is not None else None
+    if hips is None:
+        hips = next((j for j in js if "hips" in j.roles and not j.side and not j.helper), None)
+    if hips is not None:
+        out[hips.i] = "Hips"
+    # spine chain: the joints between the hips and the neck, evenly picked into Spine/1/2
+    if top is not None and hips is not None:
+        spine = []
+        for a in _ancestors(js, top.i):
+            j = js[a]
+            if j.i == hips.i:
+                break
+            if j.helper or j.side or j.roles & {"clavicle", "shoulder", "upperarm", "neck", "head"}:
+                continue
+            spine.append(j)
+        spine.reverse()  # hips -> neck order
+        spine = [j for j in spine if j.i not in out]
+        picks = [spine[0], spine[len(spine) // 2], spine[-1]] if len(spine) >= 3 else spine
+        for j, n in zip(picks, ("Spine", "Spine1", "Spine2"), strict=False):
+            out[j.i] = n
+    elif hips is not None:  # no head: take the spine-named joints going up
+        sp = [j for j in js if "spine" in j.roles and not j.side and not j.helper]
+        sp = [j for j in sp if j.i not in out]
+        sp.sort(key=lambda j: (j.depth, j.i))
+        for j, n in zip(sp[:3], ("Spine", "Spine1", "Spine2"), strict=False):
+            out[j.i] = n
+    return out
+
+
+def is_humanoid(std: dict) -> bool:
+    """The core Mixamo set (hips, both arms + hands, both legs + feet) is all there."""
+    return set(std.values()) >= _CORE
+
+
+def humanoid_hint(names) -> bool:
+    """Names-only guess (no hierarchy): both hands, both feet and a torso keyword."""
+    seen = set()
+    for n in names:
+        toks = tokens(n)
+        if any(t in _HELPER for t in toks):
+            continue
+        side = next((_SIDE[t] for t in toks if t in _SIDE), None)
+        for t in toks:
+            r = _ROLES.get(t)
+            if r in ("hand", "foot") and side:
+                seen.add(f"{r}{side}")
+            elif r in _TORSO:
+                seen.add("torso")
+    return {"handL", "handR", "footL", "footR", "torso"} <= seen
+# END HUMANOID
+
+
+def auto_map_bones(arm, force=False):
+    """Bones carry no gcrip_std_bone props (a rip from before the mapper, or a format the
+    ripper does not map): guess the humanoid core from the bone names + hierarchy and store
+    the props `rename_bones` uses.  Returns how many bones were mapped."""
+    bones = list(arm.data.bones)
+    if not force and any(b.get(STD_KEY) or b.get(ORIG_KEY) for b in bones):
+        return 0
+    idx = {b.name: i for i, b in enumerate(bones)}
+    parents = [idx[b.parent.name] if b.parent else None for b in bones]
+    found = guess_bones([b.name for b in bones], parents)
+    for i, std in found.items():
+        bones[i][STD_KEY] = "mixamorig:" + std
+    return len(found)
+
+
+def rig_mixamo_names(arm):
+    """Set of Mixamo bone names present on the armature (without the prefix)."""
+    return {b.name.split(":", 1)[1] for b in arm.data.bones if b.name.startswith("mixamorig:")}
+
+
 def rename_bones(arm, to_mixamo):
     """Rename bones using the custom props gcrip stored on them. Blender updates vertex
     groups, actions and constraints automatically when a bone is renamed."""
     n = 0
+    if to_mixamo:
+        auto_map_bones(arm)
     for bone in list(arm.data.bones):
         if to_mixamo:
             target = bone.get(STD_KEY)
@@ -333,6 +628,29 @@ class GCRIP_OT_rename_bones(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class GCRIP_OT_auto_map(bpy.types.Operator):
+    """Guess the humanoid core (hips, spine, arms, legs...) of the active rig from its bone
+    names + hierarchy and rename those bones to Mixamo names - for rips without a bone map"""
+
+    bl_idname = "gcrip.auto_map"
+    bl_label = "Guess humanoid bones"
+    bl_options = {"REGISTER", "UNDO"}
+
+    def execute(self, context):
+        arms = _armatures(_family(context.active_object))
+        if not arms:
+            self.report({"WARNING"}, "select a rigged model")
+            return {"CANCELLED"}
+        n = auto_map_bones(arms[0], force=True)
+        rename_bones(arms[0], True)
+        core = is_humanoid({i: s for i, s in enumerate(rig_mixamo_names(arms[0]))})
+        self.report(
+            {"INFO"} if core else {"WARNING"},
+            f"{n} bones mapped" + ("" if core else " - not a full biped (arms/legs/hips)"),
+        )
+        return {"FINISHED"}
+
+
 class GCRIP_OT_set_expression(bpy.types.Operator):
     bl_idname = "gcrip.set_expression"
     bl_label = "Set expression"
@@ -433,16 +751,29 @@ _PCOLL = None
 _LIST_CAP = 3000
 
 
+def rig_kind(m: dict) -> str:
+    """'mixamo' = the ripper mapped >= 12 standard bones, 'guess' = the joint names look
+    humanoid (both hands, both feet, a torso) so the add-on will map it on spawn, '' = no."""
+    if len(m.get("std_bones") or {}) >= 12:
+        return "mixamo"
+    if (
+        m.get("skinned")
+        and (m.get("joints") or 0) >= 8
+        and humanoid_hint(m.get("joint_names") or [])
+    ):
+        return "guess"
+    return ""
+
+
 def classify(m: dict) -> str:
     """Category of a rip_results.json model entry."""
     path = m.get("path", "")
     name = os.path.basename(path)
     tris = m.get("triangles", 0) or 0
     joints = m.get("joints", 0) or 0
-    std = len(m.get("std_bones") or {})
     if _LEVEL_HINTS.search(path) and joints <= 3:
         return "LEVEL"
-    if std >= 12:
+    if rig_kind(m):
         return "CHARACTER"
     if _EFFECT_HINTS.search(name) or tris < 8:
         return "MISC"
@@ -472,8 +803,12 @@ def save_config(cfg: dict) -> None:
         json.dump(cfg, fh, indent=1)
 
 
+INDEX_VERSION = 2  # bump when the record tuple changes -> stale caches are rescanned
+
+
 def scan_root(root: str) -> list:
-    """[(game_id, title, category, name, gltf, thumb, info), ...] for one rip folder."""
+    """[(game_id, title, category, name, gltf, thumb, info, rig), ...] for one rip folder;
+    ``rig`` is 'mixamo' / 'guess' / '' (see rig_kind)."""
     out = []
     if not os.path.isdir(root):
         return out
@@ -511,11 +846,14 @@ def scan_root(root: str) -> list:
                 if parent and parent.split(".")[0].lower() != name.lower():
                     name = f"{parent.split('.')[0]}/{name}"
                 info = f"{m.get('triangles', 0)} tris, {m.get('joints', 0)} joints"
-                if len(m.get("std_bones") or {}):
+                rig = rig_kind(m)
+                if rig == "mixamo":
                     info += f", {len(m['std_bones'])} Mixamo bones"
+                elif rig == "guess":
+                    info += ", humanoid names"
                 if m.get("animations"):
                     info += f", {len(m['animations'])} clips"
-                out.append((gid, title, classify(m), name, gltf, thumb, info))
+                out.append((gid, title, classify(m), name, gltf, thumb, info, rig))
         sdir = os.path.join(gdir, "stages")
         if os.path.isdir(sdir):
             for st in sorted(os.listdir(sdir)):
@@ -545,6 +883,7 @@ def scan_root(root: str) -> list:
                         gltf,
                         thumb,
                         "recompiled level (flattened, no rigs)",
+                        "",
                     )
                 )
     return out
@@ -574,7 +913,7 @@ def build_index(roots: list, save: bool = True) -> None:
             with open(
                 os.path.join(_config_dir(), "library_index.json"), "w", encoding="utf-8"
             ) as fh:
-                json.dump({"roots": roots, "records": recs}, fh)
+                json.dump({"version": INDEX_VERSION, "roots": roots, "records": recs}, fh)
         except Exception as e:  # noqa: BLE001
             print("[gcrip] could not cache index:", e)
 
@@ -585,6 +924,12 @@ def load_index_cache() -> bool:
             data = json.load(fh)
     except Exception:  # noqa: BLE001
         return False
+    if data.get("version") != INDEX_VERSION:  # older record layout: rescan the same roots
+        roots = data.get("roots") or load_config().get("roots") or []
+        if not roots:
+            return False
+        build_index(roots)
+        return bool(LIB["records"])
     LIB["roots"] = data.get("roots", [])
     LIB["records"] = [tuple(r) for r in data.get("records", [])]
     LIB["games"] = sorted({(r[0], r[1]) for r in LIB["records"]}, key=lambda g: g[1].lower())
@@ -604,10 +949,12 @@ def _refill(self, context):
     props.items.clear()
     game, cat, q = props.game, props.category, props.search.strip().lower()
     n = 0
-    for gid, _t, c, name, gltf, thumb, info in LIB["records"]:
+    for gid, _t, c, name, gltf, thumb, info, rig in LIB["records"]:
         if gid != game:
             continue
         if cat != "ALL" and c != cat:
+            continue
+        if props.humanoid and not rig:
             continue
         if q and q not in name.lower() and q not in gltf.lower():
             continue
@@ -618,6 +965,7 @@ def _refill(self, context):
         it.info = info
         it.category = c
         it.game = gid
+        it.rig = rig
         n += 1
         if n >= _LIST_CAP:
             break
@@ -647,12 +995,19 @@ class GCRIP_LibItem(bpy.types.PropertyGroup):
     info: StringProperty()
     category: StringProperty()
     game: StringProperty()
+    rig: StringProperty()
 
 
 class GCRIP_LibProps(bpy.types.PropertyGroup):
     game: EnumProperty(name="Game", items=_game_items, update=_refill)
     category: EnumProperty(name="Category", items=CATEGORIES, default="CHARACTER", update=_refill)
     search: StringProperty(name="Search", options={"TEXTEDIT_UPDATE"}, update=_refill)
+    humanoid: BoolProperty(
+        name="Mocap-ready only",
+        default=False,
+        description="Only rigs with a humanoid bone map (retarget targets)",
+        update=_refill,
+    )
     items: CollectionProperty(type=GCRIP_LibItem)
     index: IntProperty(default=-1, update=_on_index)
     count: IntProperty(default=0)
@@ -676,7 +1031,10 @@ class GCRIP_UL_models(bpy.types.UIList):
             "MISC": "PARTICLES",
         }
         row = layout.row(align=True)
-        row.label(text=item.name, icon=icons.get(item.category, "OBJECT_DATA"))
+        icon = icons.get(item.category, "OBJECT_DATA")
+        if item.rig:
+            icon = "ARMATURE_DATA" if item.rig == "mixamo" else "BONE_DATA"
+        row.label(text=item.name, icon=icon)
         row.label(text=item.info)
 
 
@@ -734,6 +1092,59 @@ class GCRIP_OT_lib_forget(bpy.types.Operator):
         return {"FINISHED"}
 
 
+def _ops_import(gltf, mixamo):
+    """Run the GCRip importer; from a timer (control server) the context lacks a window,
+    so retry under the first window's context."""
+    try:
+        bpy.ops.gcrip.import_gltf(filepath=gltf, mixamo=mixamo)
+    except RuntimeError:
+        wm = bpy.context.window_manager
+        if not wm.windows:
+            raise
+        win = wm.windows[0]
+        with bpy.context.temp_override(window=win, screen=win.screen, area=win.screen.areas[0]):
+            bpy.ops.gcrip.import_gltf(filepath=gltf, mixamo=mixamo)
+
+
+def spawn_model(gid, category, gltf, at=None, mixamo=True):
+    """Import one library pick into collection <gid>; ``at`` = (x, y, z) for the roots
+    (levels stay at the origin).  Returns (new objects, the object to select)."""
+    if not os.path.isfile(gltf):
+        raise FileNotFoundError(gltf)
+    before = set(bpy.data.objects)
+    _ops_import(gltf, mixamo=mixamo and category == "CHARACTER")
+    # the importer's bone-shape mesh lives in "glTF_not_exported" - leave it there
+    new = [
+        o
+        for o in bpy.data.objects
+        if o not in before
+        and not any(c.name.startswith("glTF_not_exported") for c in o.users_collection)
+    ]
+    scene = bpy.context.scene
+    col = bpy.data.collections.get(gid)
+    if col is None:
+        col = bpy.data.collections.new(gid)
+        scene.collection.children.link(col)
+    for o in new:
+        for c in o.users_collection:
+            c.objects.unlink(o)
+        col.objects.link(o)
+    roots = [o for o in new if o.parent is None]
+    if at is not None and category != "LEVEL":
+        for o in roots:
+            o.location = at
+    for o in bpy.data.objects:
+        with contextlib.suppress(RuntimeError):
+            o.select_set(False)
+    arms = [o for o in new if o.type == "ARMATURE"]
+    pick = arms[0] if arms else (roots[0] if roots else None)
+    if pick is not None:
+        with contextlib.suppress(RuntimeError):
+            pick.select_set(True)
+            bpy.context.view_layer.objects.active = pick
+    return new, pick
+
+
 class GCRIP_OT_lib_spawn(bpy.types.Operator):
     """Import the highlighted model into the scene"""
 
@@ -747,33 +1158,17 @@ class GCRIP_OT_lib_spawn(bpy.types.Operator):
             self.report({"WARNING"}, "pick a model in the list")
             return {"CANCELLED"}
         it = props.items[props.index]
-        if not os.path.isfile(it.gltf):
-            self.report({"ERROR"}, f"missing file: {it.gltf}")
+        try:
+            new, _pick = spawn_model(
+                it.game,
+                it.category,
+                it.gltf,
+                at=context.scene.cursor.location.copy() if props.at_cursor else None,
+                mixamo=props.mixamo,
+            )
+        except FileNotFoundError as e:
+            self.report({"ERROR"}, f"missing file: {e}")
             return {"CANCELLED"}
-        before = set(bpy.data.objects)
-        bpy.ops.gcrip.import_gltf(
-            filepath=it.gltf, mixamo=props.mixamo and it.category == "CHARACTER"
-        )
-        new = [o for o in bpy.data.objects if o not in before]
-        col = bpy.data.collections.get(it.game)
-        if col is None:
-            col = bpy.data.collections.new(it.game)
-            context.scene.collection.children.link(col)
-        for o in new:
-            for c in o.users_collection:
-                c.objects.unlink(o)
-            col.objects.link(o)
-        roots = [o for o in new if o.parent is None]
-        if props.at_cursor and it.category != "LEVEL":
-            for o in roots:
-                o.location = context.scene.cursor.location
-        for o in bpy.data.objects:
-            o.select_set(False)
-        arms = [o for o in new if o.type == "ARMATURE"]
-        pick = arms[0] if arms else (roots[0] if roots else None)
-        if pick is not None:
-            pick.select_set(True)
-            context.view_layer.objects.active = pick
         self.report({"INFO"}, f"{it.name}: {len(new)} objects")
         return {"FINISHED"}
 
@@ -798,7 +1193,9 @@ class GCRIP_PT_library(bpy.types.Panel):
         row.operator("gcrip.lib_forget", text="", icon="X")
         row.label(text=f"{len(LIB['records'])} models, {len(LIB['games'])} games")
         lay.prop(props, "game", text="")
-        lay.prop(props, "category", text="")
+        row = lay.row(align=True)
+        row.prop(props, "category", text="")
+        row.prop(props, "humanoid", text="", icon="ARMATURE_DATA", toggle=True)
         lay.prop(props, "search", text="", icon="VIEWZOOM")
         if props.count >= _LIST_CAP:
             lay.label(text=f"showing first {_LIST_CAP} - narrow the search", icon="ERROR")
@@ -1080,9 +1477,42 @@ def hide_static_props(arm, objs):
     return hidden
 
 
+def skinned_meshes(objs):
+    """Meshes of the family that carry skin weights (vertex groups) - the ones a retarget
+    can move.  Empty for rips whose exporter dropped JOINTS_0/WEIGHTS_0."""
+    return [o for o in objs if o.type == "MESH" and o.vertex_groups]
+
+
+_MOCAP_CORE = (
+    "Hips",
+    "UpperArm_L",
+    "LowerArm_L",
+    "Hand_L",
+    "UpperArm_R",
+    "LowerArm_R",
+    "Hand_R",
+    "UpperLeg_L",
+    "LowerLeg_L",
+    "Foot_L",
+    "UpperLeg_R",
+    "LowerLeg_R",
+    "Foot_R",
+)
+_MOCAP_PARENT = {c: p for p, c in _MOCAP_PRIMARY.items() if c is not None}
+_MOCAP_PARENT.update({"UpperLeg_L": "Hips", "UpperLeg_R": "Hips", "Shoulder_L": "Chest2"})
+_MOCAP_PARENT.update({"Shoulder_R": "Chest2", "Chest2": "Chest"})
+
+
+def missing_core_bones(arm):
+    """Mixamo core bones the rig lacks (empty = retarget can run)."""
+    return [_MOCAP_MAP[j] for j in _MOCAP_CORE if _MOCAP_MAP[j] not in arm.data.bones]
+
+
 def retarget_bvh(arm, bvh_path, ref=0, max_frames=0, name=None):
     """Bake the BVH onto `arm` (Mixamo-named bones) as a new action.
 
+    Only the core (hips, arms + hands, legs + feet) must exist on both sides; spine
+    chain, neck, head, shoulders and toes are used when present and skipped when not.
     Returns (action, slot, nframes, fps)."""
     joints, rows, ftime = bvh_parse(bvh_path)
     if max_frames:
@@ -1092,6 +1522,13 @@ def retarget_bvh(arm, bvh_path, ref=0, max_frames=0, name=None):
         j["name"] = rename.get(j["name"], j["name"])
     frames = [bvh_fk(joints, r) for r in rows]
     alias = {"Chest2": "Chest2_src" if "Chest2_src" in frames[0][0] else "Chest"}
+    src_have = {j for j in _MOCAP_MAP if alias.get(j, j) in frames[0][0]}
+    tgt_have = {j for j, b in _MOCAP_MAP.items() if b in arm.data.bones}
+    for label, have in (("clip", src_have), ("rig", tgt_have)):
+        lack = [j for j in _MOCAP_CORE if j not in have]
+        if lack:
+            raise RuntimeError(f"{label} lacks core joints: {', '.join(lack)}")
+    both = src_have & tgt_have
     A = np.array(arm.matrix_world)
     RA = A[:3, :3]
     RAi = np.linalg.inv(RA)
@@ -1108,42 +1545,60 @@ def retarget_bvh(arm, bvh_path, ref=0, max_frames=0, name=None):
     def rest_rot(b):
         return np.array(arm.data.bones[b].matrix_local)[:3, :3]
 
-    def axes(pos):
-        up = _unit(pos("Spine") - pos("Hips"))
+    def axes(pos, have):
+        top = next(n for n in ("Spine", "Chest", "Chest2", "Neck", "Head") if n in have)
+        up = _unit(pos(top) - pos("Hips"))
         lr = _unit(pos("UpperLeg_L") - pos("UpperLeg_R"))
         sh = _unit(pos("UpperArm_L") - pos("UpperArm_R"))
         fwd = _unit(np.cross(lr, up))
-        if np.dot(fwd, _unit(pos("Toes_L") - pos("Foot_L"))) < 0:
+        if "Toes_L" in have and np.dot(fwd, _unit(pos("Toes_L") - pos("Foot_L"))) < 0:
             fwd = -fwd
         return {"lr": lr, "sh": sh, "fwd": fwd, "up": up}
 
-    def chain_dir(j, pos, eps):
-        if _MOCAP_PRIMARY[j] is None:
-            return chain_dir(_MOCAP_DIR_PARENT[j], pos, eps)
+    def chain_dir(j, pos, eps, have):
         origin, c = pos(j), _MOCAP_PRIMARY[j]
-        while c is not None:
-            d = pos(c) - origin
-            if np.linalg.norm(d) > eps:
-                return _unit(d)
+        while c is not None:  # the next distinct joint down the chain
+            if c in have:
+                d = pos(c) - origin
+                if np.linalg.norm(d) > eps:
+                    return _unit(d)
             c = _MOCAP_PRIMARY[c]
-        raise RuntimeError(f"no distinct joint below {j}")
+        p = _MOCAP_DIR_PARENT.get(j, _MOCAP_PARENT.get(j))  # chain end: keep the parent's
+        while p is not None:
+            if p in have:
+                d = origin - pos(p)
+                if np.linalg.norm(d) > eps:
+                    return _unit(d)
+            p = _MOCAP_PARENT.get(p)
+        raise RuntimeError(f"no distinct joint next to {j}")
 
     src_p = lambda n: src_pos(ref, n)  # noqa: E731
     tgt_p = lambda n: rest_head(_MOCAP_MAP[n])  # noqa: E731
     feet = ("Foot_L", "Foot_R", "Toes_L", "Toes_R")
-    src_floor = min(src_p(n)[2] for n in feet)
-    tgt_floor = min(tgt_p(n)[2] for n in feet)
-    src_h = src_p("Hips")[2] - src_floor
-    tgt_h = tgt_p("Hips")[2] - tgt_floor
-    AS, AT = axes(src_p), axes(tgt_p)
+    src_floor = min(src_p(n)[2] for n in feet if n in src_have)
+    tgt_floor = min(tgt_p(n)[2] for n in feet if n in tgt_have)
+
+    # Height and translation are driven by the thigh centre, not the hips joint: some rigs
+    # put "Hips" at the floor (a root that parents legs and spine), others above the pelvis.
+    def thighs(pos):
+        return 0.5 * (pos("UpperLeg_L") + pos("UpperLeg_R"))
+
+    src_h = thighs(src_p)[2] - src_floor
+    tgt_h = thighs(tgt_p)[2] - tgt_floor
+    if src_h <= 1e-6 or tgt_h <= 1e-6:
+        raise RuntimeError("legs have no height above the feet - not a standing biped")
+    AS, AT = axes(src_p, src_have), axes(tgt_p, tgt_have)
     W_ref = {}
-    for j, b in _MOCAP_MAP.items():
-        F_s = _frame3(chain_dir(j, src_p, 0.01 * src_h), AS[_MOCAP_SECONDARY[j]])
-        F_t = _frame3(chain_dir(j, tgt_p, 0.01 * tgt_h), AT[_MOCAP_SECONDARY[j]])
+    for j in both:
+        b = _MOCAP_MAP[j]
+        F_s = _frame3(chain_dir(j, src_p, 0.01 * src_h, src_have), AS[_MOCAP_SECONDARY[j]])
+        F_t = _frame3(chain_dir(j, tgt_p, 0.01 * tgt_h, tgt_have), AT[_MOCAP_SECONDARY[j]])
         W_ref[b] = F_s @ F_t.T @ rest_rot(b)
     scale = tgt_h / src_h
-    origin = src_p("Hips").copy()
+    origin = thighs(src_p).copy()
     origin[2] = src_floor
+    hips_off = tgt_p("Hips") - thighs(tgt_p)  # rest offset of the hips joint from the thighs
+    hips_rest_rot = rest_rot("mixamorig:Hips")
 
     for pb in arm.pose.bones:
         pb.rotation_mode = "QUATERNION"
@@ -1164,7 +1619,7 @@ def retarget_bvh(arm, bvh_path, ref=0, max_frames=0, name=None):
         if b.parent is None:
             walk(b)
     Ml = {b.name: np.array(b.matrix_local) for b in arm.data.bones}
-    inv_map = {b: j for j, b in _MOCAP_MAP.items()}
+    inv_map = {_MOCAP_MAP[j]: j for j in both}
     for t in range(len(rows)):
         M = {}
         for b in order:
@@ -1177,8 +1632,10 @@ def retarget_bvh(arm, bvh_path, ref=0, max_frames=0, name=None):
                 desired = np.eye(4)
                 desired[:3, :3] = src_rot(t, j) @ src_rot(ref, j).T @ W_ref[n]
                 if n == "mixamorig:Hips":
-                    desired[:3, 3] = (src_pos(t, "Hips") - origin) * scale
-                    desired[2, 3] += tgt_floor
+                    drive = (thighs(lambda k: src_pos(t, k)) - origin) * scale  # noqa: B023
+                    drive[2] += tgt_floor
+                    turn = desired[:3, :3] @ hips_rest_rot.T  # hips rotation vs rest
+                    desired[:3, 3] = drive + turn @ hips_off
                     basis = np.linalg.inv(rel) @ np.linalg.inv(Mp) @ desired
                 else:
                     desired[:3, 3] = (Mp @ rel)[:3, 3]
@@ -1229,46 +1686,73 @@ class GCRIP_OT_mocap_retarget(bpy.types.Operator):
             self.report({"ERROR"}, "pick a .bvh file first")
             return {"CANCELLED"}
         fam = _family(context.active_object)
-        arm = _armatures(fam)[0]
-        if "mixamorig:Hips" not in arm.data.bones:
-            rename_bones(arm, True)
-        missing = [b for b in _MOCAP_MAP.values() if b not in arm.data.bones]
-        if missing:
-            self.report(
-                {"ERROR"}, f"not a humanoid rig - missing {missing[0]} (+{len(missing) - 1})"
-            )
-            return {"CANCELLED"}
-        hidden = hide_static_props(arm, fam)
-        if arm.animation_data and mp.mute_game:
-            for tr in arm.animation_data.nla_tracks:
-                if tr.name != "MOCAP":
-                    tr.mute = True
         try:
-            act, slot, n, fps = retarget_bvh(arm, path, max_frames=mp.max_frames)
+            res = mocap_retarget(
+                _armatures(fam)[0],
+                fam,
+                path,
+                start=mp.start,
+                max_frames=mp.max_frames,
+                mute_game=mp.mute_game,
+            )
         except Exception as e:  # noqa: BLE001
             self.report({"ERROR"}, str(e))
             return {"CANCELLED"}
-        track = next((t for t in arm.animation_data.nla_tracks if t.name == "MOCAP"), None)
-        if track is None:
-            track = arm.animation_data.nla_tracks.new()
-            track.name = "MOCAP"
-        start = mp.start
-        for s in track.strips:
-            start = max(start, int(s.frame_end) + 1)
-        strip = track.strips.new(act.name, start, act)
-        with contextlib.suppress(Exception):
-            if slot is not None:
-                strip.action_slot = slot
-        context.scene.render.fps = fps
-        context.scene.render.fps_base = 1.0
-        context.scene.frame_end = max(context.scene.frame_end, int(strip.frame_end))
-        context.scene.frame_set(start)
         self.report(
             {"INFO"},
-            f"{act.name}: {n} frames on NLA track MOCAP at {start}"
-            + (f", hid {len(hidden)} static prop mesh(es)" if hidden else ""),
+            f"{res['action']}: {res['frames']} frames on NLA track MOCAP at {res['start']}"
+            + (f", hid {len(res['hidden'])} static prop mesh(es)" if res["hidden"] else ""),
         )
         return {"FINISHED"}
+
+
+def mocap_retarget(arm, family, bvh_path, start=1, max_frames=0, mute_game=True):
+    """Retarget a BVH onto `arm` as a strip on NLA track MOCAP (appended after existing
+    strips).  Maps + renames bones to Mixamo names first when needed.  Raises RuntimeError
+    with a plain message when the rig or the clip is not a biped."""
+    if "mixamorig:Hips" not in arm.data.bones:
+        rename_bones(arm, True)
+    missing = missing_core_bones(arm)
+    if missing:
+        raise RuntimeError(
+            f"not a humanoid rig - no {missing[0]}"
+            + (f" (+{len(missing) - 1} more)" if len(missing) > 1 else "")
+        )
+    if not skinned_meshes(family):
+        raise RuntimeError(
+            "the mesh carries no skin weights (this rip's exporter dropped them) - the "
+            "skeleton would move but the body would not"
+        )
+    hidden = hide_static_props(arm, family)
+    if arm.animation_data and mute_game:
+        for tr in arm.animation_data.nla_tracks:
+            if tr.name != "MOCAP":
+                tr.mute = True
+    act, slot, n, fps = retarget_bvh(arm, bvh_path, max_frames=max_frames)
+    track = next((t for t in arm.animation_data.nla_tracks if t.name == "MOCAP"), None)
+    if track is None:
+        track = arm.animation_data.nla_tracks.new()
+        track.name = "MOCAP"
+    for s in track.strips:
+        start = max(start, int(s.frame_end) + 1)
+    strip = track.strips.new(act.name, start, act)
+    with contextlib.suppress(Exception):
+        if slot is not None:
+            strip.action_slot = slot
+    scene = bpy.context.scene
+    scene.render.fps = fps
+    scene.render.fps_base = 1.0
+    scene.frame_end = max(scene.frame_end, int(strip.frame_end))
+    scene.frame_set(start)
+    return {
+        "action": act.name,
+        "frames": n,
+        "fps": fps,
+        "start": start,
+        "end": int(strip.frame_end),
+        "hidden": hidden,
+        "armature": arm.name,
+    }
 
 
 class GCRIP_PT_mocap(bpy.types.Panel):
@@ -1292,6 +1776,654 @@ class GCRIP_PT_mocap(bpy.types.Panel):
         else:
             lay.label(text="select a spawned character", icon="INFO")
         lay.operator("gcrip.mocap_retarget", icon="ARMATURE_DATA")
+
+
+# ---------------------------------------------------------------- control server
+#
+# A JSON-lines TCP channel on 127.0.0.1 so an assistant (tools/blender_mcp.py, an MCP
+# server) can drive this Blender: one request per line {"id", "cmd", "args"}, one reply
+# per line {"id", "ok", "result" | "error"}.  Socket threads only queue requests; every
+# command runs on Blender's main thread from a timer (GUI) or server_loop() (headless), so
+# bpy is never touched off-thread.
+
+import io  # noqa: E402
+import queue  # noqa: E402
+import socket  # noqa: E402
+import threading  # noqa: E402
+import traceback  # noqa: E402
+
+DEFAULT_PORT = 8788
+SERVER = {"sock": None, "port": 0, "clients": 0, "handled": 0, "quit": False}
+_CMDS = queue.Queue()
+RPC = {}
+
+
+def rpc(fn):
+    RPC[fn.__name__] = fn
+    return fn
+
+
+def _client_thread(conn):
+    SERVER["clients"] += 1
+    try:
+        f = conn.makefile("rwb")
+        for line in f:
+            req = None
+            try:
+                req = json.loads(line)
+                if not isinstance(req, dict):
+                    raise ValueError("request must be a JSON object")
+            except ValueError as e:
+                resp = {"ok": False, "error": f"bad request: {e}"}
+            else:
+                reply = queue.Queue()
+                _CMDS.put((req, reply))
+                try:
+                    resp = reply.get(timeout=float(req.get("timeout") or 900))
+                except queue.Empty:
+                    resp = {"ok": False, "error": "timed out waiting for Blender's main thread"}
+            resp["id"] = req.get("id") if isinstance(req, dict) else None
+            f.write((json.dumps(resp, default=str) + "\n").encode("utf-8"))
+            f.flush()
+    except (OSError, ValueError):
+        pass
+    finally:
+        SERVER["clients"] -= 1
+        with contextlib.suppress(OSError):
+            conn.close()
+
+
+def _accept_thread(srv):
+    while SERVER["sock"] is srv:
+        try:
+            conn, _addr = srv.accept()
+        except OSError:
+            break
+        threading.Thread(target=_client_thread, args=(conn,), daemon=True).start()
+
+
+def server_pump():
+    """Run queued commands on the main thread; returns how many ran."""
+    n = 0
+    while True:
+        try:
+            req, reply = _CMDS.get_nowait()
+        except queue.Empty:
+            return n
+        cmd = req.get("cmd")
+        fn = RPC.get(cmd)
+        try:
+            if fn is None:
+                raise KeyError(f"unknown command {cmd!r}; known: {', '.join(sorted(RPC))}")
+            result = fn(**(req.get("args") or {}))
+            resp = {"ok": True, "result": result}
+        except Exception as e:  # noqa: BLE001
+            resp = {
+                "ok": False,
+                "error": f"{type(e).__name__}: {e}",
+                "trace": traceback.format_exc()[-1500:],
+            }
+        reply.put(resp)
+        n += 1
+        SERVER["handled"] += 1
+
+
+def _server_timer():
+    if SERVER["sock"] is None:
+        return None
+    server_pump()
+    if SERVER["quit"]:
+        server_stop()
+        return None
+    return 0.05
+
+
+def server_running():
+    return SERVER["sock"] is not None
+
+
+def server_start(port=None):
+    """Listen on 127.0.0.1:<port> (default: env GCRIP_BLENDER_PORT, the add-on preference,
+    else 8788).  Returns the port."""
+    if SERVER["sock"] is not None:
+        return SERVER["port"]
+    if port is None:
+        port = int(os.environ.get("GCRIP_BLENDER_PORT") or 0) or _pref("port", DEFAULT_PORT)
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.bind(("127.0.0.1", int(port)))
+    srv.listen(8)
+    SERVER.update(sock=srv, port=int(port), quit=False)
+    threading.Thread(target=_accept_thread, args=(srv,), daemon=True).start()
+    if not bpy.app.background:
+        bpy.app.timers.register(_server_timer, first_interval=0.1, persistent=True)
+    print(f"[gcrip] control server listening on 127.0.0.1:{port}")
+    return int(port)
+
+
+def server_stop():
+    srv = SERVER["sock"]
+    if srv is None:
+        return
+    SERVER["sock"] = None
+    with contextlib.suppress(OSError):
+        srv.close()
+    print("[gcrip] control server stopped")
+
+
+def server_loop():
+    """Headless (blender -b): pump until a `shutdown` command arrives."""
+    while SERVER["sock"] is not None and not SERVER["quit"]:
+        if not server_pump():
+            time.sleep(0.02)
+    time.sleep(0.3)  # let the client thread write the last reply
+    server_stop()
+
+
+def _pref(name, default):
+    try:
+        return getattr(bpy.context.preferences.addons[__name__].preferences, name)
+    except (KeyError, AttributeError):
+        return default
+
+
+def _ensure_index():
+    if not LIB["records"]:
+        load_index_cache()
+    return LIB["records"]
+
+
+def _find_records(gid=None, name=None, category=None, query=None, humanoid=False, limit=100):
+    q = (query or "").strip().lower()
+    nm = (name or "").strip().lower()
+    out = []
+    for rec in _ensure_index():
+        r_gid, _t, cat, r_name, gltf, _th, _info, rig = rec
+        if gid and r_gid != gid:
+            continue
+        if category and category != "ALL" and cat != category:
+            continue
+        if humanoid and not rig:
+            continue
+        if nm and nm != r_name.lower() and nm != os.path.basename(gltf).lower():
+            continue
+        if q and q not in r_name.lower() and q not in gltf.lower() and q not in _t.lower():
+            continue
+        out.append(rec)
+        if len(out) >= limit:
+            break
+    return out
+
+
+def _rec_dict(rec):
+    gid, title, cat, name, gltf, thumb, info, rig = rec
+    return {
+        "gid": gid,
+        "title": title,
+        "category": cat,
+        "name": name,
+        "gltf": gltf,
+        "thumb": thumb,
+        "info": info,
+        "rig": rig,
+    }
+
+
+def _resolve_armature(obj=None):
+    scene = bpy.context.scene
+    if obj:
+        o = bpy.data.objects.get(obj)
+        if o is None:
+            raise KeyError(f"no object named {obj!r}")
+    else:
+        o = bpy.context.view_layer.objects.active
+        if o is None or not _armatures(_family(o)):
+            arms = [ob for ob in scene.objects if ob.type == "ARMATURE"]
+            if len(arms) != 1:
+                raise RuntimeError("pass object=<name>: no single armature in the scene")
+            o = arms[0]
+    fam = _family(o)
+    arms = _armatures(fam)
+    if not arms:
+        raise RuntimeError(f"{o.name} has no armature")
+    return arms[0], fam
+
+
+@rpc
+def ping():
+    scene = bpy.context.scene
+    return {
+        "blender": bpy.app.version_string,
+        "addon": ".".join(str(v) for v in bl_info["version"]),
+        "background": bpy.app.background,
+        "file": bpy.data.filepath,
+        "frame": scene.frame_current,
+        "frame_range": [scene.frame_start, scene.frame_end],
+        "fps": scene.render.fps,
+        "objects": len(scene.objects),
+        "port": SERVER["port"],
+        "handled": SERVER["handled"],
+    }
+
+
+@rpc
+def games(query=""):
+    """Games in the library index: id, title, model count, mocap-ready rig count."""
+    _ensure_index()
+    q = query.strip().lower()
+    per = {}
+    for gid, title, _c, _n, _g, _t, _i, rig in LIB["records"]:
+        d = per.setdefault(gid, {"gid": gid, "title": title, "models": 0, "rigs": 0})
+        d["models"] += 1
+        d["rigs"] += bool(rig)
+    rows = [d for d in per.values() if not q or q in d["title"].lower() or q in d["gid"].lower()]
+    return sorted(rows, key=lambda d: d["title"].lower())
+
+
+@rpc
+def library(gid="", category="", query="", humanoid=False, limit=100):
+    """Library rows (game id, category, name, glTF path, rig flag ...) - the same records
+    the Library panel lists.  category: CHARACTER | CREATURE | ITEM | VEHICLE | PROP |
+    LEVEL | MISC | ALL; humanoid=True keeps only mocap-ready rigs."""
+    recs = _find_records(
+        gid=gid or None, category=category or None, query=query, humanoid=humanoid, limit=limit
+    )
+    return [_rec_dict(r) for r in recs]
+
+
+@rpc
+def spawn(gltf="", gid="", name="", at=None, mixamo=True):
+    """Import a model: by glTF path, or by game id + model name (as listed by `library`).
+    ``at`` = [x, y, z] for the model's root (levels stay at the origin)."""
+    if gltf:
+        recs = [r for r in _ensure_index() if r[4].lower() == gltf.lower()]
+        rec = recs[0] if recs else (gid or "MODEL", "", "CHARACTER", name or gltf, gltf, "", "", "")
+    else:
+        recs = _find_records(gid=gid or None, name=name) or _find_records(
+            gid=gid or None, query=name, limit=2
+        )
+        if not recs:
+            raise KeyError(f"no library model {name!r} in game {gid or 'any'}")
+        rec = recs[0]
+    new, pick = spawn_model(rec[0], rec[2], rec[4], at=tuple(at) if at else None, mixamo=mixamo)
+    arms = [o for o in new if o.type == "ARMATURE"]
+    out = {
+        "objects": [o.name for o in new],
+        "root": pick.name if pick else None,
+        "armature": arms[0].name if arms else None,
+        "gltf": rec[4],
+        "category": rec[2],
+    }
+    if arms:
+        std = rig_mixamo_names(arms[0])
+        out["bones"] = len(arms[0].data.bones)
+        out["mixamo_bones"] = len(std)
+        out["missing_core"] = missing_core_bones(arms[0])
+        out["skinned_meshes"] = len(skinned_meshes(new))
+        out["mocap_ready"] = not out["missing_core"] and out["skinned_meshes"] > 0
+        if not out["skinned_meshes"]:
+            out["warning"] = "no skin weights in this rip - the body will not follow the bones"
+        out["clips"] = [
+            t.name for t in (arms[0].animation_data.nla_tracks if arms[0].animation_data else [])
+        ]
+    return out
+
+
+@rpc
+def characters():
+    """Armatures in the scene with their mocap readiness and NLA tracks."""
+    rows = []
+    for arm in bpy.context.scene.objects:
+        if arm.type != "ARMATURE":
+            continue
+        tracks = []
+        if arm.animation_data:
+            for t in arm.animation_data.nla_tracks:
+                tracks.append({"name": t.name, "muted": t.mute, "strips": len(t.strips)})
+        rows.append(
+            {
+                "armature": arm.name,
+                "root": _root(arm).name,
+                "location": list(_root(arm).location),
+                "bones": len(arm.data.bones),
+                "mixamo_bones": len(rig_mixamo_names(arm)),
+                "missing_core": missing_core_bones(arm),
+                "skinned_meshes": len(skinned_meshes(_family(arm))),
+                "tracks": tracks,
+            }
+        )
+    return rows
+
+
+@rpc
+def map_bones(object="", force=False):  # noqa: A002
+    """Guess + apply Mixamo names on a rig without a bone map (what spawn does for you)."""
+    arm, _fam = _resolve_armature(object)
+    n = auto_map_bones(arm, force=force)
+    rename_bones(arm, True)
+    return {"armature": arm.name, "mapped": n, "missing_core": missing_core_bones(arm)}
+
+
+@rpc
+def retarget(bvh, object="", start=1, max_frames=0, mute_game=True):  # noqa: A002
+    """Retarget a BVH clip onto a character (the active one, the only armature, or
+    ``object``) as an NLA strip on track MOCAP."""
+    if not os.path.isfile(bvh):
+        raise FileNotFoundError(bvh)
+    arm, fam = _resolve_armature(object)
+    return mocap_retarget(arm, fam, bvh, start=start, max_frames=max_frames, mute_game=mute_game)
+
+
+@rpc
+def frame(frame=None, start=None, end=None):  # noqa: A002
+    scene = bpy.context.scene
+    if start is not None:
+        scene.frame_start = int(start)
+    if end is not None:
+        scene.frame_end = int(end)
+    if frame is not None:
+        scene.frame_set(int(frame))
+    return {"frame": scene.frame_current, "range": [scene.frame_start, scene.frame_end]}
+
+
+def _bounds(objs):
+    lo = np.array([1e30] * 3)
+    hi = -lo
+    for o in objs:
+        if o.type != "MESH" or o.hide_render:
+            continue
+        for c in o.bound_box:
+            w = np.array(o.matrix_world @ Vector(c))
+            lo, hi = np.minimum(lo, w), np.maximum(hi, w)
+    if lo[0] > hi[0]:
+        for o in objs:
+            w = np.array(o.matrix_world.translation)
+            lo, hi = np.minimum(lo, w), np.maximum(hi, w)
+    return lo, hi
+
+
+@rpc
+def camera(target="", distance=None, height=None, azimuth=-30.0, track=True, name="GCRipCam"):
+    """Aim a camera at a character (its family's bounding box): ``distance``/``height`` in
+    scene units (default 2.6x / 0.55x the target's height), ``azimuth`` degrees around Z
+    from straight in front of the character (0 = front, 90 = its left side, 180 = behind).
+    Adds a sun when the scene has no light.  Track To follows the spine bone."""
+    scene = bpy.context.scene
+    if target:
+        obj = bpy.data.objects.get(target)
+        if obj is None:
+            raise KeyError(f"no object {target!r}")
+        fam = _family(obj)
+    else:
+        arms = [o for o in scene.objects if o.type == "ARMATURE"]
+        if not arms:
+            raise RuntimeError("no character to aim at - pass target=<object name>")
+        fam = _family(arms[0])
+    lo, hi = _bounds(fam)
+    centre = (lo + hi) / 2
+    h = max(hi[2] - lo[2], 1e-3)
+    dist = float(distance) if distance is not None else 2.6 * h
+    z = float(height) if height is not None else lo[2] + 0.55 * h
+    arms = _armatures(fam)
+    # azimuth 0 = straight in front of the character: its facing comes from the Mixamo
+    # bones (left-right thigh axis x up), else assume the Blender convention (-Y)
+    base = -math.pi / 2
+    if arms and not missing_core_bones(arms[0]):
+        pb = arms[0].pose.bones
+        w = arms[0].matrix_world
+        lr = np.array(w @ pb["mixamorig:LeftUpLeg"].head) - np.array(
+            w @ pb["mixamorig:RightUpLeg"].head
+        )
+        up = np.array(w @ pb["mixamorig:Hips"].head) - 0.5 * (
+            np.array(w @ pb["mixamorig:LeftFoot"].head)
+            + np.array(w @ pb["mixamorig:RightFoot"].head)
+        )
+        fwd = np.cross(lr, up)
+        if np.linalg.norm(fwd[:2]) > 1e-9:
+            base = math.atan2(fwd[1], fwd[0])
+    a = base + math.radians(float(azimuth))
+    cam = bpy.data.objects.get(name)
+    if cam is None or cam.type != "CAMERA":
+        cam = bpy.data.objects.new(name, bpy.data.cameras.new(name))
+        scene.collection.objects.link(cam)
+    cam.location = (centre[0] + dist * math.cos(a), centre[1] + dist * math.sin(a), z)
+    cam.data.clip_end = max(cam.data.clip_end, dist * 50)
+    for c in list(cam.constraints):
+        cam.constraints.remove(c)
+    if not any(o.type == "LIGHT" for o in scene.objects):  # headless scenes start unlit
+        sun = bpy.data.objects.new("GCRipSun", bpy.data.lights.new("GCRipSun", "SUN"))
+        sun.data.energy = 3.0
+        sun.rotation_euler = (0.9, 0.2, a + 0.6)
+        scene.collection.objects.link(sun)
+    if track:
+        con = cam.constraints.new("TRACK_TO")
+        con.track_axis, con.up_axis = "TRACK_NEGATIVE_Z", "UP_Y"
+        if arms:
+            con.target = arms[0]
+            for b in ("mixamorig:Spine1", "mixamorig:Spine", "mixamorig:Hips"):
+                if b in arms[0].data.bones:
+                    con.subtarget = b
+                    break
+        else:
+            con.target = fam[0]
+    scene.camera = cam
+    return {"camera": cam.name, "location": list(cam.location), "target_height": h}
+
+
+@rpc
+def render(
+    path,
+    frame=None,
+    animation=False,
+    start=None,
+    end=None,
+    width=None,
+    height=None,
+    engine=None,
+    samples=None,
+):  # noqa: E501
+    """Render a still (PNG) or an animation (MP4/H.264) to ``path``.  Defaults: Eevee,
+    the scene's resolution and frame range."""
+    scene = bpy.context.scene
+    r = scene.render
+    if engine:
+        r.engine = engine
+    elif r.engine == "BLENDER_WORKBENCH":
+        r.engine = "BLENDER_EEVEE_NEXT" if hasattr(bpy.types, "SceneEEVEE") else "BLENDER_EEVEE"
+    if width:
+        r.resolution_x = int(width)
+    if height:
+        r.resolution_y = int(height)
+    r.resolution_percentage = 100
+    if samples and hasattr(scene, "eevee"):
+        scene.eevee.taa_render_samples = int(samples)
+    if scene.camera is None:
+        camera()
+    t0 = time.time()
+    if animation:
+        if start is not None:
+            scene.frame_start = int(start)
+        if end is not None:
+            scene.frame_end = int(end)
+        with contextlib.suppress(AttributeError):  # Blender 5: video formats need this first
+            r.image_settings.media_type = "VIDEO"
+        r.image_settings.file_format = "FFMPEG"
+        r.ffmpeg.format = "MPEG4"
+        r.ffmpeg.codec = "H264"
+        r.ffmpeg.constant_rate_factor = "MEDIUM"
+        r.filepath = path
+        bpy.ops.render.render(animation=True)
+        frames = scene.frame_end - scene.frame_start + 1
+    else:
+        if frame is not None:
+            scene.frame_set(int(frame))
+        with contextlib.suppress(AttributeError):
+            r.image_settings.media_type = "IMAGE"
+        r.image_settings.file_format = "PNG"
+        r.filepath = path
+        bpy.ops.render.render(write_still=True)
+        frames = 1
+    return {
+        "path": path,
+        "frames": frames,
+        "seconds": round(time.time() - t0, 1),
+        "engine": r.engine,
+    }
+
+
+@rpc
+def scene():
+    sc = bpy.context.scene
+    objs = []
+    for o in sc.objects:
+        objs.append(
+            {
+                "name": o.name,
+                "type": o.type,
+                "parent": o.parent.name if o.parent else None,
+                "location": [round(v, 2) for v in o.matrix_world.translation],
+                "hidden": o.hide_render,
+                "collection": o.users_collection[0].name if o.users_collection else None,
+            }
+        )
+    return {
+        "file": bpy.data.filepath,
+        "frame": sc.frame_current,
+        "range": [sc.frame_start, sc.frame_end],
+        "fps": sc.render.fps,
+        "camera": sc.camera.name if sc.camera else None,
+        "engine": sc.render.engine,
+        "resolution": [sc.render.resolution_x, sc.render.resolution_y],
+        "collections": [c.name for c in sc.collection.children],
+        "objects": objs,
+    }
+
+
+@rpc
+def save(path=""):
+    if path:
+        bpy.ops.wm.save_as_mainfile(filepath=path)
+    else:
+        if not bpy.data.filepath:
+            raise RuntimeError("untitled file - pass path=")
+        bpy.ops.wm.save_mainfile()
+    return {"file": bpy.data.filepath}
+
+
+@rpc
+def open_file(path):
+    bpy.ops.wm.open_mainfile(filepath=path)
+    return {"file": bpy.data.filepath, "objects": len(bpy.context.scene.objects)}
+
+
+@rpc
+def delete(objects=None, family=True):
+    """Delete objects by name (with their imported family by default), or everything when
+    ``objects`` is empty."""
+    sc = bpy.context.scene
+    if objects:
+        doomed = set()
+        for n in objects:
+            o = bpy.data.objects.get(n)
+            if o is None:
+                raise KeyError(f"no object {n!r}")
+            doomed.update(_family(o) if family else [o])
+    else:
+        doomed = set(sc.objects)
+    for o in doomed:
+        bpy.data.objects.remove(o, do_unlink=True)
+    for col in list(sc.collection.children):
+        if not col.all_objects:
+            bpy.data.collections.remove(col)
+    with contextlib.suppress(Exception):
+        bpy.data.orphans_purge(do_recursive=True)
+    return {"deleted": len(doomed), "objects": len(sc.objects)}
+
+
+@rpc
+def python(code):
+    """Run Python inside Blender with `bpy` and this add-on's globals; returns captured
+    stdout and repr() of a variable named `result` if the code sets one."""
+    ns = dict(globals())
+    ns["bpy"] = bpy
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        exec(compile(code, "<gcrip-rpc>", "exec"), ns)  # noqa: S102
+    return {"stdout": buf.getvalue()[-20000:], "result": repr(ns.get("result"))[:20000]}
+
+
+@rpc
+def shutdown():
+    """Stop the server; a headless Blender exits with it."""
+    SERVER["quit"] = True
+    return {"stopping": True}
+
+
+class GCRIP_Prefs(bpy.types.AddonPreferences):
+    bl_idname = __name__
+    port: IntProperty(name="Control server port", default=DEFAULT_PORT, min=1024, max=65535)
+    autostart: BoolProperty(
+        name="Start the control server with Blender",
+        default=False,
+        description="Listen on 127.0.0.1:<port> whenever this add-on loads",
+    )
+
+    def draw(self, context):
+        self.layout.prop(self, "port")
+        self.layout.prop(self, "autostart")
+
+
+class GCRIP_OT_server_start(bpy.types.Operator):
+    """Listen for the MCP bridge (tools/blender_mcp.py) on 127.0.0.1"""
+
+    bl_idname = "gcrip.server_start"
+    bl_label = "Start control server"
+
+    def execute(self, context):
+        try:
+            port = server_start()
+        except OSError as e:
+            self.report({"ERROR"}, f"could not listen: {e}")
+            return {"CANCELLED"}
+        self.report({"INFO"}, f"GCRip control server on 127.0.0.1:{port}")
+        return {"FINISHED"}
+
+
+class GCRIP_OT_server_stop(bpy.types.Operator):
+    bl_idname = "gcrip.server_stop"
+    bl_label = "Stop control server"
+
+    def execute(self, context):
+        server_stop()
+        return {"FINISHED"}
+
+
+class GCRIP_PT_server(bpy.types.Panel):
+    bl_label = "GCRip Server"
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "GCRip"
+    bl_order = 3
+    bl_options = {"DEFAULT_CLOSED"}
+
+    def draw(self, context):
+        lay = self.layout
+        if server_running():
+            lay.label(
+                text=f"listening on 127.0.0.1:{SERVER['port']}  ({SERVER['handled']} commands)",
+                icon="LINKED",
+            )
+            lay.operator("gcrip.server_stop", icon="UNLINKED")
+        else:
+            lay.label(text="not running", icon="UNLINKED")
+            lay.operator("gcrip.server_start", icon="LINKED")
+        lay.label(text="MCP bridge: tools/blender_mcp.py", icon="INFO")
+
+
+def _autostart():
+    if os.environ.get("GCRIP_SERVER_AUTOSTART") or _pref("autostart", False):
+        with contextlib.suppress(OSError):
+            server_start()
+    return None
 
 
 # ------------------------------------------------------------------- panel
@@ -1344,6 +2476,7 @@ class GCRIP_PT_panel(bpy.types.Panel):
             r = box.row(align=True)
             r.operator("gcrip.rename_bones", text="Mixamo names").to_mixamo = True
             r.operator("gcrip.rename_bones", text="Original names").to_mixamo = False
+            box.operator("gcrip.auto_map", icon="BONE_DATA")
         else:
             box.label(text="(no armature)")
         row = lay.row(align=True)
@@ -1357,9 +2490,11 @@ def _menu_import(self, context):
 
 
 CLASSES = (
+    GCRIP_Prefs,
     GCRIP_OT_import,
     GCRIP_OT_hide_variants,
     GCRIP_OT_rename_bones,
+    GCRIP_OT_auto_map,
     GCRIP_OT_set_expression,
     GCRIP_OT_set_fps,
     GCRIP_OT_add_library,
@@ -1374,6 +2509,9 @@ CLASSES = (
     GCRIP_MocapProps,
     GCRIP_OT_mocap_retarget,
     GCRIP_PT_mocap,
+    GCRIP_OT_server_start,
+    GCRIP_OT_server_stop,
+    GCRIP_PT_server,
     GCRIP_PT_panel,
 )
 
@@ -1386,10 +2524,13 @@ def register():
     bpy.types.Scene.gcrip_mocap = PointerProperty(type=GCRIP_MocapProps)
     bpy.types.TOPBAR_MT_file_import.append(_menu_import)
     _PCOLL = bpy.utils.previews.new()  # the index cache loads on first use of the panel
+    if not bpy.app.background:
+        bpy.app.timers.register(_autostart, first_interval=0.5)
 
 
 def unregister():
     global _PCOLL
+    server_stop()
     bpy.types.TOPBAR_MT_file_import.remove(_menu_import)
     del bpy.types.Scene.gcrip_lib
     del bpy.types.Scene.gcrip_mocap

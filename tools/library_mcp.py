@@ -101,7 +101,9 @@ def rigged_models(
 
     Each entry: game, name, glTF path (skin + joints + clips inside), .blend path, joint
     count + joint names, `std_bones` (game joint -> Mixamo-standard bone map: the retarget
-    key), clip names.  ``humanoid=True`` keeps rigs with >= 15 mapped standard bones.
+    key; ``inferred: True`` when the structural mapper produced it from the joint tree
+    rather than the ripper), clip names.  ``humanoid=True`` keeps rigs whose map covers
+    the Mixamo core (hips, both arms + hands, both legs + feet).
     ``write_rigs_manifest`` writes the same list to rigs_manifest.json at the dump root."""
     return lq.rigged_models(ROOT, min_joints=min_joints, humanoid=humanoid, game=game, query=query)
 
@@ -131,13 +133,16 @@ def library_root() -> dict:
 
 @mcp.tool()
 def mocap_rigs(
-    min_std_bones: int = 15, game: str | None = None, query: str = "", limit: int = 500
+    min_std_bones: int = 0, game: str | None = None, query: str = "", limit: int = 500
 ) -> list[dict]:
     """Rigs suitable for motion-capture retargeting: skinned characters whose skeleton maps
-    onto >= ``min_std_bones`` Mixamo-standard bones (Hips/Spine/Arms/Legs...).  Each entry
+    onto the Mixamo core (Hips, both Arm/ForeArm/Hand, both UpLeg/Leg/Foot) - the set the
+    Blender add-on's retarget needs.  ``min_std_bones`` additionally demands that many
+    mapped bones (22 = full set incl. spine chain, neck, head, shoulders, toes).  Each entry
     carries the game, name, absolute + relative glTF/thumb/.blend paths, joint count,
-    ``std_bones`` (game joint -> standard bone) and clip names.  Best-first order."""
-    rigs = lq.rigged_models(ROOT, humanoid=False, game=game, query=query)
+    ``std_bones`` (game joint -> standard bone; ``inferred: True`` when guessed from the
+    joint tree rather than written by the ripper) and clip names.  Best-first order."""
+    rigs = lq.rigged_models(ROOT, humanoid=True, game=game, query=query)
     keep = [r for r in rigs if r["std"] >= min_std_bones][: max(1, limit)]
     return [_absolutize(r) for r in keep]
 

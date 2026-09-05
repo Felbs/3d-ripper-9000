@@ -220,8 +220,11 @@ def set_flag(
         return read_flags(root)
     flags = read_flags(root)
     if on:
-        entry = {"n": name or key.rsplit("/", 1)[-1], "gid": gid or key.split("/", 1)[0],
-                 "time": _time.strftime("%Y-%m-%d %H:%M")}
+        entry = {
+            "n": name or key.rsplit("/", 1)[-1],
+            "gid": gid or key.split("/", 1)[0],
+            "time": _time.strftime("%Y-%m-%d %H:%M"),
+        }
         if note:
             entry["note"] = note[:500]
         flags[key] = entry
@@ -245,13 +248,27 @@ def flagged_models(root: Path) -> list[dict]:
         for m in _models_cached(root, g["id"]):
             key = m.get("g") or m.get("t")
             if key in flags:
-                out.append({**m, "gid": g["id"], "title": g["title"],
-                            **{k: v for k, v in flags[key].items() if k in ("note", "time")}})
+                out.append(
+                    {
+                        **m,
+                        "gid": g["id"],
+                        "title": g["title"],
+                        **{k: v for k, v in flags[key].items() if k in ("note", "time")},
+                    }
+                )
     known = {m.get("g") or m.get("t") for m in out}
     for key, e in flags.items():  # flags whose model vanished from the catalog still show
         if key not in known:
-            out.append({"n": e.get("n", key), "g": key, "gid": e.get("gid", ""),
-                        "title": "(no longer in catalog)", "tris": 0, **e})
+            out.append(
+                {
+                    "n": e.get("n", key),
+                    "g": key,
+                    "gid": e.get("gid", ""),
+                    "title": "(no longer in catalog)",
+                    "tris": 0,
+                    **e,
+                }
+            )
     return out
 
 
@@ -271,6 +288,80 @@ def pack_glb(root: Path, rel_gltf: str, dest: str | None = None) -> dict:
 
 
 RIGS_FILE = "rigs_manifest.json"
+INFER_FILE = "rigs_infer_cache.json"
+
+
+def gltf_skeleton(path: Path) -> tuple[list[str], list[int | None], bool]:
+    """(node names, parent index per node, has skin weights) from a glTF: the joint tree,
+    plus whether any primitive carries JOINTS_0/WEIGHTS_0 (some format exporters write the
+    skeleton but drop the weights - such a rig cannot be animated)."""
+    g = json.loads(Path(path).read_text(encoding="utf-8"))
+    nodes = g.get("nodes", [])
+    parents: list[int | None] = [None] * len(nodes)
+    for i, n in enumerate(nodes):
+        for c in n.get("children", []):
+            if 0 <= c < len(nodes):
+                parents[c] = i
+    weights = any(
+        "JOINTS_0" in p.get("attributes", {}) and "WEIGHTS_0" in p.get("attributes", {})
+        for m in g.get("meshes", [])
+        for p in m.get("primitives", [])
+    )
+    return [n.get("name", f"node_{i}") for i, n in enumerate(nodes)], parents, weights
+
+
+def gltf_hierarchy(path: Path) -> tuple[list[str], list[int | None]]:
+    """(node names, parent index per node) from a glTF's ``nodes`` - the joint tree."""
+    names, parents, _w = gltf_skeleton(path)
+    return names, parents
+
+
+def infer_std_bones(root: Path, rigs: list[dict]) -> int:
+    """Fill ``std_bones`` for rigs the ripper left unmapped (every non-J3D format) by
+    running the structural humanoid mapper on the glTF's joint tree.  Only rigs whose joint
+    names *look* humanoid are opened; results are cached in ``rigs_infer_cache.json`` next
+    to the manifest, keyed by glTF path + mtime.  Returns how many rigs gained a map."""
+    from gcrip import humanoid as _hm
+
+    cache_path = Path(root) / INFER_FILE
+    try:
+        cache = json.loads(cache_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        cache = {}
+    dirty = gained = 0
+    for r in rigs:
+        if r["std"] or r["joints"] < 8 or not r["g"]:
+            continue
+        if not _hm.humanoid_hint(r["joint_names"]):
+            continue
+        p = Path(root) / r["g"]
+        try:
+            mtime = p.stat().st_mtime
+        except OSError:
+            continue
+        hit = cache.get(r["g"])
+        if hit and hit.get("mtime") == mtime and "weights" in hit:
+            std, weights = hit["std_bones"], hit["weights"]
+        else:
+            try:
+                names, parents, weights = gltf_skeleton(p)
+                std = {names[i]: v for i, v in _hm.guess_bones(names, parents).items()}
+            except (OSError, ValueError, KeyError):
+                std, weights = {}, False
+            cache[r["g"]] = {"mtime": mtime, "std_bones": std, "weights": weights}
+            dirty += 1
+        r["weights"] = weights
+        if std:
+            r["std_bones"], r["std"], r["inferred"] = std, len(std), True
+            gained += 1
+    if dirty:
+        try:
+            tmp = cache_path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(cache), encoding="utf-8")
+            tmp.replace(cache_path)
+        except OSError:
+            pass
+    return gained
 
 
 def rigged_models(
@@ -280,12 +371,17 @@ def rigged_models(
     humanoid: bool = False,
     game: str | None = None,
     query: str = "",
+    infer: bool = True,
 ) -> list[dict]:
     """Every skinned (rigged) model in the library with what a rig consumer needs: the glTF
     (skin + joints + clips), the .blend when one exists, joint count and names, the
     ``std_bones`` map (game joint name -> Mixamo-standard bone, the retargeting key) and
-    the clip names.  ``humanoid`` keeps rigs with >= 15 mapped standard bones - the batch's
-    own "mixamo rig" threshold.  Reads rip_results.json only (mid-rip safe)."""
+    the clip names.  ``humanoid`` keeps rigs whose map covers the Mixamo core (hips, both
+    arms + hands, both legs + feet) - the set the mocap retarget needs.  ``infer`` runs the
+    structural mapper on rigs the ripper left unmapped (``inferred: True`` on those).
+    Reads rip_results.json (+ the glTF joint tree for inferred rigs; mid-rip safe)."""
+    from gcrip.humanoid import is_humanoid
+
     q = query.strip().lower()
     out = []
     games = catalog(root)["games"]
@@ -306,8 +402,6 @@ def rigged_models(
             if joints < min_joints:
                 continue
             std = m.get("std_bones") or {}
-            if humanoid and len(std) < 15:
-                continue
             name = (m.get("path") or m.get("out_rel") or "model").split("/")[-1]
             if q and q not in name.lower() and q not in g["title"].lower():
                 continue
@@ -332,7 +426,14 @@ def rigged_models(
                     "a": bool(m.get("animations")),
                 }
             )
-    out.sort(key=lambda x: (-x["std"], -x["joints"], -x["tris"]))
+    if infer:
+        infer_std_bones(root, out)
+    for r in out:
+        # a full core map, and skin weights to move (unknown for ripper-mapped rigs = yes)
+        r["humanoid"] = is_humanoid(r["std_bones"]) and r.get("weights", True)
+    if humanoid:
+        out = [r for r in out if r["humanoid"]]
+    out.sort(key=lambda x: (-x["humanoid"], -x["std"], -x["joints"], -x["tris"]))
     return out
 
 
@@ -345,7 +446,8 @@ def write_rigs_manifest(root: Path, **filters) -> dict:
         "root": str(Path(root)),
         "paths": "relative to root; 'g' is the glTF with skin+joints+clips, 'blend' the .blend",
         "count": len(rigs),
-        "humanoid": sum(1 for r in rigs if r["std"] >= 15),
+        "humanoid": sum(1 for r in rigs if r["humanoid"]),
+        "inferred": sum(1 for r in rigs if r.get("inferred")),
         "animated": sum(1 for r in rigs if r["clips"]),
         "games": len({r["gid"] for r in rigs}),
         "rigs": rigs,

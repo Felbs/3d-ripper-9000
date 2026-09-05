@@ -19,6 +19,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from gcrip import humanoid
 from gcrip.formats import j3d
 
 MIXAMO_PREFIX = "mixamorig:"
@@ -170,4 +171,9 @@ def standard_bones(joints: list[j3d.Joint]) -> dict[int, str]:
                 spine = [s for s in spine if s not in out]
                 for k, s in enumerate(spine[:3]):
                     out[s] = "Spine" if k == 0 else f"Spine{k}"
+    if len(out) < 12:
+        # not J3D naming (EA, Radical, Maya-style rigs ...): the structural mapper
+        alt = humanoid.guess_bones([j.name for j in joints], [j.parent for j in joints])
+        if len(alt) > len(out):
+            return alt
     return out

@@ -96,10 +96,13 @@ Then:
   the model is imported at the 3D cursor into a collection named after the game, with the
   expression meshes hidden and, for characters, Mixamo bone names applied.
 
-Categories come from the rip data: a model with 12+ bones mapped to the Mixamo humanoid
-is a character, other skinned rigs are creatures, disc paths under `Stage/`, `map/`,
-`Room` are level pieces, and name hints (sword, bomb, ship, kart, ptcl...) sort the rest.
-Meshes under 8 triangles (billboards, particle quads) are left out of the index.
+Categories come from the rip data: a model with 12+ bones mapped to the Mixamo humanoid,
+or a skinned rig whose joint names look humanoid (both hands, both feet, a torso), is a
+character; other skinned rigs are creatures, disc paths under `Stage/`, `map/`, `Room`
+are level pieces, and name hints (sword, bomb, ship, kart, ptcl...) sort the rest.
+Meshes under 8 triangles (billboards, particle quads) are left out of the index. The
+bone icon next to the category dropdown (**Mocap-ready only**) keeps just the rigs with a
+humanoid map.
 
 ### Motion capture onto a character (GCRip Mocap panel)
 
@@ -111,6 +114,27 @@ source needs no T-pose: anatomical frames are built from joint positions at the 
 frame and world-space rotation deltas are transferred bone by bone, so the character's
 own rest pose and bone axes do not matter. Spawn a character, pick the file, press
 **Retarget onto selected character**; a second clip appends after the first.
+
+Any biped works, not only Nintendo's. When a rip carries no bone map (every non-J3D
+format: EA's FIFA / NHL, LEGO, Metroid Prime, Mario Party...) the add-on guesses the
+humanoid core from the joint names and hierarchy (`gcrip/humanoid.py`, embedded in the
+add-on; `docs/RIGS.md` explains the rules) and renames those bones to Mixamo names on
+spawn. Only the core has to exist - hips, both arms with hands, both legs with feet;
+spine chain, neck, head, shoulders and toes are used when present. The **Guess humanoid
+bones** button in the GCRip panel does the same for a rig imported some other way. A rig
+whose exporter dropped the skin weights (the Radical p3d games) is refused with a plain
+message, since its body would not follow the skeleton.
+
+### Drive Blender from an assistant (GCRip Server panel, `gcrip-blender` MCP)
+
+**GCRip Server** (N sidebar > GCRip tab) starts a JSON-lines control channel on
+127.0.0.1:8788 (port and auto-start in the add-on preferences). `tools/blender_mcp.py`,
+registered in `.mcp.json` as `gcrip-blender`, turns it into MCP tools: browse the
+library index, spawn a model, retarget a BVH, aim a camera, render a still or an MP4,
+save, run Python, or launch a fresh Blender (headless with `background=True`) via
+`blender/gcrip_server_boot.py`. Every command runs on Blender's main thread, so you can
+keep working in the GUI while the assistant drives it. `tools/blender_mcp_smoke.py`
+runs the whole chain headless as a check.
 
 Wind Waker (USA): 2,759 models -> 1,856 unique glTFs, 4,175 animation clips, 1,867 textures in ~4.5 minutes.
 Twilight Princess (USA): 3,626 models -> 2,489 unique glTFs, 13,822 clips in ~10 minutes.

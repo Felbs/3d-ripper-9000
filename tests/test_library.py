@@ -275,10 +275,15 @@ def test_rigged_models_and_manifest(tmp_path):
     # give link a rig: joints + std_bones + clips in rip_results
     rr_path = root / "WIND" / "rip_results.json"
     rr = json.loads(rr_path.read_text(encoding="utf-8"))
+    core = [
+        "Hips", "Spine", "Neck", "LeftArm", "LeftForeArm", "LeftHand", "RightArm",
+        "RightForeArm", "RightHand", "LeftUpLeg", "LeftLeg", "LeftFoot", "RightUpLeg",
+        "RightLeg", "RightFoot", "Head",
+    ]  # fmt: skip
     for m in rr["models"]:
         if m["path"] == "a/link.bdl":
             m["joints"] = 20
-            m["std_bones"] = {f"j{i}": f"Std{i}" for i in range(16)}
+            m["std_bones"] = {f"j{i}": n for i, n in enumerate(core)}
             m["joint_names"] = [f"j{i}" for i in range(20)]
             m["animations"] = ["wait", "run"]
     rr_path.write_text(json.dumps(rr), encoding="utf-8")
@@ -287,11 +292,56 @@ def test_rigged_models_and_manifest(tmp_path):
     assert [r["n"] for r in rigs] == ["link.bdl"] and rigs[0]["joints"] == 20
     assert rigs[0]["std"] == 16 and rigs[0]["clips"] == ["wait", "run"]
     assert rigs[0]["g"] == "WIND/a/link.gltf"
-    # humanoid keeps >= 15 std bones; min_joints filters; query matches names/titles
+    # humanoid = the Mixamo core is mapped; min_joints filters; query matches names/titles
     assert len(lq.rigged_models(root, humanoid=True)) == 1
     assert lq.rigged_models(root, min_joints=50) == []
     assert lq.rigged_models(root, query="nothing-like-this") == []
     summary = lq.write_rigs_manifest(root)
     assert summary["count"] == 1 and summary["humanoid"] == 1 and summary["animated"] == 1
     doc = json.loads((root / "rigs_manifest.json").read_text(encoding="utf-8"))
-    assert doc["rigs"][0]["std_bones"]["j0"] == "Std0"
+    assert doc["rigs"][0]["std_bones"]["j0"] == "Hips"
+
+
+def test_rigged_models_infers_unmapped_rigs_from_the_gltf(tmp_path):
+    """A non-J3D rig (no std_bones from the ripper) gets a map from its joint tree, and a
+    rig whose exporter dropped the skin weights is not called humanoid."""
+    from gcrip import library_query as lq
+
+    root = _mini_dump(tmp_path)
+    names = [
+        "Pelvis", "Hip_L", "Knee_L", "Ankle_L", "Hip_R", "Knee_R", "Ankle_R", "Spine_1",
+        "Neck", "Head", "Shoulder_L", "Elbow_L", "Wrist_L", "Shoulder_R", "Elbow_R", "Wrist_R",
+    ]  # fmt: skip
+    parents = [None, 0, 1, 2, 0, 4, 5, 0, 7, 8, 7, 10, 11, 7, 13, 14]
+    nodes = [{"name": n} for n in names]
+    for i, p in enumerate(parents):
+        if p is not None:
+            nodes[p].setdefault("children", []).append(i)
+    rr_path = root / "WIND" / "rip_results.json"
+    rr = json.loads(rr_path.read_text(encoding="utf-8"))
+    for m in rr["models"]:
+        if m["path"] == "a/link.bdl":
+            m["joints"] = len(names)
+            m["std_bones"] = {}
+            m["joint_names"] = names
+    rr_path.write_text(json.dumps(rr), encoding="utf-8")
+    gltf = root / "WIND" / "a" / "link.gltf"
+    gltf.parent.mkdir(parents=True, exist_ok=True)
+    prim = {"attributes": {"POSITION": 0, "JOINTS_0": 1, "WEIGHTS_0": 2}}
+    gltf.write_text(json.dumps({"nodes": nodes, "meshes": [{"primitives": [prim]}]}))
+    lq._cache["cat"] = None
+    rigs = lq.rigged_models(root)
+    assert rigs[0]["inferred"] and rigs[0]["humanoid"] and rigs[0]["weights"]
+    assert (
+        rigs[0]["std_bones"]["Wrist_L"] == "LeftHand" and rigs[0]["std_bones"]["Pelvis"] == "Hips"
+    )
+    assert (root / "rigs_infer_cache.json").exists()
+    # same skeleton, weights dropped by the exporter -> mapped but not mocap-able
+    prim["attributes"] = {"POSITION": 0}
+    gltf.write_text(json.dumps({"nodes": nodes, "meshes": [{"primitives": [prim]}]}))
+    import os
+
+    os.utime(gltf, (1, 1))  # a different mtime invalidates the cache entry
+    rigs = lq.rigged_models(root)
+    assert rigs[0]["std"] == 16 and not rigs[0]["weights"] and not rigs[0]["humanoid"]
+    assert lq.rigged_models(root, humanoid=True) == []
