@@ -183,12 +183,21 @@ def blender_retarget(
     start: int = 1,
     max_frames: int = 0,
     mute_game: bool = True,  # noqa: A002
+    skip: int = 0,
 ) -> dict:
     """Retarget a BVH clip (Bandai Namco dataset, ComfyUI-MotionCapture output, Mixamo) onto a
     character as an NLA strip on track MOCAP, appended after earlier strips.  ``object`` =
-    the armature or any object of the character; default = active / the only armature."""
+    the armature or any object of the character; default = active / the only armature.
+    ``skip`` drops that many leading BVH frames (capture from before the person was in
+    shot); pair it with ``start=skip+1`` to keep scene frames aligned with the clip."""
     return call(
-        "retarget", bvh=bvh, object=object, start=start, max_frames=max_frames, mute_game=mute_game
+        "retarget",
+        bvh=bvh,
+        object=object,
+        start=start,
+        max_frames=max_frames,
+        mute_game=mute_game,
+        skip=skip,
     )
 
 
@@ -269,6 +278,38 @@ def blender_delete(objects: list[str] | None = None, family: bool = True) -> dic
     """Delete objects by name (with the rest of their imported model unless family=False);
     no names = clear the whole scene."""
     return call("delete", objects=objects, family=family)
+
+
+@mcp.tool()
+def blender_hold_prop(
+    gid: str = "",
+    name: str = "",
+    gltf: str = "",
+    object: str = "",  # noqa: A002
+    hand: str = "auto",
+    release_frame: int | None = None,
+    flight_frames: int = 0,
+    size: float = 0.16,
+    toss: float = 1.4,
+) -> dict:
+    """Put a library prop (gid + name as listed by blender_library, or a glTF path) into a
+    character's hand for the whole clip, and optionally let go of it at ``release_frame``
+    (scene frame): it then flies a ballistic arc from the hand's velocity and lands on the
+    ground, in ``flight_frames`` frames when given.  ``hand`` = left | right | auto (the
+    hand kept nearest the head before the release).  ``size`` = prop height as a fraction
+    of the character's height."""
+    return call(
+        "hold_prop",
+        gid=gid,
+        name=name,
+        gltf=gltf,
+        object=object,
+        hand=hand,
+        release_frame=release_frame,
+        flight_frames=flight_frames,
+        size=size,
+        toss=toss,
+    )
 
 
 @mcp.tool()

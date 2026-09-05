@@ -105,7 +105,7 @@ def plain_node(type_, inputs, outputs, widgets, title=None):
     return n
 
 
-def build(video: str, people: int, name: str):
+def build(video: str, people: int, name: str, throw: bool = True):
     tpl = load_templates()
     g = Graph()
     note = g.add(
@@ -140,6 +140,7 @@ def build(video: str, people: int, name: str):
                 ("mask_4", "VIDEO"),
                 ("preview", "IMAGE"),
                 ("info", "STRING"),
+                ("tracks", "GCRIP_TRACKS"),
             ],
             [people, "left_to_right", "person_yolov8m-seg.pt", 0.4, 6, name],
         ),
@@ -151,6 +152,29 @@ def build(video: str, people: int, name: str):
         plain_node("PreviewImage", [("images", "IMAGE")], [], []), (-220, 320), size=[330, 260]
     )
     g.link(masks, "preview", prev, "images")
+    if throw:
+        thr = g.add(
+            plain_node(
+                "GCRipThrowTracker",
+                [("video", "VIDEO"), ("tracks", "GCRIP_TRACKS")],
+                [
+                    ("throws_json", "STRING"),
+                    ("preview", "IMAGE"),
+                    ("release_frame", "INT"),
+                    ("person", "INT"),
+                    ("flight_frames", "INT"),
+                ],
+                ["bright", 1.75, 3],
+            ),
+            (-220, 620),
+            size=[330, 200],
+        )
+        g.link(vid, "VIDEO", thr, "video")
+        g.link(masks, "tracks", thr, "tracks")
+        tprev = g.add(
+            plain_node("PreviewImage", [("images", "IMAGE")], [], []), (-220, 860), size=[330, 260]
+        )
+        g.link(thr, "preview", tprev, "images")
     cfg = g.add(tpl["LoadGVHMRModels"], (-220, -260), widgets=["", "auto", "auto", False])
     for k in range(1, people + 1):
         y = (k - 1) * 340
@@ -190,16 +214,19 @@ def to_api(doc: dict) -> dict:
                 inputs[inp["name"]] = [str(lk[1]), lk[2]]
                 if inp.get("widget"):
                     wi += 1
-            elif inp.get("widget") or n["type"] == "GCRipPersonMasks":
+            elif inp.get("widget"):
                 if inp["name"] == "upload":
                     wi += 1
                     continue
                 if wi < len(widgets):
                     inputs[inp["name"]] = widgets[wi]
                 wi += 1
-        if n["type"] == "GCRipPersonMasks":
-            names = ["people", "order", "model", "confidence", "dilate", "name"]
-            inputs.update(dict(zip(names, widgets, strict=True)))
+        plain = {
+            "GCRipPersonMasks": ["people", "order", "model", "confidence", "dilate", "name"],
+            "GCRipThrowTracker": ["colour", "person_height_m", "max_events"],
+        }
+        if n["type"] in plain:
+            inputs.update(dict(zip(plain[n["type"]], widgets, strict=True)))
         api[str(n["id"])] = {"class_type": n["type"], "inputs": inputs}
     # a PreviewImage output keeps the mask node alive in API runs
     return api

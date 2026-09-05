@@ -1508,13 +1508,18 @@ def missing_core_bones(arm):
     return [_MOCAP_MAP[j] for j in _MOCAP_CORE if _MOCAP_MAP[j] not in arm.data.bones]
 
 
-def retarget_bvh(arm, bvh_path, ref=0, max_frames=0, name=None):
+def retarget_bvh(arm, bvh_path, ref=0, max_frames=0, name=None, skip=0):
     """Bake the BVH onto `arm` (Mixamo-named bones) as a new action.
 
     Only the core (hips, arms + hands, legs + feet) must exist on both sides; spine
     chain, neck, head, shoulders and toes are used when present and skipped when not.
+    ``skip`` drops that many leading BVH frames (a person who walks into shot later);
+    ``ref`` is the frame (after the skip) whose pose anchors the alignment - a degenerate
+    one (the capture flailing before the person was visible) is stepped past automatically.
     Returns (action, slot, nframes, fps)."""
     joints, rows, ftime = bvh_parse(bvh_path)
+    if skip:
+        rows = rows[int(skip) :]
     if max_frames:
         rows = rows[:max_frames]
     profile, rename = bvh_profile([j["name"] for j in joints])
@@ -1572,10 +1577,8 @@ def retarget_bvh(arm, bvh_path, ref=0, max_frames=0, name=None):
             p = _MOCAP_PARENT.get(p)
         raise RuntimeError(f"no distinct joint next to {j}")
 
-    src_p = lambda n: src_pos(ref, n)  # noqa: E731
     tgt_p = lambda n: rest_head(_MOCAP_MAP[n])  # noqa: E731
     feet = ("Foot_L", "Foot_R", "Toes_L", "Toes_R")
-    src_floor = min(src_p(n)[2] for n in feet if n in src_have)
     tgt_floor = min(tgt_p(n)[2] for n in feet if n in tgt_have)
 
     # Height and translation are driven by the thigh centre, not the hips joint: some rigs
@@ -1583,17 +1586,49 @@ def retarget_bvh(arm, bvh_path, ref=0, max_frames=0, name=None):
     def thighs(pos):
         return 0.5 * (pos("UpperLeg_L") + pos("UpperLeg_R"))
 
-    src_h = thighs(src_p)[2] - src_floor
     tgt_h = thighs(tgt_p)[2] - tgt_floor
-    if src_h <= 1e-6 or tgt_h <= 1e-6:
-        raise RuntimeError("legs have no height above the feet - not a standing biped")
-    AS, AT = axes(src_p, src_have), axes(tgt_p, tgt_have)
-    W_ref = {}
-    for j in both:
-        b = _MOCAP_MAP[j]
-        F_s = _frame3(chain_dir(j, src_p, 0.01 * src_h, src_have), AS[_MOCAP_SECONDARY[j]])
-        F_t = _frame3(chain_dir(j, tgt_p, 0.01 * tgt_h, tgt_have), AT[_MOCAP_SECONDARY[j]])
-        W_ref[b] = F_s @ F_t.T @ rest_rot(b)
+    if tgt_h <= 1e-6:
+        raise RuntimeError("rig's legs have no height above the feet - not a standing biped")
+    AT = axes(tgt_p, tgt_have)
+
+    def align(r):
+        """Anchor frames from source frame r; raises on a degenerate pose."""
+        sp = lambda n: src_pos(r, n)  # noqa: E731
+        floor = min(sp(n)[2] for n in feet if n in src_have)
+        h = thighs(sp)[2] - floor
+        if not np.isfinite(h) or h <= 1e-6:
+            raise RuntimeError("legs have no height above the feet")
+        AS = axes(sp, src_have)
+        if min(np.linalg.norm(v) for v in AS.values()) < 0.5:
+            raise RuntimeError("body axes collapsed")
+        w = {}
+        for j in both:
+            b = _MOCAP_MAP[j]
+            d_s = chain_dir(j, sp, 0.01 * h, src_have)
+            d_t = chain_dir(j, tgt_p, 0.01 * tgt_h, tgt_have)
+            # the secondary axis must not be parallel to the bone on either side (a rig
+            # whose rest arms point straight forward, say); fall back through the others,
+            # always the same choice for source and target so the frames still correspond
+            first = _MOCAP_SECONDARY[j]
+            for sec in (first, *[k for k in ("lr", "fwd", "sh", "up") if k != first]):
+                F_s, F_t = _frame3(d_s, AS[sec]), _frame3(d_t, AT[sec])
+                if abs(np.linalg.det(F_s)) >= 0.05 and abs(np.linalg.det(F_t)) >= 0.05:
+                    break
+            else:
+                raise RuntimeError(f"degenerate frame at {j}")
+            w[b] = F_s @ F_t.T @ rest_rot(b)
+        return sp, floor, h, w
+
+    last_err = None
+    for r in range(int(ref), len(rows), 5):
+        try:
+            src_p, src_floor, src_h, W_ref = align(r)
+            ref = r
+            break
+        except (RuntimeError, ValueError, FloatingPointError) as e:
+            last_err = e
+    else:
+        raise RuntimeError(f"no usable reference pose in the clip ({last_err})")
     scale = tgt_h / src_h
     origin = thighs(src_p).copy()
     origin[2] = src_floor
@@ -1632,8 +1667,12 @@ def retarget_bvh(arm, bvh_path, ref=0, max_frames=0, name=None):
                 desired = np.eye(4)
                 desired[:3, :3] = src_rot(t, j) @ src_rot(ref, j).T @ W_ref[n]
                 if n == "mixamorig:Hips":
-                    drive = (thighs(lambda k: src_pos(t, k)) - origin) * scale  # noqa: B023
-                    drive[2] += tgt_floor
+                    sp_t = lambda k: src_pos(t, k)  # noqa: B023, E731
+                    drive = (thighs(sp_t) - origin) * scale
+                    # height from the feet, not from the capture's world Y: video mocap
+                    # drifts upward by metres as a person walks in, feet never lie
+                    low = min(sp_t(k)[2] for k in feet if k in src_have)
+                    drive[2] = tgt_floor + (thighs(sp_t)[2] - low) * scale
                     turn = desired[:3, :3] @ hips_rest_rot.T  # hips rotation vs rest
                     desired[:3, 3] = drive + turn @ hips_off
                     basis = np.linalg.inv(rel) @ np.linalg.inv(Mp) @ desired
@@ -1706,7 +1745,7 @@ class GCRIP_OT_mocap_retarget(bpy.types.Operator):
         return {"FINISHED"}
 
 
-def mocap_retarget(arm, family, bvh_path, start=1, max_frames=0, mute_game=True):
+def mocap_retarget(arm, family, bvh_path, start=1, max_frames=0, mute_game=True, skip=0):
     """Retarget a BVH onto `arm` as a strip on NLA track MOCAP (appended after existing
     strips).  Maps + renames bones to Mixamo names first when needed.  Raises RuntimeError
     with a plain message when the rig or the clip is not a biped."""
@@ -1728,7 +1767,7 @@ def mocap_retarget(arm, family, bvh_path, start=1, max_frames=0, mute_game=True)
         for tr in arm.animation_data.nla_tracks:
             if tr.name != "MOCAP":
                 tr.mute = True
-    act, slot, n, fps = retarget_bvh(arm, bvh_path, max_frames=max_frames)
+    act, slot, n, fps = retarget_bvh(arm, bvh_path, max_frames=max_frames, skip=skip)
     track = next((t for t in arm.animation_data.nla_tracks if t.name == "MOCAP"), None)
     if track is None:
         track = arm.animation_data.nla_tracks.new()
@@ -2104,13 +2143,15 @@ def map_bones(object="", force=False):  # noqa: A002
 
 
 @rpc
-def retarget(bvh, object="", start=1, max_frames=0, mute_game=True):  # noqa: A002
+def retarget(bvh, object="", start=1, max_frames=0, mute_game=True, skip=0):  # noqa: A002
     """Retarget a BVH clip onto a character (the active one, the only armature, or
     ``object``) as an NLA strip on track MOCAP."""
     if not os.path.isfile(bvh):
         raise FileNotFoundError(bvh)
     arm, fam = _resolve_armature(object)
-    return mocap_retarget(arm, fam, bvh, start=start, max_frames=max_frames, mute_game=mute_game)
+    return mocap_retarget(
+        arm, fam, bvh, start=start, max_frames=max_frames, mute_game=mute_game, skip=skip
+    )
 
 
 @rpc
@@ -2344,6 +2385,165 @@ def delete(objects=None, family=True):
     with contextlib.suppress(Exception):
         bpy.data.orphans_purge(do_recursive=True)
     return {"deleted": len(doomed), "objects": len(sc.objects)}
+
+
+def _action_fcurves(action):
+    """F-curves of an action on Blender 4 (action.fcurves) and 5 (layers/strips/slots)."""
+    fcs = getattr(action, "fcurves", None)
+    if fcs is not None:
+        return list(fcs)
+    out = []
+    for layer in getattr(action, "layers", []):
+        for strip in layer.strips:
+            for cb in getattr(strip, "channelbags", []):
+                out.extend(cb.fcurves)
+    return out
+
+
+@rpc
+def hold_prop(
+    gltf="",
+    gid="",
+    name="",
+    object="",  # noqa: A002
+    hand="auto",
+    release_frame=None,
+    flight_frames=0,
+    size=0.16,
+    toss=1.4,
+):
+    """Put a prop (a library pick by gid+name, or a glTF) in a character's hand for the whole
+    clip and, if ``release_frame`` (scene frame) is given, let go of it there: it flies a
+    ballistic arc from the hand's own velocity (times ``toss``) and lands on the ground,
+    in ``flight_frames`` frames when given, else when gravity says so.  ``hand`` = left |
+    right | auto (the hand that stays closest to the head before the release - the one
+    doing the drinking).  ``size`` = prop height as a fraction of the character's height."""
+    arm, fam = _resolve_armature(object)
+    sc = bpy.context.scene
+    if gltf:
+        rec = next((r for r in _ensure_index() if r[4].lower() == gltf.lower()), None)
+        rec = rec or (gid or "PROP", "", "ITEM", name or os.path.basename(gltf), gltf, "", "", "")
+    else:
+        recs = _find_records(gid=gid or None, name=name) or _find_records(
+            gid=gid or None, query=name, limit=1
+        )
+        if not recs:
+            raise KeyError(f"no library model {name!r} in game {gid or 'any'}")
+        rec = recs[0]
+    new, _pick = spawn_model(rec[0], "ITEM", rec[4], at=None, mixamo=False)
+    roots = [o for o in new if o.parent is None]
+    if not roots:
+        raise RuntimeError("prop import produced no objects")
+    prop = roots[0]
+    for o in roots[1:]:
+        o.parent = prop
+    # size it against the character
+    lo, hi = _bounds(fam)
+    char_h = max(hi[2] - lo[2], 1e-3)
+    plo, phi = _bounds(new)
+    prop_h = max(phi[2] - plo[2], phi[0] - plo[0], phi[1] - plo[1], 1e-3)
+    s = size * char_h / prop_h
+    prop.scale = (s, s, s)
+    hands = {"left": "mixamorig:LeftHand", "right": "mixamorig:RightHand"}
+    for b in hands.values():
+        if b not in arm.pose.bones:
+            raise RuntimeError(f"rig has no {b}")
+    f0, f1 = sc.frame_start, int(release_frame) if release_frame else sc.frame_end
+    if hand == "auto":
+        head = next(
+            (
+                b
+                for b in ("mixamorig:Head", "mixamorig:Neck", "mixamorig:Spine2")
+                if b in arm.pose.bones
+            ),
+            None,
+        )
+        score = {"left": 0.0, "right": 0.0}
+        for f in range(f0, max(f0 + 1, f1), 5):
+            sc.frame_set(f)
+            hp = (
+                np.array(arm.matrix_world @ arm.pose.bones[head].head)
+                if head
+                else np.array([0, 0, 1e9])
+            )
+            for k, b in hands.items():
+                score[k] += np.linalg.norm(np.array(arm.matrix_world @ arm.pose.bones[b].tail) - hp)
+        hand = min(score, key=score.get)
+    hand_bone = hands[hand]
+    pb = arm.pose.bones[hand_bone]
+
+    def hand_matrix(f):
+        sc.frame_set(f)
+        return arm.matrix_world @ pb.matrix
+
+    # attach: the prop sits at the hand's tail, following the hand exactly
+    m0 = hand_matrix(f0)
+    grip = Matrix.Translation((0, pb.length, 0))  # bone-local Y runs head -> tail
+    prop.matrix_world = m0 @ grip @ Matrix.Diagonal((s, s, s, 1))
+    con = prop.constraints.new("CHILD_OF")
+    con.target, con.subtarget = arm, hand_bone
+    con.inverse_matrix = m0.inverted()
+    prop.rotation_mode = "XYZ"
+    prop.location = (m0 @ grip).translation
+    prop.rotation_euler = (m0 @ grip).to_euler()
+    out = {"prop": prop.name, "hand": hand, "attached_to": hand_bone, "scale": round(s, 4)}
+    if release_frame:
+        fr = int(release_frame)
+        fps = sc.render.fps or 30
+        # the attached-time transform must hold until the release (a later keyframe would
+        # otherwise extrapolate backwards over the whole clip)
+        for f in (f0, fr - 1):
+            prop.keyframe_insert("location", frame=f)
+            prop.keyframe_insert("rotation_euler", frame=f)
+        w_r = hand_matrix(fr) @ grip
+        w_p = hand_matrix(max(f0, fr - 4)) @ grip
+        span = max(1, fr - max(f0, fr - 4))
+        vel = (np.array(w_r.translation) - np.array(w_p.translation)) / span * float(toss)
+        vmax = 12.0 * (max(hi[2] - lo[2], 1e-3) / 1.7) / (sc.render.fps or 30)  # 12 m/s cap
+        if np.linalg.norm(vel) > vmax:
+            vel *= vmax / np.linalg.norm(vel)
+        upm = char_h / 1.7  # scene units per metre, from the character's height
+        g = 9.81 * upm / (fps * fps)
+        p0 = np.array(w_r.translation)
+        ground = lo[2]
+        z0 = p0[2] - ground
+        if flight_frames and flight_frames > 0:
+            T = int(flight_frames)
+            vel[2] = (0.5 * g * T * T - z0) / T
+        else:
+            vz = vel[2]
+            T = int(max(3, (vz + (vz * vz + 2 * g * z0) ** 0.5) / g))
+        con.influence = 1.0
+        con.keyframe_insert("influence", frame=fr - 1)
+        con.influence = 0.0
+        con.keyframe_insert("influence", frame=fr)
+        if prop.animation_data and prop.animation_data.action:
+            for fc in _action_fcurves(prop.animation_data.action):
+                if "influence" in fc.data_path:
+                    for kp in fc.keyframe_points:
+                        kp.interpolation = "CONSTANT"
+        prop.rotation_mode = "XYZ"
+        rot0 = np.array(w_r.to_euler())
+        spin = np.array([0.15, 0.07, 0.2])
+        for i in range(T + 1):
+            p = p0 + vel * i
+            p[2] = p0[2] + vel[2] * i - 0.5 * g * i * i
+            if p[2] < ground:
+                p[2] = ground
+            prop.location = tuple(p)
+            prop.rotation_euler = tuple(rot0 + spin * i)
+            prop.keyframe_insert("location", frame=fr + i)
+            prop.keyframe_insert("rotation_euler", frame=fr + i)
+        out.update(
+            {
+                "release_frame": fr,
+                "flight_frames": T,
+                "lands_frame": fr + T,
+                "velocity": [round(float(v), 2) for v in vel],
+            }
+        )
+        sc.frame_set(f0)
+    return out
 
 
 @rpc

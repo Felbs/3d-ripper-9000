@@ -12,6 +12,7 @@ is briefly lost keep the last good mask.  Runs in ComfyUI's own Python (torch + 
 
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import time
@@ -201,8 +202,8 @@ class GCRipPersonMasks:
             }
         }
 
-    RETURN_TYPES = ("VIDEO", "VIDEO", "VIDEO", "VIDEO", "IMAGE", "STRING")
-    RETURN_NAMES = ("mask_1", "mask_2", "mask_3", "mask_4", "preview", "info")
+    RETURN_TYPES = ("VIDEO", "VIDEO", "VIDEO", "VIDEO", "IMAGE", "STRING", "GCRIP_TRACKS")
+    RETURN_NAMES = ("mask_1", "mask_2", "mask_3", "mask_4", "preview", "info", "tracks")
     FUNCTION = "run"
     CATEGORY = "GCRip/mocap"
     DESCRIPTION = (
@@ -294,8 +295,161 @@ class GCRipPersonMasks:
             f"{len(tracks)} tracks, kept {len(keep)}, {time.time() - t0:.0f}s\n" + "\n".join(lines)
         )
         print("[gcrip] person masks:\n" + info)
-        return (*videos, preview, info)
+        people_doc = {
+            "video": src,
+            "frames": meta["frames"],
+            "fps": meta["fps"],
+            "size": [meta["w"], meta["h"]],
+            "people": [
+                {
+                    "person": k,
+                    "first": int(min(tracks[tid]["masks"])),
+                    "last": int(max(tracks[tid]["masks"])),
+                    "seen": int(tracks[tid]["n"]),
+                    "mean_x": round(tracks[tid]["cx"] / max(meta["w"], 1), 3),
+                    "mask": os.path.join(out_dir, f"{stem}_p{k}.mp4"),
+                }
+                for k, tid in enumerate(keep, 1)
+            ],
+        }
+        with open(os.path.join(out_dir, f"{stem}_people.json"), "w", encoding="utf-8") as fh:
+            json.dump(people_doc, fh, indent=1)
+        tracks_out = {
+            "video": src,
+            "meta": meta,
+            "people": [tracks[tid] for tid in keep],
+            "name": stem,
+            "out_dir": out_dir,
+        }
+        return (*videos, preview, info, tracks_out)
 
 
-NODE_CLASS_MAPPINGS = {"GCRipPersonMasks": GCRipPersonMasks}
-NODE_DISPLAY_NAME_MAPPINGS = {"GCRipPersonMasks": "GCRip Person Masks (track people)"}
+def _union_mask_fn(tracks_out):
+    """frame -> uint8 union mask of the kept people (last good mask held over gaps)."""
+    meta, people = tracks_out["meta"], tracks_out["people"]
+    w, h = meta["w"], meta["h"]
+    state = [None] * len(people)
+
+    def fn(t):
+        out = None
+        for i, tr in enumerate(people):
+            if t in tr["masks"]:
+                state[i] = tr["masks"][t]
+            elif state[i] is None and tr["masks"]:
+                state[i] = tr["masks"][min(tr["masks"])]
+            if state[i] is None:
+                continue
+            m = np.unpackbits(state[i])[: w * h].reshape(h, w)
+            out = m if out is None else np.maximum(out, m)
+        return out
+
+    return fn
+
+
+class GCRipThrowTracker:
+    """Find an object thrown by one of the tracked people (static camera)."""
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "video": ("VIDEO",),
+                "tracks": ("GCRIP_TRACKS", {"tooltip": "From GCRip Person Masks."}),
+                "colour": (
+                    ["bright", "dark", "any"],
+                    {"tooltip": "bright (cans, cups, balls), dark, or any moving thing."},
+                ),
+                "person_height_m": (
+                    "FLOAT",
+                    {"default": 1.75, "min": 1.0, "max": 2.3, "step": 0.05},
+                ),
+                "max_events": ("INT", {"default": 3, "min": 1, "max": 10}),
+            }
+        }
+
+    RETURN_TYPES = ("STRING", "IMAGE", "INT", "INT", "INT")
+    RETURN_NAMES = ("throws_json", "preview", "release_frame", "person", "flight_frames")
+    FUNCTION = "run"
+    CATEGORY = "GCRip/mocap"
+    DESCRIPTION = (
+        "Static-camera throw finder: small moving blobs outside the people that leave a "
+        "person's hand and fall like a projectile. Gives the release frame, who threw, the "
+        "2D path and how long it flew - the Blender side uses it to let go of a held prop."
+    )
+
+    def run(self, video, tracks, colour, person_height_m, max_events):
+        import cv2
+        import torch
+        from comfy.utils import ProgressBar
+
+        from . import throw
+
+        src = tracks.get("video") or _video_path(video)
+        meta = tracks["meta"]
+        bar = ProgressBar(max(1, meta["frames"]))
+        data = throw.extract_blobs(
+            src,
+            _union_mask_fn(tracks),
+            meta["frames"],
+            colour=colour,
+            progress=lambda i, n: bar.update_absolute(i),
+        )
+        events, g_px = throw.link_throws(data, fps=meta["fps"], person_m=person_height_m)
+        events = events[:max_events]
+        # who threw it: the kept person whose mask is nearest the release point
+        for e in events:
+            t, (x, y) = e["release_frame"], e["release_xy"]
+            best, bd = 0, 1e18
+            for i, tr in enumerate(tracks["people"]):
+                near = [f for f in tr["masks"] if abs(f - t) <= 5]
+                if not near:
+                    continue
+                f = min(near, key=lambda f: abs(f - t))
+                m = np.unpackbits(tr["masks"][f])[: meta["w"] * meta["h"]].reshape(
+                    meta["h"], meta["w"]
+                )
+                ys, xs = np.nonzero(m)
+                if len(xs):
+                    d = float(np.min((xs - x) ** 2 + (ys - y) ** 2))
+                    if d < bd:
+                        best, bd = i + 1, d
+            e["person"] = best
+        top = events[0] if events else None
+        cap = cv2.VideoCapture(src)
+        if top:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, top["release_frame"] + max(1, top["frames"] // 3))
+        ok, frame = cap.read()
+        cap.release()
+        if ok and top:
+            throw.draw_throw(frame, top)
+        if ok:
+            preview = torch.from_numpy(
+                cv2.cvtColor(frame, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+            )[None]
+        else:
+            preview = torch.zeros((1, 64, 64, 3))
+        doc = {"gravity_px_per_frame2": round(g_px, 2), "fps": meta["fps"], "events": events}
+        if tracks.get("out_dir") and tracks.get("name"):  # for headless callers (comfy_mcp)
+            base = os.path.join(tracks["out_dir"], tracks["name"])
+            with open(base + "_throws.json", "w", encoding="utf-8") as fh:
+                json.dump(doc, fh, indent=1)
+            if ok:
+                cv2.imwrite(base + "_throw.png", frame)
+        print(
+            f"[gcrip] throws: {len(events)} event(s); best: "
+            + (json.dumps({k: v for k, v in top.items() if k != "path"}) if top else "none")
+        )
+        return (
+            json.dumps(doc),
+            preview,
+            int(top["release_frame"]) if top else -1,
+            int(top["person"]) if top else 0,
+            int(top["frames"]) if top else 0,
+        )
+
+
+NODE_CLASS_MAPPINGS = {"GCRipPersonMasks": GCRipPersonMasks, "GCRipThrowTracker": GCRipThrowTracker}
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "GCRipPersonMasks": "GCRip Person Masks (track people)",
+    "GCRipThrowTracker": "GCRip Throw Tracker (thrown object)",
+}

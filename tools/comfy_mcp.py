@@ -192,18 +192,23 @@ def comfy_mocap(
     moving_camera: bool = False,
     order: str = "left_to_right",
     confidence: float = 0.4,
+    track_throw: bool = True,
+    throw_colour: str = "bright",
     wait_s: int = 1800,
 ) -> dict:
     """Footage -> one BVH per person.  ``video`` = a file name in ComfyUI/input (see
     comfy_upload) or an absolute path (uploaded for you).  Runs Load Video -> GCRip Person
     Masks (tracks each person, person 1 = leftmost at the start unless order=largest_first)
-    -> GVHMR Inference per person -> SMPL to BVH per person, and waits.  Returns the BVH
-    paths (ComfyUI/output/<name>_p<k>.bvh), the mask videos, the tracking report and timing.
-    Tip: static phone, whole bodies in frame, people apart in the first frame."""
+    -> GVHMR Inference per person -> SMPL to BVH per person, and waits.  With
+    ``track_throw`` the GCRip Throw Tracker also looks for an object leaving someone's hand
+    (``throw_colour``: bright for cans/cups/balls, dark, any) and the result carries
+    ``throw`` = {release_frame, person, flight_frames, ...} for mocap_take's ``props``.
+    Returns the BVH paths (ComfyUI/output/<name>_p<k>.bvh), the mask videos, the tracking
+    report and timing.  Tip: static phone, whole bodies in frame, people apart at the start."""
     if os.path.isabs(video) or os.sep in video:
         video = comfy_upload(video)["input_name"]
     wf = _wf()
-    doc = wf.build(video, people, name)
+    doc = wf.build(video, people, name, throw=track_throw)
     prompt = wf.to_api(doc)
     for node in prompt.values():
         if node["class_type"] == "GVHMRInference":
@@ -211,6 +216,8 @@ def comfy_mocap(
         if node["class_type"] == "GCRipPersonMasks":
             node["inputs"]["order"] = order
             node["inputs"]["confidence"] = float(confidence)
+        if node["class_type"] == "GCRipThrowTracker":
+            node["inputs"]["colour"] = throw_colour
     t0 = time.time()
     pid = submit(prompt)
     entry = wait(pid, timeout=wait_s)
@@ -223,7 +230,7 @@ def comfy_mocap(
         for k, v in node_out.items():
             if k in ("info", "text") and v:
                 info += (v[0] if isinstance(v, list) else str(v)) + "\n"
-    return {
+    out = {
         "prompt_id": pid,
         "bvh": bvhs,
         "masks": masks,
@@ -231,6 +238,20 @@ def comfy_mocap(
         "info": info.strip()[:4000],
         "next": "Blender: GCRip Mocap panel > pick a BVH > Retarget; or mocap_take",
     }
+    pj = out_dir / "gcrip_masks" / f"{name}_people.json"
+    if pj.is_file():
+        people_doc = json.loads(pj.read_text(encoding="utf-8"))
+        out["people"] = people_doc.get("people", [])
+        # where each person's capture is real: pass as mocap_take(start_frames=...)
+        out["start_frames"] = [p["first"] for p in out["people"]]
+    tj = out_dir / "gcrip_masks" / f"{name}_throws.json"
+    if track_throw and tj.is_file():
+        doc = json.loads(tj.read_text(encoding="utf-8"))
+        ev = doc.get("events") or []
+        out["throw"] = {k: v for k, v in ev[0].items() if k != "path"} if ev else None
+        out["throws_json"] = str(tj)
+        out["throw_preview"] = str(tj.with_name(f"{name}_throw.png"))
+    return out
 
 
 @mcp.tool()
@@ -311,12 +332,20 @@ def mocap_take(
     spacing: float = 220.0,
     max_frames: int = 0,
     background: bool = True,
+    props: list[dict] | None = None,
+    start_frames: list[int] | None = None,
 ) -> dict:
     """BVH files -> characters animated in a saved .blend (and optionally an MP4), through
     the gcrip-blender control channel.  ``characters`` = one "GAMEID:name" per BVH as
     listed by blender_library (e.g. "GZLE01:link/cl", "G6FE69:m200__"), or a glTF path.
     Characters stand ``spacing`` units apart along X; each gets its BVH on NLA track MOCAP;
-    a camera looks at all of them.  Launches a headless Blender if none is listening."""
+    a camera looks at all of them.  ``start_frames`` (comfy_mocap's ``start_frames``) =
+    the clip frame each person first appears: capture before that is skipped and the strip
+    starts there, so scene frames stay equal to clip frames + 1.  ``props`` puts things in
+    hands: each entry {"person": 1-based index into ``characters``, "gid": ..., "name": ...
+    (or "gltf"), "hand": "auto"|"left"|"right", "release_frame": clip frame from
+    comfy_mocap's ``throw`` (or null to keep holding), "flight_frames": 0, "size": 0.16}.
+    Launches a headless Blender if none is listening."""
     sys.path.insert(0, str(HERE))
     import blender_mcp as bm
 
@@ -345,26 +374,85 @@ def mocap_take(
             raise RuntimeError(f"{ch}: no armature")
         if not sp.get("mocap_ready", True):
             raise RuntimeError(f"{ch}: {sp.get('warning') or sp.get('missing_core')}")
-        rt = bm.call("retarget", bvh=clip, object=sp["armature"], max_frames=max_frames)
-        arms.append(
-            {"character": ch, "armature": sp["armature"], "frames": rt["frames"], "fps": rt["fps"]}
+        skip = int(start_frames[k]) if start_frames and k < len(start_frames) else 0
+        rt = bm.call(
+            "retarget",
+            bvh=clip,
+            object=sp["armature"],
+            max_frames=max_frames,
+            skip=skip,
+            start=skip + 1,
         )
-    last = max(a["frames"] for a in arms)
+        arms.append(
+            {
+                "character": ch,
+                "armature": sp["armature"],
+                "frames": rt["frames"],
+                "fps": rt["fps"],
+                "start": rt["start"],
+                "end": rt["end"],
+            }
+        )
+    last = max(a["end"] for a in arms)
     bm.call("frame", start=1, end=last)
+    held = []
+    for p in props or []:
+        k = int(p.get("person", 1)) - 1
+        if not 0 <= k < len(arms):
+            raise ValueError(f"prop person {k + 1} out of range")
+        rel = p.get("release_frame")
+        held.append(
+            bm.call(
+                "hold_prop",
+                gid=p.get("gid", ""),
+                name=p.get("name", ""),
+                gltf=p.get("gltf", ""),
+                object=arms[k]["armature"],
+                hand=p.get("hand", "auto"),
+                release_frame=(int(rel) + 1) if rel is not None else None,  # clip -> scene frame
+                flight_frames=int(p.get("flight_frames", 0) or 0),
+                size=float(p.get("size", 0.16)),
+                toss=float(p.get("toss", 1.4)),
+            )
+        )
     cam = bm.call("camera", target=arms[0]["armature"], azimuth=-10)
     h = cam["target_height"]  # back off enough that raised arms and hats stay in frame
     bm.call("camera", target=arms[0]["armature"], azimuth=-10, distance=3.6 * h, height=0.5 * h)
-    if len(arms) > 1:  # look at the middle of the line-up instead of the first character
-        bm.call(
-            "python",
-            code=(
-                "import bpy\nsc=bpy.context.scene\nmid=bpy.data.objects.new('LookAt', None)\n"
-                "sc.collection.objects.link(mid)\n"
-                f"mid.location=(0,0,{50})\ncam=bpy.data.objects['GCRipCam']\n"
-                "for c in cam.constraints: c.target=mid; c.subtarget=''\n"
-                f"cam.location=(0,-{spacing * (len(arms) + 0.6)},{spacing * 0.45})\n"
-            ),
-        )
+    # frame everything the characters do over the whole take (they may walk metres apart),
+    # from the -Y side: +X is screen-right, as in the footage
+    names = [a["armature"] for a in arms]
+    bm.call(
+        "python",
+        code=(
+            "import bpy, math, numpy as np\nfrom mathutils import Vector\n"
+            "sc=bpy.context.scene\n"
+            f"names={names!r}\n"
+            "def fam(o):\n    out=[o]; st=list(o.children)\n"
+            "    while st:\n        c=st.pop(); out.append(c); st.extend(c.children)\n"
+            "    return out\n"
+            "lo=np.array([1e30]*3); hi=-lo\n"
+            "objs=[o for n in names for o in fam(bpy.data.objects[n])\n"
+            "      if o.type=='MESH' and not o.hide_render]\n"
+            "step=max(1,(sc.frame_end-sc.frame_start)//40)\n"
+            "for f in range(sc.frame_start, sc.frame_end+1, step):\n"
+            "    sc.frame_set(f)\n"
+            "    for o in objs:\n        for c in o.bound_box:\n"
+            "            w=np.array(o.matrix_world @ Vector(c))\n"
+            "            lo=np.minimum(lo,w); hi=np.maximum(hi,w)\n"
+            "cam=bpy.data.objects['GCRipCam']\n"
+            "lens=cam.data.lens; hf=math.atan(18.0/lens); vf=math.atan(18.0*9/16/lens)\n"
+            "w=hi[0]-lo[0]; h=hi[2]-lo[2]; dep=hi[1]-lo[1]\n"
+            "d=max(w/(2*math.tan(hf)), h/(2*math.tan(vf)))*1.25 + dep/2\n"
+            "mid=bpy.data.objects.get('LookAt') or bpy.data.objects.new('LookAt', None)\n"
+            "if mid.name not in sc.collection.objects: sc.collection.objects.link(mid)\n"
+            "mid.location=((lo[0]+hi[0])/2, (lo[1]+hi[1])/2, (lo[2]+hi[2])/2)\n"
+            "for c in cam.constraints: c.target=mid; c.subtarget=''\n"
+            "cam.location=((lo[0]+hi[0])/2, lo[1]-d, lo[2]+0.6*h)\n"
+            "sc.frame_set(sc.frame_start)\n"
+            "result=dict(extent=[lo.round(0).tolist(), hi.round(0).tolist()],\n"
+            "            distance=round(float(d)))\n"
+        ),
+    )
     bm.call(
         "python",
         code=(
@@ -378,15 +466,15 @@ def mocap_take(
     bm.call(
         "python",
         code=(
-            "import bpy\nn=0\nfor a in list(bpy.data.actions):\n"
-            "    if not a.name.startswith('mocap_'): bpy.data.actions.remove(a); n+=1\n"
+            "import bpy\n"
             "for ob in bpy.context.scene.objects:\n    ad=ob.animation_data\n"
-            "    if ad:\n        for tr in list(ad.nla_tracks):\n"
+            "    if ad and ob.type=='ARMATURE':\n        for tr in list(ad.nla_tracks):\n"
             "            if tr.name!='MOCAP': ad.nla_tracks.remove(tr)\n"
-            "bpy.data.orphans_purge(do_recursive=True)\nresult=n"
+            "n=len(bpy.data.actions)\nbpy.data.orphans_purge(do_recursive=True)\n"
+            "result=n-len(bpy.data.actions)"
         ),
     )
-    out = {"characters": arms, "frames": last}
+    out = {"characters": arms, "frames": last, "props": held}
     if render_mp4:
         out["mp4"] = bm.call(
             "render", path=render_mp4, animation=True, start=1, end=last, width=960, height=540
