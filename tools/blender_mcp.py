@@ -291,13 +291,16 @@ def blender_hold_prop(
     flight_frames: int = 0,
     size: float = 0.16,
     toss: float = 1.4,
+    grasp: bool = True,
 ) -> dict:
     """Put a library prop (gid + name as listed by blender_library, or a glTF path) into a
     character's hand for the whole clip, and optionally let go of it at ``release_frame``
     (scene frame): it then flies a ballistic arc from the hand's velocity and lands on the
     ground, in ``flight_frames`` frames when given.  ``hand`` = left | right | auto (the
     hand kept nearest the head before the release).  ``size`` = prop height as a fraction
-    of the character's height."""
+    of the character's height.  ``grasp`` rolls the wrist each frame so the palm faces the
+    body while holding (video mocap does not know the wrist twist) and stands the prop
+    vertical against the palm."""
     return call(
         "hold_prop",
         gid=gid,
@@ -309,6 +312,7 @@ def blender_hold_prop(
         flight_frames=flight_frames,
         size=size,
         toss=toss,
+        grasp=grasp,
     )
 
 

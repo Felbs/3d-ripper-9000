@@ -2429,6 +2429,7 @@ def hold_prop(
     flight_frames=0,
     size=0.16,
     toss=1.4,
+    grasp=True,
 ):
     """Put a prop (a library pick by gid+name, or a glTF) in a character's hand for the whole
     clip and, if ``release_frame`` (scene frame) is given, let go of it there: it flies a
@@ -2533,13 +2534,16 @@ def hold_prop(
         body = np.array(arm.matrix_world @ arm.pose.bones["mixamorig:Hips"].head)
         if np.dot(normal, body - tail) < 0:
             normal = -normal
-    up = _unit(np.cross(fingers, normal))
-    if up[2] < 0:
-        up = -up
-    side = _unit(np.cross(fingers, up))
-    R = Matrix(
-        ((side[0], fingers[0], up[0]), (side[1], fingers[1], up[1]), (side[2], fingers[2], up[2]))
-    )
+    # a held can/bottle stands vertical against the palm: its axis is world-up projected
+    # onto the palm plane (when the palm faces straight up/down, fall back to across the
+    # fingers)
+    up = np.array([0.0, 0.0, 1.0]) - normal * normal[2]
+    if np.linalg.norm(up) < 0.3:
+        up = np.cross(fingers, normal)
+    up = _unit(up)
+    xax = _unit(np.cross(up, normal))
+    yax = np.cross(up, xax)
+    R = Matrix(((xax[0], yax[0], up[0]), (xax[1], yax[1], up[1]), (xax[2], yax[2], up[2])))
     width = min(phi[0] - plo[0], phi[1] - plo[1]) * s
     # rest the prop on the palm: mid-hand along the bone, pushed out past the hand's own
     # thickness plus the prop's radius, so it touches the palm instead of filling the hand
@@ -2557,8 +2561,61 @@ def hold_prop(
     prop.rotation_mode = "XYZ"
     prop.location = world0.translation
     prop.rotation_euler = world0.to_euler()
+    # Grasp: video mocap knows where the wrist is, not how it twists, so a holding hand
+    # tends to come out palm-up.  While the prop is held, roll the hand about its own
+    # axis each frame so the palm faces the body line (spine at the hand's height: the
+    # chest when the arm is down, the face when drinking).  The wrist keys go into the
+    # armature's active action, which replaces just that channel on top of the MOCAP NLA
+    # strip; after the release the mocap's own values are keyed so nothing lingers.
+    grasp_frames = 0
+    if grasp:
+        n_local = (m0.to_3x3().inverted() @ Vector(normal)).normalized()
+        hips_pb = arm.pose.bones["mixamorig:Hips"]
+        top_pb = next(
+            (
+                arm.pose.bones[b]
+                for b in ("mixamorig:Head", "mixamorig:Neck", "mixamorig:Spine2")
+                if b in arm.pose.bones
+            ),
+            None,
+        )
+        last = int(release_frame) if release_frame else sc.frame_end
+        mocap = {}
+        for f in range(f0, sc.frame_end + 1):  # pass 1: the mocap's own hand pose
+            sc.frame_set(f)
+            mocap[f] = (arm.matrix_world @ pb.matrix).copy()
+        for f in range(f0, sc.frame_end + 1):  # pass 2: roll while holding, key everything
+            sc.frame_set(f)
+            M = mocap[f]
+            if f <= last and top_pb is not None:
+                a = Vector(M.col[1][:3]).normalized()
+                n_w = (M.to_3x3() @ n_local).normalized()
+                p0 = arm.matrix_world @ hips_pb.head
+                p1 = arm.matrix_world @ top_pb.head
+                axis = p1 - p0
+                length = axis.length
+                axis.normalize()
+                hand_p = M.translation
+                t = max(0.0, min(length, (hand_p - p0).dot(axis)))
+                d = (p0 + axis * t) - hand_p
+                d -= a * d.dot(a)
+                n_p = n_w - a * n_w.dot(a)
+                if d.length > 1e-6 and n_p.length > 1e-6:
+                    d.normalize()
+                    n_p.normalize()
+                    ang = math.atan2(n_p.cross(d).dot(a), n_p.dot(d))
+                    M = (
+                        Matrix.Translation(hand_p)
+                        @ Matrix.Rotation(ang, 4, a)
+                        @ M.to_3x3().to_4x4()
+                    )
+                    grasp_frames += 1
+            pb.matrix = arm.matrix_world.inverted() @ M
+            pb.keyframe_insert("rotation_quaternion", frame=f)
+        sc.frame_set(f0)
     out = {
         "prop": prop.name,
+        "grasp_frames": grasp_frames,
         "hand": hand,
         "attached_to": hand_bone,
         "scale": round(s, 4),

@@ -456,6 +456,7 @@ def mocap_take(
                 flight_frames=int(p.get("flight_frames", 0) or 0),
                 size=float(p.get("size", 0.16)),
                 toss=float(p.get("toss", 1.4)),
+                grasp=bool(p.get("grasp", True)),
             )
         )
     cam = bm.call("camera", target=arms[0]["armature"], azimuth=-10)
