@@ -2518,6 +2518,11 @@ def hold_prop(
         C = P - P.mean(axis=0)
         _w, vecs = np.linalg.eigh(C.T @ C)
         normal = _unit(vecs[:, 0])  # least-variance axis = across the palm
+        # wrist -> fingertips = the hand mesh's longest axis (the bone may run anywhere)
+        fingers = _unit(vecs[:, 2])
+        if np.dot(fingers, P.mean(axis=0) - head_p) < 0:
+            fingers = -fingers
+        tail = head_p + fingers * float(np.ptp((P - head_p) @ fingers))
         proj = (P - head_p) @ normal
         thickness = float(np.ptp(proj))
         # which side is the palm: fingers curl towards it, so the far end of the hand
@@ -2536,7 +2541,7 @@ def hold_prop(
         (
             b
             for b in arm.pose.bones
-            if any(k in b.name.lower() for k in ("thumb", "oya"))
+            if any(k in b.name.lower() for k in ("thumb", "thamb", "oya"))
             and b.name.lower().rstrip("0123456789").endswith(side_key)
             or (b.parent is not None and b.parent.name == hand_bone and "thumb" in b.name.lower())
         ),
@@ -2618,7 +2623,7 @@ def hold_prop(
     width = min(phi[0] - plo[0], phi[1] - plo[1]) * s
     # rest the prop on the palm: mid-hand along the bone, pushed out past the hand's own
     # thickness plus the prop's radius, so it touches the palm instead of filling the hand
-    palm_mid = head_p + fingers * (0.5 * pb.length)
+    palm_mid = (head_p + tail) / 2
     centre = palm_mid + normal * (0.5 * thickness + 0.5 * width)
     # The drink stays upright in the world while held: it follows the palm point but keeps
     # its own orientation (a real hand turns the wrist to keep a can level, which the
@@ -2892,6 +2897,14 @@ _CAM_TO_BL = np.array([[1, 0, 0], [0, 0, -1], [0, 1, 0]], dtype=float)  # Y-up w
 _MANO_WRIST, _MANO_INDEX, _MANO_MIDDLE, _MANO_PINKY = 0, 5, 9, 17
 
 
+def _angle(a, b):
+    """Unsigned angle between two vectors (radians)."""
+    na, nb = np.linalg.norm(a), np.linalg.norm(b)
+    if na < 1e-9 or nb < 1e-9:
+        return 0.0
+    return float(np.arccos(np.clip(np.dot(a, b) / (na * nb), -1.0, 1.0)))
+
+
 def _palm_normal_local(arm, fam, hand_bone, palm="auto"):
     """The palm normal of a hand bone in bone-local space at rest: thinnest axis of the
     hand mesh (PCA of vertices weighted to the bone), signed by a thumb bone, else finger
@@ -2919,6 +2932,13 @@ def _palm_normal_local(arm, fam, hand_bone, palm="auto"):
         C = P - P.mean(axis=0)
         _w, vecs = np.linalg.eigh(C.T @ C)
         normal = _unit(vecs[:, 0])
+        # the importer points a bone wherever it likes (Ganondorf's hand bone runs across
+        # the palm); the wrist -> fingertips direction is the hand mesh's longest axis,
+        # signed away from the wrist
+        fingers = _unit(vecs[:, 2])
+        if np.dot(fingers, P.mean(axis=0) - head_p) < 0:
+            fingers = -fingers
+        tail = head_p + fingers * float(np.ptp((P - head_p) @ fingers))
         proj = (P - head_p) @ normal
         thickness = float(np.ptp(proj))
         along = (P - head_p) @ fingers
@@ -2932,14 +2952,14 @@ def _palm_normal_local(arm, fam, hand_bone, palm="auto"):
         (
             b
             for b in arm.pose.bones
-            if any(k in b.name.lower() for k in ("thumb", "oya"))
+            if any(k in b.name.lower() for k in ("thumb", "thamb", "oya"))
             and b.name.lower().rstrip("0123456789").endswith(side_key)
         ),
         None,
     )
     if thumb is not None:
         tip = np.array(arm.matrix_world @ thumb.tail)
-        if np.dot(normal, tip - (head_p + fingers * (0.5 * pb.length))) < 0:
+        if np.dot(normal, tip - (head_p + tail) / 2) < 0:
             normal = -normal
         how = f"thumb {thumb.name}"
     elif abs(curl) > 0.02 * thickness:
@@ -2954,16 +2974,26 @@ def _palm_normal_local(arm, fam, hand_bone, palm="auto"):
     if palm == "flip":
         normal = -normal
         how += " (flipped)"
-    n_local = (m0.to_3x3().inverted() @ Vector(normal)).normalized()
+    normal = _unit(normal - fingers * np.dot(normal, fingers))
+    inv = m0.to_3x3().inverted()
+    n_local = (inv @ Vector(normal)).normalized()
+    f_local = (inv @ Vector(fingers)).normalized()
     arm.data.pose_position = "POSE"
     bpy.context.view_layer.update()
     sc.frame_set(sc.frame_start)
-    return Vector(n_local), how
+    return Vector(n_local), Vector(f_local), how
 
 
 @rpc
 def apply_hands(  # noqa: A002
-    hands_json, camera_json="", object="", person=1, sides="LR", palm="auto", max_gap=15
+    hands_json,
+    camera_json="",
+    object="",
+    person=1,
+    sides="LR",
+    palm="auto",
+    max_gap=15,
+    smooth=True,
 ):
     """Drive a character's hand bones from tracked hands (WiLoR, see comfyui/gcrip_mocap/
     hands.py): each detected frame gives the palm normal and finger direction in camera
@@ -2991,17 +3021,18 @@ def apply_hands(  # noqa: A002
         if hand_bone not in arm.pose.bones:
             continue
         pb = arm.pose.bones[hand_bone]
-        n_local, how = _palm_normal_local(arm, fam, hand_bone, palm)
-        side_local = Vector((0, 1, 0)).cross(n_local).normalized()
+        n_local, f_local, how = _palm_normal_local(arm, fam, hand_bone, palm)
+        side_local = f_local.cross(n_local).normalized()
         L = Matrix(
             (
-                (side_local.x, 0.0, n_local.x),
-                (side_local.y, 1.0, n_local.y),
-                (side_local.z, 0.0, n_local.z),
+                (side_local.x, f_local.x, n_local.x),
+                (side_local.y, f_local.y, n_local.y),
+                (side_local.z, f_local.z, n_local.z),
             )
         )
         # target world rotation per detected frame (scene frame = clip frame + 1)
         targets = {}
+        flex = {}
         for fs, hands_at in rec.items():
             h = hands_at.get(side)
             if not h:
@@ -3018,10 +3049,69 @@ def apply_hands(  # noqa: A002
                 ((s_w[0], f_w[0], n_w[0]), (s_w[1], f_w[1], n_w[1]), (s_w[2], f_w[2], n_w[2]))
             )
             targets[int(fs) + 1] = (W @ L.inverted()).to_quaternion()
+            # finger flexion (mean over index..pinky): knuckle and middle joint angles
+            a1 = a2 = 0.0
+            for mcp in (5, 9, 13, 17):
+                v0 = kp[mcp] - kp[_MANO_WRIST]
+                v1 = kp[mcp + 1] - kp[mcp]
+                v2 = kp[mcp + 2] - kp[mcp + 1]
+                a1 += _angle(v0, v1)
+                a2 += _angle(v1, v2)
+            flex[int(fs) + 1] = (min(a1 / 4, 1.75), min(a2 / 4, 1.9))
         if not targets:
             out[side] = {"bone": hand_bone, "frames": 0}
             continue
         keys = sorted(targets)
+        # per-frame hand estimates jitter: smooth each key with its neighbours
+        if smooth and len(keys) > 2:
+            sm = {}
+            for i, k in enumerate(keys):
+                q = targets[k].copy()
+                for j in (i - 1, i + 1):
+                    if 0 <= j < len(keys) and abs(keys[j] - k) <= max_gap:
+                        q = q.slerp(targets[keys[j]], 0.25)
+                sm[k] = q
+            targets = sm
+
+        # finger bones under the hand: children = knuckle level, grandchildren = next.
+        # Only real fingers - not the thumb (its own axis) nor weapon / item holders.
+        def _is_finger(b):
+            n = b.name.lower()
+            if any(k in n for k in ("thumb", "thamb", "oya", "weapon", "item", "prop", "hold")):
+                return False
+            return any(
+                k in n for k in ("finger", "yubi", "index", "middle", "ring", "pinky", "digit")
+            )
+
+        levels = []
+        cur = [b for b in pb.children if _is_finger(b)]
+        while cur and len(levels) < 2:
+            levels.append(cur)
+            cur = [c for b in cur for c in b.children if _is_finger(c)]
+        finger_axis = {}
+        hand_rest = arm.data.bones[hand_bone].matrix_local.to_3x3()
+        for bones in levels:
+            for fb in bones:
+                # bend axis (fingers x palm normal, curling towards the palm) in the finger
+                # bone's own rest frame, so a local rotation about it flexes the finger
+                s_arm = hand_rest @ side_local
+                finger_axis[fb.name] = (
+                    arm.data.bones[fb.name].matrix_local.to_3x3().inverted() @ s_arm
+                ).normalized()
+
+        def _at(table, f, keys=keys):
+            if f in table:
+                return table[f]
+            lo = max((k for k in keys if k < f), default=None)
+            hi = min((k for k in keys if k > f), default=None)
+            if lo is not None and hi is not None and hi - lo <= max_gap:
+                t = (f - lo) / (hi - lo)
+                a, b = table[lo], table[hi]
+                if isinstance(a, Quaternion):
+                    return a.slerp(b, t)
+                return tuple(x + (y - x) * t for x, y in zip(a, b, strict=True))
+            return None
+
         # pass 1: the capture's own hand matrices (an active action would mask the NLA)
         mocap = {}
         for f in range(sc.frame_start, sc.frame_end + 1):
@@ -3031,23 +3121,28 @@ def apply_hands(  # noqa: A002
         for f in range(sc.frame_start, sc.frame_end + 1):
             sc.frame_set(f)
             M = mocap[f]
-            q = None
-            if f in targets:
-                q = targets[f]
-            else:
-                lo = max((k for k in keys if k < f), default=None)
-                hi = min((k for k in keys if k > f), default=None)
-                if lo is not None and hi is not None and hi - lo <= max_gap:
-                    q = targets[lo].slerp(targets[hi], (f - lo) / (hi - lo))
+            q = _at(targets, f)
             if q is not None:
-                rot = q.to_matrix()
                 # the world rotation includes the armature object's rotation/scale: the
                 # bone matrix we set is armature-space, so strip the object part
-                M = Matrix.Translation(M.translation) @ rot.to_4x4()
+                M = Matrix.Translation(M.translation) @ q.to_matrix().to_4x4()
                 applied += 1
             pb.matrix = arm.matrix_world.inverted() @ M
             pb.keyframe_insert("rotation_quaternion", frame=f)
-        out[side] = {"bone": hand_bone, "detected": len(targets), "frames": applied, "palm": how}
+            ang = _at(flex, f) if levels else None
+            for lvl, bones in enumerate(levels):
+                for fb in bones:
+                    a = ang[min(lvl, 1)] if ang is not None else 0.0
+                    fb.rotation_mode = "QUATERNION"
+                    fb.rotation_quaternion = Quaternion(finger_axis[fb.name], a)
+                    fb.keyframe_insert("rotation_quaternion", frame=f)
+        out[side] = {
+            "bone": hand_bone,
+            "detected": len(targets),
+            "frames": applied,
+            "palm": how,
+            "finger_bones": [b.name for lv in levels for b in lv],
+        }
     sc.frame_set(sc.frame_start)
     return out
 
