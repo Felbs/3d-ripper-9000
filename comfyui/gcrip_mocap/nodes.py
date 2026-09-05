@@ -329,7 +329,7 @@ class GCRipPersonMasks:
             ],
         }
         with open(os.path.join(out_dir, f"{stem}_people.json"), "w", encoding="utf-8") as fh:
-            json.dump(people_doc, fh, indent=1)
+            json.dump(people_doc, fh, indent=1, default=float)
         tracks_out = {
             "video": src,
             "meta": meta,
@@ -448,7 +448,7 @@ class GCRipThrowTracker:
         if tracks.get("out_dir") and tracks.get("name"):  # for headless callers (comfy_mcp)
             base = os.path.join(tracks["out_dir"], tracks["name"])
             with open(base + "_throws.json", "w", encoding="utf-8") as fh:
-                json.dump(doc, fh, indent=1)
+                json.dump(doc, fh, indent=1, default=float)
             if ok:
                 cv2.imwrite(base + "_throw.png", frame)
         print(
@@ -528,7 +528,7 @@ class GCRipHandPose:
         if tracks.get("out_dir") and tracks.get("name"):
             path = os.path.join(tracks["out_dir"], tracks["name"] + "_hands.json")
             with open(path, "w", encoding="utf-8") as fh:
-                json.dump(doc, fh)
+                json.dump(doc, fh, default=float)
         # preview: the frame with the most hands
         best_t, best_n = 0, -1
         for frames in doc["people"].values():
