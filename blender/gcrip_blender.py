@@ -2430,6 +2430,7 @@ def hold_prop(
     size=0.16,
     toss=1.4,
     grasp=True,
+    palm="auto",
 ):
     """Put a prop (a library pick by gid+name, or a glTF) in a character's hand for the whole
     clip and, if ``release_frame`` (scene frame) is given, let go of it there: it flies a
@@ -2527,40 +2528,37 @@ def hold_prop(
             curl = float(np.mean(proj[far]) - np.mean(proj))
     else:
         normal = _unit(np.cross(fingers, (0, 0, 1)))
-    if abs(curl) > 0.02 * max(thickness, 1e-6):
+    # which side of the hand plane is the palm: a thumb bone sits on the palm side; else
+    # the fingers curl towards it; else assume it faces the body.  ``palm="flip"``
+    # overrides all of that when the guess is wrong.
+    side_key = "l" if hand == "left" else "r"
+    thumb = next(
+        (
+            b
+            for b in arm.pose.bones
+            if any(k in b.name.lower() for k in ("thumb", "oya"))
+            and b.name.lower().rstrip("0123456789").endswith(side_key)
+            or (b.parent is not None and b.parent.name == hand_bone and "thumb" in b.name.lower())
+        ),
+        None,
+    )
+    sign_from = "body"
+    if thumb is not None:
+        tip = np.array(arm.matrix_world @ thumb.tail)
+        if np.dot(normal, tip - (head_p + fingers * (0.5 * pb.length))) < 0:
+            normal = -normal
+        sign_from = f"thumb {thumb.name}"
+    elif abs(curl) > 0.02 * max(thickness, 1e-6):
         if curl < 0:
             normal = -normal
-    else:  # straight fingers: the palm faces the body (arms down) or down (T-pose)
+        sign_from = "finger curl"
+    else:
         body = np.array(arm.matrix_world @ arm.pose.bones["mixamorig:Hips"].head)
         if np.dot(normal, body - tail) < 0:
             normal = -normal
-    # a held can/bottle stands vertical against the palm: its axis is world-up projected
-    # onto the palm plane (when the palm faces straight up/down, fall back to across the
-    # fingers)
-    up = np.array([0.0, 0.0, 1.0]) - normal * normal[2]
-    if np.linalg.norm(up) < 0.3:
-        up = np.cross(fingers, normal)
-    up = _unit(up)
-    xax = _unit(np.cross(up, normal))
-    yax = np.cross(up, xax)
-    R = Matrix(((xax[0], yax[0], up[0]), (xax[1], yax[1], up[1]), (xax[2], yax[2], up[2])))
-    width = min(phi[0] - plo[0], phi[1] - plo[1]) * s
-    # rest the prop on the palm: mid-hand along the bone, pushed out past the hand's own
-    # thickness plus the prop's radius, so it touches the palm instead of filling the hand
-    palm_mid = head_p + fingers * (0.5 * pb.length)
-    centre = palm_mid + normal * (0.5 * thickness + 0.5 * width)
-    # the model's origin is wherever the game put it (a bottle's is at its base): grip
-    # the mesh 45% up its height, not the origin
-    g = Vector(((plo[0] + phi[0]) / 2, (plo[1] + phi[1]) / 2, plo[2] + 0.45 * (phi[2] - plo[2])))
-    world0 = Matrix.Translation(centre) @ R.to_4x4() @ Matrix.Translation(-g * s)
-    grip = m0.inverted() @ world0  # hand-relative pose; hand_matrix(f) @ grip follows it
-    prop.matrix_world = world0 @ Matrix.Diagonal((s, s, s, 1))
-    con = prop.constraints.new("CHILD_OF")
-    con.target, con.subtarget = arm, hand_bone
-    con.inverse_matrix = m0.inverted()
-    prop.rotation_mode = "XYZ"
-    prop.location = world0.translation
-    prop.rotation_euler = world0.to_euler()
+    if palm == "flip":
+        normal = -normal
+        sign_from += " (flipped)"
     # Grasp: video mocap knows where the wrist is, not how it twists, so a holding hand
     # tends to come out palm-up.  While the prop is held, roll the hand about its own
     # axis each frame so the palm faces the body line (spine at the hand's height: the
@@ -2568,8 +2566,9 @@ def hold_prop(
     # armature's active action, which replaces just that channel on top of the MOCAP NLA
     # strip; after the release the mocap's own values are keyed so nothing lingers.
     grasp_frames = 0
+    last = int(release_frame) if release_frame else sc.frame_end
+    n_local = (m0.to_3x3().inverted() @ Vector(normal)).normalized()
     if grasp:
-        n_local = (m0.to_3x3().inverted() @ Vector(normal)).normalized()
         hips_pb = arm.pose.bones["mixamorig:Hips"]
         top_pb = next(
             (
@@ -2579,7 +2578,6 @@ def hold_prop(
             ),
             None,
         )
-        last = int(release_frame) if release_frame else sc.frame_end
         mocap = {}
         for f in range(f0, sc.frame_end + 1):  # pass 1: the mocap's own hand pose
             sc.frame_set(f)
@@ -2613,9 +2611,50 @@ def hold_prop(
             pb.matrix = arm.matrix_world.inverted() @ M
             pb.keyframe_insert("rotation_quaternion", frame=f)
         sc.frame_set(f0)
+    # The prop stands across the palm, perpendicular to the fingers (they wrap around it),
+    # pointing up in the HELD pose: everything is built in the hand's own frame from the
+    # rest-pose measurements, and the up sign is picked at a frame in the middle of the
+    # hold, after the grasp roll - not at the rest pose, where a palm-down hand fooled it.
+    width = min(phi[0] - plo[0], phi[1] - plo[1]) * s
+    # rest the prop on the palm: mid-hand along the bone, pushed out past the hand's own
+    # thickness plus the prop's radius, so it touches the palm instead of filling the hand
+    palm_mid = head_p + fingers * (0.5 * pb.length)
+    centre = palm_mid + normal * (0.5 * thickness + 0.5 * width)
+    # The drink stays upright in the world while held: it follows the palm point but keeps
+    # its own orientation (a real hand turns the wrist to keep a can level, which the
+    # capture cannot see), leaning towards the head when raised to drink.  Keyed every
+    # frame; the model's origin is wherever the game put it (a bottle's is at its base),
+    # so the grip point is 45% up the mesh, not the origin.
+    centre_local = m0.inverted() @ Vector(centre)
+    g = Vector(((plo[0] + phi[0]) / 2, (plo[1] + phi[1]) / 2, plo[2] + 0.45 * (phi[2] - plo[2])))
+    head_pb = next(
+        (arm.pose.bones[b] for b in ("mixamorig:Head", "mixamorig:Neck") if b in arm.pose.bones),
+        None,
+    )
+
+    def held_matrix(f):
+        p = hand_matrix(f) @ centre_local
+        rot = Matrix.Identity(3)
+        if head_pb is not None:
+            d = (arm.matrix_world @ head_pb.head) - p
+            reach = 0.35 * char_h
+            horiz = Vector((d.x, d.y, 0.0))
+            if 1e-6 < d.length < reach and horiz.length > 1e-6:
+                tilt = math.radians(55.0) * (1.0 - d.length / reach)
+                rot = Matrix.Rotation(tilt, 3, Vector((0, 0, 1)).cross(horiz.normalized()))
+        return Matrix.Translation(p) @ rot.to_4x4() @ Matrix.Translation(-g * s)
+
+    prop.rotation_mode = "XYZ"
+    for f in range(f0, last + 1):
+        sc.frame_set(f)
+        prop.matrix_world = held_matrix(f) @ Matrix.Diagonal((s, s, s, 1))
+        prop.keyframe_insert("location", frame=f)
+        prop.keyframe_insert("rotation_euler", frame=f)
+    sc.frame_set(f0)
     out = {
         "prop": prop.name,
         "grasp_frames": grasp_frames,
+        "palm_side": sign_from,
         "hand": hand,
         "attached_to": hand_bone,
         "scale": round(s, 4),
@@ -2626,13 +2665,8 @@ def hold_prop(
     if release_frame:
         fr = int(release_frame)
         fps = sc.render.fps or 30
-        # the attached-time transform must hold until the release (a later keyframe would
-        # otherwise extrapolate backwards over the whole clip)
-        for f in (f0, fr - 1):
-            prop.keyframe_insert("location", frame=f)
-            prop.keyframe_insert("rotation_euler", frame=f)
-        w_r = hand_matrix(fr) @ grip
-        w_p = hand_matrix(max(f0, fr - 4)) @ grip
+        w_r = held_matrix(fr)
+        w_p = held_matrix(max(f0, fr - 4))
         span = max(1, fr - max(f0, fr - 4))
         vel = (np.array(w_r.translation) - np.array(w_p.translation)) / span * float(toss)
         vmax = 12.0 * (max(hi[2] - lo[2], 1e-3) / 1.7) / (sc.render.fps or 30)  # 12 m/s cap
@@ -2649,16 +2683,6 @@ def hold_prop(
         else:
             vz = vel[2]
             T = int(max(3, (vz + (vz * vz + 2 * g * z0) ** 0.5) / g))
-        con.influence = 1.0
-        con.keyframe_insert("influence", frame=fr - 1)
-        con.influence = 0.0
-        con.keyframe_insert("influence", frame=fr)
-        if prop.animation_data and prop.animation_data.action:
-            for fc in _action_fcurves(prop.animation_data.action):
-                if "influence" in fc.data_path:
-                    for kp in fc.keyframe_points:
-                        kp.interpolation = "CONSTANT"
-        prop.rotation_mode = "XYZ"
         rot0 = np.array(w_r.to_euler())
         spin = np.array([0.15, 0.07, 0.2])
         for i in range(T + 1):

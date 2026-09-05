@@ -457,6 +457,7 @@ def mocap_take(
                 size=float(p.get("size", 0.16)),
                 toss=float(p.get("toss", 1.4)),
                 grasp=bool(p.get("grasp", True)),
+                palm=p.get("palm", "auto"),
             )
         )
     cam = bm.call("camera", target=arms[0]["armature"], azimuth=-10)

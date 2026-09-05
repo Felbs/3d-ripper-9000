@@ -292,6 +292,7 @@ def blender_hold_prop(
     size: float = 0.16,
     toss: float = 1.4,
     grasp: bool = True,
+    palm: str = "auto",
 ) -> dict:
     """Put a library prop (gid + name as listed by blender_library, or a glTF path) into a
     character's hand for the whole clip, and optionally let go of it at ``release_frame``
@@ -300,7 +301,8 @@ def blender_hold_prop(
     hand kept nearest the head before the release).  ``size`` = prop height as a fraction
     of the character's height.  ``grasp`` rolls the wrist each frame so the palm faces the
     body while holding (video mocap does not know the wrist twist) and stands the prop
-    vertical against the palm."""
+    vertical against the palm.  The palm side comes from a thumb bone, else finger curl,
+    else a guess; ``palm="flip"`` when the result faces the back of the hand at the body."""
     return call(
         "hold_prop",
         gid=gid,
@@ -313,6 +315,7 @@ def blender_hold_prop(
         size=size,
         toss=toss,
         grasp=grasp,
+        palm=palm,
     )
 
 
