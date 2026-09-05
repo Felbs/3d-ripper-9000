@@ -351,7 +351,9 @@ def mocap_take(
         )
     last = max(a["frames"] for a in arms)
     bm.call("frame", start=1, end=last)
-    bm.call("camera", target=arms[0]["armature"], azimuth=-10)
+    cam = bm.call("camera", target=arms[0]["armature"], azimuth=-10)
+    h = cam["target_height"]  # back off enough that raised arms and hats stay in frame
+    bm.call("camera", target=arms[0]["armature"], azimuth=-10, distance=3.6 * h, height=0.5 * h)
     if len(arms) > 1:  # look at the middle of the line-up instead of the first character
         bm.call(
             "python",
