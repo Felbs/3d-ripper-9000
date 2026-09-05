@@ -187,6 +187,33 @@ def serve_library(root: Path, *, port: int = 8765, blender: str | None = None, o
                 self.end_headers()
                 self.wfile.write(body)
                 return None
+            if path in ("/rigs.json", "/rigs_manifest"):
+                import urllib.parse as _up
+
+                from gcrip import library_query as _lq
+
+                qs = _up.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+                one = lambda k, d="": qs.get(k, [d])[0]  # noqa: E731
+                kw = dict(
+                    min_joints=int(one("min_joints", "2") or 2),
+                    humanoid=one("humanoid") == "1",
+                    game=one("game") or None,
+                    query=one("q", "") or "",
+                )
+                if path == "/rigs_manifest":
+                    body = json.dumps(_lq.write_rigs_manifest(root, **kw)).encode()
+                else:
+                    rigs = _lq.rigged_models(root, **kw)
+                    # the browse view does not need the per-joint tables
+                    slim = [{k: v for k, v in r.items() if k not in ("std_bones", "joint_names")} for r in rigs]
+                    body = json.dumps({"count": len(slim), "rigs": slim}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
+                return None
             if path == "/quality.json":
                 qf = root / "quality_flags.json"
                 body = qf.read_bytes() if qf.exists() else b"{}"
@@ -357,7 +384,7 @@ footer{color:#55555f;font-size:.72rem;padding:1.5rem 1.1rem;border-top:1px solid
 <h1>GameCube 3D Model Library <small id="sub"></small></h1>
 <div class="stats" id="statbar"></div>
 <div class="controls">
-  <span class="seg"><span class="chip on" id="modeGames" data-mode="games">Games</span><span class="chip" id="modeModels" data-mode="models">Models</span><span class="chip" id="modeStats" data-mode="stats">📊 Stats</span></span>
+  <span class="seg"><span class="chip on" id="modeGames" data-mode="games">Games</span><span class="chip" id="modeModels" data-mode="models">Models</span><span class="chip" id="modeStats" data-mode="stats">📊 Stats</span><span class="chip" id="modeRigs" data-mode="rigs" title="every rigged character across every game">🦴 Rigs</span></span>
   <input id="q" placeholder="Search games…  (title or disc filename)" autocomplete="off">
   <select id="sort">
     <option value="tris">Sort: most triangles</option><option value="models">Sort: most models</option>
@@ -406,11 +433,11 @@ function drawCats(){
 }
 drawCats();
 document.querySelectorAll(".chip[data-f]").forEach(c=>c.onclick=()=>{filters[c.dataset.f]=!filters[c.dataset.f];c.classList.toggle("on");render();});
-const modeG=document.getElementById("modeGames"),modeM=document.getElementById("modeModels"),modeS=document.getElementById("modeStats");
-function setMode(m){mode=m;if(gameFromHash())history.replaceState(null,"",location.pathname+location.search);modeG.classList.toggle("on",m==="games");modeM.classList.toggle("on",m==="models");modeS.classList.toggle("on",m==="stats");
-  q.placeholder=m==="models"?"Search models…  (character / weapon / part names across every game)":"Search games…  (title or disc filename)";
+const modeG=document.getElementById("modeGames"),modeM=document.getElementById("modeModels"),modeS=document.getElementById("modeStats"),modeR=document.getElementById("modeRigs");
+function setMode(m){mode=m;if(gameFromHash())history.replaceState(null,"",location.pathname+location.search);modeG.classList.toggle("on",m==="games");modeM.classList.toggle("on",m==="models");modeS.classList.toggle("on",m==="stats");modeR.classList.toggle("on",m==="rigs");
+  q.placeholder=m==="models"?"Search models…  (character / weapon / part names across every game)":m==="rigs"?"Search rigs…  (character name or game)":"Search games…  (title or disc filename)";
   render();}
-modeG.onclick=()=>setMode("games");modeM.onclick=()=>setMode("models");modeS.onclick=()=>setMode("stats");
+modeG.onclick=()=>setMode("games");modeM.onclick=()=>setMode("models");modeS.onclick=()=>setMode("stats");modeR.onclick=()=>setMode("rigs");
 q.oninput=render;sortSel.onchange=render;
 function card(g){
   const icons=(g.skinned?"⤳":"")+(g.clips>0?" ▶":"");
@@ -447,7 +474,7 @@ function gameHasFlag(g){for(const k of Object.keys(FLAGS))if(k.startsWith(g.id+"
 function gameHasQ(g,qk){for(const k in QUALITY){if(k.startsWith(g.id+"/")&&("q"+QUALITY[k].score)===qk)return true;}return false;}
 function catGameOK(g){for(const k of cats){if(k==="rigged"){if(!(g.rigged>0))return false;}else if(k==="flagged"){if(!gameHasFlag(g))return false;}else if(QKINDS.includes(k)){if(!gameHasQ(g,k))return false;}else if(!(g.kinds&&g.kinds[k]>0))return false;}return true;}
 function gameFromHash(){const m=location.hash.match(/^#g=(.+)$/);return m?decodeURIComponent(m[1]):null;}
-function render(){const gid=gameFromHash();if(gid)return renderGame(gid);if(mode==="models")return renderModels();if(mode==="stats")return renderStats();renderGames();}
+function render(){const gid=gameFromHash();if(gid)return renderGame(gid);if(mode==="models")return renderModels();if(mode==="stats")return renderStats();if(mode==="rigs")return renderRigs();renderGames();}
 addEventListener("hashchange",()=>{q.value="";render();});
 async function renderGame(gid){
   const g=GAMES.find(x=>x.id===gid);
@@ -514,6 +541,42 @@ async function renderModels(){
   grid.querySelectorAll(".gjump").forEach(t=>t.onclick=e=>{e.stopPropagation();location.hash="g="+encodeURIComponent(t.dataset.g);});
   grid.querySelectorAll(".fl").forEach(el=>{el.onclick=e=>{e.stopPropagation();const card=el.closest(".mcard");toggleFlag(list[+card.dataset.i],el);};});
   grid.querySelectorAll(".act").forEach(el=>{el.onclick=e=>{e.stopPropagation();const card=el.closest(".mcard");doAct(el.dataset.act,list[+card.dataset.i]);};});
+}
+let RIGS=null,rigKey="_",rigOpts={humanoid:false,minJoints:2};
+function rigcard(m,i){const nj=m.joints||0,st=m.std||0,nc=(m.clips||[]).length;
+  const hb=st>=15?`<span class="kb character" title="${st} Mixamo-standard bones mapped">🧍 humanoid ${st}</span>`:st?`<span class="kb" title="${st} standard bones mapped">${st} std</span>`:"";
+  return `<div class="mcard${served&&m.g?" v":""}" data-i="${i}"><img loading=lazy src="${m.t||""}" alt=""><div class=mn title="${esc(m.n)}">${esc(m.n)}</div><div class="mn gjump" data-g="${m.gid}" style="color:var(--accent);cursor:pointer">${esc(m.title||"")}</div>△ ${fmt(m.tris)} · <b>${nj} joints</b>${nc?` · ▶${nc} clips`:""}<div>${hb}${qbadge(m)}</div>${actrow(m)}</div>`;}
+async function renderRigs(){
+  empty.hidden=true;
+  const term=q.value.trim().toLowerCase();
+  const key=`${rigOpts.humanoid}|${rigOpts.minJoints}`;
+  if(!served){grid.innerHTML=`<div class=empty>The Rigs view needs the served library — run <code>gcrip library</code>.</div>`;return;}
+  if(key!==rigKey||RIGS===null){grid.innerHTML=`<div class=empty>loading rigs…</div>`;
+    try{const r=await fetch(`/rigs.json?min_joints=${rigOpts.minJoints}${rigOpts.humanoid?"&humanoid=1":""}`,{cache:"no-store"});RIGS=(await r.json()).rigs||[];}catch(e){RIGS=[];}
+    rigKey=key;}
+  let list=RIGS.filter(m=>!term||(m.n||"").toLowerCase().includes(term)||(m.title||"").toLowerCase().includes(term));
+  if(cats.has("flagged"))list=list.filter(m=>mkey(m) in FLAGS);
+  for(const qk of QKINDS)if(cats.has(qk))list=list.filter(m=>{const qq=QUALITY[mkey(m)];return qq&&("q"+qq.score)===qk;});
+  const k=sortSel.value;list.sort((a,b)=>k==="title"?(a.n||"").localeCompare(b.n||""):k==="tex"?b.tex-a.tex:k==="models"?(b.clips||[]).length-(a.clips||[]).length:(b.std-a.std)||(b.joints-a.joints)||(b.tris-a.tris));
+  const shown=list.slice(0,1200);
+  const games=new Set(list.map(m=>m.gid)).size,hum=list.filter(m=>m.std>=15).length,anim=list.filter(m=>(m.clips||[]).length).length;
+  grid.innerHTML=`<div class=expand style="grid-column:1/-1">
+    <h3>🦴 Rigs — ${fmt(list.length)} rigged characters across ${games} games <span style="color:var(--dim);font-weight:400;font-size:.78rem">· ${fmt(hum)} humanoid (≥15 Mixamo bones) · ${fmt(anim)} with clips${list.length>shown.length?` · showing first ${shown.length}, narrow with search`:""}</span></h3>
+    <div class=controls style="margin:.2rem 0 .7rem">
+      <span class="chip${rigOpts.humanoid?" on":""}" id="rigHum" title="only rigs with 15+ standard bones — the mocap-retargetable set">🧍 Humanoid only</span>
+      <select id="rigMin"><option value="2"${rigOpts.minJoints==2?" selected":""}>≥ 2 joints</option><option value="8"${rigOpts.minJoints==8?" selected":""}>≥ 8 joints</option><option value="15"${rigOpts.minJoints==15?" selected":""}>≥ 15 joints</option><option value="30"${rigOpts.minJoints==30?" selected":""}>≥ 30 joints</option></select>
+      <span class="chip" id="rigExport" title="write rigs_manifest.json at the dump root for other tools (the mocap add-on)">💾 Export manifest</span>
+      <span id="rigMsg" style="font-size:.74rem;color:var(--dim)"></span>
+    </div>
+    <div class=mstrip>${shown.length?shown.map((m,i)=>rigcard(m,i)).join(""):`<div style="color:#55555f">No rigs match.</div>`}</div></div>`;
+  document.getElementById("rigHum").onclick=()=>{rigOpts.humanoid=!rigOpts.humanoid;render();};
+  document.getElementById("rigMin").onchange=e=>{rigOpts.minJoints=+e.target.value;render();};
+  document.getElementById("rigExport").onclick=async()=>{const msg=document.getElementById("rigMsg");msg.textContent="writing…";
+    try{const r=await fetch(`/rigs_manifest?min_joints=${rigOpts.minJoints}${rigOpts.humanoid?"&humanoid=1":""}`,{cache:"no-store"});const d=await r.json();msg.textContent=`rigs_manifest.json written: ${fmt(d.count)} rigs, ${fmt(d.humanoid)} humanoid, ${fmt(d.animated)} animated, ${d.games} games`;}catch(e){msg.textContent="export failed: "+e;}};
+  grid.querySelectorAll(".mcard").forEach(c=>{c.onclick=()=>{if(served&&c.classList.contains("v"))openMV(shown[+c.dataset.i]);};});
+  grid.querySelectorAll(".gjump").forEach(t=>t.onclick=e=>{e.stopPropagation();location.hash="g="+encodeURIComponent(t.dataset.g);});
+  grid.querySelectorAll(".fl").forEach(el=>{el.onclick=e=>{e.stopPropagation();const card=el.closest(".mcard");toggleFlag(shown[+card.dataset.i],el);};});
+  grid.querySelectorAll(".act").forEach(el=>{el.onclick=e=>{e.stopPropagation();const card=el.closest(".mcard");doAct(el.dataset.act,shown[+card.dataset.i]);};});
 }
 let mermaidLoaded=false;
 function ensureMermaid(cb){

@@ -266,3 +266,32 @@ def test_review_flags_roundtrip(tmp_path):
     lq.set_flag(root, "../escape.gltf", True)
     lq.set_flag(root, "C:/abs.gltf", True)
     assert lq.read_flags(root) == {}
+
+
+def test_rigged_models_and_manifest(tmp_path):
+    from gcrip import library_query as lq
+
+    root = _mini_dump(tmp_path)
+    # give link a rig: joints + std_bones + clips in rip_results
+    rr_path = root / "WIND" / "rip_results.json"
+    rr = json.loads(rr_path.read_text(encoding="utf-8"))
+    for m in rr["models"]:
+        if m["path"] == "a/link.bdl":
+            m["joints"] = 20
+            m["std_bones"] = {f"j{i}": f"Std{i}" for i in range(16)}
+            m["joint_names"] = [f"j{i}" for i in range(20)]
+            m["animations"] = ["wait", "run"]
+    rr_path.write_text(json.dumps(rr), encoding="utf-8")
+    lq._cache["cat"] = None  # force a catalog rebuild after the edit
+    rigs = lq.rigged_models(root)
+    assert [r["n"] for r in rigs] == ["link.bdl"] and rigs[0]["joints"] == 20
+    assert rigs[0]["std"] == 16 and rigs[0]["clips"] == ["wait", "run"]
+    assert rigs[0]["g"] == "WIND/a/link.gltf"
+    # humanoid keeps >= 15 std bones; min_joints filters; query matches names/titles
+    assert len(lq.rigged_models(root, humanoid=True)) == 1
+    assert lq.rigged_models(root, min_joints=50) == []
+    assert lq.rigged_models(root, query="nothing-like-this") == []
+    summary = lq.write_rigs_manifest(root)
+    assert summary["count"] == 1 and summary["humanoid"] == 1 and summary["animated"] == 1
+    doc = json.loads((root / "rigs_manifest.json").read_text(encoding="utf-8"))
+    assert doc["rigs"][0]["std_bones"]["j0"] == "Std0"

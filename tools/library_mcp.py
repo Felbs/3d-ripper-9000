@@ -94,6 +94,75 @@ def search_models(
 
 
 @mcp.tool()
+def rigged_models(
+    min_joints: int = 2, humanoid: bool = False, game: str | None = None, query: str = ""
+) -> list[dict]:
+    """Every rigged (skinned) model in the library - for rig/mocap consumers.
+
+    Each entry: game, name, glTF path (skin + joints + clips inside), .blend path, joint
+    count + joint names, `std_bones` (game joint -> Mixamo-standard bone map: the retarget
+    key), clip names.  ``humanoid=True`` keeps rigs with >= 15 mapped standard bones.
+    ``write_rigs_manifest`` writes the same list to rigs_manifest.json at the dump root."""
+    return lq.rigged_models(ROOT, min_joints=min_joints, humanoid=humanoid, game=game, query=query)
+
+
+def _absolutize(rec: dict) -> dict:
+    """Add absolute paths a Blender add-on can open directly (relative ones stay too)."""
+    out = dict(rec)
+    for key, abs_key in (("g", "abs_gltf"), ("t", "abs_thumb"), ("blend", "abs_blend")):
+        if rec.get(key):
+            out[abs_key] = str(ROOT / rec[key])
+    return out
+
+
+@mcp.tool()
+def library_root() -> dict:
+    """Where the library lives - absolute dump root, the manifest/report files, and the
+    served URL - so another tool can resolve every relative path this server returns."""
+    return {
+        "root": str(ROOT),
+        "rigs_manifest": str(ROOT / "rigs_manifest.json"),
+        "quality_report": str(ROOT / "quality_report.json"),
+        "review_flags": str(ROOT / "review_flags.json"),
+        "served_url": "http://127.0.0.1:8765/library.html",
+        "thumbnail_note": "each model has a <name>_thumb.png beside its glTF (the 't' path)",
+    }
+
+
+@mcp.tool()
+def mocap_rigs(
+    min_std_bones: int = 15, game: str | None = None, query: str = "", limit: int = 500
+) -> list[dict]:
+    """Rigs suitable for motion-capture retargeting: skinned characters whose skeleton maps
+    onto >= ``min_std_bones`` Mixamo-standard bones (Hips/Spine/Arms/Legs...).  Each entry
+    carries the game, name, absolute + relative glTF/thumb/.blend paths, joint count,
+    ``std_bones`` (game joint -> standard bone) and clip names.  Best-first order."""
+    rigs = lq.rigged_models(ROOT, humanoid=False, game=game, query=query)
+    keep = [r for r in rigs if r["std"] >= min_std_bones][: max(1, limit)]
+    return [_absolutize(r) for r in keep]
+
+
+@mcp.tool()
+def level_models(
+    query: str = "", game: str | None = None, min_triangles: int = 2000, limit: int = 200
+) -> list[dict]:
+    """Level / environment geometry to put characters into: models classified as level
+    pieces (terrain, rooms, arenas, buildings, worlds), biggest first, with absolute and
+    relative glTF + thumbnail paths.  ``query`` matches model names and game titles."""
+    res = lq.search_models(
+        ROOT, query, kind="level", game=game, min_triangles=min_triangles, limit=limit
+    )
+    return [_absolutize(m) for m in res.get("models", [])]
+
+
+@mcp.tool()
+def write_rigs_manifest(humanoid: bool = False, min_joints: int = 2) -> dict:
+    """Write rigs_manifest.json at the dump root (the full rigged-model list, no server
+    needed) and return its summary counts."""
+    return lq.write_rigs_manifest(ROOT, humanoid=humanoid, min_joints=min_joints)
+
+
+@mcp.tool()
 def flagged_models() -> list[dict]:
     """The models the user flagged as glitchy in the library UI (their review/audit list).
 

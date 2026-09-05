@@ -268,3 +268,89 @@ def pack_glb(root: Path, rel_gltf: str, dest: str | None = None) -> dict:
     data = glbmod.pack(src)
     out.write_bytes(data)
     return {"glb": str(out), "bytes": len(data), "source": rel_gltf}
+
+
+RIGS_FILE = "rigs_manifest.json"
+
+
+def rigged_models(
+    root: Path,
+    *,
+    min_joints: int = 2,
+    humanoid: bool = False,
+    game: str | None = None,
+    query: str = "",
+) -> list[dict]:
+    """Every skinned (rigged) model in the library with what a rig consumer needs: the glTF
+    (skin + joints + clips), the .blend when one exists, joint count and names, the
+    ``std_bones`` map (game joint name -> Mixamo-standard bone, the retargeting key) and
+    the clip names.  ``humanoid`` keeps rigs with >= 15 mapped standard bones - the batch's
+    own "mixamo rig" threshold.  Reads rip_results.json only (mid-rip safe)."""
+    q = query.strip().lower()
+    out = []
+    games = catalog(root)["games"]
+    if game:
+        g = find_game(root, game)
+        games = [g] if g else []
+    for g in games:
+        if not g.get("rigged"):
+            continue
+        try:
+            rr = json.loads((Path(root) / g["id"] / "rip_results.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        for m in rr.get("models", []) if isinstance(rr, dict) else rr:
+            if not m.get("skinned") or m.get("duplicate_of") or m.get("error"):
+                continue
+            joints = int(m.get("joints") or 0)
+            if joints < min_joints:
+                continue
+            std = m.get("std_bones") or {}
+            if humanoid and len(std) < 15:
+                continue
+            name = (m.get("path") or m.get("out_rel") or "model").split("/")[-1]
+            if q and q not in name.lower() and q not in g["title"].lower():
+                continue
+            out_rel = m.get("out_rel") or ""
+            out.append(
+                {
+                    "gid": g["id"],
+                    "title": g["title"],
+                    "n": name,
+                    "g": f"{g['id']}/{out_rel}" if out_rel.endswith(".gltf") else None,
+                    "blend": f"{g['id']}/{m['blend_rel']}" if m.get("blend_rel") else None,
+                    "t": f"{g['id']}/{m['thumb']}" if m.get("thumb") else None,
+                    "tris": int(m.get("triangles") or 0),
+                    "tex": int(m.get("textures") or 0),
+                    "joints": joints,
+                    "std": len(std),
+                    "std_bones": std,
+                    "joint_names": m.get("joint_names") or [],
+                    "clips": list(m.get("animations") or []),
+                    "k": "character",
+                    "r": True,
+                    "a": bool(m.get("animations")),
+                }
+            )
+    out.sort(key=lambda x: (-x["std"], -x["joints"], -x["tris"]))
+    return out
+
+
+def write_rigs_manifest(root: Path, **filters) -> dict:
+    """Write ``rigs_manifest.json`` at the dump root - the full rigged-model list for other
+    tools (the mocap/Blender add-on) to consume without the server.  Returns a summary."""
+    rigs = rigged_models(root, **filters)
+    doc = {
+        "generated": _time.strftime("%Y-%m-%d %H:%M"),
+        "root": str(Path(root)),
+        "paths": "relative to root; 'g' is the glTF with skin+joints+clips, 'blend' the .blend",
+        "count": len(rigs),
+        "humanoid": sum(1 for r in rigs if r["std"] >= 15),
+        "animated": sum(1 for r in rigs if r["clips"]),
+        "games": len({r["gid"] for r in rigs}),
+        "rigs": rigs,
+    }
+    tmp = Path(root) / (RIGS_FILE + ".tmp")
+    tmp.write_text(json.dumps(doc, indent=1), encoding="utf-8")
+    tmp.replace(Path(root) / RIGS_FILE)
+    return {k: v for k, v in doc.items() if k != "rigs"}
