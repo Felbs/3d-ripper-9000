@@ -2508,15 +2508,31 @@ def hold_prop(
         for v in o.data.vertices:
             if any(g.group == gi and g.weight > 0.3 for g in v.groups):
                 pts.append(np.array(o.matrix_world @ v.co))
+    head_p = np.array(m0.translation)
+    thickness = 0.0
+    curl = 0.0
     if len(pts) >= 12:
-        P = np.array(pts) - np.mean(pts, axis=0)
-        _w, vecs = np.linalg.eigh(P.T @ P)
+        P = np.array(pts)
+        C = P - P.mean(axis=0)
+        _w, vecs = np.linalg.eigh(C.T @ C)
         normal = _unit(vecs[:, 0])  # least-variance axis = across the palm
+        proj = (P - head_p) @ normal
+        thickness = float(np.ptp(proj))
+        # which side is the palm: fingers curl towards it, so the far end of the hand
+        # (last 30% along the bone) sits off the bone axis on the palm side
+        along = (P - head_p) @ fingers
+        far = along > 0.7 * along.max()
+        if far.sum() >= 4:
+            curl = float(np.mean(proj[far]) - np.mean(proj))
     else:
         normal = _unit(np.cross(fingers, (0, 0, 1)))
-    body = np.array(arm.matrix_world @ arm.pose.bones["mixamorig:Hips"].head)
-    if np.dot(normal, body - tail) < 0:
-        normal = -normal
+    if abs(curl) > 0.02 * max(thickness, 1e-6):
+        if curl < 0:
+            normal = -normal
+    else:  # straight fingers: the palm faces the body (arms down) or down (T-pose)
+        body = np.array(arm.matrix_world @ arm.pose.bones["mixamorig:Hips"].head)
+        if np.dot(normal, body - tail) < 0:
+            normal = -normal
     up = _unit(np.cross(fingers, normal))
     if up[2] < 0:
         up = -up
@@ -2525,7 +2541,10 @@ def hold_prop(
         ((side[0], fingers[0], up[0]), (side[1], fingers[1], up[1]), (side[2], fingers[2], up[2]))
     )
     width = min(phi[0] - plo[0], phi[1] - plo[1]) * s
-    centre = tail + normal * (0.55 * width)
+    # rest the prop on the palm: mid-hand along the bone, pushed out past the hand's own
+    # thickness plus the prop's radius, so it touches the palm instead of filling the hand
+    palm_mid = head_p + fingers * (0.5 * pb.length)
+    centre = palm_mid + normal * (0.5 * thickness + 0.5 * width)
     # the model's origin is wherever the game put it (a bottle's is at its base): grip
     # the mesh 45% up its height, not the origin
     g = Vector(((plo[0] + phi[0]) / 2, (plo[1] + phi[1]) / 2, plo[2] + 0.45 * (phi[2] - plo[2])))
@@ -2538,7 +2557,15 @@ def hold_prop(
     prop.rotation_mode = "XYZ"
     prop.location = world0.translation
     prop.rotation_euler = world0.to_euler()
-    out = {"prop": prop.name, "hand": hand, "attached_to": hand_bone, "scale": round(s, 4)}
+    out = {
+        "prop": prop.name,
+        "hand": hand,
+        "attached_to": hand_bone,
+        "scale": round(s, 4),
+        "hand_thickness": round(thickness, 1),
+        "finger_curl": round(curl, 2),
+        "palm_normal": [round(float(v), 2) for v in normal],
+    }
     if release_frame:
         fr = int(release_frame)
         fps = sc.render.fps or 30
