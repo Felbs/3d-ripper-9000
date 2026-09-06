@@ -345,3 +345,53 @@ def test_rigged_models_infers_unmapped_rigs_from_the_gltf(tmp_path):
     rigs = lq.rigged_models(root)
     assert rigs[0]["std"] == 16 and not rigs[0]["weights"] and not rigs[0]["humanoid"]
     assert lq.rigged_models(root, humanoid=True) == []
+
+
+def test_second_disc_gets_its_own_entry_and_its_own_models(tmp_path):
+    """Both discs of a 2-disc game share a game id; the rip writes disc 2 to <id>_disc2
+    and the batch row names that folder in "dir".  The catalog must follow "dir" - keyed
+    on the game id, disc 2's row read disc 1's folder and listed disc 1's models twice."""
+    rows = [
+        _write(
+            tmp_path,
+            "GAME01",
+            [
+                {
+                    "path": "d1/hero.bdl",
+                    "out_rel": "d1/hero.gltf",
+                    "triangles": 100,
+                    "thumb": "d1/hero_thumb.png",
+                }
+            ],
+            {"exported": 1, "triangles": 100, "dir": "GAME01"},
+        ),
+        _write(
+            tmp_path,
+            "GAME01_disc2",
+            [
+                {
+                    "path": "d2/boss.bdl",
+                    "out_rel": "d2/boss.gltf",
+                    "triangles": 200,
+                    "thumb": "d2/boss_thumb.png",
+                }
+            ],
+            {"exported": 1, "triangles": 200, "dir": "GAME01_disc2"},
+        ),
+    ]
+    # the second row is the disc-2 disc of the SAME game id
+    rows[1]["game_id"] = "GAME01"
+    (tmp_path / "batch_results.jsonl").write_text(
+        "\n".join(json.dumps(r) for r in rows), encoding="utf-8"
+    )
+    library.build_index(tmp_path)
+    _, games, stats = _catalog(tmp_path)
+
+    by_id = {g["id"]: g for g in games}
+    assert set(by_id) == {"GAME01", "GAME01_disc2"}
+    assert by_id["GAME01_disc2"]["game_id"] == "GAME01"
+    # each entry shows its own disc's model, not the other's
+    assert by_id["GAME01"]["top"][0]["n"] == "hero.bdl"
+    assert by_id["GAME01_disc2"]["top"][0]["n"] == "boss.bdl"
+    assert by_id["GAME01_disc2"]["hero"].startswith("GAME01_disc2/")
+    assert stats["tris"] == 300

@@ -65,9 +65,17 @@ def _game_entry(root: Path, row: dict) -> dict | None:
     gid = row.get("game_id")
     if not gid:
         return None
+    # Both discs of a 2-disc game carry the same game id; the rip writes the second to
+    # <id>_disc2 and the batch row records that folder in "dir".  Keying the entry on the
+    # folder is what makes disc 2's models visible at all - on the game id, disc 2's row
+    # pointed at disc 1's folder and listed disc 1's models a second time.
+    gdir = row.get("dir") or gid
     title = (row.get("title") or row.get("file") or gid).strip() or gid
+    if gdir != gid and "disc" not in title.lower():
+        title = f"{title} (disc {gdir.rsplit('_disc', 1)[-1]})"
     entry = {
-        "id": gid,
+        "id": gdir,
+        "game_id": gid,
         "title": title,
         "disc": row.get("file", ""),
         "models": int(row.get("exported") or 0),
@@ -77,10 +85,10 @@ def _game_entry(root: Path, row: dict) -> dict | None:
         "skinned": False,
         "hero": None,
         "top": [],
-        "report": f"{gid}/report.html" if (root / gid / "report.html").exists() else None,
+        "report": f"{gdir}/report.html" if (root / gdir / "report.html").exists() else None,
     }
     try:
-        rr = json.loads((root / gid / "rip_results.json").read_text(encoding="utf-8"))
+        rr = json.loads((root / gdir / "rip_results.json").read_text(encoding="utf-8"))
     except Exception:  # noqa: BLE001 - a game with no results is still listed by its batch row
         return entry
     models = rr.get("models", []) if isinstance(rr, dict) else rr
@@ -101,10 +109,10 @@ def _game_entry(root: Path, row: dict) -> dict | None:
         have.append((tris, m, thumb))
     have.sort(key=lambda x: -x[0])
     for tris, m, thumb in have:
-        if entry["hero"] is None and (root / gid / thumb).exists():
-            entry["hero"] = f"{gid}/{thumb}"
+        if entry["hero"] is None and (root / gdir / thumb).exists():
+            entry["hero"] = f"{gdir}/{thumb}"
         if len(entry["top"]) < TOP_MODELS:
-            entry["top"].append(_model_card(root, gid, m, thumb, tris))
+            entry["top"].append(_model_card(root, gdir, m, thumb, tris))
     entry["nmodels"] = len(have)  # thumbnailed models available for "Show all"
     # per-game kind counts (only kinds that occur) drive the catalog's category filters
     entry["kinds"] = {k: n for k, n in kinds.items() if n}
