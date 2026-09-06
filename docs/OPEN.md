@@ -29,9 +29,19 @@ clusters behind it turned out to be one format bug and one non-bug.
   streaking and leave their right ~35% black, so a second field in the record (the `u16` that
   reads 4 where a single-image file reads 1) is not yet understood.  Single-image shapes are
   correct; multi-image ones are close but not clean.
-- **Not a bug.** FIFA 2003's 1,027 "untextured" `.ord` models are all named `*Shadow*` -
-  shadow-projection meshes that are supposed to have no texture.  The auditor is counting
-  artist intent as a defect and inflating the untextured figure.
+- **A claim to retract.** I first read FIFA 2003's 1,028 untextured `.ord` models as
+  shadow meshes - four sampled paths were all `*Shadow*` and I generalised from them.
+  Counted properly, only 29 of the 1,028 (3%) are shadows: **941 are `player*` models**, the
+  rest flags, nets and pitch lines.  They are real assets missing real textures, the same
+  binding gap as the rest of the cluster, not artist intent.
+- **And the auditor exception that does not exist.** The obvious follow-up - stop counting
+  geometry that is never drawn (collision hulls, shadow casters, occluders, trigger volumes)
+  - measures out at 1,218 of 63,244 untextured models (1.9%), and **half of that is a false
+  positive**: 598 come from Shadow the Hedgehog, where every path contains the character's
+  name (`shadow.one/SHADOW_HAND_GUN.DFF` is a hand, not a shadow).  The genuinely
+  never-drawn set that survives - TMNT's `cameracollision.pac`, Taz's trigger volumes - is
+  too small to be worth a name heuristic that mislabels a character's hands.  Left
+  unimplemented on purpose.
 - **Still open, and bigger than it looks.** NFL Street 1 + 2 (8,718 untextured) are
   create-a-player parts: `plaface.dat` / `plahair.dat` / `plajewel.dat` / `plahat.dat` hold
   the meshes and `platex.dat` holds 16,399 textures, but every face model asks for the same
