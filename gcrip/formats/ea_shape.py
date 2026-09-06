@@ -238,14 +238,19 @@ def _is_nhl_variant(data: bytes) -> bool:
     return off == 0x40 and size > 0x30 and off + size == len(data)
 
 
-def _nhl_image(data: bytes) -> ShapeImage:
-    """``u8 code | ... | u32 width (+0x18) | u32 height (+0x1c) | ... | pixels (+0x30)``;
-    the GX format follows from the bytes per pixel (0.5 CMPR, 1 I8, 2 RGB5A3, 4 RGBA8)."""
-    off = struct.unpack_from(">I", data, 0x10)[0]
-    name = data[0x18:0x28].split(b"\x00")[0].decode("latin-1", "replace") or "image"
+def _gc_record(data: bytes, off: int, name: str, end: int | None = None) -> ShapeImage:
+    """One GameCube shape record: ``u8 code | ... | u32 width (+0x18) | u32 height (+0x1c)
+    | pixels (+0x20)``; the GX format follows from the bytes per pixel (0.5 CMPR, 1 I8,
+    2 RGB5A3, 4 RGBA8).  *end* bounds the body when more records follow.
+
+    The body starts at +0x20, not +0x30: a 0x30 header is one CMPR tile too long, which
+    shifted every NBA Live / NHL shape by a tile and left the arenas smeared.  A sweep of
+    header sizes against gradient energy picks +0x20 (13.25) over +0x30 (16.44), and the
+    render settles it - the arena's own debug text ("MEM TOTAL UNUSED: 8390292") is only
+    legible at +0x20."""
     w, h = struct.unpack_from(">2I", data, off + 0x18)
-    img = ShapeImage(name, w, h, data[off], None)
-    body = data[off + 0x30 :]
+    img = ShapeImage(name or "image", w, h, data[off], None)
+    body = data[off + 0x20 : end if end is not None else len(data)]
     if not (0 < w <= 4096 and 0 < h <= 4096) or not body:
         img.warnings.append("implausible image size")
         return img
@@ -258,13 +263,63 @@ def _nhl_image(data: bytes) -> ShapeImage:
     return img
 
 
+def _nhl_image(data: bytes) -> ShapeImage:
+    """The single-record form: the header itself points at the one image."""
+    off = struct.unpack_from(">I", data, 0x10)[0]
+    name = data[0x18:0x28].split(b"\x00")[0].decode("latin-1", "replace") or "image"
+    return _gc_record(data, off, name)
+
+
+def _gc_directory(data: bytes) -> list[tuple[str, int]] | None:
+    """EA Canada's multi-image SHPG directory, which is *not* the SHPI name/offset table:
+    an entry is ``u32 offset | 3 unknown bytes | NUL-terminated name``, so entries vary in
+    length (NBA Live's ``bg3.gsh``: six named ```1``, ```11``, ```15``, ```2``, ```4``,
+    ```7``, the last ending exactly where the ``G427`` signature block starts).
+
+    Returns None unless the whole walk validates - the count matches the header, the
+    offsets rise strictly and land inside the file past the directory - so a genuine SHPI
+    name/offset table is never mistaken for one of these."""
+    if len(data) < 0x20:
+        return None
+    count = struct.unpack_from(">I", data, 8)[0]
+    if not 1 < count <= 0x400:
+        return None  # the single-image form is _is_nhl_variant's job
+    out: list[tuple[str, int]] = []
+    p = 0x10
+    for _ in range(count):
+        if p + 8 > len(data):
+            return None
+        off = struct.unpack_from(">I", data, p)[0]
+        end = data.find(b"\x00", p + 7)
+        if end < 0 or end > p + 0x48 or end == p + 7:
+            return None
+        raw = data[p + 7 : end]
+        if any(c < 0x20 or c > 0x7E for c in raw):
+            return None
+        if out and off <= out[-1][1]:
+            return None  # offsets must rise, or this is not the layout
+        out.append((raw.decode("latin-1"), off))
+        p = end + 1
+    if not (p <= out[0][1] < len(data)) or out[-1][1] + 0x30 >= len(data):
+        return None
+    return out
+
 def parse(data: bytes) -> list[ShapeImage]:
     if not is_shape(data):
         raise ValueError("not an EA shape file")
     if _is_nhl_variant(data):
         return [_nhl_image(data)]
-    e = _endian(data)
     gc = data[3:4].upper() == b"G"
+    if gc:
+        entries = _gc_directory(data)
+        if entries is not None:
+            # each record's body runs to the next record (the last to end of file)
+            bounds = [o for _, o in entries[1:]] + [len(data)]
+            return [
+                _gc_record(data, off, name, end)
+                for (name, off), end in zip(entries, bounds, strict=True)
+            ]
+    e = _endian(data)
     count = struct.unpack_from(e + "I", data, 8)[0]
     out = []
     for i in range(count):

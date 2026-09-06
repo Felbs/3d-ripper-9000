@@ -6,6 +6,39 @@ textures through the plugin chain.
 
 Companion to [FORMATS.md](FORMATS.md), which lists what already works.
 
+## Closed 2026-09-06 (partly): EA `ShpG` shapes - the NHL / NBA Live arenas were a tile off
+
+The post-sweep audit's biggest remaining defect is textures, not geometry: 58,209 untextured
+models, 5.8% of the library and rising faster than the library grew.  Two of the three
+clusters behind it turned out to be one format bug and one non-bug.
+
+- **The bug.** NBA Live 2005 / 06 arenas and backgrounds (4,736 models) come out bare even
+  though each `.big` holds exactly `<name>.ebo` + `<name>.gsh`, and the plugin already looks
+  next door for the shape.  The shape simply never decoded: `ea_shape`'s GameCube record put
+  the pixels at **+0x30** when they start at **+0x20** - one CMPR tile too long, which shifted
+  every image by a tile and smeared the arena into streaks.  A header-size sweep scored +0x20
+  at 13.25 gradient energy against +0x30's 16.44, and the render settles it: at +0x20 the
+  arena's own debug overlay ("MEM TOTAL UNUSED: 8390292") is legible.  This shifted **every**
+  NHL / NBA Live / FIFA shape the library has, not only the bare ones.
+- **The second form.** A multi-image `ShpG` (NBA Live's `bg3.gsh`) does *not* use the SHPI
+  `char[4] name | u32 offset` table: an entry is `u32 offset | 3 unknown bytes |
+  NUL-terminated name`, so entries vary in length.  Six entries walk out of `bg3.gsh` named
+  `` `1 ``, `` `11 ``, `` `15 ``, `` `2 ``, `` `4 ``, `` `7 ``, the last ending exactly where
+  the file's `G427` signature block begins.  `gcrip/formats/ea_shape.py:_gc_directory`.
+  **Still open:** the large multi-image records decode recognisably but keep residual
+  streaking and leave their right ~35% black, so a second field in the record (the `u16` that
+  reads 4 where a single-image file reads 1) is not yet understood.  Single-image shapes are
+  correct; multi-image ones are close but not clean.
+- **Not a bug.** FIFA 2003's 1,027 "untextured" `.ord` models are all named `*Shadow*` -
+  shadow-projection meshes that are supposed to have no texture.  The auditor is counting
+  artist intent as a defect and inflating the untextured figure.
+- **Still open, and bigger than it looks.** NFL Street 1 + 2 (8,718 untextured) are
+  create-a-player parts: `plaface.dat` / `plahair.dat` / `plajewel.dat` / `plahat.dat` hold
+  the meshes and `platex.dat` holds 16,399 textures, but every face model asks for the same
+  generic name (`baseHeadTexture`, `facialHairTextu`) and the `platex.dat` MMAPs are
+  **unnamed**, so there is nothing to match on - the pairing lives in a roster table that has
+  not been found yet.  A disc-wide name map would bind one player's face to everybody.
+
 ## The frontier after the full re-rip sweep (2026-09-05): 40 discs still export nothing
 
 The pass-7 cascade finished with wave 65 at 20:46 on 2026-09-05 - every disc re-ripped against
