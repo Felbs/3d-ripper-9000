@@ -6,6 +6,52 @@ textures through the plugin chain.
 
 Companion to [FORMATS.md](FORMATS.md), which lists what already works.
 
+## The frontier after the full re-rip sweep (2026-09-05): 40 discs still export nothing
+
+The pass-7 cascade finished with wave 65 at 20:46 on 2026-09-05 - every disc re-ripped against
+the current plugin set.  598 of 638 discs now yield geometry (1,009,853 models, 778.6M
+triangles, up from 247 discs / 535,464 models on 2026-08-31).  These 40 are what is left, split
+by an extension census of their `disc_manifest.json`.  Three of the four groups are cheap.
+
+**A. Not a rip target - compilation / emulation discs (7).**  The disc ships arcade or console
+ROMs plus an emulator; there is no native GameCube geometry.  Verify once and close for good:
+Midway Arcade Treasures 2 (`.sr`, 14 `.dol`), Namco Museum (`.blt`), Mega Man X Collection
+(`.mag`/`.arc`/`.tm2`), Tower of Druaga (Japan, 3 `.bin` on the whole disc), Maxplay Classic
+Games Vol. 1 (3 `.bin`), Pinball Hall of Fame (`.rez`), WTA Tour Tennis (174 each of
+`.rom`/`.sym`/`.syml`/`.h` - a shipped build tree, not assets).
+
+**B. One unopened archive is the entire disc (9).**  A dozen manifest entries, everything
+inside a container nothing claims.  Crack the container and the existing chain likely does the
+rest: Gladius (`.bec`), R - Racing Evolution (`.afs` + `.dat`), Defender (`.dat`/`.idx`),
+Monopoly Party (`.ste`), Shrek Smash n' Crash Racing (`.dat`), Trigger Man (`.rar`), NFL
+Quarterback Club 2002 (`.adb`), Nickelodeon Party Blast (`.wad` + `.scc`), and Bust-A-Move 3000
+(650 `.bin` + **209 `.tpl`** - the textures are already a format we read, so this is a
+container walk away from models).
+
+**C. Named formats with more than one disc behind them - best return (7 discs, 4 formats).**
+
+| format | discs | size on disc |
+|---|---|---|
+| `.spd` + `.spt` | Rocky, Big Mutha Truckers | 778 + 778, and 191 |
+| `.rws` (RenderWare) | Neighbours From Hell, Bleach GC | 28 `.rws` + 162 `.blo`; 45 `.rws` |
+| `.scc` | Nickelodeon Party Blast, X-Men: Next Dimension | 31; 3 |
+| `.iff` | NCAA College Basketball 2K3 | 2,135 files - 2K's own IFF, sibling of the Visual Concepts `DAT` work already shipped |
+
+**D. Single-disc engines (17)**, most-unclaimed-first: NBA Courtside 2002 (10,667 extensionless
++ `.cam`/`.pst`/`.std`), Digimon World 4 (`.igb` - Intrinsic Alchemy / NetImmerse, a documented
+format), 007: From Russia with Love (2,137 `.exa`), Batman: Dark Tomorrow (`.bif`/`.moc`),
+Neighbours From Hell (`.blo`), Enter the Matrix (`.dfu` + 2,054 extensionless), Konjiki no
+Gashbell (212 `.fpk`), Catwoman (`.gcs`/`.gcm`), Sonic Riders (`.dat` + 1,611 extensionless),
+Space Raiders (607 extensionless), Viewtiful Joe: Red Hot Rumble (231 `.dusgc`), Rally
+Championship (195 `.gcx`), Blood Omen 2 (179 `.bgg`), Backyard Baseball 2007 (186 `.obj`),
+DDR: Mario Mix (`.bin`/`.rel`/`.str`), Cubix: Showdown (5 `.gcp` behind 723 `.str`), One Piece
+Grand Adventure / Grand Battle (`.afs`).
+
+**Not a format problem:** Phantasy Star Online Episode I & II Plus errored out with
+`FileNotFoundError: GPOE8P/disc_manifest.json` - the rip never started.  It is a Sega Ninja
+game and dcrip's Ninja/PVR pipeline already reads that family, so it is a re-rip, not a crack,
+and the highest-value single item here.
+
 ## Closed 2026-09-05: the three highest garbage-share discs were three unclaimed formats
 
 The quality audit's worst *shares* - Kelly Slater's Pro Surfer (36 of 42 garbage), Freestyle

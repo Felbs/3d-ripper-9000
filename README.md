@@ -10,7 +10,7 @@ report and Blender add-on.
 
 | Module | Status | Language | License | What it does |
 |--------|--------|----------|---------|--------------|
-| `gcrip` - GameCube | **working** - 635 discs ripped, 413 with geometry, 726,764 models, 468.7M triangles, 68,660 clips; 98 model/texture plugins over 54 container plugins | Python | MIT | disc walker, J3D + HSD/Retro/GMA/RenderWare/Jade/EA/... parsers, GX texture decode, glTF export, Blender add-on |
+| `gcrip` - GameCube | **working** - 638 discs ripped, 598 with geometry, 1,009,853 models, 778.6M triangles, 68,759 clips, 80,042 rigged models; 98 model/texture plugins over 54 container plugins | Python | MIT | disc walker, J3D + HSD/Retro/GMA/RenderWare/Jade/EA/... parsers, GX texture decode, glTF export, Blender add-on |
 | Dolphin capture fork (for non-J3D GameCube games) | planned | C++ | GPLv2 | runtime capture of object-space geometry for games with custom formats |
 | N64 module | idea | - | - | - |
 | PlayStation module | idea | - | - | - |
