@@ -1,7 +1,7 @@
 # Character rigs - the library's rigged-model manifest
 
-For tools that consume rigs (the mocap-to-Blender add-on): every skinned model in the
-GameCube library, with what you need to load and retarget it, in one file.
+For tools that consume rigs (anyrig-mocap, and anything else): every skinned model in
+the GameCube library, with what you need to load and retarget it, in one file.
 
 ## Where
 
@@ -51,7 +51,7 @@ served endpoint `http://127.0.0.1:8765/rigs.json` (live; same records) while
   Unmapped joints keep their game names.
 - `humanoid` is the mocap flag: the map covers the Mixamo **core** (Hips, both
   Arm/ForeArm/Hand, both UpLeg/Leg/Foot) *and* the mesh carries skin weights.  That is
-  what the `humanoid` filter keeps and what the Blender add-on's retarget needs; spine
+  what the `humanoid` filter keeps and what a retarget needs downstream; spine
   chain, neck, head, shoulders and toes are welcome but optional.
 - `inferred: true` means the ripper wrote no map (every non-J3D format) and the
   structural mapper (`gcrip/humanoid.py`) derived it from the joint names + hierarchy.
@@ -76,7 +76,7 @@ and the neck meet, and the joints between hips and neck become Spine/Spine1/Spin
 The same code, embedded verbatim, runs inside the Blender add-on on any armature without
 `gcrip_std_bone` props (`tools/sync_addon_humanoid.py` keeps the copy current).
 
-## For the mocap / Blender add-on: the MCP route
+## For rig consumers (the mocap project, and anything else): the MCP route
 
 The `gcrip-library` MCP server (`.mcp.json`, `tools/library_mcp.py`) is the intended way
 for another Claude session to drive this library.  The tools that matter for putting a
@@ -115,14 +115,13 @@ pick-a-character-and-animate-it loop is then tool calls:
 | `blender_status()` / `blender_launch(background, blend)` | find or start a Blender with the server up |
 | `blender_games(query)` / `blender_library(gid, category, query, humanoid)` | the add-on's own library index (same rows as the Library panel; `humanoid=True` = mocap-ready) |
 | `blender_spawn(gltf | gid+name, at)` | import; characters come back Mixamo-named with `mocap_ready` / `missing_core` / `skinned_meshes` |
-| `blender_retarget(bvh, object, start, max_frames)` | BVH -> NLA strip on track MOCAP |
 | `blender_camera(target, azimuth, distance, height)` | aim a tracking camera from in front of the character (adds a sun if unlit) |
 | `blender_render(path, frame | animation, start, end)` | PNG still or H.264 MP4 |
 | `blender_characters()` / `blender_scene()` / `blender_frame()` / `blender_save()` / `blender_open()` / `blender_delete()` | inspect and manage the scene |
 | `blender_python(code)` | anything else, inside Blender |
 
-`python tools/blender_mcp_smoke.py <out_dir> [query] [game_id] [bvh]` exercises the whole
-chain headless (spawn, retarget, camera, two stills, save) on port 8790.
+`python tools/blender_mcp_smoke.py <out_dir> [query] [game_id]` exercises the whole
+chain headless (spawn, camera, two stills, save) on port 8790.
 
 ## Filters
 

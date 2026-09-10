@@ -1,10 +1,10 @@
 """Smoke-test the Blender control channel end to end, headless.
 
-    python tools/blender_mcp_smoke.py <out_dir> [query] [game_id] [bvh]
+    python tools/blender_mcp_smoke.py <out_dir> [query] [game_id]
 
 Launches a background Blender with the add-on (blender/gcrip_server_boot.py), lists the
-library, spawns the first mocap-ready rig matching the query, retargets a BVH onto it, aims
-a camera, renders a still, saves the .blend and shuts the worker down.  Uses port 8790 so it
+library, spawns the first mocap-ready rig matching the query, aims a camera, renders a
+still, saves the .blend and shuts the worker down.  Uses port 8790 so it
 never collides with a Blender you have open on the default 8788.
 """
 
@@ -20,11 +20,6 @@ import blender_mcp as bm  # noqa: E402
 out_dir = sys.argv[1]
 query = sys.argv[2] if len(sys.argv) > 2 else "homer"
 gid = sys.argv[3] if len(sys.argv) > 3 else ""
-bvh = (
-    sys.argv[4]
-    if len(sys.argv) > 4
-    else r"Z:\Motion capture rips\phase0\bvh_library\gvhmr_tennis.bvh"
-)
 os.makedirs(out_dir, exist_ok=True)
 
 
@@ -54,7 +49,6 @@ try:
     step(
         "python", bm.call, "python", code="import bpy\nresult = [o.name for o in bpy.data.objects]"
     )
-    rt = step("retarget", bm.call, "retarget", bvh=bvh, max_frames=120)
     step("camera", bm.call, "camera")
     step(
         "light",
@@ -68,7 +62,9 @@ try:
             "result = 'sun added'"
         ),
     )
-    step("frame", bm.call, "frame", frame=rt["start"] + 40)
+    sc = step("scene", bm.call, "scene")
+    lo, hi = sc["range"]
+    step("frame", bm.call, "frame", frame=min(lo + 40, hi))
     step(
         "render", bm.call, "render", path=os.path.join(out_dir, "still.png"), width=640, height=480
     )
@@ -77,10 +73,9 @@ try:
         bm.call,
         "render",
         path=os.path.join(out_dir, "still2.png"),
-        frame=rt["start"] + 90,
+        frame=min(lo + 90, hi),
     )
     step("save", bm.call, "save", path=os.path.join(out_dir, "smoke.blend"))
-    step("scene", bm.call, "scene")
 finally:
     step("shutdown", bm.call, "shutdown")
 print("OK ->", out_dir)

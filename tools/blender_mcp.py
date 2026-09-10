@@ -177,31 +177,6 @@ def blender_map_bones(object: str = "", force: bool = False) -> dict:  # noqa: A
 
 
 @mcp.tool()
-def blender_retarget(
-    bvh: str,
-    object: str = "",
-    start: int = 1,
-    max_frames: int = 0,
-    mute_game: bool = True,  # noqa: A002
-    skip: int = 0,
-) -> dict:
-    """Retarget a BVH clip (Bandai Namco dataset, ComfyUI-MotionCapture output, Mixamo) onto a
-    character as an NLA strip on track MOCAP, appended after earlier strips.  ``object`` =
-    the armature or any object of the character; default = active / the only armature.
-    ``skip`` drops that many leading BVH frames (capture from before the person was in
-    shot); pair it with ``start=skip+1`` to keep scene frames aligned with the clip."""
-    return call(
-        "retarget",
-        bvh=bvh,
-        object=object,
-        start=start,
-        max_frames=max_frames,
-        mute_game=mute_game,
-        skip=skip,
-    )
-
-
-@mcp.tool()
 def blender_camera(
     target: str = "",
     distance: float | None = None,
@@ -281,45 +256,6 @@ def blender_delete(objects: list[str] | None = None, family: bool = True) -> dic
 
 
 @mcp.tool()
-def blender_hold_prop(
-    gid: str = "",
-    name: str = "",
-    gltf: str = "",
-    object: str = "",  # noqa: A002
-    hand: str = "auto",
-    release_frame: int | None = None,
-    flight_frames: int = 0,
-    size: float = 0.16,
-    toss: float = 1.4,
-    grasp: bool = True,
-    palm: str = "auto",
-) -> dict:
-    """Put a library prop (gid + name as listed by blender_library, or a glTF path) into a
-    character's hand for the whole clip, and optionally let go of it at ``release_frame``
-    (scene frame): it then flies a ballistic arc from the hand's velocity and lands on the
-    ground, in ``flight_frames`` frames when given.  ``hand`` = left | right | auto (the
-    hand kept nearest the head before the release).  ``size`` = prop height as a fraction
-    of the character's height.  ``grasp`` rolls the wrist each frame so the palm faces the
-    body while holding (video mocap does not know the wrist twist) and stands the prop
-    vertical against the palm.  The palm side comes from a thumb bone, else finger curl,
-    else a guess; ``palm="flip"`` when the result faces the back of the hand at the body."""
-    return call(
-        "hold_prop",
-        gid=gid,
-        name=name,
-        gltf=gltf,
-        object=object,
-        hand=hand,
-        release_frame=release_frame,
-        flight_frames=flight_frames,
-        size=size,
-        toss=toss,
-        grasp=grasp,
-        palm=palm,
-    )
-
-
-@mcp.tool()
 def blender_attach_model(
     gid: str = "",
     name: str = "",
@@ -336,33 +272,6 @@ def blender_attach_model(
     the head's frame); 'auto' does that for parts named *face*; 'keep' never."""
     return call(
         "attach_model", gid=gid, name=name, gltf=gltf, object=object, bone=bone, orient=orient
-    )
-
-
-@mcp.tool()
-def blender_apply_hands(
-    hands_json: str,
-    camera_json: str = "",
-    object: str = "",  # noqa: A002
-    person: int = 1,
-    sides: str = "LR",
-    palm: str = "auto",
-    max_gap: int = 15,
-) -> dict:
-    """Drive a character's hand bones from WiLoR hand tracking (comfy_mocap's hands_json /
-    camera_json): each detected frame orients the hand bone by the tracked palm normal and
-    finger direction, gaps up to ``max_gap`` frames are interpolated, elsewhere the body
-    capture's wrist stays.  ``person`` = index in the hands file; ``palm="flip"`` when a
-    rig's palm side is guessed wrong."""
-    return call(
-        "apply_hands",
-        hands_json=hands_json,
-        camera_json=camera_json,
-        object=object,
-        person=person,
-        sides=sides,
-        palm=palm,
-        max_gap=max_gap,
     )
 
 

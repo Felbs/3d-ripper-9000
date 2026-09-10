@@ -104,51 +104,36 @@ Meshes under 8 triangles (billboards, particle quads) are left out of the index.
 bone icon next to the category dropdown (**Mocap-ready only**) keeps just the rigs with a
 humanoid map.
 
-### Motion capture onto a character (GCRip Mocap panel)
+### Any biped, not only Nintendo's (humanoid bone map)
 
-The **GCRip Mocap** panel retargets a `.bvh` clip onto the selected character and adds it
-as an NLA strip (track `MOCAP`; the game's own clips are muted, not deleted). It reads
-Bandai Namco Research Motiondataset clips, the `SMPLtoBVH` output of ComfyUI-MotionCapture
-(GVHMR video mocap), and Mixamo / Rokoko-style exports, in metres or centimetres. The
-source needs no T-pose: anatomical frames are built from joint positions at the first
-frame and world-space rotation deltas are transferred bone by bone, so the character's
-own rest pose and bone axes do not matter. Spawn a character, pick the file, press
-**Retarget onto selected character**; a second clip appends after the first.
+When a rip carries no bone map (every non-J3D format: EA's FIFA / NHL, LEGO, Metroid
+Prime, Mario Party...) the add-on guesses the humanoid core from the joint names and
+hierarchy (`gcrip/humanoid.py`, embedded in the add-on; `docs/RIGS.md` explains the
+rules) and renames those bones to Mixamo names on spawn. Only the core has to exist -
+hips, both arms with hands, both legs with feet; spine chain, neck, head, shoulders and
+toes are used when present. The **Guess humanoid bones** button in the GCRip panel does
+the same for a rig imported some other way. A rig whose exporter dropped the skin weights
+(the Radical p3d games) is refused with a plain message, since its body would not follow
+the skeleton. That map is what makes a rig "mocap-ready" here; driving it is another
+project's job.
 
-Any biped works, not only Nintendo's. When a rip carries no bone map (every non-J3D
-format: EA's FIFA / NHL, LEGO, Metroid Prime, Mario Party...) the add-on guesses the
-humanoid core from the joint names and hierarchy (`gcrip/humanoid.py`, embedded in the
-add-on; `docs/RIGS.md` explains the rules) and renames those bones to Mixamo names on
-spawn. Only the core has to exist - hips, both arms with hands, both legs with feet;
-spine chain, neck, head, shoulders and toes are used when present. The **Guess humanoid
-bones** button in the GCRip panel does the same for a rig imported some other way. A rig
-whose exporter dropped the skin weights (the Radical p3d games) is refused with a plain
-message, since its body would not follow the skeleton.
+### Motion capture lives in its own project
 
-### Your own footage: ComfyUI node + workflow + `gcrip-comfy` MCP
-
-`comfyui/gcrip_mocap/` is a ComfyUI custom node, **GCRip Person Masks**: one clip of
-several people in, one white-on-black mask video per person out, which is what
-ComfyUI-MotionCapture's GVHMR Inference needs per person. It finds people with the
-YOLOv8 segmentation model the Impact subpack ships and follows each one through the
-clip, so person 1 stays person 1 (leftmost at the start, or largest). Install with a
-junction: `mklink /J ComfyUI\custom_nodes\gcrip_mocap "Z:\3d ripper\comfyui\gcrip_mocap"`.
-`python comfyui/make_workflow.py --people 2` writes `comfyui/workflows/
-gcrip_multi_person_mocap.json` (drop it on the ComfyUI canvas: Load Video > Person Masks >
-GVHMR per person > SMPL to BVH per person) and an API twin. `tools/comfy_mcp.py`
-(`gcrip-comfy` in `.mcp.json`) drives it headless: `comfy_mocap(video, people)` returns
-one BVH per person, `mocap_take(bvh, characters, out_blend, render_mp4)` puts them on
-ripped characters through the Blender control channel, `comfy_launch` starts ComfyUI.
-Filming rules: static phone, whole bodies in frame, people not overlapping in the first
-frame.
+Retargeting video motion capture onto these rigs used to live here. It is now
+**anyrig-mocap** (`Z:nyrig-mocap`): phone footage -> ComfyUI (GVHMR + WiLoR) -> a BVH
+per person -> Blender, with its own add-on, its own `gcrip-blender` / `gcrip-comfy` MCP
+bridges, hand and wrist calibration, and level staging. It reads this repo's rips and
+recompiled stages as assets and does not modify them. What stays here is the rig side:
+the humanoid bone map above, the `mocap_ready` / `missing_core` / `skinned_meshes`
+report on `spawn`, and `mocap_rigs()` in the library MCP.
 
 ### Drive Blender from an assistant (GCRip Server panel, `gcrip-blender` MCP)
 
 **GCRip Server** (N sidebar > GCRip tab) starts a JSON-lines control channel on
 127.0.0.1:8788 (port and auto-start in the add-on preferences). `tools/blender_mcp.py`,
 registered in `.mcp.json` as `gcrip-blender`, turns it into MCP tools: browse the
-library index, spawn a model, retarget a BVH, aim a camera, render a still or an MP4,
-save, run Python, or launch a fresh Blender (headless with `background=True`) via
+library index, spawn a model, aim a camera, render a still or an MP4, save, run
+Python, or launch a fresh Blender (headless with `background=True`) via
 `blender/gcrip_server_boot.py`. Every command runs on Blender's main thread, so you can
 keep working in the GUI while the assistant drives it. `tools/blender_mcp_smoke.py`
 runs the whole chain headless as a check.
