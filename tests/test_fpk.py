@@ -60,3 +60,40 @@ def test_fpk_members():
     assert plug.is_container("files/fpack/chr/ank0000.fpk", data[:64])
     assert not plug.is_container("files/x.bin", data[:64])
     assert plug.expand(data) == [("hr/ank/0000.dat", dat), ("hr/ank/0000.txg", txg)]
+
+
+def _fpk_head(first_word: bytes, count: int, total: int, name: bytes = b"chr/ath/0000.seg"):
+    import struct
+
+    return (
+        first_word
+        + struct.pack(">3I", count, 16, total)
+        + name.ljust(20, b"\0")
+        + bytes(12)
+    )
+
+
+def test_is_fpk_accepts_a_non_zero_leading_checksum():
+    """Zatch Bell fills the leading word on every archive (0xec8b, 0x5a4c, ...); Naruto and
+    Bloody Roar leave it zero.  Demanding zero cost Zatch Bell all 212 of its archives."""
+    total = 16 + 8 * 32 + 1000
+    zero = _fpk_head(b"\0\0\0\0", 8, total)
+    stamped = _fpk_head(b"\x00\x00\xec\x8b", 8, total)
+    assert fpk.is_fpk(zero, total)
+    assert fpk.is_fpk(stamped, total)
+
+
+def test_is_fpk_still_rejects_non_fpk_data():
+    """Relaxing the leading word must not make the rest of the signature loose."""
+    total = 16 + 8 * 32 + 1000
+    import struct
+
+    # wrong header size
+    bad_hsize = b"\0\0\0\0" + struct.pack(">3I", 8, 32, total) + b"chr/a".ljust(32, b"\0")
+    assert not fpk.is_fpk(bad_hsize, total)
+    # declared total disagrees with the real size
+    assert not fpk.is_fpk(_fpk_head(b"\0\0\0\0", 8, total), total + 1)
+    # first entry name is not printable
+    assert not fpk.is_fpk(_fpk_head(b"\0\0\0\0", 8, total, b"\x01\x02\x03\x04"), total)
+    # absurd member count
+    assert not fpk.is_fpk(_fpk_head(b"\0\0\0\0", 0, total), total)

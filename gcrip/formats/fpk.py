@@ -21,7 +21,15 @@ class Member:
 
 
 def is_fpk(head: bytes, size: int | None = None) -> bool:
-    if len(head) < 48 or head[:4] != b"\0\0\0\0":
+    """The leading word is a per-file checksum, not a magic - Naruto and Bloody Roar leave
+    it zero (0 of 40 sampled files non-zero on each), Zatch Bell fills it in on every single
+    one (40 of 40, always inside 16 bits: 0xec8b, 0x5a4c, 0xf253).  Requiring zero there cost
+    that disc all 212 of its archives.
+
+    The signature that actually identifies an FPK is the rest: a 16-byte header size, a
+    plausible member count, a declared total that matches the file to the byte, and a
+    printable path in the first entry.  Callers gate on the ``.fpk`` name as well."""
+    if len(head) < 48:
         return False
     count, hsize, total = struct.unpack_from(">3I", head, 4)
     if hsize != 16 or not (0 < count < 100_000) or total < 16 + count * 32:
