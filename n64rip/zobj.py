@@ -59,37 +59,79 @@ def _decode_tile(tile: f3dex2.TileState, segments: f3dex2.Segments) -> np.ndarra
         return None
 
 
+def _quat_from_euler(xyz, order: str = "zyx") -> tuple[float, float, float, float]:
+    """The joint's rest rotation as a quaternion, matching anim.rotation_matrix's order."""
+    from n64rip.anim import rotation_matrix
+
+    m = rotation_matrix(np.asarray(xyz, dtype=np.float64), order)[:3, :3]
+    tr = m.trace()
+    if tr > 0:
+        s = np.sqrt(tr + 1.0) * 2
+        w, x, y, z = 0.25 * s, (m[2, 1] - m[1, 2]) / s, (m[0, 2] - m[2, 0]) / s, (m[1, 0] - m[0, 1]) / s
+    elif m[0, 0] > m[1, 1] and m[0, 0] > m[2, 2]:
+        s = np.sqrt(1.0 + m[0, 0] - m[1, 1] - m[2, 2]) * 2
+        w, x, y, z = (m[2, 1] - m[1, 2]) / s, 0.25 * s, (m[0, 1] + m[1, 0]) / s, (m[0, 2] + m[2, 0]) / s
+    elif m[1, 1] > m[2, 2]:
+        s = np.sqrt(1.0 + m[1, 1] - m[0, 0] - m[2, 2]) * 2
+        w, x, y, z = (m[0, 2] - m[2, 0]) / s, (m[0, 1] + m[1, 0]) / s, 0.25 * s, (m[1, 2] + m[2, 1]) / s
+    else:
+        s = np.sqrt(1.0 + m[2, 2] - m[0, 0] - m[1, 1]) * 2
+        w, x, y, z = (m[1, 0] - m[0, 1]) / s, (m[0, 2] + m[2, 0]) / s, (m[1, 2] + m[2, 1]) / s, 0.25 * s
+    return (float(x), float(y), float(z), float(w))
+
+
 def build(
     name: str,
     data: bytes,
     skel: skel_mod.Skeleton,
     segments: f3dex2.Segments,
     clips: list[Clip] | None = None,
+    world: dict[int, np.ndarray] | None = None,
+    rotations: np.ndarray | None = None,
 ) -> Scene:
-    """Walk *skel*'s limbs, interpret each limb's display list, and assemble one Scene."""
+    """Walk *skel*'s limbs, interpret each limb's display list, and assemble one Scene.
+
+    *world* supplies a posed set of limb matrices (see ``anim.pose_matrices``).  Without it
+    the limbs are placed by their offsets alone, which is the un-posed rig: every chain
+    extends along one axis, giving a character arms several times longer than its torso.
+    *rotations* are the matching per-limb rest rotations, baked into the exported joints so
+    the armature itself carries the pose rather than only the mesh.
+    """
     scene = Scene(name=name)
     order = skel.order()
 
     # -- the armature: one joint per limb, translations relative to the parent
     for limb in skel.limbs:
         x, y, z = limb.translation
+        quat = (0.0, 0.0, 0.0, 1.0)
+        if rotations is not None and limb.index < len(rotations):
+            quat = _quat_from_euler(rotations[limb.index])
         scene.joints.append(
             Joint(
                 name=f"limb_{limb.index:02d}",
                 parent=limb.parent,
                 translation=(x * SCALE, y * SCALE, z * SCALE),
-                rotation=(0.0, 0.0, 0.0, 1.0),
+                rotation=quat,
                 scale=(1.0, 1.0, 1.0),
             )
         )
 
     # -- world matrices, following the same walk the game does
-    world: dict[int, np.ndarray] = {}
-    for i in order:
-        limb = skel.limbs[i]
-        local = _translate(*limb.translation)
-        parent = world.get(limb.parent) if limb.parent is not None else None
-        world[i] = local if parent is None else parent @ local
+    if world is None:
+        world = {}
+        for i in order:
+            limb = skel.limbs[i]
+            local = _translate(*limb.translation)
+            parent = world.get(limb.parent) if limb.parent is not None else None
+            world[i] = local if parent is None else parent @ local
+
+    # -- the limb-matrix array the display lists reach through segment 0x0D.
+    # A limb's list selects a matrix per vertex group with G_MTX 0x0d0000N0, where N indexes
+    # the limbs that actually draw, in draw order.  The game fills this at draw time; leaving
+    # it unbound is what made one limb's geometry arrive in two different spaces at once.
+    drawing = [i for i in order if skel.limbs[i].dlist]
+    matrix_index = {limb: n for n, limb in enumerate(drawing)}
+    segments.set(0x0D, f3dex2.matrix_segment([world[i] for i in drawing]))
 
     # -- geometry, one interpreter run per limb that draws
     batches: list[f3dex2.Batch] = []

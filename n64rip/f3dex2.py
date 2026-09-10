@@ -60,6 +60,11 @@ G_LIGHTING = 0x00020000
 G_CULL_FRONT = 0x00000200
 G_CULL_BACK = 0x00000400
 
+#: G_MTX parameter bits (the command stores them XORed with G_MTX_PUSH)
+G_MTX_PUSH = 0x01
+G_MTX_LOAD = 0x02
+G_MTX_PROJECTION = 0x04
+
 VERTEX = struct.Struct(">3hHhh4B")  # x y z flag u v r/nx g/ny b/nz a
 VERTEX_SIZE = 16
 VTX_CACHE = 32
@@ -154,6 +159,34 @@ def _mtx_signed(raw: bytes) -> np.ndarray:
     ints = np.frombuffer(raw, ">i2", 16).reshape(4, 4).astype(np.float64)
     fracs = np.frombuffer(raw, ">u2", 16, 32).reshape(4, 4).astype(np.float64)
     return ints + fracs / 65536.0
+
+
+def pack_matrix(m: np.ndarray) -> bytes:
+    """A 4x4 matrix in the RSP's own layout: 16 signed integer parts, then 16 fractions.
+
+    The inverse of :func:`_mtx_signed`, and transposed the same way, so a matrix written here
+    and loaded by ``G_MTX`` comes back unchanged.
+    """
+    mt = np.asarray(m, dtype=np.float64).T  # RSP matrices are row-major
+    ints = np.floor(mt).astype(np.int64)
+    fracs = np.rint((mt - ints) * 65536.0).astype(np.int64)
+    carry = fracs >= 65536
+    ints[carry] += 1
+    fracs[carry] -= 65536
+    ints = np.clip(ints, -32768, 32767).astype(">i2")
+    fracs = np.clip(fracs, 0, 65535).astype(">u2")
+    return ints.tobytes() + fracs.tobytes()
+
+
+def matrix_segment(matrices: list[np.ndarray]) -> bytes:
+    """The limb-matrix array a display list reaches through segment 0x0D.
+
+    A Zelda limb's display list selects which matrix applies to each vertex group with
+    ``G_MTX 0x0d0000N0``, where N counts 64-byte matrices.  The game fills that array at draw
+    time - one entry per limb that actually draws, in draw order - which is why a static rip
+    that leaves segment 0x0D unbound piles geometry from different spaces on top of itself.
+    """
+    return b"".join(pack_matrix(m) for m in matrices)
 
 
 class Interpreter:
@@ -387,9 +420,16 @@ class Interpreter:
         self.tile.pal_addr = self.tile.addr
 
     def _op_mtx(self, w0: int, w1: int) -> None:
-        params = (w0 >> 16) & 0xFF
-        push = not (params & 0x01)  # F3DEX2 inverts: bit clear means push
-        load = bool(params & 0x02)
+        """``G_MTX``: the parameters are the LOW byte, XORed with G_MTX_PUSH.
+
+        F3DEX2 encodes this as ``gsDma2p(G_MTX, m, 64, params ^ G_MTX_PUSH, 0)``, so the
+        0x38 sitting in bits 19-23 is the length field, not the parameters.  Reading the
+        parameters from there makes every load look like a multiply, and multiplying one
+        limb's world matrix by another's throws the geometry into spikes.
+        """
+        params = (w0 & 0xFF) ^ G_MTX_PUSH
+        push = bool(params & G_MTX_PUSH)
+        load = bool(params & G_MTX_LOAD)
         found = self.seg.resolve(w1)
         if found is None:
             self.result.unresolved.add((w1 >> 24) & 0x0F)
