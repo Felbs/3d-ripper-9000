@@ -55,7 +55,11 @@ SHATTER_LARGEST_SHARE = 0.15
 SHATTER_TRIS_PER_COMP = 4.0  # legit multi-part stages average far more triangles/part
 TINY_SHARE = 0.01  # vs the game's median model vertex count
 TINY_MIN_MEDIAN = 300  # only meaningful when the game's models are non-trivial
-GAME_TEXTURED_MIN = 0.5  # game share of textured models before "untextured" is a verdict
+# A game whose textured share is below this has a disc-wide texture problem, not per-model
+# damage - it is reported as `no_textures` on the game rather than blamed on every model.
+# It must NOT suppress the count: gating the verdict on it hid 87,675 bare models across 78
+# games, including seven whole discs at 0.0% textured that each reported untextured = 0.
+GAME_TEXTURED_MIN = 0.5
 
 # Known-benign exceptions, matched with fnmatch against "<GID>/<out_rel>".  Tiger Woods
 # `ter` slabs decode byte-identical to raw known-plaintext copies (see gcrip/knownplain.py),
@@ -346,8 +350,11 @@ def score_model(
         return _SOFT, soft
 
     untex = (meta.get("textures") or 0) == 0 and not metrics.get("has_material_texture")
-    if untex and game_ctx.get("textured_share", 0.0) >= GAME_TEXTURED_MIN and n_tris > 0:
-        return "untextured", ["untextured"]
+    if untex and n_tris > 0:
+        # the reason says which kind it is; the verdict counts it either way, because a disc
+        # where nothing is textured is the worst case, not an exempt one
+        whole_disc = game_ctx.get("textured_share", 0.0) < GAME_TEXTURED_MIN
+        return "untextured", ["untextured_disc" if whole_disc else "untextured"]
     return "ok", []
 
 

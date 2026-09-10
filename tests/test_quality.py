@@ -281,3 +281,32 @@ def test_audit_game_unreadable_model_is_suspect(tmp_path):
     report, flags = audit_game(tmp_path, gid)
     assert flags[f"{gid}/missing.gltf"]["reasons"] == ["unreadable"]
     assert report["suspect"] == 1
+
+
+def test_untextured_fires_even_when_the_whole_disc_is_bare():
+    """A game where nothing is textured is the worst case, not an exempt one.
+
+    The verdict used to be gated on the game's textured share reaching 0.5, so a disc at
+    0.0% textured reported untextured = 0.  That hid 87,675 bare models across 78 games,
+    seven of them whole discs at 0.0% (Harry Potter 7,590, HomeRunKING 6,274, Looney Tunes
+    5,819, Animaniacs 3,257, Tomb Raider Legend 2,127).
+    """
+    metrics = {"triangles": 500, "vertices": 300, "n_components": 1,
+               "largest_component_share": 1.0, "median_edge_ratio": 0.10,
+               "p10_edge_ratio": 0.02, "degenerate_edge_pct": 0.0,
+               "dup_top_share": 0.0, "extent": 5.0, "nonfinite_pct": 0}
+    meta = {"textures": 0}
+
+    # whole disc bare: still counted, and the reason says which kind
+    verdict, reasons = score_model(metrics, meta, {"textured_share": 0.0})
+    assert verdict == "untextured"
+    assert reasons == ["untextured_disc"]
+
+    # a bare model on an otherwise textured disc: counted as before
+    verdict, reasons = score_model(metrics, meta, {"textured_share": 0.9})
+    assert verdict == "untextured"
+    assert reasons == ["untextured"]
+
+    # a textured model is still ok
+    verdict, reasons = score_model(metrics, {"textures": 3}, {"textured_share": 0.9})
+    assert verdict == "ok"
