@@ -20,9 +20,14 @@ from pathlib import Path
 
 
 def _load_jsonl(p: Path) -> list[dict]:
+    """Rows of a JSONL file, tolerating a UTF-8 BOM and blank lines.
+
+    ``utf-8-sig`` rather than ``utf-8`` because this file is the run's memory: anything
+    that rewrites it with a Windows tool (PowerShell's ``Set-Content -Encoding utf8``
+    means *with BOM*) would otherwise make every later rip die on line 1."""
     if not p.exists():
         return []
-    return [json.loads(x) for x in p.read_text(encoding="utf-8").splitlines() if x.strip()]
+    return [json.loads(x) for x in p.read_text(encoding="utf-8-sig").splitlines() if x.strip()]
 
 
 def batch(
