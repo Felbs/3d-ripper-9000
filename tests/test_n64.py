@@ -275,3 +275,38 @@ def test_sibling_cycles_do_not_hang_the_parent_walk():
     sk = skeleton.read_skeleton(data, 0)
     assert sk is not None
     assert sk.order()[0] == 0
+
+
+def test_vertex_colours_export_normalised():
+    """glTF multiplies COLOR_0 into the base colour, so it must arrive in 0..1.
+
+    Parsers hand back 0..255 bytes.  Casting those straight to float made every textured
+    surface 255x too bright - invisible in the thumbnailer, which ignores vertex colour, and
+    blown out in the browser's 3D viewer.
+    """
+    import json
+    import tempfile
+    from pathlib import Path
+
+    from ripcore import gltf
+    from ripcore.scene import MaterialDef, Primitive, Scene
+
+    scene = Scene(name="c")
+    scene.materials = [MaterialDef(name="m", texture=None)]
+    pos = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]], dtype=np.float32)
+    scene.primitives = [
+        Primitive(
+            material=0,
+            positions=pos,
+            indices=np.array([0, 1, 2], dtype=np.uint32),
+            colors=np.full((3, 4), 255, dtype=np.uint8),
+        )
+    ]
+    with tempfile.TemporaryDirectory() as d:
+        base = Path(d) / "c"
+        gltf.export(scene, base, thumbnail=False)
+        doc = json.loads(base.with_suffix(".gltf").read_text(encoding="utf-8"))
+        acc = doc["accessors"][doc["meshes"][0]["primitives"][0]["attributes"]["COLOR_0"]]
+        # bytes go out as normalized UNSIGNED_BYTE, never as raw floats of 255
+        assert acc["componentType"] == 5121
+        assert acc.get("normalized") is True

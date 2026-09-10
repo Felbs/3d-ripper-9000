@@ -15,6 +15,7 @@ from gcrip.export import png, thumb
 from ripcore.scene import Scene
 
 FLOAT, USHORT, UINT = 5126, 5123, 5125
+UNSIGNED_BYTE = 5121
 ARRAY_BUFFER, ELEMENT_ARRAY_BUFFER = 34962, 34963
 
 
@@ -245,7 +246,22 @@ def export(scene: Scene, out_base: Path, *, thumbnail: bool = True) -> ExportSta
         if p.uvs is not None:
             attrs["TEXCOORD_0"] = buf.add(p.uvs.astype(np.float32), FLOAT, "VEC2", ARRAY_BUFFER)
         if p.colors is not None:
-            attrs["COLOR_0"] = buf.add(p.colors.astype(np.float32), FLOAT, "VEC4", ARRAY_BUFFER)
+            # glTF multiplies COLOR_0 into the base colour, so it has to arrive in 0..1.
+            # Parsers hand us 0..255 bytes, and casting those straight to float made every
+            # textured surface 255x too bright - fine in the thumbnailer, which ignores
+            # vertex colour, and blown out in any real viewer.  Bytes go out as the
+            # canonical normalized UNSIGNED_BYTE; anything else is assumed already 0..1.
+            col = p.colors
+            if col.dtype == np.uint8:
+                attrs["COLOR_0"] = buf.add(
+                    np.ascontiguousarray(col, dtype=np.uint8),
+                    UNSIGNED_BYTE, "VEC4", ARRAY_BUFFER, normalized=True,
+                )
+            else:
+                arr = np.asarray(col, dtype=np.float32)
+                if arr.size and float(arr.max()) > 1.0 + 1e-6:
+                    arr = arr / 255.0
+                attrs["COLOR_0"] = buf.add(arr, FLOAT, "VEC4", ARRAY_BUFFER)
         if p.joints is not None and scene.joints:
             attrs["JOINTS_0"] = buf.add(p.joints.astype(np.uint16), USHORT, "VEC4", ARRAY_BUFFER)
             attrs["WEIGHTS_0"] = buf.add(p.weights.astype(np.float32), FLOAT, "VEC4", ARRAY_BUFFER)
