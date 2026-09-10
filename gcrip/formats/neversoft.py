@@ -439,7 +439,15 @@ def _pass_table(data: bytes, start: int, npass: int) -> int | None:
         ok = True
         for i in range(probe):
             q = p + 32 * i
-            if data[q + 24 : q + 32] != b"\0\1\0\0\0\0\0\0" or data[q + 21 : q + 24] != bytes(3):
+            # +22 is a texture wrap mode: THUG leaves it zero, THUG2 writes 0x11 on every
+            # record.  Demanding all three bytes zero cost THUG2 every model it has
+            # (356 .mdl + 52 .scn failing "pass table not found").  The record's real
+            # signature is the u32 1 << 16 / u32 0 tail, which both games write.
+            if (
+                data[q + 24 : q + 32] != b"\0\1\0\0\0\0\0\0"
+                or data[q + 21] != 0
+                or data[q + 23] != 0
+            ):
                 ok = False
                 break
         if ok:
