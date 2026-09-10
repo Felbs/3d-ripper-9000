@@ -115,6 +115,24 @@ class _Source:
             self._cache.pop(old, None)
         return raw
 
+    def head(self, path: str, n: int = 64) -> bytes:
+        """First *n* bytes of a file, without materialising the whole thing.
+
+        A top-level file is read straight off the disc image at its own offset, so this
+        stays cheap no matter how big the file is.  That matters: plugin ``detect()`` runs
+        on these bytes, and the old size guard handed an **empty** head to every detector
+        for anything over 64 MB - which is exactly where the big archives live (Cubix's
+        285 MB allpaks.gcp, Enter the Matrix's 1.06 GB wad1.dfu, NCAA 2K3's 1.3 GB
+        game.dat).  Magic-based detection could never fire on them.
+
+        Members nested inside a container still go through the full fetch, because the
+        parent has to be expanded either way; the caller keeps a size guard for those.
+        """
+        e = self.by_path[path]
+        if e.container is None:
+            return self.image.read(e.disc_offset or 0, min(n, e.size))
+        return self.raw(path)[:n]
+
     def raw(self, path: str) -> bytes:
         e = self.by_path[path]
         if e.container is None:
@@ -468,7 +486,12 @@ def _run_plugins(src, manifest, result, game_dir, quiet, thumbnails, limit, path
         if path_filter and path_filter not in e.path:
             continue
         try:
-            head = src.get(e.path)[:64] if e.size <= 64 << 20 else b""
+            # top-level files read their head straight off the image, however big they are;
+            # only nested members (whose parent must be expanded) keep the size guard
+            if e.container is None or e.size <= 64 << 20:
+                head = src.head(e.path, 64)
+            else:
+                head = b""
         except Exception:  # noqa: BLE001
             continue
         mods = plugins_for(e.path, head, e.size)
