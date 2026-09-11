@@ -18,7 +18,15 @@ import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from n64rip import anim as anim_mod, f3dex2, objects as obj_mod, skeleton as skel_mod, zobj
+from n64rip import (
+    anim as anim_mod,
+    f3dex2,
+    face as face_mod,
+    objects as obj_mod,
+    skeleton as skel_mod,
+    texture as tex_mod,
+    zobj,
+)
 from n64rip.rom import Rom, RomFile
 from ripcore import gltf
 
@@ -41,6 +49,7 @@ class ModelResult:
     skinned: bool = True
     unresolved_segments: list[int] = field(default_factory=list)
     posed: bool = False  # a rest pose was applied and it stood the model up
+    expressions: list[str] = field(default_factory=list)  # face textures written beside it
     object_id: int | None = None  # its slot in the game's object table, when it has one
     error: str = ""
     warnings: list[str] = field(default_factory=list)
@@ -84,8 +93,73 @@ def _pose(scene, name, data, skel, segments, link_anim, object_id):
             continue
         after = np.concatenate([p.positions for p in cand.primitives])
         if anim_mod.stands_up(ext_before, after.max(0) - after.min(0)):
-            return cand
+            return cand, world, rots
     return None
+
+
+def _face_tlut(data, skel, segments):
+    """The palette the face textures share, read from a CI tile the head actually requests.
+
+    The face is CI8, so it needs a TLUT, and it shares the head's - so rather than guessing
+    where the palette lives, take the one the display list already pointed at.
+    """
+    for i in skel.order():
+        limb = skel.limbs[i]
+        if not limb.dlist:
+            continue
+        res = f3dex2.run(limb.dlist, segments)
+        for b in res.batches:
+            tile = b.tile
+            if tile.fmt != tex_mod.FMT_CI or tile.pal_addr is None:
+                continue
+            got = segments.resolve(tile.pal_addr)
+            if got:
+                buf, off = got
+                return tex_mod.decode_tlut(buf[off:], 256)
+    return None
+
+
+def _faces(scene, name, data, skel, segments, code, out_dir, world, rotations):
+    """Bind a face and write every expression beside the model.
+
+    A character's face is swapped at runtime through segments 8 and 9, so a static rip leaves
+    it blank.  Binding expression 0 fills it in; writing the rest as PNGs next to the model
+    lets a rigger switch expression by pointing the material at a different image - which is
+    what a texture swap needs, since morph targets deform geometry and cannot do this.
+    """
+    unresolved = set(scene.extras.get("unresolved_segments") or ())
+    if not (unresolved & {face_mod.EYE_SEGMENT, face_mod.MOUTH_SEGMENT}) or not code:
+        return scene, []
+    faces = face_mod.find_faces(code, len(data))
+    bound = face_mod.segments_for(faces, data, 0, 0)
+    if not bound:
+        return scene, []
+    seg2 = f3dex2.Segments({**segments.bases, **bound})
+    try:
+        rebuilt = zobj.build(name, data, skel, seg2, world=world, rotations=rotations)
+    except Exception:  # noqa: BLE001
+        return scene, []
+    if not rebuilt.primitives:
+        return scene, []
+
+    tlut = _face_tlut(data, skel, seg2)
+    written: list[str] = []
+    if tlut is not None:
+        from PIL import Image
+
+        tex_dir = Path(out_dir) / f"{name}_tex"
+        tex_dir.mkdir(parents=True, exist_ok=True)
+        for kind, offs, (w, h) in (("eye", faces.eyes, faces.eye_size),
+                                   ("mouth", faces.mouths, faces.mouth_size)):
+            for k, off in enumerate(offs):
+                try:
+                    img = tex_mod.decode(tex_mod.FMT_CI, tex_mod.SIZE_8, w, h, data[off:], tlut, 0)
+                except tex_mod.TextureError:
+                    continue
+                fname = f"face_{kind}_{k}.png"
+                Image.fromarray(img).save(tex_dir / fname)
+                written.append(fname)
+    return rebuilt, written
 
 
 def extract_rom(
@@ -110,6 +184,7 @@ def extract_rom(
                 object_ids.setdefault(fidx, oid)
     # Link keeps no animations in his object file - his live in their own uncompressed one,
     # so posing him needs a separate source from every other actor.
+    code_file = None if table is None else rom.read(rom.files[table.file_index])
     link_anim = None
     for f in rom.live:
         if not f.compressed and 2_000_000 < f.size < 3_000_000:
@@ -152,11 +227,15 @@ def extract_rom(
             # the pose the model was authored in.  Applying it is gated on the result actually
             # standing up, because not every animation in a file is a rest pose.
             posed = _pose(scene, name, data, sk, segments, link_anim, res.object_id)
+            world = rotations = None
             if posed is not None:
-                scene = posed
+                scene, world, rotations = posed
                 res.posed = True
             if scene.triangles < MIN_TRIANGLES:
                 continue
+            scene, res.expressions = _faces(
+                scene, name, data, sk, segments, code_file, out_dir, world, rotations
+            )
             base = out_dir / name
             try:
                 st = gltf.export(scene, base, thumbnail=True)
