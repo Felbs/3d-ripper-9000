@@ -600,23 +600,18 @@ def test_is_blank_accepts_a_zero_length_object_slot():
     assert not _is_blank(0x015E2000, 0x015E4170)
     assert not _is_blank(0, 0x100)
 
-def test_a_face_belongs_to_a_head_not_to_a_bare_quad():
-    """A limb that is nothing but the swapped tile is an effect sprite, not a face.
+def test_the_head_share_gate_is_retired():
+    """It rejected Deku Scrubs, whose eyes really are glowing dots on their own billboards.
 
-    Measured across Ocarina of Time, a real face tile covers 4.7% to 48.9% of its limb,
-    because a head also carries skin, hair and ears.  Three non-characters sat at 100% on
-    limbs of 2 to 6 triangles - a glow, a ring and a flame - and each shipped a "face".
+    Kept as constants rather than deleted so the reasoning stays with the code: the gate was
+    built by looking at 8x8 textures out of context, and the characters it silenced were the
+    evidence against it.
     """
     from n64rip.extract import MAX_FACE_SHARE, MIN_HEAD_TRIANGLES
 
-    def rejected(face_tris, limb_tris):
-        share = face_tris / limb_tris
-        return share > MAX_FACE_SHARE and limb_tris < MIN_HEAD_TRIANGLES
+    # a two-triangle limb whose tile is all of it must now pass
+    assert not (1.0 > MAX_FACE_SHARE and 2 < MIN_HEAD_TRIANGLES)
 
-    assert rejected(2, 2) and rejected(6, 6) and rejected(2, 2)      # the three junk limbs
-    assert not rejected(64, 131)   # Link, the densest real face at 0.489
-    assert not rejected(4, 85)     # the sparsest real face at 0.047
-    assert not rejected(30, 70)    # 0.429
 
 def test_expression_variants_are_not_in_the_default_scene():
     """A plain glTF viewer draws every node in the scene, so alternates must stay out of it.

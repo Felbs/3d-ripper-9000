@@ -160,13 +160,18 @@ def _mirrored(a, b) -> bool:
     return abs(spna - spnb) <= 0.10 * max(spna, spnb, 1e-6)
 
 
-#: A limb whose geometry is entirely the swapped tile is not a head.  Measured over every
-#: actor in Ocarina of Time that binds a face: the tile covers between 4.7% and 48.9% of its
-#: limb, because a head also carries skin, hair and ears.  The cases that sit at 100% are a
-#: glow sprite, a rupee-like ring and a small flame - single quads of 2 to 6 triangles that
-#: happen to sample a face segment, and binding a "face" onto them ships a black donut.
-MAX_FACE_SHARE = 0.75
-MIN_HEAD_TRIANGLES = 16
+#: Retired.  This gate rejected any actor whose swapped tile was the whole of its limb, on
+#: the reasoning that a head also carries skin and hair - and it did keep a cart from binding
+#: a wheel texture.  But two of the three actors it caught were **Deku Scrubs, whose eyes
+#: genuinely are glowing dots on their own two-triangle billboards**, and the user found them
+#: on the models with no eyes at all.  The lesson is the usual one here: the judgement was
+#: made by looking at 8x8 textures out of context rather than at the characters.
+#:
+#: Nothing replaces it.  A segment-8 binding recovers whatever the game itself points that
+#: segment at, and the noise gates already reject anything that is not a coherent image; a
+#: wheel bound to the slot the game binds a wheel to is not a defect.
+MAX_FACE_SHARE = 1.01
+MIN_HEAD_TRIANGLES = 0
 
 
 def _face_roles(data, skel, segments):
@@ -501,7 +506,27 @@ def _size_table(data, offs, want_tiles, fallback_fmt, tlut):
     return best[1]
 
 
-def _best_table(data, runs, want_tiles, tlut, exclude=()):
+def _spans(run, min_len=2):
+    """Every contiguous stretch of a run, longest first.
+
+    Needed only for the seeded walk, which runs past the end of the table by design: its
+    frames are a fixed stride apart, so the real table is a stretch somewhere inside it and
+    the surrounding junk would otherwise drag the whole candidate below the gates.  A pointer
+    run read out of an overlay does not need this - it is already exactly the table the actor
+    indexes - and giving it the same treatment would widen the search for no gain.
+    """
+    out = []
+    n = len(run)
+    for length in range(n, min_len - 1, -1):
+        # The table starts where the palette ends, give or take one frame of something else
+        # in front of it - two of the actors recovered this way keep a mouth at the seed and
+        # their eyes immediately after.  Anything further in is not anchored by anything.
+        for i in range(0, min(MAX_SEED_SKIP, n - length) + 1):
+            out.append(list(run[i:i + length]))
+    return out
+
+
+def _best_table(data, runs, want_tiles, tlut, exclude=(), spans=False):
     """The table, size and format that best read as one face wearing several expressions.
 
     Chosen by **length first**, among the candidates that clear the threshold.  Scoring alone
@@ -514,7 +539,8 @@ def _best_table(data, runs, want_tiles, tlut, exclude=()):
         return None
     best = (0, 0.0, None)  # entries, score, payload
     for run in runs:
-        for offs in actor_mod.texture_tables(run):
+        cands = _spans(run) if spans else actor_mod.texture_tables(run)
+        for offs in cands:
             if any(o in exclude for o in offs):
                 continue
             for fmt, size in formats:
@@ -538,6 +564,68 @@ def _best_table(data, runs, want_tiles, tlut, exclude=()):
     return best[2]
 
 
+#: A 256-entry RGBA16 palette is this many bytes, and an actor's face frames begin right
+#: after the one they use.
+TLUT_BYTES = 0x200
+
+#: how many frames of something else may sit between the palette and the table
+MAX_SEED_SKIP = 2
+
+#: how far to walk from the seed before giving up; the trim decides where the table really
+#: ends, and no real table measured here runs longer than nine frames
+SEED_FRAMES = 10
+
+
+def _face_palette(data, skel, segments, segment):
+    """The palette address the head names on *segment*, as an offset in the object file."""
+    for i in skel.order():
+        limb = skel.limbs[i]
+        if not limb.dlist:
+            continue
+        try:
+            res = f3dex2.run(limb.dlist, segments)
+        except Exception:  # noqa: BLE001
+            continue
+        for b in res.batches:
+            tile = b.tile
+            if tile.addr is None or not tile.pal_addr:
+                continue
+            if ((tile.addr >> 24) & 0x0F) == segment:
+                return tile.pal_addr & 0x00FFFFFF
+    return None
+
+
+def _seeded_runs(data, skel, segments, segment, tiles):
+    """One candidate table per tile spec, seeded immediately after the face's own palette.
+
+    For an actor with no entry in ``gActorOverlayTable`` there is no pointer array to read, so
+    the offsets have to come from somewhere else.  The display list already names the palette
+    the face is drawn with, and the frames that use a palette are stored directly after it:
+    on four of the actors whose offsets were established by hand, the first eye sits at
+    exactly ``palette + 0x200``, byte for byte.
+
+    This is a **seed, not a search** - one deterministic candidate per tile spec, from an
+    address the game itself states - so it does not widen the pool the way a scan would.  It
+    is only consulted when the overlay route found nothing, and the ordinary gates and the
+    per-frame trim still decide what survives: the walk deliberately runs past the end of the
+    table and lets the trim cut it back.
+    """
+    pal = _face_palette(data, skel, segments, segment)
+    if pal is None:
+        return []
+    start = pal + TLUT_BYTES
+    runs = []
+    for fmt, size, w, h in sorted(tiles):
+        nbytes = w * h * BITS.get(size, 8) // 8
+        if nbytes <= 0:
+            continue
+        offs = [start + k * nbytes for k in range(SEED_FRAMES)]
+        offs = [o for o in offs if o + nbytes <= len(data)]
+        if len(offs) >= 2 and offs not in runs:
+            runs.append(offs)
+    return runs
+
+
 def _overlay_faces(data, skel, segments, overlays, object_id):
     """This actor's own eye and mouth tables, read from its overlay's pointer runs.
 
@@ -556,8 +644,6 @@ def _overlay_faces(data, skel, segments, overlays, object_id):
     runs = []
     for ov in overlays.get(object_id, ()):
         runs += [r for r in actor_mod.texture_runs(ov, len(data)) if r[-1] < len(data)]
-    if not runs:
-        return None
     # Judge candidates through the palette the face will actually wear.  A grey ramp makes
     # smooth art look like noise, because neighbouring palette indices are not neighbouring
     # colours - which let the roughness gate pass confetti and reject real faces.
@@ -565,6 +651,14 @@ def _overlay_faces(data, skel, segments, overlays, object_id):
     if tlut is None:
         tlut = _grey_tlut()
     eye = _best_table(data, runs, eye_tiles, tlut)
+    # The seeded walk is a LAST RESORT, for an actor with no pointer table at all.  Offered to
+    # an actor that has one it only adds noise: the walk is deliberately long, so scoring its
+    # sub-spans hands "length first" a much bigger pool to win from, and characters whose real
+    # table was already correct picked up seven frames of speckle apiece.
+    seeded = not runs
+    if eye is None and eye_tiles and seeded:
+        eye = _best_table(data, _seeded_runs(data, skel, segments, eye_segs[0], eye_tiles),
+                          eye_tiles, tlut, spans=True)
     eyes, spill = ([], [])
     eye_dims, eye_fmt = (32, 32), (tex_mod.FMT_CI, tex_mod.SIZE_8)
     if eye is not None:
@@ -573,6 +667,9 @@ def _overlay_faces(data, skel, segments, overlays, object_id):
         eyes, spill = _trim_table(data, offs, nbytes, imgs)
 
     mouth = _best_table(data, runs, mouth_tiles, tlut, exclude=set(eyes)) if mouth_tiles else None
+    if mouth is None and mouth_tiles and mouth_segs and seeded:
+        mouth = _best_table(data, _seeded_runs(data, skel, segments, mouth_segs[0], mouth_tiles),
+                            mouth_tiles, tlut, exclude=set(eyes), spans=True)
     if mouth is not None:
         mouths, mouth_dims, mouth_fmt = mouth[0], mouth[1], mouth[2]
     elif spill:
