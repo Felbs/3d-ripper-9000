@@ -512,8 +512,12 @@ def gsp_segments(overlay: bytes, vram_base: int, object_size: int,
         elif m in ("lw", "ld") and len(o) == 2:
             mm = mem(o[1])
             base = prov.get(mm[1]) if mm else None
-            if mm and is_table(base):
-                prov[o[0]] = ("load", (base[1] + mm[0]) & 0xFFFFFFFF)
+            eff = ((base[1] + mm[0]) & 0xFFFFFFFF) if (mm and base and base[0] == "const") else None
+            if eff is not None and vram_base <= eff < top:
+                # judged on the effective address: the compiler folds a table's low half into
+                # the displacement (lui 0x80a2 / lw -0x4b34($t0)), so the base alone can sit
+                # outside the overlay while the load is squarely inside it
+                prov[o[0]] = ("load", eff)
             elif mm and base is None and mm[1] not in ("$sp", "$zero"):
                 # a field of some struct - usually the actor's own.  Remember which field, so
                 # the value can be traced to whatever the actor stored there.
@@ -602,4 +606,176 @@ def gsp_segments(overlay: bytes, vram_base: int, object_size: int,
         for v in resolve(mate):
             if v < object_size and v not in bucket:
                 bucket.append(v)
+    return out
+
+
+# --------------------------------------------------------------------------- attachments
+
+#: ``gSPDisplayList`` writes ``0xDE000000`` (or ``0xDE010000`` for a branch) and the address.
+GDL_HI = (0xDE00, 0xDE01)
+
+
+def attachments(overlay: bytes, vram_base: int, object_size: int,
+                max_entries: int = 8) -> list[tuple[int, list[int]]]:
+    """Display lists the actor draws on one of its limbs, outside the skeleton.
+
+    A Gerudo's ponytail, a hat, a held item: none of these is in the limb table.  The actor
+    draws them from its post-limb callback, which the compiler emits as
+
+        addiu $at, $zero, N        ; the limb this hangs from, 1-based
+        bne   $a1, $at, skip
+        ...
+        lui   $t7, 0xde00          ; gSPDisplayList command
+        sw    $t7, 0(gfx)
+        ...
+        sw    $addr, 4(gfx)        ; the list, direct or table[this->field]
+
+    with that limb's matrix on the stack - so the list's vertices are in the limb's space and
+    it moves with the limb.  Without this the character is bald, or bare-handed.
+
+    Same method as :func:`gsp_segments` - anchor on the two stores, trace the address - plus
+    the limb compare that precedes the emission: the nearest preceding ``addiu $at, $zero, N``
+    consumed by a branch on ``$a1``, the callback's ``limbIndex`` argument.  A list emitted
+    with no such compare is drawn under the actor's own matrix, not a limb's, and is not
+    reported - placing it would need the pose the actor applies, which is not known here.
+
+    Returns ``[(limb index, [display list offsets])]`` with the limb index **0-based**, the
+    first offset being what the actor draws by default and the rest the alternatives its
+    table holds (hairstyles, for the Gerudo).
+    """
+    try:
+        from capstone import CS_ARCH_MIPS, CS_MODE_32, CS_MODE_BIG_ENDIAN, Cs
+    except ImportError:  # pragma: no cover
+        return []
+    import struct as _struct
+
+    md = Cs(CS_ARCH_MIPS, CS_MODE_32 | CS_MODE_BIG_ENDIAN)
+    ins = list(md.disasm(overlay, 0))
+    if not ins:
+        return []
+    top = vram_base + len(overlay)
+
+    def ops(i):
+        return [o.strip() for o in i.op_str.split(",")] if i.op_str else []
+
+    def mem(o):
+        if "(" not in o:
+            return None
+        off, base = o.split("(", 1)
+        try:
+            return (int(off, 0) if off else 0), base.rstrip(")")
+        except ValueError:
+            return None
+
+    def imm(s):
+        try:
+            return int(s, 0)
+        except ValueError:
+            return None
+
+    def is_table(pv):
+        return pv is not None and pv[0] == "const" and vram_base <= pv[1] < top
+
+    prov: dict[str, tuple | None] = {}
+    stores = []          # (index, offset, base, prov)
+    limb_cmp = []        # (index, N) for `addiu $at, $zero, N` followed by a branch on $a1
+    pending_at = None
+    for k, i in enumerate(ins):
+        m, o = i.mnemonic, ops(i)
+        if m == "addiu" and len(o) == 3 and o[0] == "$at" and o[1] == "$zero":
+            pending_at = (k, imm(o[2]))
+        elif m in ("bne", "beq") and len(o) == 3 and pending_at and "$at" in o[:2] and "$a1" in o[:2]:
+            if pending_at[1] is not None and 0 < pending_at[1] < 64:
+                limb_cmp.append((k, pending_at[1]))
+            pending_at = None
+        if m == "lui" and len(o) == 2:
+            v = imm(o[1])
+            prov[o[0]] = ("const", (v & 0xFFFF) << 16) if v is not None else None
+        elif m in ("addiu", "ori") and len(o) == 3:
+            src = prov.get(o[1]); v = imm(o[2])
+            if src and src[0] == "const" and v is not None:
+                if m == "ori":
+                    prov[o[0]] = ("const", src[1] | (v & 0xFFFF))
+                else:
+                    if v >= 0x8000:
+                        v -= 0x10000
+                    prov[o[0]] = ("const", (src[1] + v) & 0xFFFFFFFF)
+            elif src and src[0] == "load":
+                prov[o[0]] = src
+            else:
+                prov[o[0]] = None
+        elif m in ("addu", "add", "or", "and", "subu") and len(o) == 3:
+            a, b = prov.get(o[1]), prov.get(o[2])
+            prov[o[0]] = next((pv for pv in (a, b) if pv and pv[0] == "load"), None) or \
+                         next((pv for pv in (a, b) if is_table(pv)), None) or \
+                         next((pv for pv in (a, b) if pv and pv[0] == "const"), None)
+        elif m == "lw" and len(o) == 2:
+            mm = mem(o[1]); base = prov.get(mm[1]) if mm else None
+            eff = ((base[1] + mm[0]) & 0xFFFFFFFF) if (mm and base and base[0] == "const") else None
+            prov[o[0]] = ("load", eff) if (eff is not None and vram_base <= eff < top) else None
+        elif m == "sw" and len(o) == 2:
+            mm = mem(o[1])
+            if mm:
+                stores.append((k, mm[0], mm[1], prov.get(o[0])))
+        elif m == "move" and len(o) == 2:
+            prov[o[0]] = prov.get(o[1])
+        elif o and m not in ("sw", "sh", "sb", "swc1", "beq", "bne", "beqz", "bnez", "blez",
+                             "bgtz", "bltz", "bgez", "j", "jal", "jr", "jalr", "b", "nop",
+                             "mtc1", "mfc1", "mult", "multu", "div", "divu", "mtlo", "mthi"):
+            prov[o[0]] = None
+        if m in ("jal", "jalr"):
+            for r in ("$v0", "$v1", "$a0", "$a1", "$a2", "$a3", "$t0", "$t1", "$t2", "$t3",
+                      "$t4", "$t5", "$t6", "$t7", "$t8", "$t9"):
+                prov[r] = None
+
+    n = len(overlay)
+
+    def read_table(vaddr):
+        off = vaddr - vram_base
+        vals = []
+        for e in range(max_entries):
+            at = off + 4 * e
+            if not 0 <= at <= n - 4:
+                break
+            w = _struct.unpack_from(">I", overlay, at)[0]
+            if (w >> 24) != 0x06 or (w & 0xFFFFFF) >= object_size:
+                break
+            vals.append(w & 0xFFFFFF)
+        return vals
+
+    out: list[tuple[int, list[int]]] = []
+    for si, (k, off0, base0, p0) in enumerate(stores):
+        if off0 != 0 or not p0 or p0[0] != "const" or (p0[1] >> 16) not in GDL_HI:
+            continue
+        mate = None
+        for k2, off2, base2, p2 in stores[si + 1:si + 8]:
+            if off2 == 4 and base2 == base0 and k2 - k <= GSP_WINDOW:
+                mate = p2
+                break
+        if mate is None:
+            continue
+        if mate[0] == "const" and (mate[1] >> 24) == 0x06:
+            dls = [mate[1] & 0xFFFFFF]
+        elif mate[0] == "load":
+            dls = read_table(mate[1])
+        else:
+            continue
+        dls = [x for x in dls if x < object_size]
+        if not dls:
+            continue
+        # the limb compare that guards this emission: nearest preceding one, within reach
+        limb = None
+        for kc, nlimb in reversed(limb_cmp):
+            if kc < k and k - kc <= 40:
+                limb = nlimb - 1
+                break
+        if limb is None:
+            continue
+        entry = next((e for e in out if e[0] == limb), None)
+        if entry is None:
+            out.append((limb, list(dls)))
+        else:
+            for x in dls:
+                if x not in entry[1]:
+                    entry[1].append(x)
     return out

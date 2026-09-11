@@ -871,3 +871,58 @@ def test_unclaimed_objects_consult_the_runtime_pool_by_code_only():
     assert "texture_runs" not in src, "the pool must never be searched by pointer shape"
     body = inspect.getsource(extract._overlay_faces)
     assert "if not own and pool:" in body
+
+
+def _bne(rs, rt, off_words):
+    return 0x14000000 | (rs << 21) | (rt << 16) | (off_words & 0xFFFF)
+
+
+def test_attachments_reads_a_post_limb_draw():
+    """PostLimbDraw: if (limbIndex == 15) gSPDisplayList(hairTable[this->hairType]).
+
+    The Gerudo's ponytail.  The list is not in the limb table; the actor draws it under the
+    head's matrix, and the compiler folds the table's low half into the load's displacement,
+    so the base register points outside the overlay while the load lands inside it.
+    """
+    import pytest
+
+    pytest.importorskip("capstone")
+    from n64rip.actor_code import attachments
+
+    AT, A1, T0, T7, T8, T9 = 1, 5, 8, 15, 24, 25
+    # the table sits just below the next 64 K page, as it does in the Gerudo's overlay, so
+    # the compiler reaches it with lui of that page and a negative displacement
+    base = 0x80A1C000
+    table_off = 0x80
+    words = [
+        _addiu(AT, 0, 15),            # limbIndex == 15
+        _bne(A1, AT, 20),             # skip if not
+        _lui(T7, 0xDE00),             # gSPDisplayList command
+        _lui(T0, (base + 0x10000) >> 16),   # lui of a HIGHER page than the table
+        _sw(T7, 0, V0),
+        _lw(T8, 0x29E, A3),           # this->hairType (unknown base -> index)
+        (T8 << 16) | (T9 << 11) | (2 << 6) | 0x00,   # sll $t9, $t8, 2
+        _addu(T0, T0, T9),
+        _lw(T0, (base + table_off) - ((base + 0x10000) & 0xFFFF0000), T0),   # negative displacement folds it back
+        _sw(T0, 4, V0),
+    ]
+    code = _mips(*words)
+    code += b"\0" * (table_off - len(code))
+    code += _mips(0x06009198, 0x06009430, 0x06009690, 0)
+    got = attachments(code, base, 0x10000)
+    assert got == [(14, [0x9198, 0x9430, 0x9690])], got
+
+
+def test_attachments_ignores_a_list_with_no_limb_guard():
+    """A list emitted with no limbIndex compare is drawn under the actor's own matrix, whose
+    pose is not known here - so it is left alone rather than placed at the wrong joint."""
+    import pytest
+
+    pytest.importorskip("capstone")
+    from n64rip.actor_code import attachments
+
+    code = _mips(
+        _lui(T9, 0xDE00), _sw(T9, 0, V0),
+        _lui(A0, 0x0600), _addiu(A0, A0, 0x1300), _sw(A0, 4, V0),
+    )
+    assert attachments(code, 0x80A00000, 0x4000) == []

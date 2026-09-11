@@ -65,7 +65,7 @@ class ModelResult:
 LINK_OBJECTS = (20, 21)
 
 
-def _pose(scene, name, data, skel, segments, link_anim, object_id):
+def _pose(scene, name, data, skel, segments, link_anim, object_id, attachments=None):
     """A posed rebuild of *scene*, or None if no rest pose improved it.
 
     The gate is deliberately blunt: a standing character is tallest in Y, and an un-posed rig
@@ -88,7 +88,8 @@ def _pose(scene, name, data, skel, segments, link_anim, object_id):
     for root, rots in sources:
         try:
             world = anim_mod.pose_matrices(skel, rots, root, "zyx")
-            cand = zobj.build(name, data, skel, segments, world=world, rotations=rots)
+            cand = zobj.build(name, data, skel, segments, world=world, rotations=rots,
+                              attachments=attachments)
         except Exception:  # noqa: BLE001
             continue
         if not cand.primitives:
@@ -941,7 +942,8 @@ def _face_tlut(data, skel, segments, prefer_face=True):
     return fallback
 
 
-def _expression_variants(scene, name, data, skel, segments, faces, world, rotations):
+def _expression_variants(scene, name, data, skel, segments, faces, world, rotations,
+                         attachments=None):
     """Add every other expression to *scene* as an alternate of the face primitive.
 
     The model ships wearing expression 0.  The rest are attached as variant primitives, which
@@ -964,7 +966,7 @@ def _expression_variants(scene, name, data, skel, segments, faces, world, rotati
             continue
         segs = f3dex2.Segments({**segments.bases, **bound})
         try:
-            alt = zobj.build(name, data, skel, segs, world=world, rotations=rotations)
+            alt = zobj.build(name, data, skel, segs, world=world, rotations=rotations, attachments=attachments)
         except Exception:  # noqa: BLE001
             continue
         # the display lists are the same, so material i means the same tile in both builds;
@@ -992,7 +994,7 @@ def _expression_variants(scene, name, data, skel, segments, faces, world, rotati
 
 
 def _faces(scene, name, data, skel, segments, code, out_dir, world, rotations,
-           object_id=None, overlays=None):
+           object_id=None, overlays=None, attachments=None):
     """Bind a face and write every expression beside the model.
 
     A character's face is swapped at runtime through segments 8 and 9, so a static rip leaves
@@ -1022,7 +1024,7 @@ def _faces(scene, name, data, skel, segments, code, out_dir, world, rotations,
         return scene, []
     seg2 = f3dex2.Segments({**segments.bases, **bound})
     try:
-        rebuilt = zobj.build(name, data, skel, seg2, world=world, rotations=rotations)
+        rebuilt = zobj.build(name, data, skel, seg2, world=world, rotations=rotations, attachments=attachments)
     except Exception:  # noqa: BLE001
         return scene, []
     # A face binding is a TEXTURE binding: it must never change geometry or lose textures.
@@ -1045,7 +1047,8 @@ def _faces(scene, name, data, skel, segments, code, out_dir, world, rotations,
     if len(_unresolved(rebuilt)) > len(_unresolved(scene)):
         return scene, []
 
-    rebuilt = _expression_variants(rebuilt, name, data, skel, segments, faces, world, rotations)
+    rebuilt = _expression_variants(rebuilt, name, data, skel, segments, faces, world, rotations,
+                                   attachments=attachments)
     written: list[str] = []
     from PIL import Image
 
@@ -1155,8 +1158,20 @@ def extract_rom(
             name = f.label if len(skels) == 1 else f"{f.label}_skel{si}"
             res = ModelResult(name, f.index, f"{f.vrom_start:#x}", limbs=sk.count)
             res.object_id = object_ids.get(f.index)
+            # Lists the actor draws on a limb outside the skeleton - hair, hats, held items -
+            # read from its own code.  The first list per limb is what it draws by default.
+            attach = []
+            for ov, vram in overlays.get(res.object_id, ()) if res.object_id is not None else ():
+                if not vram:
+                    continue
+                try:
+                    for limb_i, dls in actor_mod.attachments(ov, vram, len(data)):
+                        if dls and not any(a[0] == limb_i for a in attach):
+                            attach.append((limb_i, dls[0]))
+                except Exception:  # noqa: BLE001
+                    pass
             try:
-                scene = zobj.build(name, data, sk, segments)
+                scene = zobj.build(name, data, sk, segments, attachments=attach)
             except Exception as exc:  # noqa: BLE001
                 res.error = f"{type(exc).__name__}: {exc}"
                 models.append(res)
@@ -1165,7 +1180,7 @@ def extract_rom(
             # axis - Link comes out 45.9 wide and 23.3 tall.  Frame 0 of a rest animation is
             # the pose the model was authored in.  Applying it is gated on the result actually
             # standing up, because not every animation in a file is a rest pose.
-            posed = _pose(scene, name, data, sk, segments, link_anim, res.object_id)
+            posed = _pose(scene, name, data, sk, segments, link_anim, res.object_id, attach)
             world = rotations = None
             if posed is not None:
                 scene, world, rotations = posed
@@ -1174,7 +1189,7 @@ def extract_rom(
                 continue
             scene, res.expressions = _faces(
                 scene, name, data, sk, segments, code_file, out_dir, world, rotations,
-                res.object_id, overlays,
+                res.object_id, overlays, attach,
             )
             base = out_dir / name
             try:

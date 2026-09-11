@@ -99,6 +99,7 @@ def build(
     clips: list[Clip] | None = None,
     world: dict[int, np.ndarray] | None = None,
     rotations: np.ndarray | None = None,
+    attachments=None,
 ) -> Scene:
     """Walk *skel*'s limbs, interpret each limb's display list, and assemble one Scene.
 
@@ -170,6 +171,20 @@ def build(
             b.limb = i
             batches.append(b)
         scene.warnings += res.warnings
+    # Lists the actor draws on a limb from its post-limb callback - hair, hats, held items -
+    # which are not in the limb table.  They run under that limb's matrix, exactly as the
+    # game draws them, so they move with it.  See actor_code.attachments.
+    for limb_i, dl_off in (attachments or ()):
+        if not 0 <= limb_i < len(skel.limbs) or limb_i not in world:
+            continue
+        try:
+            res = f3dex2.run(0x06000000 | dl_off, segments, world[limb_i])
+        except Exception:  # noqa: BLE001 - a bad attachment must not cost the model
+            continue
+        unresolved |= res.unresolved
+        for b in res.batches:
+            b.limb = limb_i
+            batches.append(b)
 
     if not batches:
         scene.extras = {"format": "n64_zobj", "limbs": skel.count, "reason": "no geometry"}

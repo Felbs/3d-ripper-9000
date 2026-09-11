@@ -179,6 +179,44 @@ picture gates. Of four candidates for Zelda one passed, and it was her. The pool
 searched by pointer shape - that would be a search over a hundred and thirty overlays, and
 the rest of this note says what that produces.
 
+## Hair, hats, held items: display lists the actor draws on a limb
+
+The Gerudo's ponytail is not in her limb table. Nothing in the skeleton references it, every
+texture on the model resolves, and she is bald. The actor draws it from its post-limb
+callback:
+
+    addiu $at, $zero, 0xf      ; limbIndex == 15 (1-based: the head)
+    bne   $a1, $at, skip
+    lui   $t7, 0xde00          ; gSPDisplayList
+    sw    $t7, 0(gfx)
+    lbu   $t8, 0x29e($a3)      ; this->hairType
+    lui   $t0, 0x80a2
+    sll   $t9, $t8, 2
+    addu  $t0, $t0, $t9
+    lw    $t0, -0x4b34($t0)    ; hairTable[hairType]
+    sw    $t0, 4(gfx)
+
+with the head's matrix on the stack - so the list's vertices are in head space and the hair
+moves with the head. `actor_code.attachments` reads exactly this: the same two-store anchor
+as `gsp_segments`, plus the nearest preceding `addiu $at, $zero, N` consumed by a branch on
+`$a1` (the callback's `limbIndex`). A list with no such guard is drawn under the actor's own
+matrix, whose pose is not known statically, and is left alone rather than placed at the
+wrong joint. `zobj.build` runs each attached list under its limb's world matrix, exactly as
+the game does, so it is posed and skinned with the limb.
+
+Two details that cost a round each:
+
+* The table's low half is folded into the load's displacement - `lui 0x80a2` then
+  `lw -0x4b34($t0)` - so the base register points *outside* the overlay while the load
+  lands inside it. Judging "is this a table read" on the base register finds nothing; it
+  has to be the effective address. The same gap was latent in `gsp_segments`.
+* The attachments have to be threaded through *every* rebuild - the pose, the face binding,
+  each expression variant - because the face-binding gate compares triangle counts before
+  and after, and a rebuild without the hair would be rejected as having lost geometry.
+
+Eight actors in Ocarina of Time carry attachments this way. The Gerudo's table has three
+lists (hairstyles, chosen by an actor field); the first is what she draws by default.
+
 ## A face belongs to a head
 
 Three of the newly-reachable objects were not characters: a glow sprite, a ring and a small
