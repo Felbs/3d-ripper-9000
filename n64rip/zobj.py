@@ -116,12 +116,25 @@ def build(
             )
         )
 
+    # -- the actor's standing offset belongs to the scene, not to the rig.
+    # Limb 0 carries the height the actor stands at (Link's is 3,377 units), and leaving it
+    # on the root joint makes Blender draw a bone from the world origin up to the hips - a
+    # spear through the model, alongside the default-length bones it gives the zero-offset
+    # pivot limbs.  Lifting it off both the joints and the geometry keeps the skin a no-op
+    # while putting the armature where a rigger expects it.
+    root_offset = np.array(skel.limbs[0].translation, dtype=np.float64) if skel.limbs else np.zeros(3)
+    if scene.joints:
+        scene.joints[0].translation = (0.0, 0.0, 0.0)
+
     # -- world matrices, following the same walk the game does
     if world is None:
         world = {}
         for i in order:
             limb = skel.limbs[i]
-            local = _translate(*limb.translation)
+            t_ = np.array(limb.translation, dtype=np.float64)
+            if limb.parent is None:
+                t_ = t_ - root_offset
+            local = _translate(*t_)
             parent = world.get(limb.parent) if limb.parent is not None else None
             world[i] = local if parent is None else parent @ local
 
