@@ -199,8 +199,14 @@ def export(scene: Scene, out_base: Path, *, thumbnail: bool = True) -> ExportSta
         else:
             st.material_textures.append(None)
         st.material_colors.append(tuple(float(c) for c in m.base_color[:3]))
-        if m.alpha_blend:
-            mat["alphaMode"] = "BLEND"
+        # alpha_blend is the older boolean; alpha_mode carries the full choice, including
+        # MASK - the alpha-test the N64 uses for hair, fabric and cut-out detail.  Exporting
+        # those OPAQUE fills the holes in.
+        mode = "BLEND" if m.alpha_blend else getattr(m, "alpha_mode", "OPAQUE")
+        if mode != "OPAQUE":
+            mat["alphaMode"] = mode
+            if mode == "MASK":
+                mat["alphaCutoff"] = float(getattr(m, "alpha_cutoff", 0.5))
         if m.unlit:
             mat["extensions"] = {"KHR_materials_unlit": {}}
         gltf["materials"].append(mat)

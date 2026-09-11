@@ -95,6 +95,12 @@ class TileState:
     mask_s: int = 0
     mask_t: int = 0
     line: int = 0
+    tmem: int = 0
+    #: dimensions of the image actually LOADED into TMEM.  width/height above are the
+    #: clamp rectangle from G_SETTILESIZE, which is frequently larger - decoding that many
+    #: texels runs off the end of the image into whatever bytes follow it.
+    img_w: int = 0
+    img_h: int = 0
     tex_on: bool = True  # G_TEXTURE's enable bit; an off run is not sampled at all
 
     @property
@@ -141,6 +147,10 @@ class Batch:
     #: texture is pale cloth: its green comes from here, not from the image, so dropping it
     #: leaves him in a white tunic.
     prim: tuple[int, int, int, int] = (255, 255, 255, 255)
+    #: the render mode in force, and whether the combiner's alpha comes from a texel - the
+    #: pair that decides opaque vs alpha-tested vs blended
+    other_low: int = 0
+    reads_texel_alpha: bool = False
     limb: int | None = None  # set by the skeleton walker, not by the interpreter
 
 
@@ -221,6 +231,27 @@ def matrix_segment(matrices: list[np.ndarray]) -> bytes:
     return b"".join(pack_matrix(m) for m in matrices)
 
 
+_BITS = {0: 4, 1: 8, 2: 16, 3: 32}
+
+
+def _image_size(tile: "TileState", nbytes: int) -> tuple[int, int]:
+    """Dimensions of the image a tile samples, from what was loaded rather than the rect.
+
+    Width comes from the tile's TMEM row stride, or from its S mask when it has one (a mask
+    of n means the image is 2**n wide).  Height then follows from how many bytes arrived.
+    """
+    bits = _BITS[tile.size]
+    width = (tile.line * 64) // bits if tile.line else 0
+    if tile.mask_s:
+        width = 1 << tile.mask_s
+    if width <= 0:
+        return 0, 0
+    height = (nbytes * 8 // bits) // width
+    if tile.mask_t:
+        height = min(height, 1 << tile.mask_t) or height
+    return width, max(1, height)
+
+
 class Interpreter:
     """Walks a display list and collects triangle batches.
 
@@ -236,13 +267,20 @@ class Interpreter:
         self._mtx_stack: list[np.ndarray] = []
         self.tile = TileState()
         self.tiles: dict[int, TileState] = {}
+        self.timg: int | None = None        # the DMA source SETTIMG last named
+        self.timg_size: int = 2
+        self.tmem: dict[int, tuple] = {}    # TMEM address -> (source, size, bytes loaded)
         self.geometry_mode = 0
         self.prim = (255, 255, 255, 255)
+        self.other_low = 0          # G_SETOTHERMODE_L: the render mode
+        self.reads_texel_alpha = False  # G_SETCOMBINE: does the alpha equation sample a texel
         self._cache: list[tuple | None] = [None] * VTX_CACHE
         self._verts: list[tuple] = []
         self._tris: list[tuple[int, int, int]] = []
         self._batch_tile = TileState()
         self._batch_prim = (255, 255, 255, 255)
+        self._batch_other = 0
+        self._batch_texel_alpha = False
         self._steps = 0
 
     # -- batching -------------------------------------------------------------
@@ -267,6 +305,8 @@ class Interpreter:
                 tile=self._batch_tile,
                 lit=lit,
                 prim=self._batch_prim,
+                other_low=self._batch_other,
+                reads_texel_alpha=self._batch_texel_alpha,
                 cull_back=bool(self.geometry_mode & G_CULL_BACK),
             )
         )
@@ -287,7 +327,10 @@ class Interpreter:
     def _tile_changed(self) -> bool:
         """A new tile or a new prim colour both start a new batch - the combiner multiplies
         them together, so a run sharing one but not the other is not one material."""
-        return self.tile.key() != self._batch_tile.key() or self.prim != self._batch_prim
+        return (self.tile.key() != self._batch_tile.key()
+                or self.prim != self._batch_prim
+                or self.other_low != self._batch_other
+                or self.reads_texel_alpha != self._batch_texel_alpha)
 
     # -- the walk -------------------------------------------------------------
 
@@ -343,8 +386,23 @@ class Interpreter:
             if op == G_SETTILE:
                 self._op_settile(w0, w1)
                 continue
+            if op in (G_LOADBLOCK, G_LOADTILE):
+                self._op_load(w0, w1, op == G_LOADBLOCK)
+                continue
             if op == G_SETTILESIZE:
                 self._op_settilesize(w0, w1)
+                continue
+            if op == G_SETOTHERMODE_L:
+                # shift and length are encoded as 32 - shift - length in the high half
+                shift = 32 - (((w0 >> 8) & 0xFF) + ((w0 & 0xFF) + 1))
+                length = (w0 & 0xFF) + 1
+                mask = ((1 << length) - 1) << shift
+                self.other_low = (self.other_low & ~mask) | (w1 & mask)
+                continue
+            if op == G_SETCOMBINE:
+                from n64rip.render_mode import combine_reads_texel_alpha
+
+                self.reads_texel_alpha = combine_reads_texel_alpha(w0, w1)
                 continue
             if op == G_TEXTURE:
                 # Only the enable bit is honoured.  The S/T scale is NOT applied: every
@@ -418,6 +476,8 @@ class Interpreter:
             self._flush()
             self._batch_tile = copy.copy(self.tile)
             self._batch_prim = self.prim
+            self._batch_other = self.other_low
+            self._batch_texel_alpha = self.reads_texel_alpha
         a = ((w0 >> 16) & 0xFF) // 2
         b = ((w0 >> 8) & 0xFF) // 2
         c = (w0 & 0xFF) // 2
@@ -428,44 +488,82 @@ class Interpreter:
             self._flush()
             self._batch_tile = copy.copy(self.tile)
             self._batch_prim = self.prim
+            self._batch_other = self.other_low
+            self._batch_texel_alpha = self.reads_texel_alpha
         self._emit(((w0 >> 16) & 0xFF) // 2, ((w0 >> 8) & 0xFF) // 2, (w0 & 0xFF) // 2)
         self._emit(((w1 >> 16) & 0xFF) // 2, ((w1 >> 8) & 0xFF) // 2, (w1 & 0xFF) // 2)
 
     def _op_settimg(self, w0: int, w1: int) -> None:
-        self.tile.fmt = (w0 >> 21) & 0x07
-        self.tile.size = (w0 >> 19) & 0x03
-        self.tile.addr = w1
+        """``G_SETTIMG`` names the DMA *source* for the next load - nothing more.
+
+        It does not describe the tile that will be rendered from.  Writing its format and
+        address onto the render tile is wrong in the standard LoadTextureBlock + LoadTLUT
+        idiom, where the last SETTIMG before the triangles is the **palette**: the 512-byte
+        TLUT then gets decoded as if it were the image, which is the speckle on Link's hands,
+        scabbard and hilt.
+        """
+        self.timg = w1
+        self.timg_size = (w0 >> 19) & 0x03
         if self.seg.resolve(w1) is None:
             self.result.unresolved.add((w1 >> 24) & 0x0F)
+
+    def _op_load(self, w0: int, w1: int, block: bool) -> None:
+        """``G_LOADBLOCK`` / ``G_LOADTILE``: this is what actually puts an image in TMEM.
+
+        Record which source landed at which TMEM address, so a tile can be matched to the
+        image it really samples instead of to whatever SETTIMG ran most recently.
+        """
+        tile_no = (w1 >> 24) & 0x07
+        dst = self.tiles.setdefault(tile_no, TileState()).tmem
+        bits = _BITS[self.timg_size]
+        if block:
+            # lrs counts packed units, not texels: for 8bpp it is texels/2 - 1
+            units = ((w1 >> 12) & 0xFFF) + 1
+            texels = units * (64 // bits) if bits < 16 else units
+            self.tmem[dst] = (self.timg, self.timg_size, texels * bits // 8)
+        else:
+            uls, ult = (w0 >> 12) & 0xFFF, w0 & 0xFFF
+            lrs, lrt = (w1 >> 12) & 0xFFF, w1 & 0xFFF
+            w = ((lrs - uls) >> 2) + 1
+            h = ((lrt - ult) >> 2) + 1
+            self.tmem[dst] = (self.timg, self.timg_size, w * h * bits // 8)
 
     def _op_settile(self, w0: int, w1: int) -> None:
         tile_no = (w1 >> 24) & 0x07
         t = self.tile if tile_no == 0 else self.tiles.setdefault(tile_no, TileState())
-        if tile_no == 0:
-            t.fmt = (w0 >> 21) & 0x07
-            t.size = (w0 >> 19) & 0x03
-            t.line = (w0 >> 9) & 0x1FF
-            t.palette = (w1 >> 20) & 0x0F
-            t.cm_t = (w1 >> 18) & 0x03
-            t.mask_t = (w1 >> 14) & 0x0F
-            t.cm_s = (w1 >> 8) & 0x03
-            t.mask_s = (w1 >> 4) & 0x0F
+        t.fmt = (w0 >> 21) & 0x07
+        t.size = (w0 >> 19) & 0x03
+        t.line = (w0 >> 9) & 0x1FF
+        t.tmem = w0 & 0x1FF
+        t.palette = (w1 >> 20) & 0x0F
+        t.cm_t = (w1 >> 18) & 0x03
+        t.mask_t = (w1 >> 14) & 0x0F
+        t.cm_s = (w1 >> 8) & 0x03
+        t.mask_s = (w1 >> 4) & 0x0F
+        loaded = self.tmem.get(t.tmem)
+        if loaded is not None:
+            t.addr, _src_size, nbytes = loaded
+            t.img_w, t.img_h = _image_size(t, nbytes)
+        if tile_no != 0:
+            self.tiles[tile_no] = t
 
     def _op_settilesize(self, w0: int, w1: int) -> None:
-        if ((w1 >> 24) & 0x07) != 0:
-            return
+        tile_no = (w1 >> 24) & 0x07
+        t = self.tile if tile_no == 0 else self.tiles.setdefault(tile_no, TileState())
         # coordinates are 10.2 fixed point; the tile spans lrs-uls inclusive
         uls = (w0 >> 12) & 0xFFF
         ult = w0 & 0xFFF
         lrs = (w1 >> 12) & 0xFFF
         lrt = w1 & 0xFFF
-        self.tile.width = ((lrs - uls) >> 2) + 1
-        self.tile.height = ((lrt - ult) >> 2) + 1
+        t.width = ((lrs - uls) >> 2) + 1
+        t.height = ((lrt - ult) >> 2) + 1
+        if not t.img_w:
+            t.img_w, t.img_h = t.width, t.height
 
     def _op_loadtlut(self, w1: int) -> None:
         if ((w1 >> 24) & 0x07) == 0:
             return
-        self.tile.pal_addr = self.tile.addr
+        self.tile.pal_addr = self.timg
 
     def _op_mtx(self, w0: int, w1: int) -> None:
         """``G_MTX``: the parameters are the LOW byte, XORed with G_MTX_PUSH.

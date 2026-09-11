@@ -24,6 +24,11 @@ class MaterialDef:
     texture: str | None  # key into Scene.textures
     base_color: tuple[float, float, float, float] = (1.0, 1.0, 1.0, 1.0)
     alpha_blend: bool = False
+    #: "OPAQUE" | "MASK" | "BLEND".  MASK is the N64's alpha-test: hair, fences, fabric and
+    #: cut-out detail are authored as a texture with holes, and exporting them OPAQUE fills
+    #: the holes in - which reads as stray plates and phantom jewellery on a character.
+    alpha_mode: str = "OPAQUE"
+    alpha_cutoff: float = 0.5
     double_sided: bool = False
     clamp_u: bool = False
     clamp_v: bool = False

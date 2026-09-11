@@ -36,7 +36,9 @@ def _decode_tile(tile: f3dex2.TileState, segments: f3dex2.Segments) -> np.ndarra
     """RGBA for a tile, or None when its texels are not reachable in a static rip."""
     if not tile.tex_on:
         return None  # G_TEXTURE turned sampling off; this run is shaded, not textured
-    if tile.addr is None or tile.width <= 0 or tile.height <= 0:
+    w = tile.img_w or tile.width
+    h = tile.img_h or tile.height
+    if tile.addr is None or w <= 0 or h <= 0:
         return None
     found = segments.resolve(tile.addr)
     if found is None:
@@ -54,11 +56,18 @@ def _decode_tile(tile: f3dex2.TileState, segments: f3dex2.Segments) -> np.ndarra
         tlut = tex_mod.decode_tlut(pdata[poff:], entries)
     try:
         return tex_mod.decode(
-            tile.fmt, tile.size, tile.width, tile.height,
+            tile.fmt, tile.size, w, h,
             data[off:], tlut, tile.palette,
         )
     except tex_mod.TextureError:
         return None
+
+
+def _alpha_mode(batch) -> str:
+    """OPAQUE / MASK / BLEND for a batch, from the render mode it was drawn under."""
+    from n64rip.render_mode import alpha_mode
+
+    return alpha_mode(batch.other_low, batch.reads_texel_alpha)
 
 
 def _quat_from_euler(xyz, order: str = "zyx") -> tuple[float, float, float, float]:
@@ -170,7 +179,7 @@ def build(
     by_tile: dict[tuple, int] = {}
     missing = 0
     for b in batches:
-        key = (b.tile.key(), b.prim)
+        key = (b.tile.key(), b.prim, b.other_low, b.reads_texel_alpha)
         if key in by_tile:
             continue
         rgba = _decode_tile(b.tile, segments)
@@ -179,7 +188,8 @@ def build(
             missing += 1
             scene.materials.append(
                 MaterialDef(name=f"mat_{idx:02d}", texture=None, unlit=not b.lit,
-                            base_color=tuple(c / 255.0 for c in b.prim))
+                            base_color=tuple(c / 255.0 for c in b.prim),
+                            alpha_mode=_alpha_mode(b))
             )
         else:
             tex_name = f"tex_{idx:02d}_{tex_mod.format_name(b.tile.fmt, b.tile.size)}"
@@ -196,13 +206,15 @@ def build(
                     unlit=not b.lit,
                     # the combiner multiplies the texture by the primitive colour
                     base_color=tuple(c / 255.0 for c in b.prim),
+                    alpha_mode=_alpha_mode(b),
                 )
             )
         by_tile[key] = idx
 
     # -- primitives, merged per material so one bone-weighted mesh comes out
     for key, mat in by_tile.items():
-        group = [b for b in batches if (b.tile.key(), b.prim) == key]
+        group = [b for b in batches
+                 if (b.tile.key(), b.prim, b.other_low, b.reads_texel_alpha) == key]
         pos = np.concatenate([b.positions for b in group]) * SCALE
         uvs = np.concatenate([b.uvs for b in group])
         cols = np.concatenate([b.colors for b in group])
@@ -220,8 +232,11 @@ def build(
             base += n
         # texel coordinates to normalised UVs, using the tile the group shares
         tile = group[0].tile
-        if tile.width > 0 and tile.height > 0:
-            uvs = uvs / np.array([tile.width, tile.height], dtype=np.float32)
+        # normalise against the image that was loaded, not the clamp rectangle
+        tw = tile.img_w or tile.width
+        th = tile.img_h or tile.height
+        if tw > 0 and th > 0:
+            uvs = uvs / np.array([tw, th], dtype=np.float32)
         scene.primitives.append(
             Primitive(
                 material=mat,

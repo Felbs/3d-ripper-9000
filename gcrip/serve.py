@@ -61,21 +61,32 @@ def frame_later():
     except Exception:
         log("frame failed" + chr(10) + traceback.format_exc())
     return None
+def import_later():
+    # The import must NOT run inline at --python startup.  The context there is restricted,
+    # and Blender's own glTF importer reaches for bpy.context.object while placing an
+    # armature - which raises "'Context' object has no attribute 'object'", aborts the
+    # import and leaves the user staring at the startup scene with no model in it.  Any
+    # rigged model hits this.  A timer runs once the UI exists and the context is complete.
+    try:
+        bpy.ops.wm.read_homefile(use_empty=True)
+        p = {addon!r}
+        if p:
+            s = importlib.util.spec_from_file_location("gcrip_blender", p)
+            m = importlib.util.module_from_spec(s)
+            s.loader.exec_module(m)
+            m.register()
+            bpy.ops.gcrip.import_gltf(filepath={path!r})
+        else:
+            bpy.ops.import_scene.gltf(filepath={path!r})
+        bpy.context.scene.render.fps = 30
+        n = len([o for o in bpy.data.objects if o.type == "MESH"])
+        log("opened " + {path!r} + f" ({{n}} meshes)")
+        bpy.app.timers.register(frame_later, first_interval=0.5)
+    except Exception:
+        log("import failed" + chr(10) + traceback.format_exc())
+    return None
 try:
-    bpy.ops.wm.read_homefile(use_empty=True)
-    p = {addon!r}
-    if p:
-        s = importlib.util.spec_from_file_location("gcrip_blender", p)
-        m = importlib.util.module_from_spec(s)
-        s.loader.exec_module(m)
-        m.register()
-        bpy.ops.gcrip.import_gltf(filepath={path!r})
-    else:
-        bpy.ops.import_scene.gltf(filepath={path!r})
-    bpy.context.scene.render.fps = 30
-    n = len([o for o in bpy.data.objects if o.type == "MESH"])
-    log("opened " + {path!r} + f" ({{n}} meshes)")
-    bpy.app.timers.register(frame_later, first_interval=0.5)
+    bpy.app.timers.register(import_later, first_interval=0.25)
 except Exception:
     log("FAILED " + {path!r} + chr(10) + traceback.format_exc())
     def _popup(self, context):
