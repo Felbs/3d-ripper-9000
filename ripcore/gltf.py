@@ -281,13 +281,18 @@ def export(scene: Scene, out_base: Path, *, thumbnail: bool = True) -> ExportSta
             }
         )
         tri = idx.reshape(-1, 3)
-        all_pos.append(p.positions)
-        all_tri.append(tri + vbase)
-        all_mat.append(np.full(len(tri), p.material, np.int32))
-        all_uv.append(p.uvs if p.uvs is not None else np.zeros((len(p.positions), 2), np.float32))
-        vbase += len(p.positions)
-        st.triangles += len(tri)
-        st.vertices += len(p.positions)
+        # Expression alternates are coincident with the primitive they replace, so drawing
+        # them all would z-fight the thumbnail exactly as it did the in-page viewer.  The
+        # thumbnail shows the model wearing its default expression.
+        if not p.variant_of:
+            all_pos.append(p.positions)
+            all_tri.append(tri + vbase)
+            all_mat.append(np.full(len(tri), p.material, np.int32))
+            all_uv.append(p.uvs if p.uvs is not None
+                          else np.zeros((len(p.positions), 2), np.float32))
+            st.triangles += len(tri)
+            st.vertices += len(p.positions)
+            vbase += len(p.positions)
     # Expression alternates go in their own mesh each, because a rigger switches between
     # them by showing one object and hiding the others - which needs them to be separate
     # objects once imported, not extra primitives inside one.
@@ -340,7 +345,14 @@ def export(scene: Scene, out_base: Path, *, thumbnail: bool = True) -> ExportSta
         if "skin" in mesh_node:
             node["skin"] = mesh_node["skin"]
         gltf["nodes"].append(node)
-        scene_nodes.append(len(gltf["nodes"]) - 1)
+        # Deliberately NOT added to the scene.  A plain glTF viewer draws every node in the
+        # scene, so listing the alternates there stacks every expression on top of the default
+        # one - coincident geometry that z-fights, which is what made a whole cast of
+        # characters look like their eyes were shut in the library preview and in thumbnails.
+        # Blender still imports a node that belongs to no scene: it lands in an "Orphan Nodes"
+        # collection in the same scene, so the add-on finds it and wires the controls as
+        # before.  A viewer that only reads the scene graph sees the character wearing its
+        # default expression, which is the right default in both places.
     gltf["scenes"][0]["nodes"] = scene_nodes
 
     # animations

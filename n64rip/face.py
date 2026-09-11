@@ -23,6 +23,11 @@ from dataclasses import dataclass, field
 #: what the head's display list asks for, read from the display list rather than assumed
 EYE_SEGMENT = 8
 MOUTH_SEGMENT = 9
+#: The segments an actor may point at a swappable face texture.  It is not always two: a
+#: character with separately-drawn left and right eyes spends 8 and 9 on the eyes and puts
+#: the mouth on 0x0A, and one whose mouth is a different shape from its eye may skip 9
+#: entirely.  Which segment plays which part is decided per actor - see `_face_roles`.
+FACE_SEGMENTS = (8, 9, 10)
 MIN_RUN = 3  # fewer than this is not a table
 
 
@@ -39,6 +44,11 @@ class FaceSet:
     #: striped those faces into lace.
     eye_fmt: tuple[int, int] = (2, 1)
     mouth_fmt: tuple[int, int] = (2, 1)
+    #: which segments each table is bound to.  Two eye segments means the head draws its left
+    #: and right eye as separate calls sharing one texture - binding only one of them leaves
+    #: the character with a blank eye on one side.
+    eye_segments: tuple[int, ...] = (EYE_SEGMENT,)
+    mouth_segments: tuple[int, ...] = (MOUTH_SEGMENT,)
 
     def __bool__(self) -> bool:
         return bool(self.eyes or self.mouths)
@@ -96,12 +106,20 @@ def find_faces(code: bytes, object_size: int,
 
 
 def segments_for(faces: FaceSet, obj: bytes, eye: int = 0, mouth: int = 0) -> dict[int, bytes]:
-    """Bind one expression: ``{8: eyes, 9: mouth}`` as segment bases into the object file."""
+    """Bind one expression, as ``{segment: bytes}`` bases into the object file.
+
+    Every segment playing a part gets the table for that part, so a head that draws its two
+    eyes through separate segments gets the same frame on both.
+    """
     out: dict[int, bytes] = {}
     if faces.eyes:
-        out[EYE_SEGMENT] = obj[faces.eyes[min(eye, len(faces.eyes) - 1)]:]
+        base = obj[faces.eyes[min(eye, len(faces.eyes) - 1)]:]
+        for seg in faces.eye_segments:
+            out[seg] = base
     if faces.mouths:
-        out[MOUTH_SEGMENT] = obj[faces.mouths[min(mouth, len(faces.mouths) - 1)]:]
+        base = obj[faces.mouths[min(mouth, len(faces.mouths) - 1)]:]
+        for seg in faces.mouth_segments:
+            out[seg] = base
     return out
 
 

@@ -107,22 +107,12 @@ MAX_FACE_SHARE = 0.75
 MIN_HEAD_TRIANGLES = 16
 
 
-def _wanted_face_tiles(data, skel, segments):
-    """``{segment: {(fmt, size, w, h)}}`` for the tiles this actor's head asks for.
+def _face_batches(data, skel, segments):
+    """Every batch the actor draws through a face segment, with where it sits on the head.
 
-    Kept per segment, because segment 8 is the eye and segment 9 the mouth, and they are
-    neither the same shape nor even the same pixel format.
-
-    Only the **format** here is trustworthy.  Width and height are derived from how many
-    texels were actually loaded, and for exactly the actors whose face is missing nothing was
-    ever loaded on that segment - so the size has to come from somewhere else.  SETTILE states
-    the format outright, so that part is solid.
-
-    A request is only counted when it comes from a limb that is a **head**: one carrying
-    geometry beyond the swapped tile itself.  Without that, three non-characters claimed
-    faces - the tile is the whole limb for a glow, a ring and a flame.
+    Returns ``[(segment, tile spec, centroid, x span, triangles, limb triangles)]``.
     """
-    want: dict[int, set] = {}
+    out = []
     for i in skel.order():
         limb = skel.limbs[i]
         if not limb.dlist:
@@ -132,25 +122,100 @@ def _wanted_face_tiles(data, skel, segments):
         except Exception:  # noqa: BLE001
             continue
         total = sum(len(b.indices) // 3 for b in res.batches if b.indices is not None)
-        found: dict[int, set] = {}
-        face_tris = 0
         for b in res.batches:
             tile = b.tile
             if tile.addr is None or not tile.width or not tile.height:
                 continue
             seg = (tile.addr >> 24) & 0x0F
-            if seg not in (face_mod.EYE_SEGMENT, face_mod.MOUTH_SEGMENT):
+            if seg not in face_mod.FACE_SEGMENTS:
                 continue
-            found.setdefault(seg, set()).add((tile.fmt, tile.size, tile.width, tile.height))
-            if b.indices is not None:
-                face_tris += len(b.indices) // 3
-        if not found:
-            continue
-        share = face_tris / total if total else 1.0
-        if share > MAX_FACE_SHARE and total < MIN_HEAD_TRIANGLES:
+            if b.positions is None or not len(b.positions):
+                continue
+            spec = (tile.fmt, tile.size, tile.width, tile.height)
+            centre = b.positions.mean(axis=0)
+            span = float(b.positions[:, 0].max() - b.positions[:, 0].min())
+            tris = len(b.indices) // 3 if b.indices is not None else 0
+            out.append((seg, spec, centre, span, tris, total))
+    return out
+
+
+def _mirrored(a, b) -> bool:
+    """Are these two batches the left and right of one feature?
+
+    A character whose eyes are drawn as two calls issues the same tile twice at centroids
+    mirrored across the head's centre line.  Measured on this ROM the pairs agree to within a
+    few percent - (255.2, 611.8, -162.0) against (255.2, 611.2, +162.0) - while a genuine
+    eye-and-mouth pair sits at very different heights and spans.
+
+    The **tile**, not the palette, decides this.  Judging by palette loses the mouths of three
+    characters whose two features share one, and calls both features mouths on three others
+    whose eye segments differ.
+    """
+    _sa, spa, ca, spna, _ta, _la = a
+    _sb, spb, cb, spnb, _tb, _lb = b
+    if spa != spb or ca[2] * cb[2] >= 0:
+        return False
+    if abs(abs(ca[2]) - abs(cb[2])) > 0.08 * max(abs(ca[2]), abs(cb[2]), 1e-6):
+        return False
+    return abs(spna - spnb) <= 0.10 * max(spna, spnb, 1e-6)
+
+
+#: A limb whose geometry is entirely the swapped tile is not a head.  Measured over every
+#: actor in Ocarina of Time that binds a face: the tile covers between 4.7% and 48.9% of its
+#: limb, because a head also carries skin, hair and ears.  The cases that sit at 100% are a
+#: glow sprite, a rupee-like ring and a small flame - single quads of 2 to 6 triangles that
+#: happen to sample a face segment, and binding a "face" onto them ships a black donut.
+MAX_FACE_SHARE = 0.75
+MIN_HEAD_TRIANGLES = 16
+
+
+def _face_roles(data, skel, segments):
+    """Which segments are eyes, which are the mouth, and what tiles each asks for.
+
+    Returns ``(eye_segments, mouth_segments, eye_tiles, mouth_tiles)``.
+
+    The assignment is per actor because the layout is.  The common case is one eye segment
+    and one mouth segment.  But a head that draws its left and right eye separately spends
+    two segments on the eyes and puts the mouth on a third - and binding by segment number
+    alone then paints a mouth where the right eye belongs.  Segments that mirror each other
+    are one feature; whatever centred segment is left is the mouth.
+    """
+    batches = [b for b in _face_batches(data, skel, segments)
+               if not (b[5] and b[4] / b[5] > MAX_FACE_SHARE and b[5] < MIN_HEAD_TRIANGLES)]
+    if not batches:
+        return (), (), set(), set()
+
+    eye_segs: list[int] = []
+    for i, a in enumerate(batches):
+        for b in batches[i + 1:]:
+            if a[0] != b[0] and _mirrored(a, b):
+                for s in (a[0], b[0]):
+                    if s not in eye_segs:
+                        eye_segs.append(s)
+    if not eye_segs:
+        eye_segs = [min(b[0] for b in batches)]
+    rest = sorted({b[0] for b in batches} - set(eye_segs))
+    mouth_segs = rest[:1]
+
+    def tiles(segs):
+        return {b[1] for b in batches if b[0] in segs}
+
+    return tuple(sorted(eye_segs)), tuple(mouth_segs), tiles(eye_segs), tiles(mouth_segs)
+
+
+def _wanted_face_tiles(data, skel, segments):
+    """``{segment: {(fmt, size, w, h)}}`` - kept for callers that want it by segment.
+
+    Only the **format** here is trustworthy.  Width and height are derived from how many
+    texels were actually loaded, and for exactly the actors whose face is missing nothing was
+    ever loaded on that segment, so the size has to come from somewhere else.  SETTILE states
+    the format outright, so that part is solid.
+    """
+    want: dict[int, set] = {}
+    for seg, spec, _c, _s, tris, total in _face_batches(data, skel, segments):
+        if total and tris / total > MAX_FACE_SHARE and total < MIN_HEAD_TRIANGLES:
             continue  # the tile is the whole limb: an effect sprite, not a face
-        for seg, tiles in found.items():
-            want.setdefault(seg, set()).update(tiles)
+        want.setdefault(seg, set()).add(spec)
     return want
 
 
@@ -485,8 +550,8 @@ def _overlay_faces(data, skel, segments, overlays, object_id):
     """
     if not overlays or object_id is None:
         return None
-    want = _wanted_face_tiles(data, skel, segments)
-    if not want:
+    eye_segs, mouth_segs, eye_tiles, mouth_tiles = _face_roles(data, skel, segments)
+    if not eye_tiles and not mouth_tiles:
         return None
     runs = []
     for ov in overlays.get(object_id, ()):
@@ -499,9 +564,6 @@ def _overlay_faces(data, skel, segments, overlays, object_id):
     tlut = _face_tlut(data, skel, segments)
     if tlut is None:
         tlut = _grey_tlut()
-    eye_tiles = want.get(face_mod.EYE_SEGMENT, set())
-    mouth_tiles = want.get(face_mod.MOUTH_SEGMENT, set())
-
     eye = _best_table(data, runs, eye_tiles, tlut)
     eyes, spill = ([], [])
     eye_dims, eye_fmt = (32, 32), (tex_mod.FMT_CI, tex_mod.SIZE_8)
@@ -531,6 +593,8 @@ def _overlay_faces(data, skel, segments, overlays, object_id):
         eyes=list(eyes), mouths=list(mouths),
         eye_size=eye_dims, mouth_size=mouth_dims,
         eye_fmt=eye_fmt, mouth_fmt=mouth_fmt,
+        eye_segments=eye_segs or (face_mod.EYE_SEGMENT,),
+        mouth_segments=mouth_segs or (face_mod.MOUTH_SEGMENT,),
     )
 
 
@@ -645,7 +709,7 @@ def _faces(scene, name, data, skel, segments, code, out_dir, world, rotations,
     what a texture swap needs, since morph targets deform geometry and cannot do this.
     """
     unresolved = set(scene.extras.get("unresolved_segments") or ())
-    if not (unresolved & {face_mod.EYE_SEGMENT, face_mod.MOUTH_SEGMENT}) or not code:
+    if not (unresolved & set(face_mod.FACE_SEGMENTS)) or not code:
         return scene, []
     # Where the face textures come from depends on the actor.  Link keeps his in an evenly
     # spaced array that a stride walk finds in `code`.  Almost no NPC does - theirs sit in

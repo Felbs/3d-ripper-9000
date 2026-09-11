@@ -617,3 +617,90 @@ def test_a_face_belongs_to_a_head_not_to_a_bare_quad():
     assert not rejected(64, 131)   # Link, the densest real face at 0.489
     assert not rejected(4, 85)     # the sparsest real face at 0.047
     assert not rejected(30, 70)    # 0.429
+
+def test_expression_variants_are_not_in_the_default_scene():
+    """A plain glTF viewer draws every node in the scene, so alternates must stay out of it.
+
+    Listed in the scene, all nine of a character's expressions render coincident and z-fight -
+    which is what made a whole cast look like their eyes were shut in the library preview and
+    in the thumbnails.  Blender still imports a scene-less node (into an "Orphan Nodes"
+    collection in the same scene), so the add-on still finds them.
+    """
+    import json
+    import pathlib
+    import tempfile
+
+    import numpy as np
+
+    from ripcore import gltf
+    from ripcore.scene import MaterialDef, Primitive, Scene
+
+    tri = dict(
+        positions=np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]], np.float32),
+        indices=np.array([0, 1, 2], np.uint32),
+    )
+    sc = Scene(name="who")
+    sc.materials = [MaterialDef("body", None), MaterialDef("face", None),
+                    MaterialDef("face_expr1", None)]
+    sc.primitives = [
+        Primitive(material=0, **tri),
+        Primitive(material=1, **tri),
+        Primitive(material=2, variant_of="face", variant_texture="expr_01", **tri),
+    ]
+    out = pathlib.Path(tempfile.mkdtemp()) / "who"
+    gltf.export(sc, out, thumbnail=False)
+    g = json.loads(out.with_suffix(".gltf").read_text(encoding="utf-8"))
+
+    names = {i: n.get("name") for i, n in enumerate(g["nodes"])}
+    in_scene = {names[i] for i in g["scenes"][0]["nodes"]}
+    assert "face@expr_01" not in in_scene, "the alternate must not be drawn by default"
+    assert "face" in in_scene, "but the default face must be"
+    # it still has to exist as a node, or Blender has nothing to import
+    assert "face@expr_01" in set(names.values())
+    variant = next(n for n in g["nodes"] if n.get("name") == "face@expr_01")
+    assert variant["extras"]["gcrip_variant_of"] == "face"
+
+def test_mirrored_batches_are_one_feature_not_two():
+    """Two segments drawing the same tile at mirrored centroids are the left and right eye.
+
+    Measured on this ROM: (255.2, 611.8, -162.0) against (255.2, 611.2, +162.0), same tile,
+    same x-span.  Binding only one of them leaves the character blank on one side; treating
+    the second as a mouth paints a mouth where the right eye belongs.
+    """
+    import numpy as np
+
+    from n64rip.extract import _mirrored
+
+    spec = (2, 1, 32, 32)
+    left = (8, spec, np.array([255.2, 611.8, -162.0]), 518.0, 4, 120)
+    right = (9, spec, np.array([255.2, 611.2, 162.0]), 518.0, 4, 120)
+    assert _mirrored(left, right)
+
+    # an eye and a mouth: same side of the head, different height and span
+    mouth = (9, (2, 1, 32, 16), np.array([-120.1, 670.3, -4.3]), 307.0, 5, 120)
+    eye = (8, spec, np.array([213.4, 702.4, -4.7]), 433.0, 6, 120)
+    assert not _mirrored(eye, mouth)
+
+    # same tile but both centred - Link's two features share a spec on some actors
+    a = (8, spec, np.array([333.3, 666.6, 0.0]), 497.0, 6, 84)
+    b = (9, spec, np.array([48.3, 600.5, 0.0]), 309.0, 5, 84)
+    assert not _mirrored(a, b)
+
+
+def test_face_segments_include_0x0a():
+    """Some heads put the mouth on segment 0x0A and never sample 9 at all."""
+    from n64rip.face import FACE_SEGMENTS
+
+    assert set(FACE_SEGMENTS) == {8, 9, 10}
+
+
+def test_segments_for_binds_every_segment_playing_a_part():
+    """A head drawing two eyes through two segments needs the frame on both."""
+    from n64rip.face import FaceSet, segments_for
+
+    obj = bytes(range(256)) * 4
+    faces = FaceSet(eyes=[0x10], mouths=[0x40], eye_segments=(8, 9), mouth_segments=(10,))
+    bound = segments_for(faces, obj)
+    assert set(bound) == {8, 9, 10}
+    assert bound[8] is not None and bound[8] == bound[9], "both eyes share one frame"
+    assert bound[10] != bound[8]
