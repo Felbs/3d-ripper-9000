@@ -153,3 +153,82 @@ def keep_segments(rom, table: ObjectTable | None, *, field: bool = False, dungeo
             except Exception:  # noqa: BLE001
                 pass
     return out
+
+
+#: gActorOverlayTable entries: vromStart, vromEnd, vramStart, vramEnd, loadedRam, initInfo,
+#: name, allocType/numLoaded - eight words.
+ACTOR_ENTRY_WORDS = 8
+
+
+def _is_vram(w: int) -> bool:
+    return 0x80000000 <= w < 0x81000000
+
+
+def find_actor_overlays(rom, code: bytes) -> dict[int, int]:
+    """``{object id: overlay ROM file index}`` from the actor table in ``code``.
+
+    Found the same way as the object table - by structure.  An entry's first two words are a
+    real DMA range and its next two are VRAM addresses, which together are specific enough to
+    locate the table without any outside data.  Each entry's ``initInfo`` points into the
+    overlay at a known VRAM base, and the ``ActorInit`` there carries the object id at +8.
+
+    Useful for attributing per-actor data - an actor's own code is where its runtime segment
+    setup lives.  Note what this does *not* give you: NPC eye and mouth textures are **not**
+    uniformly discoverable from the overlay.  Link's are a strided pointer array, but of 14
+    sampled NPCs only one had anything similar, and several overlays hold no segmented
+    pointer into their object at all while still requesting a face on segment 8.
+    """
+    import struct as _struct
+
+    n = len(code) // 4
+    if n < ACTOR_ENTRY_WORDS:
+        return {}
+    words = _struct.unpack_from(f">{n}I", code, 0)
+    pairs = {(f.vrom_start, f.vrom_end): f.index for f in rom.files if f.vrom_start > 0x10000}
+
+    def entry_ok(b: int) -> bool:
+        if b + ACTOR_ENTRY_WORDS > n:
+            return False
+        vs, ve = words[b], words[b + 1]
+        if vs == 0 and ve == 0:
+            return True  # an actor linked into code rather than overlaid
+        return (vs, ve) in pairs and _is_vram(words[b + 2])
+
+    best = (0, -1)
+    i = 0
+    while i < n - ACTOR_ENTRY_WORDS:
+        if (words[i], words[i + 1]) in pairs and _is_vram(words[i + 2]) and _is_vram(words[i + 3]):
+            k = 0
+            while entry_ok(i + ACTOR_ENTRY_WORDS * k):
+                k += 1
+            if k > best[0]:
+                best = (k, i)
+            i += max(1, ACTOR_ENTRY_WORDS * k)
+        else:
+            i += 1
+    if best[1] < 0:
+        return {}
+    lo = best[1]
+    while lo - ACTOR_ENTRY_WORDS >= 0 and entry_ok(lo - ACTOR_ENTRY_WORDS):
+        lo -= ACTOR_ENTRY_WORDS
+
+    out: dict[int, int] = {}
+    b = lo
+    while entry_ok(b):
+        vs, ve = words[b], words[b + 1]
+        fidx = pairs.get((vs, ve))
+        init, base = words[b + 5], words[b + 2]
+        b += ACTOR_ENTRY_WORDS
+        if fidx is None or not _is_vram(init):
+            continue
+        try:
+            ov = rom.read(rom.files[fidx])
+        except Exception:  # noqa: BLE001
+            continue
+        off = init - base
+        if not 0 <= off + 12 <= len(ov):
+            continue
+        object_id = _struct.unpack_from(">h", ov, off + 8)[0]
+        if 0 < object_id < 400:
+            out.setdefault(object_id, fidx)
+    return out
