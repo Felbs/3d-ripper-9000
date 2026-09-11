@@ -130,6 +130,55 @@ Accepting a zero-length range as a blank slot: 227 -> 402 object slots, 211 -> 3
 files, and **22 -> 40 characters with expression sets**, with no change to the first 227
 entries and nothing lost.
 
+## Reading the binding out of the code
+
+Everything above reads *data* and guesses what the game does with it. The game does not
+store "this texture goes on segment 8" anywhere - the actor's Draw function computes it every
+frame:
+
+    gSPSegment(gfx, 0x08, SEGMENTED_TO_VIRTUAL(sEyeTextures[this->eyeIndex]));
+
+An emulator gets that for free by running the code. `actor_code.gsp_segments` reads it
+instead. The macro compiles to a fixed shape: the command word is built by `lui r, 0xdb06`
+and `ori r, r, seg*4` and stored at `0(gfx)`; the address is stored at `4(gfx)`. Find a
+store of a register holding `0xDB06xxxx`, take the store to `+4` of the same base register,
+and work out where *that* register's value came from - which is the whole method, plus three
+things the first attempt got wrong:
+
+* **The address is derived, not built.** `SEGMENTED_TO_VIRTUAL` masks the offset with `and`
+  and adds the segment base with two `addu`. A tracker that drops the value at the `and`
+  finds nothing in any actor. The segmented source has to be *carried through* arithmetic.
+* **Pair the two stores, not the nearest address.** With two calls interleaved by the
+  compiler, the `+4` store nearest by distance belongs to the previous call, and every
+  pointer lands one segment late. The mate is the nearest `+4` store that *follows*.
+* **The pointer may come through the actor's own struct.** Child Zelda's Update copies
+  `sEyeTextures[index]` into `this->eyeTexture`; her Draw binds `this->eyeTexture` and never
+  builds the table address at all. That needs a second hop: stores into the same field offset
+  whose value traced to a table.
+
+Two sources of address occur. A **direct** binding builds the segmented constant itself -
+Tektite does this once per colour variant, and no data scan can find it because the offsets
+never appear as `0x06XXXXXX` words. A **table** binding loads it from an array whose VRAM
+address the code builds; the overlay is linked for its home address, so the table's offset
+in the file is that address minus `vramStart` from `gActorOverlayTable`.
+
+Tried before the data route, per role. It is exact where a run found by shape may be two
+tables end to end: object 188's run of ten is the code's two tables of five, and object 10's
+segment `0x0A` mouth is a two-entry subtable the shape scan could only ever see as the tail
+of the eyes.
+
+### Attributing an object nobody claims
+
+Some actors name `gameplay_keep` in their `ActorInit` and pick their real object at runtime.
+The second child Zelda and one of the Deku Scrubs are drawn by such actors, so no entry in
+the actor table leads to them and every data route is blind. Their *code* is not: the object
+is offered to every runtime-object actor through `gsp_segments` alone, and a candidate is
+kept only when it names at least two offsets that fit the object and decode, at the format
+the head requests and through the head's own palette, as something that passes the ordinary
+picture gates. Of four candidates for Zelda one passed, and it was her. The pool is never
+searched by pointer shape - that would be a search over a hundred and thirty overlays, and
+the rest of this note says what that produces.
+
 ## A face belongs to a head
 
 Three of the newly-reachable objects were not characters: a glow sprite, a ring and a small

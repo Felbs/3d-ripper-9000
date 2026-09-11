@@ -357,3 +357,249 @@ def modal_stride(run: list[int]) -> int:
 
     steps = [b - a for a, b in zip(run, run[1:]) if b > a]
     return Counter(steps).most_common(1)[0][0] if steps else 0
+
+
+# --------------------------------------------------------------------------- code route
+
+#: ``gSPSegment`` writes two words: the command ``0xDB060000 | (segment * 4)`` and the
+#: address.  The constant is what the compiler leaves in the instruction stream.
+GSP_SEGMENT_HI = 0xDB06
+
+#: How far apart the two halves of one gSPSegment can land.  The compiler interleaves
+#: neighbouring calls: on one actor the ``lui 0xdb06`` and its ``ori`` are twelve instructions
+#: apart, so a window of ten finds only the first segment and silently misses the rest.
+GSP_WINDOW = 24
+
+
+def gsp_segments(overlay: bytes, vram_base: int, object_size: int,
+                 segments=(8, 9, 10), max_entries: int = 16) -> dict[int, list[int]]:
+    """What this actor's code binds to each face segment, read from the code itself.
+
+    Everything else in this module reads *data* - a pointer array, a palette, a spacing - and
+    guesses what the game does with it.  This reads what the game **does**: the
+    ``gSPSegment(gfx, seg, addr)`` calls in the actor's Draw, which are the one place the
+    binding is stated rather than implied.
+
+    The macro compiles to a fixed shape.  The command word is built by ``lui r, 0xdb06`` and
+    ``ori r, r, seg*4`` and stored at ``0(gfx)``; the address is stored at ``4(gfx)``.  So the
+    method is: find a store of a register holding ``0xDB06xxxx``, take the matching store to
+    ``4`` of the same base register, and work out where *that* register's value came from.
+    Two sources occur.  A **direct** binding builds the segmented address itself
+    (``lui 0x0600`` + ``addiu``) - Tektite does this, once per colour variant.  A **table**
+    binding loads it (``lw``) from an array whose VRAM address the code builds, indexed by the
+    actor's state - the common case, and the table's offset in the overlay is that address
+    minus ``vram_base``, because the overlay is linked for its home address.
+
+    Anchoring on the two stores matters.  Pairing a ``0xDB06`` constant with the nearest
+    address by distance assigned one pointer to three different segments on the first actor
+    tried.
+
+    Returns ``{segment: [offsets into the object]}``.  Every offset is bounds-checked against
+    *object_size*, but nothing here judges whether the bytes are a picture - that is the
+    caller's job, with the same gates as every other route.
+    """
+    try:
+        from capstone import CS_ARCH_MIPS, CS_MODE_32, CS_MODE_BIG_ENDIAN, Cs
+    except ImportError:  # pragma: no cover - capstone is optional
+        return {}
+    import struct as _struct
+
+    md = Cs(CS_ARCH_MIPS, CS_MODE_32 | CS_MODE_BIG_ENDIAN)
+    ins = list(md.disasm(overlay, 0))
+    if not ins:
+        return {}
+
+    def ops(i):
+        return [o.strip() for o in i.op_str.split(",")] if i.op_str else []
+
+    def mem(o):
+        # "4($v1)" / "($v1)" / "0x10($sp)" -> (offset, base)
+        o = o.strip()
+        if "(" not in o:
+            return None
+        off, base = o.split("(", 1)
+        base = base.rstrip(")")
+        try:
+            return (int(off, 0) if off else 0), base
+        except ValueError:
+            return None
+
+    def imm(s):
+        try:
+            v = int(s, 0)
+        except ValueError:
+            return None
+        return v
+
+    top = vram_base + len(overlay)
+
+    # Provenance per register.  Three kinds matter:
+    #   ("const", v)  a value built from immediates - the gSPSegment command word, a table's
+    #                 VRAM address, or a segmented address written out directly;
+    #   ("load", a)   a value loaded from VRAM address a - an entry of a pointer table;
+    #   None          anything we cannot follow.
+    # SEGMENTED_TO_VIRTUAL turns the segmented pointer into the stored address through
+    # `and` (mask the offset) and two `addu` (segment base, then 0x80000000).  The pointer
+    # itself is the thing we want, so those operations *pass the source through* rather than
+    # producing a new value - dropping it at the `and` is what made the first attempt find
+    # nothing at all.
+    def is_seg(pv):
+        return pv is not None and pv[0] == "const" and (pv[1] >> 24) == 0x06
+
+    def is_table(pv):
+        return pv is not None and pv[0] == "const" and vram_base <= pv[1] < top
+
+    def carry(a, b):
+        """The operand worth keeping through an arithmetic step."""
+        # A segmented constant or a table entry is direct evidence; a struct field is a
+        # lead to follow; a table base is only useful to a later load.  Rank accordingly -
+        # letting a field outrank a constant hid every direct binding behind gSegments[].
+        for pv in (a, b):
+            if pv is not None and pv[0] == "load":
+                return pv
+        for pv in (a, b):
+            if is_seg(pv):
+                return pv
+        for pv in (a, b):
+            if pv is not None and pv[0] == "field":
+                return pv
+        for pv in (a, b):
+            if is_table(pv):
+                return pv
+        # any other constant - an address outside the overlay, such as gSegments[] - is kept
+        # so that a load through it is recognised as "known, and not ours" rather than
+        # mistaken for a field of the actor
+        for pv in (a, b):
+            if pv is not None and pv[0] == "const":
+                return pv
+        return None
+
+    prov: dict[str, tuple | None] = {}
+    stores: list[tuple[int, int, str, tuple | None]] = []  # (index, offset, base, prov)
+    CLOBBER = ("$v0", "$v1", "$a0", "$a1", "$a2", "$a3", "$t0", "$t1", "$t2", "$t3",
+               "$t4", "$t5", "$t6", "$t7", "$t8", "$t9")
+    NO_WRITE = {"sw", "sd", "sh", "sb", "swc1", "sdc1", "beq", "bne", "beqz", "bnez", "blez",
+                "bgtz", "bltz", "bgez", "j", "jal", "jr", "jalr", "b", "nop", "mtc1", "mtc0",
+                "mult", "multu", "div", "divu", "mtlo", "mthi", "bc1t", "bc1f", "swl", "swr",
+                "sync", "cache", "break", "teq"}
+
+    for k, i in enumerate(ins):
+        m, o = i.mnemonic, ops(i)
+        if m == "lui" and len(o) == 2:
+            v = imm(o[1])
+            prov[o[0]] = ("const", (v & 0xFFFF) << 16) if v is not None else None
+        elif m in ("addiu", "ori", "daddiu", "xori") and len(o) == 3:
+            src = prov.get(o[1])
+            v = imm(o[2])
+            if src and src[0] == "const" and v is not None:
+                if m == "ori":
+                    prov[o[0]] = ("const", src[1] | (v & 0xFFFF))
+                elif m == "xori":
+                    prov[o[0]] = ("const", src[1] ^ (v & 0xFFFF))
+                else:
+                    if v >= 0x8000:
+                        v -= 0x10000
+                    prov[o[0]] = ("const", (src[1] + v) & 0xFFFFFFFF)
+            elif src and src[0] in ("load", "field"):
+                prov[o[0]] = src  # an offset applied to a loaded pointer keeps its source
+            else:
+                prov[o[0]] = None
+        elif m in ("andi",) and len(o) == 3:
+            src = prov.get(o[1])
+            prov[o[0]] = src if (is_seg(src) or (src and src[0] in ("load", "field"))) else None
+        elif m in ("addu", "add", "or", "and", "daddu", "subu") and len(o) == 3:
+            prov[o[0]] = carry(prov.get(o[1]), prov.get(o[2]))
+        elif m in ("lw", "ld") and len(o) == 2:
+            mm = mem(o[1])
+            base = prov.get(mm[1]) if mm else None
+            if mm and is_table(base):
+                prov[o[0]] = ("load", (base[1] + mm[0]) & 0xFFFFFFFF)
+            elif mm and base is None and mm[1] not in ("$sp", "$zero"):
+                # a field of some struct - usually the actor's own.  Remember which field, so
+                # the value can be traced to whatever the actor stored there.
+                prov[o[0]] = ("field", mm[0])
+            else:
+                prov[o[0]] = None
+        elif m in ("sw", "sd") and len(o) == 2:
+            mm = mem(o[1])
+            if mm:
+                stores.append((k, mm[0], mm[1], prov.get(o[0])))
+        elif m == "move" and len(o) == 2:
+            prov[o[0]] = prov.get(o[1])
+        elif o and m not in NO_WRITE:
+            prov[o[0]] = None
+        if m in ("jal", "jalr"):
+            for r in CLOBBER:
+                prov[r] = None
+
+    out: dict[int, list[int]] = {}
+    n = len(overlay)
+
+    def read_table(vaddr):
+        off = vaddr - vram_base
+        if not 0 <= off < n - 4:
+            return []
+        vals = []
+        for e in range(max_entries):
+            if off + 4 * e + 4 > n:
+                break
+            w = _struct.unpack_from(">I", overlay, off + 4 * e)[0]
+            if (w >> 24) != 0x06 or (w & 0xFFFFFF) >= object_size:
+                break
+            vals.append(w & 0xFFFFFF)
+        return vals
+
+    # Second hop: what did the actor store into each of its own fields?  An actor whose
+    # Update copies `sEyeTextures[index]` into `this->eyeTexture` and whose Draw binds
+    # `this->eyeTexture` never builds the table address in the Draw at all.  Keyed by field
+    # offset; only values that trace to a table or a segmented constant are kept.
+    field_sources: dict[int, list[tuple]] = {}
+    for _k, off, base, pv in stores:
+        if base in ("$sp", "$zero") or pv is None:
+            continue
+        if pv[0] == "load" or is_seg(pv):
+            field_sources.setdefault(off, []).append(pv)
+
+    def resolve(pv):
+        """Offsets in the object that a stored address provenance names."""
+        if pv is None:
+            return []
+        if is_seg(pv):
+            return [pv[1] & 0xFFFFFF]
+        if pv[0] == "load":
+            return read_table(pv[1])
+        if pv[0] == "field":
+            found: list[int] = []
+            for src in field_sources.get(pv[1], ()):
+                for v in resolve(src):
+                    if v not in found:
+                        found.append(v)
+            return found
+        return []
+
+    for si, (k, off0, base0, p0) in enumerate(stores):
+        if off0 != 0 or not p0 or p0[0] != "const":
+            continue
+        if (p0[1] >> 16) != GSP_SEGMENT_HI:
+            continue
+        seg = (p0[1] & 0xFFFF) // 4
+        if seg not in segments:
+            continue
+        # The address store is the one at +4 of the same base.  Prefer the nearest one that
+        # FOLLOWS the command store: with two calls interleaved, the nearest by distance can
+        # be the previous call's address, which assigned every pointer one segment late.
+        mate = None
+        for k2, off2, base2, p2 in stores[si + 1:si + 8]:
+            if off2 == 4 and base2 == base0 and k2 - k <= GSP_WINDOW:
+                mate = p2
+                break
+        if mate is None:
+            for k2, off2, base2, p2 in reversed(stores[max(0, si - 7):si]):
+                if off2 == 4 and base2 == base0 and k - k2 <= GSP_WINDOW:
+                    mate = p2
+                    break
+        bucket = out.setdefault(seg, [])
+        for v in resolve(mate):
+            if v < object_size and v not in bucket:
+                bucket.append(v)
+    return out

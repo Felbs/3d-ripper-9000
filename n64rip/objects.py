@@ -177,6 +177,31 @@ def _is_vram(w: int) -> bool:
     return 0x80000000 <= w < 0x81000000
 
 
+def actor_overlay_bases(rom, code: bytes) -> dict[int, int]:
+    """``{overlay ROM file index: vramStart}`` for every entry in ``gActorOverlayTable``.
+
+    The base is what turns an address the overlay's code builds - ``lui``/``addiu`` pairs
+    hold the final VRAM address, the overlay being linked for its home address - back into
+    an offset inside the file.  Reading the actor's own ``gSPSegment`` calls needs it.
+    """
+    import struct as _struct
+
+    n = len(code) // 4
+    if n < ACTOR_ENTRY_WORDS:
+        return {}
+    words = _struct.unpack_from(f">{n}I", code, 0)
+    pairs = {(f.vrom_start, f.vrom_end): f.index for f in rom.files if f.vrom_start > 0x10000}
+    out: dict[int, int] = {}
+    for b in range(0, n - ACTOR_ENTRY_WORDS, 1):
+        fidx = pairs.get((words[b], words[b + 1]))
+        if fidx is None or not _is_vram(words[b + 2]) or not _is_vram(words[b + 3]):
+            continue
+        if words[b + 3] <= words[b + 2]:
+            continue
+        out.setdefault(fidx, words[b + 2])
+    return out
+
+
 def find_actor_overlays(rom, code: bytes) -> dict[int, list[int]]:
     """``{object id: [overlay ROM file indices]}`` from the actor table in ``code``.
 

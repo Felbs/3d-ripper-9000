@@ -751,3 +751,123 @@ def test_every_attested_row_records_what_was_seen():
             assert len(tb.seen) > 20, f"object {oid} {role} must describe what was seen"
             assert len(tb.offsets) >= 2
             assert tb.width > 0 and tb.height > 0
+
+def _mips(*words):
+    import struct
+
+    return b"".join(struct.pack(">I", w) for w in words)
+
+
+def _lui(rt, imm):
+    return 0x3C000000 | (rt << 16) | (imm & 0xFFFF)
+
+
+def _ori(rt, rs, imm):
+    return 0x34000000 | (rs << 21) | (rt << 16) | (imm & 0xFFFF)
+
+
+def _addiu(rt, rs, imm):
+    return 0x24000000 | (rs << 21) | (rt << 16) | (imm & 0xFFFF)
+
+
+def _sw(rt, off, base):
+    return 0xAC000000 | (base << 21) | (rt << 16) | (off & 0xFFFF)
+
+
+def _lw(rt, off, base):
+    return 0x8C000000 | (base << 21) | (rt << 16) | (off & 0xFFFF)
+
+
+def _and(rd, rs, rt):
+    return (rs << 21) | (rt << 16) | (rd << 11) | 0x24
+
+
+def _addu(rd, rs, rt):
+    return (rs << 21) | (rt << 16) | (rd << 11) | 0x21
+
+
+V0, A0, A3, T0, T4, T5, T6, T7, T9 = 2, 4, 7, 8, 12, 13, 14, 15, 25
+
+
+def test_gsp_segments_reads_a_direct_binding_through_segmented_to_virtual():
+    """gSPSegment(gfx, 8, SEGMENTED_TO_VIRTUAL(0x06001300)) as the compiler emits it.
+
+    The stored address is derived from the segmented constant through `and` and two `addu`;
+    the first attempt dropped the constant at the `and` and found nothing in any actor.
+    """
+    import pytest
+
+    pytest.importorskip("capstone")
+    from n64rip.actor_code import gsp_segments
+
+    code = _mips(
+        _lui(A3, 0x00FF), _ori(A3, A3, 0xFFFF),      # 0x00FFFFFF mask
+        _lui(T0, 0x8000),                            # + 0x80000000
+        _lui(A0, 0x0600), _addiu(A0, A0, 0x1300),    # the segmented address
+        _lui(T9, 0xDB06), _ori(T9, T9, 0x20),        # gSPSegment command for segment 8
+        _sw(T9, 0, V0),                              # gfx->words.w0
+        _lw(T5, 0, T4),                              # gSegments[seg] (unknown base)
+        _and(T6, A0, A3),                            # offset
+        _addu(T7, T5, T6), _addu(T7, T7, T0),        # virtual address
+        _sw(T7, 4, V0),                              # gfx->words.w1
+    )
+    got = gsp_segments(code, 0x80A00000, 0x4000)
+    assert got.get(8) == [0x1300], got
+
+
+def test_gsp_segments_reads_a_table_binding():
+    """The common shape: the address is loaded from an array the code names by VRAM address."""
+    import pytest
+
+    pytest.importorskip("capstone")
+    from n64rip.actor_code import gsp_segments
+
+    base = 0x80A00000
+    table_off = 0x40
+    code_words = [
+        _lui(T9, 0xDB06), _ori(T9, T9, 0x24),        # segment 9
+        _sw(T9, 0, V0),
+        _lui(T4, (base + table_off) >> 16),
+        _addiu(T4, T4, (base + table_off) & 0xFFFF),
+        _lw(A0, 0, T4),                              # sEyeTextures[0]
+        _sw(A0, 4, V0),
+    ]
+    code = _mips(*code_words)
+    code += b"\0" * (table_off - len(code))
+    code += _mips(0x06001000, 0x06001400, 0x06001800, 0x00000000)
+    got = gsp_segments(code, base, 0x4000)
+    assert got.get(9) == [0x1000, 0x1400, 0x1800], got
+
+
+def test_gsp_segments_pairs_the_two_stores_not_the_nearest_address():
+    """With two calls interleaved, the +4 store nearest by distance can belong to the previous
+    call - which assigned every pointer one segment late on the first actor tried."""
+    import pytest
+
+    pytest.importorskip("capstone")
+    from n64rip.actor_code import gsp_segments
+
+    code = _mips(
+        _lui(A0, 0x0600), _addiu(A0, A0, 0x1300),
+        _lui(T9, 0xDB06), _ori(T9, T9, 0x20), _sw(T9, 0, V0),     # cmd 8
+        _sw(A0, 4, V0),                                           # addr 8
+        _addiu(V0, V0, 8),
+        _lui(A0, 0x0600), _addiu(A0, A0, 0x1700),
+        _lui(T9, 0xDB06), _ori(T9, T9, 0x24), _sw(T9, 0, V0),     # cmd 9
+        _sw(A0, 4, V0),                                           # addr 9
+    )
+    got = gsp_segments(code, 0x80A00000, 0x4000)
+    assert got.get(8) == [0x1300] and got.get(9) == [0x1700], got
+
+
+def test_unclaimed_objects_consult_the_runtime_pool_by_code_only():
+    """An object no actor claims is attributed by asking the pool's code, never by shape."""
+    import inspect
+
+    from n64rip import extract
+
+    src = inspect.getsource(extract._attribute_from_pool)
+    assert "gsp_segments" in src
+    assert "texture_runs" not in src, "the pool must never be searched by pointer shape"
+    body = inspect.getsource(extract._overlay_faces)
+    assert "if not own and pool:" in body

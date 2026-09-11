@@ -662,8 +662,60 @@ def _attested_faces(att, eye_segs, mouth_segs):
     )
 
 
+def _attribute_from_pool(data, pool, eye_segs, eye_tiles, skel, segments):
+    """Which runtime-object actor draws this object?  The one whose code binds pictures.
+
+    Every actor in *pool* is disassembled and asked what it binds to the eye segments; a
+    candidate is kept only when it names at least two offsets that fit the object **and**
+    decode, at the format the head requests and through the head's own palette, as something
+    that passes the same picture gates as every other route.  Of four candidates for the
+    second child Zelda, one passed - and it was her.
+
+    Returns the winning actor's bindings as ``{segment: [offsets]}``, or ``{}``.  This is
+    the code route only: offering the pool's pointer arrays by shape would be a search over a
+    hundred and thirty overlays, and the whole history of this file says what that produces.
+    """
+    if not eye_segs or not eye_tiles:
+        return {}
+    _pal, tlut = _tlut_for_segment(data, skel, segments, eye_segs[0])
+    best = (0.0, {})
+    for ov, vram in pool:
+        try:
+            got = actor_mod.gsp_segments(ov, vram, len(data))
+        except Exception:  # noqa: BLE001
+            continue
+        offs: list[int] = []
+        for s in eye_segs:
+            for o in got.get(s, ()):
+                if o not in offs:
+                    offs.append(o)
+        if len(offs) < 2:
+            continue
+        for fmt, size, w, h in sorted(eye_tiles):
+            nbytes = w * h * BITS.get(size, 8) // 8
+            if any(o + nbytes > len(data) for o in offs):
+                continue
+            imgs = _decode_table(data, offs, fmt, size, (w, h), tlut)
+            if not imgs:
+                continue
+            if _roughness(imgs) > MAX_ROUGHNESS or _structure_ratio(imgs) > MAX_STRUCTURE_RATIO:
+                continue
+            score = _expression_score(data, offs, nbytes, imgs)
+            if score > best[0]:
+                best = (score, {s: list(v) for s, v in got.items() if v})
+    return best[1]
+
+
 def _overlay_faces(data, skel, segments, overlays, object_id):
     """This actor's own eye and mouth tables, read from its overlay's pointer runs.
+
+    ``overlays`` maps an object id to ``[(overlay bytes, vram base)]``.
+
+    Four routes, in order of how much they *know*.  The actor's own code, read by
+    :func:`actor_code.gsp_segments`, states the binding outright.  A pointer array found by
+    shape in the overlay is the same table without knowing which segment it feeds.  A walk
+    seeded at the palette the head names is for actors with no overlay at all.  And a short
+    attested table covers what none of those reach.
 
     Three measurements are combined, each taken where it is reliable.  The display list states
     the pixel *format* on segments 8 and 9, which is always explicit.  The size comes from
@@ -680,9 +732,32 @@ def _overlay_faces(data, skel, segments, overlays, object_id):
         return None
     if not eye_tiles and not mouth_tiles:
         return None
+    own = overlays.get(object_id, ())
+    pool = overlays.get(None, ()) if not own else ()
     runs = []
-    for ov in overlays.get(object_id, ()):
+    # what the actor's code binds to each segment - read from its gSPSegment calls, which is
+    # the one place the binding is stated rather than implied.  Tried first, per role.
+    coded: dict[int, list[int]] = {}
+    for ov, vram in own:
         runs += [r for r in actor_mod.texture_runs(ov, len(data)) if r[-1] < len(data)]
+        if vram:
+            try:
+                for seg, offs in actor_mod.gsp_segments(ov, vram, len(data)).items():
+                    bucket = coded.setdefault(seg, [])
+                    for o in offs:
+                        if o not in bucket:
+                            bucket.append(o)
+            except Exception:  # noqa: BLE001 - a disassembly failure must not cost the data route
+                pass
+    if not own and pool:
+        coded = _attribute_from_pool(data, pool, eye_segs, eye_tiles, skel, segments)
+
+    def coded_runs(segs):
+        out = []
+        for s in segs:
+            if len(coded.get(s, ())) >= 2 and coded[s] not in out:
+                out.append(list(coded[s]))
+        return out
     # Judge each candidate through the palette *that role* is drawn with.  A grey ramp makes
     # smooth art look like noise, and so does the wrong palette: the eye's palette applied to
     # the mouth made three characters' mouths - present in their pointer tables all along -
@@ -691,11 +766,17 @@ def _overlay_faces(data, skel, segments, overlays, object_id):
     mouth_pal, mouth_tlut = _tlut_for_segment(
         data, skel, segments, mouth_segs[0] if mouth_segs else None)
 
-    eye = _best_table(data, runs, eye_tiles, tlut)
+    # Code first, data second: a table the actor's code indexes is exact, where a run found
+    # by shape may be two tables end to end or carry entries that are not textures at all.
+    eye = _best_table(data, coded_runs(eye_segs), eye_tiles, tlut) if coded else None
+    if eye is None:
+        eye = _best_table(data, runs, eye_tiles, tlut)
     # The seeded walk is a LAST RESORT, for an actor with no pointer table at all.  Offered to
     # an actor that has one it only adds noise: the walk is deliberately long, so scoring its
     # sub-spans hands "length first" a much bigger pool to win from, and characters whose real
     # table was already correct picked up seven frames of speckle apiece.
+    # A code-route candidate that then fails the gates must not silence the seeded walk -
+    # it did, and cost one character the eyes the walk had already found.
     seeded = not runs
     if eye is None and eye_tiles and seeded:
         eye = _best_table(data, _seeded_runs(data, skel, segments, eye_segs[0], eye_tiles),
@@ -707,8 +788,12 @@ def _overlay_faces(data, skel, segments, overlays, object_id):
         nbytes = eye_dims[0] * eye_dims[1] * BITS.get(eye_fmt[1], 8) // 8
         eyes, spill = _trim_table(data, offs, nbytes, imgs)
 
-    mouth = (_best_table(data, runs, mouth_tiles, mouth_tlut, exclude=set(eyes))
-             if mouth_tiles else None)
+    mouth = None
+    if mouth_tiles and coded:
+        mouth = _best_table(data, coded_runs(mouth_segs), mouth_tiles, mouth_tlut,
+                            exclude=set(eyes))
+    if mouth is None and mouth_tiles:
+        mouth = _best_table(data, runs, mouth_tiles, mouth_tlut, exclude=set(eyes))
     if mouth is None and mouth_tiles and mouth_segs and seeded:
         mouth = _best_table(data, _seeded_runs(data, skel, segments, mouth_segs[0], mouth_tiles),
                             mouth_tiles, mouth_tlut, exclude=set(eyes), spans=True)
@@ -948,14 +1033,30 @@ def extract_rom(
     # so posing him needs a separate source from every other actor.
     code_file = None if table is None else rom.read(rom.files[table.file_index])
     # object id -> the bytes of every actor overlay that uses it, for per-actor face textures
-    overlays: dict[int, list[bytes]] = {}
+    overlays: dict[int, list[tuple[bytes, int]]] = {}
+    # Actors whose ActorInit names gameplay_keep, or nothing we recognised, pick their object
+    # at runtime - the second child Zelda and one of the Deku Scrubs are drawn by such
+    # actors.  Nothing in the data says which; their *code* does, so this pool is offered to
+    # any object no actor claims, through the code route only.
+    unclaimed_pool: list[tuple[bytes, int]] = []
     if code_file is not None:
-        for oid, files in obj_mod.find_actor_overlays(rom, code_file).items():
+        bases = obj_mod.actor_overlay_bases(rom, code_file)
+        by_object = obj_mod.find_actor_overlays(rom, code_file)
+        for oid, files in by_object.items():
             for fidx in files:
                 try:
-                    overlays.setdefault(oid, []).append(rom.read(rom.files[fidx]))
+                    overlays.setdefault(oid, []).append((rom.read(rom.files[fidx]), bases.get(fidx, 0)))
                 except Exception:  # noqa: BLE001
                     pass
+        claimed = {f for fs in by_object.values() for f in fs}
+        runtime = set(by_object.get(obj_mod.GAMEPLAY_KEEP, [])) | (set(bases) - claimed)
+        for fidx in sorted(runtime):
+            if bases.get(fidx):
+                try:
+                    unclaimed_pool.append((rom.read(rom.files[fidx]), bases[fidx]))
+                except Exception:  # noqa: BLE001
+                    pass
+        overlays[None] = unclaimed_pool
     link_anim = None
     for f in rom.live:
         if not f.compressed and 2_000_000 < f.size < 3_000_000:
