@@ -532,3 +532,56 @@ def test_face_tlut_prefers_a_palette_from_a_face_tile():
     assert "EYE_SEGMENT" in src and "MOUTH_SEGMENT" in src, "must prefer a face-segment tile"
     assert "fallback" in src, "and still return something when no face tile resolves"
     assert "prefer_face" in inspect.signature(_face_tlut).parameters
+
+def test_coherent_span_drops_garbage_at_both_ends():
+    """A pointer run does not start and end where the eye table does."""
+    from n64rip.extract import _coherent_span
+
+    assert _coherent_span([0.01, 0.6, 0.7, 0.6, 0.02, 0.01]) == (1, 4)
+    assert _coherent_span([0.7, 0.6, 0.05, 0.01]) == (0, 2)
+    assert _coherent_span([0.6, 0.7, 0.6]) == (0, 3)
+
+
+def test_coherent_span_ends_at_a_frame_unlike_the_others():
+    """Junk frames can agree with each other byte for byte, so steps alone do not cut them."""
+    from n64rip.extract import _coherent_span
+
+    steps = [0.6, 0.6, 0.6, 0.6, 0.6]          # every neighbour "matches"
+    ok = [True, True, True, False, False, False]  # but the last three are not faces
+    assert _coherent_span(steps, ok) == (0, 2)
+
+
+def test_frame_is_face_needs_both_halves_of_the_rule():
+    """Relative alone cuts Link's dark open mouth; absolute alone cuts detailed eyes."""
+    import numpy as np
+
+    from n64rip.extract import _frame_is_face
+
+    rng = np.random.default_rng(7)
+    smooth = np.zeros((32, 32, 4), dtype=np.uint8)
+    smooth[:16] = 210
+    detailed = smooth.copy()
+    detailed[::3] = 120           # busier, but still a drawing
+    noise = rng.integers(0, 255, (32, 32, 4), dtype=np.uint8)
+    ok = _frame_is_face([smooth, detailed, noise])
+    assert ok[0] and ok[2] is False, ok
+    assert ok[1], "a more detailed real frame must survive"
+
+
+def test_trim_table_hands_back_the_tail_it_shed():
+    """What the eye table sheds is usually the mouth table, so the caller needs it."""
+    import numpy as np
+
+    from n64rip.extract import _trim_table
+
+    rng = np.random.default_rng(5)
+    eye = rng.integers(0, 255, 64, dtype=np.uint8)
+    frames = [eye, eye.copy(), eye.copy()]
+    frames[1][:10] = 3
+    frames[2][:20] = 3
+    mouth = rng.integers(0, 255, 64, dtype=np.uint8)
+    data = b"".join(f.tobytes() for f in frames) + mouth.tobytes() + mouth.tobytes()
+    offs = [0, 64, 128, 192, 256]
+    head, tail = _trim_table(data, offs, 64, [])
+    assert head == [0, 64, 128], head
+    assert tail == [192, 256], tail

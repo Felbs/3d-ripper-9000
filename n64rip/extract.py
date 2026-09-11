@@ -237,9 +237,12 @@ def _structure_ratio(images) -> float:
     return float(np.mean(vals)) if vals else 1.0
 
 
-#: noise sits near 1.0; the densest real face measured (Link's, eyes and brows in one tile)
-#: reaches 0.43, so this rejects only what is plainly structureless
-MAX_STRUCTURE_RATIO = 0.45
+#: Noise sits near 1.0.  Re-measured once the face palette was being used to decode the
+#: candidates rather than a grey ramp: every table verified by eye comes in at or below 0.30
+#: (the busiest, a Deku mouth, averages 0.28), and every table that turned out to be
+#: unrelated bytes is above it.  The old 0.45 dated from the wrong-palette measurements and
+#: was letting three characters ship mouths made of somebody else's mesh.
+MAX_STRUCTURE_RATIO = 0.30
 
 
 #: uniform random bytes measure about 0.33; every face verified by eye came in under 0.20
@@ -282,35 +285,129 @@ def _candidate_dims(want_tiles, fmt, size, run):
     return dims
 
 
-def _split_weak_link(data, offs, nbytes, images):
-    """Cut a table where it stops being the same feature.
-
-    An actor's eye and mouth tables sit next to each other in one array, so a pointer run
-    often holds both.  Frames of one eye resemble each other and a mouth does not resemble an
-    eye, so the boundary shows up as one badly matched step in an otherwise consistent table.
-    Returns ``(head, tail)``.
-    """
+def _frame_steps(data, offs, nbytes, images):
+    """How well each consecutive pair of entries matches, one number per step."""
     import numpy as np
 
-    if len(offs) < 3:
-        return list(offs), []
     steps = []
     for a, b in zip(offs, offs[1:]):
+        if a + nbytes > len(data) or b + nbytes > len(data):
+            steps.append(0.0)
+            continue
         fa = np.frombuffer(data, np.uint8, nbytes, a)
         fb = np.frombuffer(data, np.uint8, nbytes, b)
         steps.append(float(np.mean(fa == fb)))
-    if images and max(steps) < 0.2:  # true-colour art: fall back to the decoded pixels
+    if images and len(images) == len(offs) and max(steps, default=0.0) < 0.2:
+        # true-colour art is re-shaded rather than copied, so few bytes match; compare pixels
         steps = []
         for a, b in zip(images, images[1:]):
             x = a[..., :3].astype(np.float64).ravel()
             y = b[..., :3].astype(np.float64).ravel()
             steps.append(0.0 if x.std() < 1e-6 or y.std() < 1e-6
                          else float(np.corrcoef(x, y)[0, 1]))
-    k = int(np.argmin(steps))
-    others = [s for i, s in enumerate(steps) if i != k]
-    if others and float(np.mean(others)) > steps[k] + 0.25:
-        return list(offs[:k + 1]), list(offs[k + 1:])
-    return list(offs), []
+    return steps
+
+
+#: below this, two entries are not the same feature - measured eye-to-eye steps run 0.5-0.8
+#: and unrelated data lands near zero, so the cut is nowhere near either
+MIN_STEP = 0.25
+
+
+#: A frame is unlike the rest of its table when it is this much rougher than the cleanest
+#: frame in it *and* rough in absolute terms.  Both halves are needed: the relative test
+#: alone cuts the dark open mouth out of Link's four, and the absolute test alone cuts
+#: characters whose eyes are simply drawn with more detail than most.
+JUNK_FRAME_RELATIVE = 2.0
+JUNK_FRAME_FLOOR = 0.30
+
+
+def _frame_is_face(images):
+    """Per frame: does this look like part of the same drawn set as the rest?
+
+    Measured across every table in Ocarina of Time, a real frame sits between 0.09 and 0.31
+    on the local-versus-global scale, and a frame of unrelated mesh between 0.28 and 0.45 -
+    so neither a fixed cut nor a purely relative one separates them, but the pair does.
+    """
+    if not images:
+        return []
+    ratios = [_structure_ratio([im]) for im in images]
+    floor = min(ratios)
+    return [not (r > floor * JUNK_FRAME_RELATIVE and r > JUNK_FRAME_FLOOR) for r in ratios]
+
+
+def _coherent_span(steps, ok=None):
+    """The longest stretch of a table that holds together: ``(start, end_inclusive)``.
+
+    A pointer run does not begin and end where the eye table does.  It can open on an
+    unrelated pointer and it can carry on past the last eye into whatever the actor stored
+    next - one character shipped four real frames followed by four of somebody else's mesh.
+    Two things end a stretch: a frame that does not look like the others (``ok``), and a step
+    between neighbours that do not match.
+    """
+    n = len(steps) + 1
+    if n < 2:
+        return 0, max(0, n - 1)
+    if ok is None or len(ok) != n:
+        ok = [True] * n
+    best = (0, 0, 0)
+    i = 0
+    while i < n:
+        if not ok[i]:
+            i += 1
+            continue
+        j = i
+        while j + 1 < n and ok[j + 1] and steps[j] >= MIN_STEP:
+            j += 1
+        if j - i + 1 > best[0]:
+            best = (j - i + 1, i, j)
+        i = j + 1
+    if best[0] == 0:  # nothing holds together; keep it whole and let the table gates judge
+        return 0, n - 1
+    return best[1], best[2]
+
+
+def _trim_table(data, offs, nbytes, images):
+    """Keep a table's coherent span; hand back everything after it.
+
+    The tail matters: an actor's eye and mouth tables sit next to each other in one array, so
+    what the eye table sheds is usually the mouth table - at its own size, not the eye's.
+    """
+    if len(offs) < 3:
+        return list(offs), []
+    steps = _frame_steps(data, offs, nbytes, images)
+    ok = _frame_is_face(images) if len(images) == len(offs) else None
+    lo, hi = _coherent_span(steps, ok)
+    return list(offs[lo:hi + 1]), list(offs[hi + 1:])
+
+
+def _size_table(data, offs, want_tiles, fallback_fmt, tlut):
+    """Pick the size and format for a table whose offsets are already known.
+
+    Needed for the tail an eye table sheds.  Inheriting the eye's dimensions is wrong - a
+    mouth is not the same shape as an eye, and the game does not store it at the same size -
+    and that is what left several actors' mouths striped.
+    """
+    formats = sorted({(f, s) for f, s, _w, _h in want_tiles}) or [fallback_fmt]
+    stride = actor_mod.modal_stride(offs)
+    best = (0.0, None)
+    for fmt, size in formats:
+        dims_set = {(w, h) for f, s, w, h in want_tiles if (f, s) == (fmt, size)}
+        from_stride = actor_mod.tile_for(stride, BITS.get(size, 8))
+        if from_stride:
+            dims_set.add(from_stride)
+        for dims in sorted(dims_set):
+            nbytes = dims[0] * dims[1] * BITS.get(size, 8) // 8
+            if offs[-1] + nbytes > len(data):
+                continue
+            imgs = _decode_table(data, offs, fmt, size, dims, tlut)
+            if not imgs:
+                continue
+            score = _expression_score(data, offs, nbytes, imgs)
+            if _roughness(imgs) > MAX_ROUGHNESS or _structure_ratio(imgs) > MAX_STRUCTURE_RATIO:
+                continue
+            if score > best[0]:
+                best = (score, (dims, (fmt, size)))
+    return best[1]
 
 
 def _best_table(data, runs, want_tiles, tlut, exclude=()):
@@ -385,14 +482,20 @@ def _overlay_faces(data, skel, segments, overlays, object_id):
     if eye is not None:
         offs, eye_dims, eye_fmt, imgs = eye
         nbytes = eye_dims[0] * eye_dims[1] * BITS.get(eye_fmt[1], 8) // 8
-        eyes, spill = _split_weak_link(data, offs, nbytes, imgs)
+        eyes, spill = _trim_table(data, offs, nbytes, imgs)
 
     mouth = _best_table(data, runs, mouth_tiles, tlut, exclude=set(eyes)) if mouth_tiles else None
     if mouth is not None:
         mouths, mouth_dims, mouth_fmt = mouth[0], mouth[1], mouth[2]
     elif spill:
-        # the tail the eye table shed is the mouth table, at the eye's own format
-        mouths, mouth_dims, mouth_fmt = spill, eye_dims, eye_fmt
+        # The tail the eye table shed is the mouth table - but it has to be sized on its own
+        # terms.  A mouth is neither the shape nor the size of an eye, and inheriting the
+        # eye's dimensions is what left several characters' mouths striped.
+        sized = _size_table(data, spill, mouth_tiles, eye_fmt, tlut)
+        if sized is None:
+            mouths, mouth_dims, mouth_fmt = [], (32, 32), (tex_mod.FMT_CI, tex_mod.SIZE_8)
+        else:
+            mouths, (mouth_dims, mouth_fmt) = spill, sized
     else:
         mouths, mouth_dims, mouth_fmt = [], (32, 32), (tex_mod.FMT_CI, tex_mod.SIZE_8)
 
