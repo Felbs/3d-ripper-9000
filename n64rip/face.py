@@ -78,6 +78,12 @@ def find_faces(code: bytes, object_size: int,
     mouth_runs = _runs(words, object_size, mouth_bytes)
     best_eyes = max(eye_runs, key=len) if eye_runs else []
     best_mouths = max(mouth_runs, key=len) if mouth_runs else []
+    # The two tables sit next to each other in the object file, so the last eye pointer plus
+    # one eye's size lands exactly on the first mouth - and the stride walk follows it there,
+    # claiming a mouth as a ninth eye.  Trim anything at or past where the mouths begin.
+    if best_eyes and best_mouths:
+        first_mouth = best_mouths[0]
+        best_eyes = [o for o in best_eyes if o < first_mouth]
     return FaceSet(eyes=best_eyes, mouths=best_mouths,
                    eye_size=eye_size, mouth_size=mouth_size)
 

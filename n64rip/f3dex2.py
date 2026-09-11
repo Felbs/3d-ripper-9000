@@ -99,7 +99,7 @@ class TileState:
 
 @dataclass
 class Batch:
-    """One run of triangles sharing a tile, a matrix and a geometry mode."""
+    """One run of triangles sharing a tile, a matrix, a geometry mode and a prim colour."""
 
     positions: np.ndarray  # (N,3) f32, already transformed by the matrix in force
     uvs: np.ndarray  # (N,2) f32, in texel units before tile scaling
@@ -109,6 +109,10 @@ class Batch:
     tile: TileState
     lit: bool
     cull_back: bool = True
+    #: G_SETPRIMCOLOR, which the colour combiner multiplies into the texture.  Link's tunic
+    #: texture is pale cloth: its green comes from here, not from the image, so dropping it
+    #: leaves him in a white tunic.
+    prim: tuple[int, int, int, int] = (255, 255, 255, 255)
     limb: int | None = None  # set by the skeleton walker, not by the interpreter
 
 
@@ -205,10 +209,12 @@ class Interpreter:
         self.tile = TileState()
         self.tiles: dict[int, TileState] = {}
         self.geometry_mode = 0
+        self.prim = (255, 255, 255, 255)
         self._cache: list[tuple | None] = [None] * VTX_CACHE
         self._verts: list[tuple] = []
         self._tris: list[tuple[int, int, int]] = []
         self._batch_tile = TileState()
+        self._batch_prim = (255, 255, 255, 255)
         self._steps = 0
 
     # -- batching -------------------------------------------------------------
@@ -232,6 +238,7 @@ class Interpreter:
                 indices=idx,
                 tile=self._batch_tile,
                 lit=lit,
+                prim=self._batch_prim,
                 cull_back=bool(self.geometry_mode & G_CULL_BACK),
             )
         )
@@ -250,7 +257,9 @@ class Interpreter:
         self._tris.append((out[0], out[1], out[2]))
 
     def _tile_changed(self) -> bool:
-        return self.tile.key() != self._batch_tile.key()
+        """A new tile or a new prim colour both start a new batch - the combiner multiplies
+        them together, so a run sharing one but not the other is not one material."""
+        return self.tile.key() != self._batch_tile.key() or self.prim != self._batch_prim
 
     # -- the walk -------------------------------------------------------------
 
@@ -308,6 +317,9 @@ class Interpreter:
                 continue
             if op == G_SETTILESIZE:
                 self._op_settilesize(w0, w1)
+                continue
+            if op == G_SETPRIMCOLOR:
+                self.prim = ((w1 >> 24) & 0xFF, (w1 >> 16) & 0xFF, (w1 >> 8) & 0xFF, w1 & 0xFF)
                 continue
             if op == G_LOADTLUT:
                 self._op_loadtlut(w1)
@@ -371,6 +383,7 @@ class Interpreter:
         if self._tile_changed():
             self._flush()
             self._batch_tile = TileState(**vars(self.tile))
+            self._batch_prim = self.prim
         a = ((w0 >> 16) & 0xFF) // 2
         b = ((w0 >> 8) & 0xFF) // 2
         c = (w0 & 0xFF) // 2
@@ -380,6 +393,7 @@ class Interpreter:
         if self._tile_changed():
             self._flush()
             self._batch_tile = TileState(**vars(self.tile))
+            self._batch_prim = self.prim
         self._emit(((w0 >> 16) & 0xFF) // 2, ((w0 >> 8) & 0xFF) // 2, (w0 & 0xFF) // 2)
         self._emit(((w1 >> 16) & 0xFF) // 2, ((w1 >> 8) & 0xFF) // 2, (w1 & 0xFF) // 2)
 

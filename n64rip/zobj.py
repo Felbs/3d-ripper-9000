@@ -168,7 +168,7 @@ def build(
     by_tile: dict[tuple, int] = {}
     missing = 0
     for b in batches:
-        key = b.tile.key()
+        key = (b.tile.key(), b.prim)
         if key in by_tile:
             continue
         rgba = _decode_tile(b.tile, segments)
@@ -176,7 +176,8 @@ def build(
         if rgba is None:
             missing += 1
             scene.materials.append(
-                MaterialDef(name=f"mat_{idx:02d}", texture=None, unlit=not b.lit)
+                MaterialDef(name=f"mat_{idx:02d}", texture=None, unlit=not b.lit,
+                            base_color=tuple(c / 255.0 for c in b.prim))
             )
         else:
             tex_name = f"tex_{idx:02d}_{tex_mod.format_name(b.tile.fmt, b.tile.size)}"
@@ -191,13 +192,15 @@ def build(
                     mirror_v=b.tile.mirror_t,
                     double_sided=not b.cull_back,
                     unlit=not b.lit,
+                    # the combiner multiplies the texture by the primitive colour
+                    base_color=tuple(c / 255.0 for c in b.prim),
                 )
             )
         by_tile[key] = idx
 
     # -- primitives, merged per material so one bone-weighted mesh comes out
     for key, mat in by_tile.items():
-        group = [b for b in batches if b.tile.key() == key]
+        group = [b for b in batches if (b.tile.key(), b.prim) == key]
         pos = np.concatenate([b.positions for b in group]) * SCALE
         uvs = np.concatenate([b.uvs for b in group])
         cols = np.concatenate([b.colors for b in group])
