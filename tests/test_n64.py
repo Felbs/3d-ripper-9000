@@ -701,11 +701,11 @@ def test_segments_for_binds_every_segment_playing_a_part():
     assert bound[10] != bound[8]
 
 def test_named_characters_reach_the_library_path():
-    """The object id always leads; the English name follows it when we have one."""
+    """The character name leads; the id and file name follow so the row stays traceable."""
     from n64rip.publish import _display_path
 
     rep = {"code": "N64_CZLE"}
-    assert _display_path(rep, {"object_id": 255, "name": "file_0731"}) ==         "N64_CZLE/obj_255_king_zora_file_0731"
+    assert _display_path(rep, {"object_id": 255, "name": "file_0731"}) ==         "N64_CZLE/king_zora_obj_255_file_0731"
     # an unidentified object keeps the id alone - which is always correct
     assert _display_path(rep, {"object_id": 99, "name": "file_0600"}) ==         "N64_CZLE/obj_099_file_0600"
     # and a model outside the object table keeps its file name

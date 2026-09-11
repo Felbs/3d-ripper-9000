@@ -36,7 +36,11 @@ def _display_path(report: dict, m: dict) -> str:
     if oid is None:
         return f"{report['code']}/{m['name']}"
     who = names.name_for(oid)
-    label = f"obj_{oid:03d}_{who}_{m['name']}" if who else f"obj_{oid:03d}_{m['name']}"
+    # The character's name leads, because that is what someone is reading the list for.  The
+    # object id and the file name follow it: names are not unique (four Deku Scrubs, several
+    # Gorons and Poes all share one), and the id is the only identity the ROM actually gives
+    # a model, so both have to survive for a row to be traceable to what is on disk.
+    label = f"{who}_obj_{oid:03d}_{m['name']}" if who else f"obj_{oid:03d}_{m['name']}"
     return f"{report['code']}/{label}"
 
 
