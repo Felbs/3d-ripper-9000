@@ -9,7 +9,7 @@ run of pairs that all match cannot be coincidence.
 Two things fall out of it:
 
 * **Which files are objects** (actors, props, characters) rather than scenes, rooms, code
-  overlays or audio.  On Ocarina of Time, 211 distinct files across 227 object slots.
+  overlays or audio.  On Ocarina of Time, 380 distinct files across 402 object slots.
 * **``gameplay_keep`` is object 1** - the shared asset bank actors reach through segment 4.
   Binding it turns Link's missing textures from 7 to 2; leaving it unbound is why characters
   that borrow from it came out part-textured.
@@ -28,7 +28,20 @@ GAMEPLAY_KEEP = 1
 FIELD_KEEP = 2
 DUNGEON_KEEP = 3
 MIN_TABLE = 24  # a run this long of pairs that all name real files is not chance
-MAX_EMPTY_RUN = 8  # consecutive {0, 0} slots before the walk decides it has left the table
+MAX_EMPTY_RUN = 8  # consecutive blank slots before the walk decides it has left the table
+
+
+def _is_blank(vrom_start: int, vrom_end: int) -> bool:
+    """Is this an unused object slot?
+
+    Two forms mean "nothing here".  ``{0, 0}`` is the obvious one.  The other is a range of
+    **zero length** - Ocarina's slot 227 is ``{0x015e2000, 0x015e2000}`` - and it is not
+    academic: the DMA table never yields a zero-length file, so such a slot can never match a
+    real one, and treating it as the end of the table stopped the walk at object 227 and hid
+    the remaining 175 objects.  King Zora is object 255, which is why he had no face: he had
+    no object id at all, and so no actor overlay to read his eye table out of.
+    """
+    return (vrom_start, vrom_end) == (0, 0) or (vrom_start == vrom_end and vrom_start != 0)
 
 
 @dataclass(frozen=True)
@@ -72,7 +85,7 @@ def find_object_table(rom) -> ObjectTable | None:
             if i + 1 >= n:
                 return False
             p = (words[i], words[i + 1])
-            return p in pairs or p == (0, 0)
+            return p in pairs or _is_blank(*p)
 
         i = 0
         while i < n - 1:
@@ -99,14 +112,14 @@ def find_object_table(rom) -> ObjectTable | None:
         if i + 1 >= n:
             return False
         p = (words[i], words[i + 1])
-        return p in pairs or p == (0, 0)
+        return p in pairs or _is_blank(*p)
 
-    # Empty {0, 0} slots are real entries - object 0 is one - but a zero-padded region
+    # Empty slots are real entries - object 0 is one - but a zero-padded region
     # would otherwise extend the table forever, so a long run of them ends the walk.
     def furthest_real(step: int) -> int:
         pos, last_real, empties = seed, seed, 0
         while 0 <= pos and ok(pos):
-            if (words[pos], words[pos + 1]) == (0, 0):
+            if _is_blank(words[pos], words[pos + 1]):
                 empties += 1
                 if empties > MAX_EMPTY_RUN:
                     break
@@ -121,7 +134,7 @@ def find_object_table(rom) -> ObjectTable | None:
     # keep the empty slots immediately before the first real one: object 0 is {0, 0}, and
     # dropping it shifts every object id by one - which silently renamed gameplay_keep.
     back = 0
-    while lo - 2 >= 0 and (words[lo - 2], words[lo - 1]) == (0, 0) and back < MAX_EMPTY_RUN:
+    while lo - 2 >= 0 and _is_blank(words[lo - 2], words[lo - 1]) and back < MAX_EMPTY_RUN:
         lo -= 2
         back += 1
     entries = [pairs.get((words[lo + 2 * j], words[lo + 2 * j + 1])) for j in range((hi - lo) // 2)]

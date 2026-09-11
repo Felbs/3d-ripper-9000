@@ -98,6 +98,15 @@ def _pose(scene, name, data, skel, segments, link_anim, object_id):
     return None
 
 
+#: A limb whose geometry is entirely the swapped tile is not a head.  Measured over every
+#: actor in Ocarina of Time that binds a face: the tile covers between 4.7% and 48.9% of its
+#: limb, because a head also carries skin, hair and ears.  The cases that sit at 100% are a
+#: glow sprite, a rupee-like ring and a small flame - single quads of 2 to 6 triangles that
+#: happen to sample segment 8, and binding a "face" onto them ships a black donut.
+MAX_FACE_SHARE = 0.75
+MIN_HEAD_TRIANGLES = 16
+
+
 def _wanted_face_tiles(data, skel, segments):
     """``{segment: {(fmt, size, w, h)}}`` for the tiles this actor's head asks for.
 
@@ -108,6 +117,10 @@ def _wanted_face_tiles(data, skel, segments):
     texels were actually loaded, and for exactly the actors whose face is missing nothing was
     ever loaded on that segment - so the size has to come from somewhere else.  SETTILE states
     the format outright, so that part is solid.
+
+    A request is only counted when it comes from a limb that is a **head**: one carrying
+    geometry beyond the swapped tile itself.  Without that, three non-characters claimed
+    faces - the tile is the whole limb for a glow, a ring and a flame.
     """
     want: dict[int, set] = {}
     for i in skel.order():
@@ -118,13 +131,26 @@ def _wanted_face_tiles(data, skel, segments):
             res = f3dex2.run(limb.dlist, segments)
         except Exception:  # noqa: BLE001
             continue
+        total = sum(len(b.indices) // 3 for b in res.batches if b.indices is not None)
+        found: dict[int, set] = {}
+        face_tris = 0
         for b in res.batches:
             tile = b.tile
             if tile.addr is None or not tile.width or not tile.height:
                 continue
             seg = (tile.addr >> 24) & 0x0F
-            if seg in (face_mod.EYE_SEGMENT, face_mod.MOUTH_SEGMENT):
-                want.setdefault(seg, set()).add((tile.fmt, tile.size, tile.width, tile.height))
+            if seg not in (face_mod.EYE_SEGMENT, face_mod.MOUTH_SEGMENT):
+                continue
+            found.setdefault(seg, set()).add((tile.fmt, tile.size, tile.width, tile.height))
+            if b.indices is not None:
+                face_tris += len(b.indices) // 3
+        if not found:
+            continue
+        share = face_tris / total if total else 1.0
+        if share > MAX_FACE_SHARE and total < MIN_HEAD_TRIANGLES:
+            continue  # the tile is the whole limb: an effect sprite, not a face
+        for seg, tiles in found.items():
+            want.setdefault(seg, set()).update(tiles)
     return want
 
 

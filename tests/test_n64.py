@@ -585,3 +585,35 @@ def test_trim_table_hands_back_the_tail_it_shed():
     head, tail = _trim_table(data, offs, 64, [])
     assert head == [0, 64, 128], head
     assert tail == [192, 256], tail
+
+def test_is_blank_accepts_a_zero_length_object_slot():
+    """A zero-length DMA range is an unused slot, not the end of the table.
+
+    Ocarina's slot 227 is {0x015e2000, 0x015e2000}.  The DMA table never yields a zero-length
+    file, so that pair can never match a real one - and treating it as the end of the table
+    stopped the walk at object 227 and hid the remaining 175 objects, King Zora among them.
+    """
+    from n64rip.objects import _is_blank
+
+    assert _is_blank(0, 0)
+    assert _is_blank(0x015E2000, 0x015E2000)
+    assert not _is_blank(0x015E2000, 0x015E4170)
+    assert not _is_blank(0, 0x100)
+
+def test_a_face_belongs_to_a_head_not_to_a_bare_quad():
+    """A limb that is nothing but the swapped tile is an effect sprite, not a face.
+
+    Measured across Ocarina of Time, a real face tile covers 4.7% to 48.9% of its limb,
+    because a head also carries skin, hair and ears.  Three non-characters sat at 100% on
+    limbs of 2 to 6 triangles - a glow, a ring and a flame - and each shipped a "face".
+    """
+    from n64rip.extract import MAX_FACE_SHARE, MIN_HEAD_TRIANGLES
+
+    def rejected(face_tris, limb_tris):
+        share = face_tris / limb_tris
+        return share > MAX_FACE_SHARE and limb_tris < MIN_HEAD_TRIANGLES
+
+    assert rejected(2, 2) and rejected(6, 6) and rejected(2, 2)      # the three junk limbs
+    assert not rejected(64, 131)   # Link, the densest real face at 0.489
+    assert not rejected(4, 85)     # the sparsest real face at 0.047
+    assert not rejected(30, 70)    # 0.429

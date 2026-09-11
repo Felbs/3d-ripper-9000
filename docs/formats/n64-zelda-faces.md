@@ -110,11 +110,42 @@ both before and after real bugs, and the nineteen scrambled faces above passed e
 check. The only test that settled any of this was rendering the candidate textures to a
 contact sheet and looking at them.
 
+## The object table was truncated, and that was most of the problem
+
+The biggest single cause of missing faces turned out not to be the face code at all.
+
+`find_object_table` walks a run of `{vromStart, vromEnd}` pairs, accepting a slot when it
+names a real DMA file or is `{0, 0}`. Ocarina's slot 227 is `{0x015e2000, 0x015e2000}` - a
+range of **zero length**. The DMA table never yields a zero-length file, so that pair can
+never match a real one, and the walk treated it as the end of the table.
+
+It stopped at object 227 of 402, hiding 175 objects. Those objects had no id, so
+`find_actor_overlays` could not attribute an overlay to them, so their face tables were
+unreachable - not because the mechanism was wrong, but because the actor was invisible.
+**King Zora is object 255.** With an id, the existing algorithm finds his eyes on the first
+attempt: overlay `file_0353`, offsets `0x1470 / 0x1870 / 0x1C70`, CI8 32x32, and they render
+as a purple iris on pale blue Zora skin - open, half-lidded, closed.
+
+Accepting a zero-length range as a blank slot: 227 -> 402 object slots, 211 -> 380 object
+files, and **22 -> 40 characters with expression sets**, with no change to the first 227
+entries and nothing lost.
+
+## A face belongs to a head
+
+Three of the newly-reachable objects were not characters: a glow sprite, a ring and a small
+flame, each of which samples segment 8 and so looked like an actor asking for a face. They
+shipped a black donut and two coloured blobs as "eyes".
+
+They are separable structurally rather than statistically. A real face tile covers between
+4.7% and 48.9% of the limb that draws it, because a head also carries skin, hair and ears.
+All three of these sit at exactly 100% on limbs of two to six triangles: the tile *is* the
+limb. A face request is therefore only counted when the limb carries geometry beyond the
+swapped tile itself.
+
 ## Result
 
-Ocarina of Time, 167 models: 24 actors carry expression sets, 132 face textures written
-beside the models as `face_eye_N.png` / `face_mouth_N.png`, `textures_missing` down from 169
-to 141, triangle count unchanged. Expressions beyond the first are also attached to the glTF
+Ocarina of Time, 167 models: 40 actors carry expression sets, face textures written
+beside the models as `face_eye_N.png` / `face_mouth_N.png`, `textures_missing` down from 169 to 123, triangle count unchanged. Expressions beyond the first are also attached to the glTF
 as variant primitives, which the Blender add-on turns into one keyframeable integer per face
 part - a shape key cannot do this job, because nothing about the geometry changes between
 expressions.
