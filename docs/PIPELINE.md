@@ -520,6 +520,8 @@ shipped something wrong:
 | posing | **taller than it is wide**, or - for anything that is not a person - less degenerate without growing | frame 0 of an arbitrary animation is not a rest pose; without the first test characters came out folded, and without the second a crab, a fish or a Goron on all fours could never be posed at all |
 | face binding | the rebuild must keep the **same triangle count** and lose no textures | display lists that call through segments 8/9 execute face bytes as a display list - 95,023 junk triangles, ~65% of everything shipped |
 | face candidate | frame-to-frame byte agreement, plus a roughness ceiling | scoring by pixel variance selects noise, which has more of it than any real image - it put scrambled bytes on nineteen faces, all of which passed every numeric check |
+| limb texture inherit | **only** a limb whose display list contains no `SETTIMG`/`SETTILE`/`LOADBLOCK`/`G_TEXTURE` at all | the game appends every limb to one command buffer, so a limb setting no texture state draws on the previous one's tile - Volvagia's body was a white bar with one orange patch.  Carrying unconditionally changes twelve other models and makes at least two worse |
+| rest pose | attested data, keyed on the **rig**, with an object-keyed override | **eight** automatic selection measures have each picked a best-scoring wrong answer - bounding volume, the standing gate, a consensus vote, "prefer short animations", "prefer first in file", compactness, stands_up-count per rotation order.  The gates reject nonsense; they do not select |
 
 Expressions are **texture** swaps, so they are exported as variant primitives (one node each,
 tagged `gcrip_variant_of` / `gcrip_texture`) rather than shape keys - see section 5; the
@@ -531,6 +533,9 @@ add-on drives them from one keyframeable integer per face part.
 |---|---|---|
 | base texture | first TEV stage sampling a vertex UV set, identity matrix, colour format | material shows the wrong layer → check `report.html` texture strip |
 | detail bake | 2nd texture in the same UV space multiplies the base | odd tint on a face part → `gcrip_composite` extras name the pair |
+| n64 constant tint | the register the combiner NAMES (prim or env), falling back to whichever the object's display lists actually **wrote** | a white tunic, or a colour that should not be there → the fallback fired the wrong way; `render_mode.combine_constant` says which register, `Batch.prim_set`/`env_set` say which was written.  An unwritten register is unknown, not white - Link's env is set by his actor at draw time |
+| n64 texgen UVs | the LINEAR map `acos(-n)/pi` over a fixed 32-texel span, normal in limb world space, default lookat | a surface smears or vanishes → the reflection orientation stands in for a camera the static rip does not have; the sphere map is the wrong map and erases dark Link's blade |
+| n64 detail tile | the second combiner cycle's tile is kept as an extra glTF image, never blended | the blend weight is `ENV_ALPHA` or `PRIM_LOD_FRAC` and where the object sets neither, the actor writes it at draw time - baking 50/50 renders convincingly and is derived from nothing |
 | clip → model | joint count (+ names for twins), same directory, name affinity | wrong actor animates → `--anim-map ANIM=MODEL` |
 | expressions | BTP swaps only the diffuse slot; alternate must match size/format/name family | missing switch → the texture is on another slot / a different TEX1 order |
 | bone names | keyword + hierarchy walk from hands/feet/head | unmapped bone → add the token to `rig._KEYWORDS` |
