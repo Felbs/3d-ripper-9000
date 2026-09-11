@@ -64,6 +64,16 @@ class ModelResult:
 #: Link's object ids, read from the game's own object table rather than assumed
 LINK_OBJECTS = (20, 21)
 
+#: Objects posed from ``link_animetion`` rather than from an ``AnimationHeader``.  Object 32 is
+#: NOT Link - it must stay out of LINK_OBJECTS, which decides whose face table to read - but it
+#: is built on his skeleton: its 21 limb translations are byte-identical to object 20's and to
+#: nothing else in the ROM, objects 20 and 21 contain no AnimationHeaders at all, and its actor
+#: reaches its animations through an indirect call consistent with LinkAnimationHeaders.  So
+#: frame 0 of link_animetion is its authored rest pose, and it renders as a Link-shaped figure
+#: standing with a shield on the left arm and a sword in the right (Dark Link, near-black
+#: because segment 0x0C is unresolved) instead of a pile of boxes on its side.
+LINK_ANIM_OBJECTS = LINK_OBJECTS + (32,)
+
 
 #: How many of a file's animations to try when looking for a rest pose.  It used to be four,
 #: which is fewer than most characters ship: the one that poses object 359 correctly is its
@@ -140,7 +150,7 @@ def _pose(scene, name, data, skel, segments, link_anim, object_id, attachments=N
                     return cand, world, rots
 
     sources = []
-    if object_id in LINK_OBJECTS and link_anim:
+    if object_id in LINK_ANIM_OBJECTS and link_anim:
         sources.append(anim_mod.link_frame(link_anim, skel.count, 0))
     for a in anim_mod.find_animations(data)[:MAX_POSE_ANIMS]:
         sources.append(anim_mod.frame_values(data, a, skel.count, 0))

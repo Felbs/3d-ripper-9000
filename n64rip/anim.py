@@ -17,11 +17,26 @@ never moves costs three shorts.
 
 Rotations are ``u16`` binary angles (65,536 = a full turn).
 
-**The rotation order is not settled.**  The scoping run's statistical oracle scored
-deliberately corrupted frames as well as good ones, so it proved nothing, and the decisive
-route - disassembling the matrix routine - has not been taken.  So the order is a parameter
-here, defaulting to ZYX, and :func:`pose_matrices` is written so a caller can render both and
-choose by eye.  Nothing downstream should treat the default as established fact.
+**The rotation order is ZYX**, and it is read out of the game rather than guessed.
+``Matrix_TranslateRotateZYX`` sits at VRAM ``0x800AAA4C`` - that is ``code``, ROM file index
+27, VRAM base ``0x80010EE0``, file offset ``0x99B6C``.  It folds the translation into its first
+block (``col3 += col0*tx + col1*ty + col2*tz``) and then right-multiplies Rz (``lh 4($a1)``),
+Ry (``lh 2($a1)``, skipped by a ``beql`` when zero) and Rx (``lh 0($a1)``), so
+
+    M_new = M_parent * T * Rz * Ry * Rx
+
+with ``Math_SinS`` at ``0x80063364`` and ``Math_CosS`` at ``0x80063324`` (= ``sins(a + 0x4000)``)
+pinning the signs.  ``SkelAnime_DrawLimb`` at ``0x80088B40`` is the caller and passes the limb's
+own ``s16 jointPos`` and the animation's 6-byte ``Vec3s``.  All three axis blocks match
+:func:`_rot` term for term, disassembled independently twice.
+
+Rendering agrees: object 163 comes out a correctly standing Zora under ``zyx`` and garbage
+under ``xyz``, ``xzy`` and ``yxz``.  ``zxy`` and ``yzx`` also look right on that model, because
+a rig whose limbs rotate about one axis each cannot tell the orders apart - judge the order
+only on a rig with many multi-axis limbs (Link, 12 of 21; object 163, 11 of 16; object 193,
+14 of 26), never on the 38-limb townsfolk, where only 6 of 38 limbs use two axes and all six
+orders render identically.
+
 """
 
 from __future__ import annotations

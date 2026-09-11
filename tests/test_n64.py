@@ -981,3 +981,34 @@ def test_an_attested_rest_pose_is_taken_before_the_gates():
     src = inspect.getsource(extract._pose)
     body = src[src.index('"""', src.index('"""') + 3):]   # past the docstring
     assert body.index("attested.rest_pose") < body.index("for root, rots in sources")
+
+def test_object_32_is_posed_from_link_animetion_but_is_not_link():
+    """It is built on Link's skeleton but is a different character.
+
+    Its 21 limb translations are byte-identical to object 20's; objects 20 and 21 hold no
+    AnimationHeaders, so no (bank, offset) pair can express its rest pose. It must NOT join
+    LINK_OBJECTS, which decides whose face table to read.
+    """
+    from n64rip.extract import LINK_ANIM_OBJECTS, LINK_OBJECTS
+
+    assert 32 in LINK_ANIM_OBJECTS
+    assert 32 not in LINK_OBJECTS
+    assert set(LINK_OBJECTS) <= set(LINK_ANIM_OBJECTS)
+
+
+def test_one_rest_pose_key_covers_the_whole_townsfolk_family():
+    """Eighteen models share skeleton 0x260; one row poses them all."""
+    from n64rip.attested import rest_pose
+
+    rp = rest_pose(0x260, 38)
+    assert rp is not None and rp.bank == 41 and rp.offset == 0x1300
+    assert "townsfolk" in rp.seen
+
+
+def test_every_rest_pose_row_records_what_was_rendered():
+    from n64rip.attested import REST_POSES
+
+    for (off, limbs), rp in REST_POSES.items():
+        assert off > 0 and limbs > 1
+        assert rp.bank > 0 and rp.offset > 0
+        assert len(rp.seen) > 40, f"({off:#x}, {limbs}) must describe the render"
