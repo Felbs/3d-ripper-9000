@@ -699,3 +699,24 @@ def test_segments_for_binds_every_segment_playing_a_part():
     assert set(bound) == {8, 9, 10}
     assert bound[8] is not None and bound[8] == bound[9], "both eyes share one frame"
     assert bound[10] != bound[8]
+
+def test_named_characters_reach_the_library_path():
+    """The object id always leads; the English name follows it when we have one."""
+    from n64rip.publish import _display_path
+
+    rep = {"code": "N64_CZLE"}
+    assert _display_path(rep, {"object_id": 255, "name": "file_0731"}) ==         "N64_CZLE/obj_255_king_zora_file_0731"
+    # an unidentified object keeps the id alone - which is always correct
+    assert _display_path(rep, {"object_id": 99, "name": "file_0600"}) ==         "N64_CZLE/obj_099_file_0600"
+    # and a model outside the object table keeps its file name
+    assert _display_path(rep, {"object_id": None, "name": "file_0900"}) == "N64_CZLE/file_0900"
+
+
+def test_names_are_path_safe():
+    """They end up in a path, so they must not carry spaces or separators."""
+    import re
+
+    from n64rip.names import OOT
+
+    for oid, nm in OOT.items():
+        assert re.fullmatch(r"[a-z0-9_]+", nm), (oid, nm)

@@ -18,7 +18,26 @@ import json
 import shutil
 from pathlib import Path
 
+from . import names
+
 BATCH = "batch_results.jsonl"
+
+
+def _display_path(report: dict, m: dict) -> str:
+    """What the library shows for a model.
+
+    The object id is the one identity the ROM gives us - its slot in the game's own object
+    table - so it always leads: `obj_255` is findable and stable.  Where we have also
+    identified the character, the English name follows it, because "obj_255_king_zora" is what
+    someone is actually looking for.  The file name stays on the end so a row can always be
+    traced back to what is on disk.
+    """
+    oid = m.get("object_id")
+    if oid is None:
+        return f"{report['code']}/{m['name']}"
+    who = names.name_for(oid)
+    label = f"obj_{oid:03d}_{who}_{m['name']}" if who else f"obj_{oid:03d}_{m['name']}"
+    return f"{report['code']}/{label}"
 
 
 def _model_rows(report: dict) -> list[dict]:
@@ -32,11 +51,7 @@ def _model_rows(report: dict) -> list[dict]:
                 # the UI names a model from its source path.  An object id is the one real
                 # identity the ROM gives us (its slot in the game's own object table), so it
                 # goes in the name - obj_017 is findable, file_0501 is not.
-                "path": (
-                    f"{report['code']}/obj_{m['object_id']:03d}_{m['name']}"
-                    if m.get("object_id") is not None
-                    else f"{report['code']}/{m['name']}"
-                ),
+                "path": _display_path(report, m),
                 "out_rel": m["out_rel"],
                 "thumb": m.get("thumb") or "",
                 "triangles": int(m.get("triangles") or 0),
