@@ -49,6 +49,13 @@ class FaceSet:
     #: the character with a blank eye on one side.
     eye_segments: tuple[int, ...] = (EYE_SEGMENT,)
     mouth_segments: tuple[int, ...] = (MOUTH_SEGMENT,)
+    #: the palette each table is drawn with, as an offset in the object file (None for
+    #: true-colour).  They differ: a head that names one palette for its eyes and another for
+    #: its mouth is the rule, not the exception, and decoding the mouth through the eye's
+    #: palette turns it into noise - which is how three characters lost mouths that were
+    #: sitting in their pointer table all along.
+    eye_tlut: int | None = None
+    mouth_tlut: int | None = None
 
     def __bool__(self) -> bool:
         return bool(self.eyes or self.mouths)

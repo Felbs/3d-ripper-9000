@@ -596,6 +596,18 @@ def _face_palette(data, skel, segments, segment):
     return None
 
 
+def _tlut_for_segment(data, skel, segments, segment):
+    """``(offset, decoded palette)`` for the palette the head names on *segment*.
+
+    Falls back to a grey ramp only when the head names no palette at all - a true-colour
+    face - in which case the palette is never consulted.
+    """
+    pal = _face_palette(data, skel, segments, segment) if segment is not None else None
+    if pal is None or pal + TLUT_BYTES > len(data):
+        return None, _grey_tlut()
+    return pal, tex_mod.decode_tlut(data[pal:], 256)
+
+
 def _seeded_runs(data, skel, segments, segment, tiles):
     """One candidate table per tile spec, seeded immediately after the face's own palette.
 
@@ -645,6 +657,8 @@ def _attested_faces(att, eye_segs, mouth_segs):
         mouth_fmt=(mouth.fmt, mouth.size) if mouth else (tex_mod.FMT_CI, tex_mod.SIZE_8),
         eye_segments=eye_segs or (face_mod.EYE_SEGMENT,),
         mouth_segments=mouth_segs or (face_mod.MOUTH_SEGMENT,),
+        eye_tlut=eye.tlut if eye else None,
+        mouth_tlut=mouth.tlut if mouth else None,
     )
 
 
@@ -669,12 +683,14 @@ def _overlay_faces(data, skel, segments, overlays, object_id):
     runs = []
     for ov in overlays.get(object_id, ()):
         runs += [r for r in actor_mod.texture_runs(ov, len(data)) if r[-1] < len(data)]
-    # Judge candidates through the palette the face will actually wear.  A grey ramp makes
-    # smooth art look like noise, because neighbouring palette indices are not neighbouring
-    # colours - which let the roughness gate pass confetti and reject real faces.
-    tlut = _face_tlut(data, skel, segments)
-    if tlut is None:
-        tlut = _grey_tlut()
+    # Judge each candidate through the palette *that role* is drawn with.  A grey ramp makes
+    # smooth art look like noise, and so does the wrong palette: the eye's palette applied to
+    # the mouth made three characters' mouths - present in their pointer tables all along -
+    # decode as confetti and fail every gate.
+    eye_pal, tlut = _tlut_for_segment(data, skel, segments, eye_segs[0] if eye_segs else None)
+    mouth_pal, mouth_tlut = _tlut_for_segment(
+        data, skel, segments, mouth_segs[0] if mouth_segs else None)
+
     eye = _best_table(data, runs, eye_tiles, tlut)
     # The seeded walk is a LAST RESORT, for an actor with no pointer table at all.  Offered to
     # an actor that has one it only adds noise: the walk is deliberately long, so scoring its
@@ -691,17 +707,18 @@ def _overlay_faces(data, skel, segments, overlays, object_id):
         nbytes = eye_dims[0] * eye_dims[1] * BITS.get(eye_fmt[1], 8) // 8
         eyes, spill = _trim_table(data, offs, nbytes, imgs)
 
-    mouth = _best_table(data, runs, mouth_tiles, tlut, exclude=set(eyes)) if mouth_tiles else None
+    mouth = (_best_table(data, runs, mouth_tiles, mouth_tlut, exclude=set(eyes))
+             if mouth_tiles else None)
     if mouth is None and mouth_tiles and mouth_segs and seeded:
         mouth = _best_table(data, _seeded_runs(data, skel, segments, mouth_segs[0], mouth_tiles),
-                            mouth_tiles, tlut, exclude=set(eyes), spans=True)
+                            mouth_tiles, mouth_tlut, exclude=set(eyes), spans=True)
     if mouth is not None:
         mouths, mouth_dims, mouth_fmt = mouth[0], mouth[1], mouth[2]
     elif spill:
         # The tail the eye table shed is the mouth table - but it has to be sized on its own
         # terms.  A mouth is neither the shape nor the size of an eye, and inheriting the
         # eye's dimensions is what left several characters' mouths striped.
-        sized = _size_table(data, spill, mouth_tiles, eye_fmt, tlut)
+        sized = _size_table(data, spill, mouth_tiles, eye_fmt, mouth_tlut)
         if sized is None:
             mouths, mouth_dims, mouth_fmt = [], (32, 32), (tex_mod.FMT_CI, tex_mod.SIZE_8)
         else:
@@ -717,6 +734,7 @@ def _overlay_faces(data, skel, segments, overlays, object_id):
         eye_fmt=eye_fmt, mouth_fmt=mouth_fmt,
         eye_segments=eye_segs or (face_mod.EYE_SEGMENT,),
         mouth_segments=mouth_segs or (face_mod.MOUTH_SEGMENT,),
+        eye_tlut=eye_pal, mouth_tlut=mouth_pal,
     )
 
 
@@ -876,17 +894,23 @@ def _faces(scene, name, data, skel, segments, code, out_dir, world, rotations,
         return scene, []
 
     rebuilt = _expression_variants(rebuilt, name, data, skel, segments, faces, world, rotations)
-    tlut = _face_tlut(data, skel, seg2)
     written: list[str] = []
     from PIL import Image
 
+    def _tlut(pal, segs):
+        if pal is not None and pal + TLUT_BYTES <= len(data):
+            return tex_mod.decode_tlut(data[pal:], 256)
+        # Link's path does not record a palette; take the one the head names for the segment
+        return _tlut_for_segment(data, skel, seg2, segs[0] if segs else None)[1]
+
     tex_dir = Path(out_dir) / f"{name}_tex"
-    for kind, offs, (w, h), (fmt, size) in (
-        ("eye", faces.eyes, faces.eye_size, faces.eye_fmt),
-        ("mouth", faces.mouths, faces.mouth_size, faces.mouth_fmt),
+    for kind, offs, (w, h), (fmt, size), tlut in (
+        ("eye", faces.eyes, faces.eye_size, faces.eye_fmt,
+         _tlut(faces.eye_tlut, faces.eye_segments)),
+        ("mouth", faces.mouths, faces.mouth_size, faces.mouth_fmt,
+         _tlut(faces.mouth_tlut, faces.mouth_segments)),
     ):
-        # only a colour-indexed table needs the head's palette; RGBA16 carries its own colour
-        if not offs or (fmt == tex_mod.FMT_CI and tlut is None):
+        if not offs:
             continue
         tex_dir.mkdir(parents=True, exist_ok=True)
         for k, off in enumerate(offs):

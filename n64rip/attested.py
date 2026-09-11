@@ -37,6 +37,16 @@ class Table(NamedTuple):
 
 #: object id -> {"eyes"|"mouths": Table}
 OOT: dict[int, dict[str, Table]] = {
+    75: {
+        "eyes": Table(
+            (0x5120, 0x5520, 0x5920), 2, 1, 32, 32, 0x4F20,
+            "blue eye under a brown brow: open / closed / half-open looking sideways",
+        ),
+        "mouths": Table(
+            (0x5F60, 0x6360), 2, 1, 32, 16, 0x5D20,
+            "a closed lip line; a dark open mouth",
+        ),
+    },
     155: {
         "eyes": Table(
             (0xF178, 0xF378, 0xF578, 0xF778), 2, 1, 32, 16, 0xECB8,
@@ -65,6 +75,7 @@ OOT: dict[int, dict[str, Table]] = {
 
 #: Why each of these needed attesting, kept so the next person does not redo the search.
 NOTES = {
+    75: "its pointer run lists the closed eye first, and two of its mouth entries are not mouths",
     155: "the palette-seeded walk starts at 0xEEB8, 0x2C0 short of the table",
     261: "its face is RGBA16 and needs no palette, so the seed had no anchor at all",
     277: "same as 261",

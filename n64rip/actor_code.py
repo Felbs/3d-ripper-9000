@@ -224,15 +224,26 @@ def texture_runs(overlay: bytes, object_size: int, min_entries: int = 2) -> list
     words = _struct.unpack_from(f">{n}I", overlay, 0)
     out: list[list[int]] = []
     run: list[int] = []
+    def keep(r):
+        # A repeated pointer is a blink cycle, not a broken table: child Zelda's eyes are
+        # `open, half, closed, half, mouth`, and rejecting the run for the repeat threw her
+        # whole face away.  The repeat is dropped rather than kept, because an adjacent
+        # duplicate scores a perfect 1.0 in frame agreement and would let random bytes as
+        # `A, A, B` clear the threshold on the strength of the A-A pair alone.
+        seen: dict[int, None] = {}
+        for o in r:
+            seen.setdefault(o, None)
+        deduped = list(seen)
+        if len(deduped) >= min_entries:
+            out.append(deduped)
+
     for w in words:
         if (w >> 24) == 0x06 and (w & 0x00FFFFFF) < object_size:
             run.append(w & 0x00FFFFFF)
             continue
-        if len(run) >= min_entries and len(set(run)) == len(run):
-            out.append(run)
+        keep(run)
         run = []
-    if len(run) >= min_entries and len(set(run)) == len(run):
-        out.append(run)
+    keep(run)
     return out
 
 
