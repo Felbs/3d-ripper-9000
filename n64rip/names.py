@@ -15,20 +15,21 @@ unlisted object keeps its numeric id, which is always correct.
 Object ids are stable across Ocarina of Time's releases, so an entry confirmed here holds for
 Master Quest and the other images too.
 
-Still unresolved, with the competing readings, so nobody redoes the work:
-  55  iron_knuckle vs phantom_ganon   (a lance with a glowing gem, declared in the Forest
-                                       Temple boss scene - but read as bronze plate and horns)
-  91  giant_goron vs shopkeeper       (the two readings of the face are irreconcilable)
-  155 ganon vs ganondorf              (boar snout and tusks, or an olive-skinned human face
-                                       with blink frames; the scenes are the man, not the boar)
-  167 shopkeeper vs rauru             (loads in Ganon's Castle beside the five other sages)
-  188 kokiri_boy vs saria             (the "cap" is green hair with a headband, and it carries
-                                       five eye and five mouth states - close to resolved)
-  192 running_man vs ingo             (same model; placed only at Lon Lon Ranch, and object
-                                       136 already takes the Talon slot)
+The user settled most of the earlier ties by eye, and their reading is authoritative here:
+object 155 is Ganondorf squatting (the checker had read the same), 188 is Saria, 167 is Rauru,
+91 is the bomb shop man, and the Kokiri children are 51, 53, 76, 195 and 196 (boys) and 75 and
+78 (girls). Object 55 is Ganondorf kneeling - named `ganondorf_kneeling` to keep it distinct
+from 155.
 
-Struck deliberately: 51, 53, 65, 75, 76, 78 sit on the unused 38-limb townsfolk rig and the
-real Kokiri objects are 188/251/252/253; 195 and 196 lost the evidence behind `carpenter`.
+Still unnamed, and honestly so:
+  158 (both skeletons)  an enemy nobody has placed; an earlier low-confidence lead was
+                        flare_dancer, on the grounds that it loads only in the Fire Temple
+  172                   42 triangles that render as a cube; a lead calls it a collapsed
+                        parasitic tentacle from Jabu-Jabu, which would explain the shape
+  398                   a flat plane with no animations at all - a runtime-textured strip the
+                        actor drives at draw time, so possibly not a character
+  57, 110, 192          never described by anyone; 192 was read as running_man or ingo and
+                        neither was confirmed
 """
 from __future__ import annotations
 
@@ -58,20 +59,29 @@ OOT: dict[int, str] = {
      37: "torch_slug",            # legless brown leopard-mottled mound with two eyestalks tipped with green slit eyes
      38: "shellblade",            # two hinged teal ridged shell valves opening on pink flesh with a red blade between
      40: "hylian_adult",          # second unposed 38-limb adult human rig; eyeshadow, dark hair - individual unknown
+     46: "fairy",                 # the user: a fairy, though not one they recognised from the game
      48: "moblin",                # brown armoured brute, flat-brimmed helm, red eyes, teal tusks; skel0 spear, skel1 club
      50: "stalfos",               # skeleton warrior, bare skull, ribcage, teal skirt and boots, round studded shield
+     51: "kokiri_boy",            # the user
+     53: "kokiri_boy",            # same rig and build as 51/76/195/196; the user did not name this one
+     55: "ganondorf_kneeling",    # the user: Ganondorf kneeling. Distinct from 155, which is his squat
      56: "armos",                 # grey stone statue on a plinth, horned helmet, mask face, arms folded (see note)
      60: "hylian_townsperson",    # slim adult, dark bowl cut, red flat cap, pale tunic, purple sash (unused NPC set)
      61: "hylian_townswoman",     # adult in lavender striped robes with a flaring skirt, made-up face (unused NPC set)
      62: "hylian_townsman",       # man in a blue-white doublet and cape, orange breeches, stockings (unused NPC set)
      63: "hylian_townswoman",     # woman, green headscarf, white blouse, flame-patterned hose (unused NPC set)
      64: "fish",                  # deep-bodied grey-green fish, forked tail, blue eye with blink frames, toothed mouth
+     65: "old_man",               # the user: looks like an old man
      67: "hylian_townsperson",    # heavy-set adult, bare arms, green bodice over a huge puffed skirt (unused NPC set)
      68: "hylian_townswoman",     # woman in a ruffled orange jacket over a teal gold-scrolled skirt (unused NPC set)
      69: "hylian_townswoman",     # woman in a blue bodice and pale tiered skirt (unused NPC set)
      74: "deku_scrub",            # leaf-crowned plant creature, glowing orange eyes, dark snout, leaf ruff
+     75: "kokiri_girl",           # the user
+     76: "kokiri_boy",            # the user
+     78: "kokiri_girl",           # the user
      87: "hylian_guard",          # soldier, spiked helm, blue-white-gold tabard over plate, long spear
      88: "hylian_guard",          # same tabard, scale sleeves and spear, torso only (head and legs not drawn)
+     91: "bomb_shop_man",         # the user: the man from the bomb shop, big and hairy
      93: "bubble",                # bone-white skull with green glowing eyes, hinged toothed jaw, two red-edged wings
      96: "zelda_adult",           # tall woman, white-and-lilac gown, gold shoulder plates, circlet
     109: "poe",                   # tattered shroud panels and a cone hood carrying a skull texture, flame sheets
@@ -86,13 +96,19 @@ OOT: dict[int, str] = {
     151: "hylian_guard",          # full-height soldier, plate cuirass over a blue-grey tunic, winged helm, upright spear
     152: "gibdo",                 # bandage-wrapped mummy  ; skel1 is the unwrapped masked variant (see note)
     153: "poe",                   # black cowl, pale face plate with red eyes and gold fangs, ragged smoke body, lantern
+    155: "ganondorf",             # the user: Ganondorf in a squat pose - and the checker read the same
     156: "volvagia",              # lava-skinned head mass and fiery limbs of the Fire Temple dragon (4 skeletons)
     157: "goron",                 # muscular biped, olive pebbled skin, rock spike crown, purple orb eyes, square grin
     163: "ruto",                  # small pale-blue Zora child, fin head-crest, fin forearms, webbed feet
     165: "volvagia",              # very long segmented lava-textured body plus fiery head pieces with a bone jaw
     166: "dead_hand",             # long pale arms ending in splayed hands, white-grey skin smeared with blood
+    167: "rauru",                 # the user: the king of Hyrule or a sage; Rauru is the Sage of Light
     179: "nabooru",               # Gerudo woman, tall red ponytail, gold headpiece, jewelled bandeau, white harem trousers
+    181: "water_monster",         # the user: a water monster. Provisional - the species is not settled
+    188: "saria",                 # the user: a Kokiri who becomes a sage, green shirt - the checker agreed
     193: "twinrova",              # hunched hags on brooms in striped hats and patterned cloaks; blue gem / red gem pair
+    195: "kokiri_boy",            # the user
+    196: "kokiri_boy",            # the user
     201: "goron",                 # big round olive-gold pebbled body, rocky plate back, crossed arms, square-toothed grin
     202: "zora",                  # pale blue-white Zora, arms out, swept head fin, webbed feet
     207: "goron",                 # the same olive-gold Goron body curled into a ball on its side, fists out
@@ -154,6 +170,7 @@ OOT: dict[int, str] = {
     388: "dead_hand",             # hunched khaki humanoid, huge blocky head, oversized blood-stained claws, red eye disc
     393: "bed",                   # four-poster bed with canopy, white bedding and a shape lying under the blanket
     395: "cow",                   # white-and-brown patched cow with horns and hooves; skel1 is its tail
+    396: "hylian_townswoman",     # the user: a woman, maybe a townswoman
     401: "zelda_child_alt",       # child Zelda, purple and white dress, violet-and-gold headdress, white wimple
 }
 
