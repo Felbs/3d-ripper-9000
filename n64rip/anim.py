@@ -171,3 +171,39 @@ def pose_matrices(
         parent = world.get(limb.parent) if limb.parent is not None else None
         world[i] = local if parent is None else parent @ local
     return world
+
+#: ``link_animetion`` stores Link's frames as a flat array with no header: three shorts of
+#: root translation then one binang triple per limb.  Frame 0 is his standing pose - its
+#: translation is byte-identical to limb 0's own offset, which is how the layout was
+#: confirmed against this ROM rather than assumed.
+LINK_STRIDE = 67
+
+
+def link_frame(raw: bytes, limb_count: int, frame: int = 0) -> tuple[np.ndarray, np.ndarray]:
+    """(root translation, per-limb rotations) from ``link_animetion``.
+
+    Link keeps no animations in his object file; they live in their own uncompressed file,
+    which is why posing him needs a separate path from every other actor.
+    """
+    off = frame * LINK_STRIDE * 2
+    if off + LINK_STRIDE * 2 > len(raw):
+        return np.zeros(3), np.zeros((limb_count, 3))
+    signed = np.frombuffer(raw, ">h", LINK_STRIDE, off)
+    unsigned = np.frombuffer(raw, ">H", LINK_STRIDE, off)
+    root = signed[:3].astype(np.float64)
+    want = limb_count * 3
+    vals = unsigned[3 : 3 + want].astype(np.float64)
+    if len(vals) < want:
+        vals = np.pad(vals, (0, want - len(vals)))
+    return root, (vals * BINANG).reshape(limb_count, 3)
+
+
+def stands_up(unposed: np.ndarray, posed: np.ndarray) -> bool:
+    """Did the pose make the model taller than it is wide?
+
+    A standing character is tallest in Y.  An actor authored with its limbs strung along one
+    axis is not, and applying the right frame flips that - Link goes from 45.9 x 23.3 x 21.8
+    to 33.4 x 62.2 x 21.2.  A cheap, honest gate on whether a pose helped, used instead of
+    trusting that any given animation is the rest pose.
+    """
+    return float(posed[1]) > float(unposed[1]) and float(posed[1]) >= float(posed.max()) * 0.95

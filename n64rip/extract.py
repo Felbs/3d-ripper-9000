@@ -18,7 +18,7 @@ import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from n64rip import f3dex2, objects as obj_mod, skeleton as skel_mod, zobj
+from n64rip import anim as anim_mod, f3dex2, objects as obj_mod, skeleton as skel_mod, zobj
 from n64rip.rom import Rom, RomFile
 from ripcore import gltf
 
@@ -40,12 +40,52 @@ class ModelResult:
     drawn_limbs: int = 0
     skinned: bool = True
     unresolved_segments: list[int] = field(default_factory=list)
+    posed: bool = False  # a rest pose was applied and it stood the model up
     object_id: int | None = None  # its slot in the game's object table, when it has one
     error: str = ""
     warnings: list[str] = field(default_factory=list)
 
 
 # segment binding now comes from the game's own object table; see n64rip.objects
+
+
+
+#: Link's object ids, read from the game's own object table rather than assumed
+LINK_OBJECTS = (20, 21)
+
+
+def _pose(scene, name, data, skel, segments, link_anim, object_id):
+    """A posed rebuild of *scene*, or None if no rest pose improved it.
+
+    The gate is deliberately blunt: a standing character is tallest in Y, and an un-posed rig
+    is not.  Anything that fails it keeps the un-posed build, because a wrong pose is worse
+    than none.
+    """
+    import numpy as np
+
+    if not scene.primitives:
+        return None
+    before = np.concatenate([p.positions for p in scene.primitives])
+    ext_before = before.max(0) - before.min(0)
+
+    sources = []
+    if object_id in LINK_OBJECTS and link_anim:
+        sources.append(anim_mod.link_frame(link_anim, skel.count, 0))
+    for a in anim_mod.find_animations(data)[:4]:
+        sources.append(anim_mod.frame_values(data, a, skel.count, 0))
+
+    for root, rots in sources:
+        try:
+            world = anim_mod.pose_matrices(skel, rots, root, "zyx")
+            cand = zobj.build(name, data, skel, segments, world=world, rotations=rots)
+        except Exception:  # noqa: BLE001
+            continue
+        if not cand.primitives:
+            continue
+        after = np.concatenate([p.positions for p in cand.primitives])
+        if anim_mod.stands_up(ext_before, after.max(0) - after.min(0)):
+            return cand
+    return None
 
 
 def extract_rom(
@@ -68,6 +108,16 @@ def extract_rom(
         for oid, fidx in enumerate(table.entries):
             if fidx is not None:
                 object_ids.setdefault(fidx, oid)
+    # Link keeps no animations in his object file - his live in their own uncompressed one,
+    # so posing him needs a separate source from every other actor.
+    link_anim = None
+    for f in rom.live:
+        if not f.compressed and 2_000_000 < f.size < 3_000_000:
+            try:
+                link_anim = rom.read(f)
+            except Exception:  # noqa: BLE001
+                link_anim = None
+            break
     files = rom.live[:limit] if limit else rom.live
     for n, f in enumerate(files):
         if progress and n % 50 == 0:
@@ -97,6 +147,14 @@ def extract_rom(
                 res.error = f"{type(exc).__name__}: {exc}"
                 models.append(res)
                 continue
+            # A skeleton on its own has every joint at identity, so its chains run along one
+            # axis - Link comes out 45.9 wide and 23.3 tall.  Frame 0 of a rest animation is
+            # the pose the model was authored in.  Applying it is gated on the result actually
+            # standing up, because not every animation in a file is a rest pose.
+            posed = _pose(scene, name, data, sk, segments, link_anim, res.object_id)
+            if posed is not None:
+                scene = posed
+                res.posed = True
             if scene.triangles < MIN_TRIANGLES:
                 continue
             base = out_dir / name
