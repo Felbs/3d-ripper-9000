@@ -164,8 +164,11 @@ def _is_vram(w: int) -> bool:
     return 0x80000000 <= w < 0x81000000
 
 
-def find_actor_overlays(rom, code: bytes) -> dict[int, int]:
-    """``{object id: overlay ROM file index}`` from the actor table in ``code``.
+def find_actor_overlays(rom, code: bytes) -> dict[int, list[int]]:
+    """``{object id: [overlay ROM file indices]}`` from the actor table in ``code``.
+
+    Every actor that uses an object, not just the first - several actors routinely share one
+    object, and only one of them may be the one that draws its face.
 
     Found the same way as the object table - by structure.  An entry's first two words are a
     real DMA range and its next two are VRAM addresses, which together are specific enough to
@@ -212,7 +215,7 @@ def find_actor_overlays(rom, code: bytes) -> dict[int, int]:
     while lo - ACTOR_ENTRY_WORDS >= 0 and entry_ok(lo - ACTOR_ENTRY_WORDS):
         lo -= ACTOR_ENTRY_WORDS
 
-    out: dict[int, int] = {}
+    out: dict[int, list[int]] = {}
     b = lo
     while entry_ok(b):
         vs, ve = words[b], words[b + 1]
@@ -230,5 +233,7 @@ def find_actor_overlays(rom, code: bytes) -> dict[int, int]:
             continue
         object_id = _struct.unpack_from(">h", ov, off + 8)[0]
         if 0 < object_id < 400:
-            out.setdefault(object_id, fidx)
+            bucket = out.setdefault(object_id, [])
+            if fidx not in bucket:
+                bucket.append(fidx)
     return out

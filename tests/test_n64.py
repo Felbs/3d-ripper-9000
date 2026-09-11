@@ -383,3 +383,119 @@ def test_texture_disabled_runs_are_not_textured():
     on = f3dex2.TileState(addr=0x06001000, width=8, height=8)
     off = f3dex2.TileState(addr=0x06001000, width=8, height=8, tex_on=False)
     assert on.key() != off.key()
+
+# --------------------------------------------------------------------------- face tables
+
+
+def test_tile_for_picks_the_squarest_shape():
+    """A stride gives a texel count, not a shape; the squarest split is the right one."""
+    from n64rip.actor_code import tile_for
+
+    assert tile_for(0x400, 8) == (32, 32)  # 1024 texels, not 64x16
+    assert tile_for(0x800, 8) == (64, 32)
+    assert tile_for(0x800, 16) == (32, 32)  # RGBA16 is two bytes a texel
+    assert tile_for(0x200, 8) == (32, 16)
+    assert tile_for(0, 8) is None
+
+
+def test_delta_groups_splits_eyes_from_mouths():
+    """A change of spacing is where one packed table ends and the next begins."""
+    from n64rip.actor_code import delta_groups
+
+    # three 0x800 eyes, a jump, then three 0x400 mouths
+    run = [0x1000, 0x1800, 0x2000, 0x9000, 0x9400, 0x9800]
+    assert delta_groups(run) == [[0x1000, 0x1800, 0x2000], [0x9000, 0x9400, 0x9800]]
+
+
+def test_texture_tables_offers_the_whole_run_too():
+    """Not every table is packed - some actors list scattered offsets, so the run is it."""
+    from n64rip.actor_code import texture_tables
+
+    run = [0x100, 0x980, 0x1200, 0x1600]
+    assert run in texture_tables(run)
+
+
+def test_texture_tables_ignores_a_lone_pointer():
+    from n64rip.actor_code import texture_tables
+
+    assert texture_tables([0x100], 8) == []
+
+
+def test_frame_agreement_ranks_variants_over_noise():
+    """The discriminator that replaced maximising pixel variance.
+
+    Variance maximisation chose noise, because noise has more of it than any real image.
+    Frames of one eye are the same drawing with the lid moved, so they share most of their
+    bytes; unrelated data shares about one byte in 256.
+    """
+    import numpy as np
+
+    from n64rip.extract import MIN_EXPRESSION_CORR, _frame_agreement
+
+    rng = np.random.default_rng(0)
+    eye = rng.integers(0, 255, 1024, dtype=np.uint8)
+    lid = eye.copy()
+    lid[:300] = 7  # same eye, lid lowered over the top third
+    data = eye.tobytes() + lid.tobytes()
+    assert _frame_agreement(data, [0, 1024], 1024) > MIN_EXPRESSION_CORR
+
+    noise = rng.integers(0, 255, 3072, dtype=np.uint8).tobytes()
+    assert _frame_agreement(noise, [0, 1024, 2048], 1024) < MIN_EXPRESSION_CORR
+
+
+def test_frame_agreement_rejects_flat_and_identical_frames():
+    """Padding is one byte repeated; a repeated pointer gives identical frames."""
+    import numpy as np
+
+    from n64rip.extract import _frame_agreement
+
+    assert _frame_agreement(bytes(2048), [0, 1024], 1024) == 0.0
+    rng = np.random.default_rng(1)
+    same = rng.integers(0, 255, 1024, dtype=np.uint8).tobytes()
+    assert _frame_agreement(same * 2, [0, 1024], 1024) == 0.0
+
+
+def test_pixel_correlation_carries_true_colour_faces():
+    """RGBA16 eyes are re-shaded rather than copied, so few bytes match but the picture does."""
+    import numpy as np
+
+    from n64rip.extract import _pixel_correlation
+
+    rng = np.random.default_rng(2)
+    a = rng.integers(0, 255, (16, 16, 4), dtype=np.uint8)
+    b = a.copy()
+    b[:4] = rng.integers(0, 255, (4, 16, 4), dtype=np.uint8)  # same picture, lid redrawn
+    assert _pixel_correlation([a, b]) > 0.45
+    assert _pixel_correlation([a, rng.integers(0, 255, (16, 16, 4), dtype=np.uint8)]) < 0.45
+
+
+def test_actor_overlays_keep_every_actor_sharing_an_object():
+    """Several actors can use one object, and only one of them may draw the face."""
+    import inspect
+
+    from n64rip.objects import find_actor_overlays
+
+    src = inspect.getsource(find_actor_overlays)
+    assert "bucket.append" in src, "must collect every overlay, not just the first"
+
+def test_structure_ratio_sees_through_a_low_contrast_palette():
+    """Noise in a narrow palette measures smooth in absolute terms; the ratio does not care.
+
+    This is the gate that stopped an actor shipping twenty-one frames of grey confetti as
+    its mouth table.
+    """
+    import numpy as np
+
+    from n64rip.extract import MAX_STRUCTURE_RATIO, _roughness, _structure_ratio
+
+    rng = np.random.default_rng(3)
+    # noise confined to a narrow band of values - absolutely smooth, structurally not
+    quiet = rng.integers(120, 140, (32, 32, 4), dtype=np.uint8)
+    assert _roughness([quiet]) < 0.20  # the absolute gate is fooled
+    assert _structure_ratio([quiet]) > MAX_STRUCTURE_RATIO  # this one is not
+
+    # a drawing: regions, so neighbours agree far more than distant texels do
+    art = np.zeros((32, 32, 4), dtype=np.uint8)
+    art[:16] = 200
+    art[16:] = 40
+    assert _structure_ratio([art]) < MAX_STRUCTURE_RATIO

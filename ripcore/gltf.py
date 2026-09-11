@@ -288,7 +288,12 @@ def export(scene: Scene, out_base: Path, *, thumbnail: bool = True) -> ExportSta
         vbase += len(p.positions)
         st.triangles += len(tri)
         st.vertices += len(p.positions)
-    gltf["meshes"].append({"name": scene.name, "primitives": prims})
+    # Expression alternates go in their own mesh each, because a rigger switches between
+    # them by showing one object and hiding the others - which needs them to be separate
+    # objects once imported, not extra primitives inside one.
+    variants = [(i, p) for i, p in enumerate(scene.primitives) if p.variant_of]
+    base_prims = [pr for i, pr in enumerate(prims) if not scene.primitives[i].variant_of]
+    gltf["meshes"].append({"name": scene.name, "primitives": base_prims or prims})
     mesh_node = {"name": scene.name, "mesh": 0}
     if scene.joints:
         ibm = np.array([_safe_inv(m).T for m in rest], np.float32)  # column-major
@@ -302,7 +307,22 @@ def export(scene: Scene, out_base: Path, *, thumbnail: bool = True) -> ExportSta
         ]
         mesh_node["skin"] = 0
     gltf["nodes"].append(mesh_node)
-    gltf["scenes"][0]["nodes"] = [*roots, len(gltf["nodes"]) - 1]
+    scene_nodes = [*roots, len(gltf["nodes"]) - 1]
+    for i, src in variants:
+        gltf["meshes"].append({"name": f"{scene.name}_{src.variant_texture}",
+                               "primitives": [prims[i]]})
+        node = {
+            "name": f"{src.variant_of}@{src.variant_texture}",
+            "mesh": len(gltf["meshes"]) - 1,
+            # the add-on reads these to build one keyframeable integer per face part
+            "extras": {"gcrip_variant_of": src.variant_of,
+                       "gcrip_texture": src.variant_texture},
+        }
+        if "skin" in mesh_node:
+            node["skin"] = mesh_node["skin"]
+        gltf["nodes"].append(node)
+        scene_nodes.append(len(gltf["nodes"]) - 1)
+    gltf["scenes"][0]["nodes"] = scene_nodes
 
     # animations
     anims = []

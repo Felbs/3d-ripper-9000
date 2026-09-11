@@ -34,6 +34,11 @@ class FaceSet:
     mouths: list[int] = field(default_factory=list)
     eye_size: tuple[int, int] = (64, 32)
     mouth_size: tuple[int, int] = (32, 32)
+    #: ``(fmt, size)`` as the display list declares them.  Not every face is CI8 - the
+    #: Great Fairy's eyes are RGBA16 - and reading 16-bit pixels as 8-bit indices is what
+    #: striped those faces into lace.
+    eye_fmt: tuple[int, int] = (2, 1)
+    mouth_fmt: tuple[int, int] = (2, 1)
 
     def __bool__(self) -> bool:
         return bool(self.eyes or self.mouths)

@@ -47,6 +47,11 @@ class Primitive:
     colors: np.ndarray | None = None  # (N,4)
     joints: np.ndarray | None = None  # (N,4) u16
     weights: np.ndarray | None = None  # (N,4) f32
+    #: An alternate of another primitive, differing only in its texture - a character's other
+    #: expressions.  Exported as its own node so a rigger can switch between them; the name is
+    #: the material it stands in for, which is what the Blender add-on groups on.
+    variant_of: str | None = None
+    variant_texture: str | None = None
 
 
 @dataclass

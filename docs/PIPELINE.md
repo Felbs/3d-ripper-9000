@@ -491,6 +491,40 @@ after their container - and often their own compression - is opened; `formats.ge
 handles the common table and LZ shapes, the rest is per-studio work in the order the
 compatibility list's developer column suggests.
 
+## 8. Nintendo 64 (`n64rip`)
+
+A ROM has no filesystem, so the walk starts from the game's own tables. Only the front half
+differs; from `Scene` on, it is the same pipeline as a GameCube disc.
+
+```
+ROM ──rom.py──> dmadata ──> files (Yaz0-decompressed)
+                   │
+                   ├─ objects.find_object_table   -> which files are objects, gameplay_keep
+                   ├─ objects.find_actor_overlays  -> object id -> every actor overlay using it
+                   │
+ per file ─ skeleton.find_skeletons ─┬─ zobj.build ─ f3dex2.run (per limb display list)
+                                     │                  └─ texture.decode (TMEM tiles, TLUTs)
+                                     ├─ anim.find_animations ─ pose_matrices ─ stands_up?
+                                     └─ face tables ─ expression variants
+                                                            │
+                                    ripcore.scene.Scene ────┴──> ripcore/gltf.py ──> .gltf
+                                                                       │
+                                                     publish.py ──> library browser / Blender
+```
+
+Three gates decide whether a step is kept, and each exists because the ungated version
+shipped something wrong:
+
+| step | gate | what it caught |
+|---|---|---|
+| posing | the posed model must be **taller than it is wide** | frame 0 of an arbitrary animation is not a rest pose; without this, characters came out folded |
+| face binding | the rebuild must keep the **same triangle count** and lose no textures | display lists that call through segments 8/9 execute face bytes as a display list - 95,023 junk triangles, ~65% of everything shipped |
+| face candidate | frame-to-frame byte agreement, plus a roughness ceiling | scoring by pixel variance selects noise, which has more of it than any real image - it put scrambled bytes on nineteen faces, all of which passed every numeric check |
+
+Expressions are **texture** swaps, so they are exported as variant primitives (one node each,
+tagged `gcrip_variant_of` / `gcrip_texture`) rather than shape keys - see section 5; the
+add-on drives them from one keyframeable integer per face part.
+
 ## What is heuristic (and where to look when it's wrong)
 
 | step | assumption | if wrong |

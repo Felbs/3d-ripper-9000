@@ -15,10 +15,11 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 from n64rip import (
+    actor_code as actor_mod,
     anim as anim_mod,
     f3dex2,
     face as face_mod,
@@ -97,6 +98,325 @@ def _pose(scene, name, data, skel, segments, link_anim, object_id):
     return None
 
 
+def _wanted_face_tiles(data, skel, segments):
+    """``{segment: {(fmt, size, w, h)}}`` for the tiles this actor's head asks for.
+
+    Kept per segment, because segment 8 is the eye and segment 9 the mouth, and they are
+    neither the same shape nor even the same pixel format.
+
+    Only the **format** here is trustworthy.  Width and height are derived from how many
+    texels were actually loaded, and for exactly the actors whose face is missing nothing was
+    ever loaded on that segment - so the size has to come from somewhere else.  SETTILE states
+    the format outright, so that part is solid.
+    """
+    want: dict[int, set] = {}
+    for i in skel.order():
+        limb = skel.limbs[i]
+        if not limb.dlist:
+            continue
+        try:
+            res = f3dex2.run(limb.dlist, segments)
+        except Exception:  # noqa: BLE001
+            continue
+        for b in res.batches:
+            tile = b.tile
+            if tile.addr is None or not tile.width or not tile.height:
+                continue
+            seg = (tile.addr >> 24) & 0x0F
+            if seg in (face_mod.EYE_SEGMENT, face_mod.MOUTH_SEGMENT):
+                want.setdefault(seg, set()).add((tile.fmt, tile.size, tile.width, tile.height))
+    return want
+
+
+#: frames of one eye agree far above this; unrelated data falls far below it
+MIN_EXPRESSION_CORR = 0.45
+
+#: bits a texel, by the display list's size field
+BITS = {0: 4, 1: 8, 2: 16, 3: 32}
+
+
+def _frame_agreement(data, offs, nbytes) -> float:
+    """How much of their raw bytes consecutive entries share.
+
+    The frames of an eye set are one drawing with the lid moved, so most of the texture -
+    the skin around the eye - is byte-identical between frames.  Unrelated data shares about
+    one byte in 256.  That gap is far wider than any measure taken after decoding, and it
+    costs nothing to compute.
+
+    It is also the only measure that works on colour-indexed art.  Pearson correlation over
+    palette *indices* is close to meaningless, because neighbouring indices are not
+    neighbouring colours - which is why scoring that way rejected several eye sets that
+    plainly render as eyes.
+    """
+    import numpy as np
+
+    if len(offs) < 2 or nbytes <= 0:
+        return 0.0
+    frames = []
+    for off in offs:
+        if off + nbytes > len(data):
+            return 0.0
+        frames.append(np.frombuffer(data, np.uint8, nbytes, off))
+    for f in frames:
+        counts = np.bincount(f, minlength=256)
+        if counts.max() / f.size > 0.95:
+            return 0.0  # a frame that is one repeated byte is padding
+    scores = [float(np.mean(a == b)) for a, b in zip(frames, frames[1:])]
+    mean = float(np.mean(scores))
+    return 0.0 if mean > 0.9995 else mean
+
+
+def _pixel_correlation(images) -> float:
+    """A fallback for true-colour faces, whose frames are re-shaded rather than copied.
+
+    RGBA16 eyes are drawn with soft edges, so two frames can share few exact bytes while
+    plainly being the same picture.  Correlation is meaningful here precisely because the
+    values are colours rather than palette indices.
+    """
+    import numpy as np
+
+    if len(images) < 2:
+        return 0.0
+    scores = []
+    for a, b in zip(images, images[1:]):
+        x = a[..., :3].astype(np.float64).ravel()
+        y = b[..., :3].astype(np.float64).ravel()
+        if x.std() < 1e-6 or y.std() < 1e-6:
+            return 0.0
+        scores.append(float(np.corrcoef(x, y)[0, 1]))
+    mean = float(np.mean(scores))
+    return 0.0 if mean > 0.9995 else mean
+
+
+def _roughness(images) -> float:
+    """Mean difference between neighbouring texels, as a fraction of full scale.
+
+    Drawn art is locally smooth - skin, an eyelid, the white of an eye are all runs of
+    similar texels - while bytes that are not a picture differ from their neighbours about as
+    much as two random numbers do, which lands near 0.33.  Used only to *reject*, and only
+    well above anything a real texture reaches, because a face decoded out of unrelated bytes
+    is worse than an honestly blank one.
+    """
+    import numpy as np
+
+    if not images:
+        return 1.0
+    vals = []
+    for im in images:
+        a = im[..., :3].astype(np.float64)
+        if a.shape[1] < 2:
+            continue
+        dx = np.abs(np.diff(a, axis=1)).mean()
+        dy = np.abs(np.diff(a, axis=0)).mean() if a.shape[0] > 1 else dx
+        vals.append((dx + dy) / 2.0 / 255.0)
+    return float(np.mean(vals)) if vals else 1.0
+
+
+def _structure_ratio(images) -> float:
+    """Local variation as a fraction of the image's own overall variation.
+
+    Scale-free, which is what :func:`_roughness` is not.  In noise, neighbouring texels differ
+    by as much as any two texels do, so the ratio sits near 1; in a drawing they differ far
+    less, because a drawing is made of regions.  A low-contrast palette can make genuine noise
+    look smooth in absolute terms - that is what let an actor ship twenty-one frames of grey
+    confetti - and dividing by the image's own spread sees through it.
+    """
+    import numpy as np
+
+    if not images:
+        return 1.0
+    vals = []
+    for im in images:
+        a = im[..., :3].astype(np.float64)
+        if a.shape[0] < 2 or a.shape[1] < 2:
+            continue
+        local = (np.abs(np.diff(a, axis=1)).mean() + np.abs(np.diff(a, axis=0)).mean()) / 2.0
+        flat = a.reshape(-1, 3)
+        spread = np.abs(flat - flat.mean(0)).mean() * 2.0
+        vals.append(local / spread if spread > 1e-9 else 1.0)
+    return float(np.mean(vals)) if vals else 1.0
+
+
+#: noise sits near 1.0; the densest real face measured (Link's, eyes and brows in one tile)
+#: reaches 0.43, so this rejects only what is plainly structureless
+MAX_STRUCTURE_RATIO = 0.45
+
+
+#: uniform random bytes measure about 0.33; every face verified by eye came in under 0.20
+MAX_ROUGHNESS = 0.20
+
+
+def _expression_score(data, offs, nbytes, images) -> float:
+    """How much a candidate table looks like one face wearing several expressions.
+
+    Whichever of the two measures suits the artwork; each is decisive where the other is
+    blind.  Replaces scoring by pixel variance, which was exactly backwards - noise has more
+    variance than any real image, so maximising it selected garbage and put scrambled bytes
+    on nineteen faces.
+    """
+    return max(_frame_agreement(data, offs, nbytes), _pixel_correlation(images))
+
+
+def _decode_table(data, offs, fmt, size, dims, tlut):
+    w, h = dims
+    out = []
+    for off in offs:
+        try:
+            img = tex_mod.decode(fmt, size, w, h, data[off:], tlut, 0)
+        except Exception:  # noqa: BLE001
+            return []
+        if img is None:
+            return []
+        out.append(img)
+    return out
+
+
+def _candidate_dims(want_tiles, fmt, size, run):
+    """Every plausible size for one format: what the display list said, and what the
+    spacing measures.  They disagree often enough that guessing between them blind is how
+    nineteen faces came out as lace, and cheap enough to simply try both and score them."""
+    dims = {(w, h) for f, s, w, h in want_tiles if (f, s) == (fmt, size)}
+    from_stride = actor_mod.tile_for(actor_mod.modal_stride(run), BITS.get(size, 8))
+    if from_stride:
+        dims.add(from_stride)
+    return dims
+
+
+def _split_weak_link(data, offs, nbytes, images):
+    """Cut a table where it stops being the same feature.
+
+    An actor's eye and mouth tables sit next to each other in one array, so a pointer run
+    often holds both.  Frames of one eye resemble each other and a mouth does not resemble an
+    eye, so the boundary shows up as one badly matched step in an otherwise consistent table.
+    Returns ``(head, tail)``.
+    """
+    import numpy as np
+
+    if len(offs) < 3:
+        return list(offs), []
+    steps = []
+    for a, b in zip(offs, offs[1:]):
+        fa = np.frombuffer(data, np.uint8, nbytes, a)
+        fb = np.frombuffer(data, np.uint8, nbytes, b)
+        steps.append(float(np.mean(fa == fb)))
+    if images and max(steps) < 0.2:  # true-colour art: fall back to the decoded pixels
+        steps = []
+        for a, b in zip(images, images[1:]):
+            x = a[..., :3].astype(np.float64).ravel()
+            y = b[..., :3].astype(np.float64).ravel()
+            steps.append(0.0 if x.std() < 1e-6 or y.std() < 1e-6
+                         else float(np.corrcoef(x, y)[0, 1]))
+    k = int(np.argmin(steps))
+    others = [s for i, s in enumerate(steps) if i != k]
+    if others and float(np.mean(others)) > steps[k] + 0.25:
+        return list(offs[:k + 1]), list(offs[k + 1:])
+    return list(offs), []
+
+
+def _best_table(data, runs, want_tiles, tlut, exclude=()):
+    """The table, size and format that best read as one face wearing several expressions.
+
+    Chosen by **length first**, among the candidates that clear the threshold.  Scoring alone
+    picks the shortest table every time, because the score is an average over consecutive
+    pairs and a two-entry candidate has only its single best pair to average - which reduced
+    a nine-expression face to two.
+    """
+    formats = sorted({(f, s) for f, s, _w, _h in want_tiles})
+    if not formats:
+        return None
+    best = (0, 0.0, None)  # entries, score, payload
+    for run in runs:
+        for offs in actor_mod.texture_tables(run):
+            if any(o in exclude for o in offs):
+                continue
+            for fmt, size in formats:
+                for dims in sorted(_candidate_dims(want_tiles, fmt, size, run)):
+                    nbytes = dims[0] * dims[1] * BITS.get(size, 8) // 8
+                    if offs[-1] + nbytes > len(data):
+                        continue
+                    imgs = _decode_table(data, offs, fmt, size, dims, tlut)
+                    if not imgs:
+                        continue
+                    score = _expression_score(data, offs, nbytes, imgs)
+                    if score < MIN_EXPRESSION_CORR:
+                        continue
+                    # indistinguishable from noise; a blank face is better than a wrong one
+                    if _roughness(imgs) > MAX_ROUGHNESS:
+                        continue
+                    if _structure_ratio(imgs) > MAX_STRUCTURE_RATIO:
+                        continue
+                    if (len(offs), score) > (best[0], best[1]):
+                        best = (len(offs), score, (offs, dims, (fmt, size), imgs))
+    return best[2]
+
+
+def _overlay_faces(data, skel, segments, overlays, object_id):
+    """This actor's own eye and mouth tables, read from its overlay's pointer runs.
+
+    Three measurements are combined, each taken where it is reliable.  The display list states
+    the pixel *format* on segments 8 and 9, which is always explicit.  The size comes from
+    whichever of the display list or the table's own spacing scores better, because either can
+    be wrong: nothing was ever loaded on a missing face's segment, and not every table is
+    packed.  Finally the winning table is cut where it stops correlating, which is where the
+    eyes end and the mouths begin.
+    """
+    if not overlays or object_id is None:
+        return None
+    want = _wanted_face_tiles(data, skel, segments)
+    if not want:
+        return None
+    runs = []
+    for ov in overlays.get(object_id, ()):
+        runs += [r for r in actor_mod.texture_runs(ov, len(data)) if r[-1] < len(data)]
+    if not runs:
+        return None
+    # Judge candidates through the palette the face will actually wear.  A grey ramp makes
+    # smooth art look like noise, because neighbouring palette indices are not neighbouring
+    # colours - which let the roughness gate pass confetti and reject real faces.
+    tlut = _face_tlut(data, skel, segments)
+    if tlut is None:
+        tlut = _grey_tlut()
+    eye_tiles = want.get(face_mod.EYE_SEGMENT, set())
+    mouth_tiles = want.get(face_mod.MOUTH_SEGMENT, set())
+
+    eye = _best_table(data, runs, eye_tiles, tlut)
+    eyes, spill = ([], [])
+    eye_dims, eye_fmt = (32, 32), (tex_mod.FMT_CI, tex_mod.SIZE_8)
+    if eye is not None:
+        offs, eye_dims, eye_fmt, imgs = eye
+        nbytes = eye_dims[0] * eye_dims[1] * BITS.get(eye_fmt[1], 8) // 8
+        eyes, spill = _split_weak_link(data, offs, nbytes, imgs)
+
+    mouth = _best_table(data, runs, mouth_tiles, tlut, exclude=set(eyes)) if mouth_tiles else None
+    if mouth is not None:
+        mouths, mouth_dims, mouth_fmt = mouth[0], mouth[1], mouth[2]
+    elif spill:
+        # the tail the eye table shed is the mouth table, at the eye's own format
+        mouths, mouth_dims, mouth_fmt = spill, eye_dims, eye_fmt
+    else:
+        mouths, mouth_dims, mouth_fmt = [], (32, 32), (tex_mod.FMT_CI, tex_mod.SIZE_8)
+
+    if not eyes and not mouths:
+        return None
+    return face_mod.FaceSet(
+        eyes=list(eyes), mouths=list(mouths),
+        eye_size=eye_dims, mouth_size=mouth_dims,
+        eye_fmt=eye_fmt, mouth_fmt=mouth_fmt,
+    )
+
+
+def _grey_tlut():
+    """A neutral palette, used only to judge whether a candidate looks like an image.
+
+    The real palette comes from the model's own display list at decode time; here we only
+    need to tell a picture from a flat block of padding.
+    """
+    import numpy as np
+
+    ramp = np.arange(256, dtype=np.uint8)
+    return np.stack([ramp, ramp, ramp, np.full(256, 255, np.uint8)], axis=-1)
+
+
 def _face_tlut(data, skel, segments):
     """The palette the face textures share, read from a CI tile the head actually requests.
 
@@ -119,8 +439,58 @@ def _face_tlut(data, skel, segments):
     return None
 
 
+def _expression_variants(scene, name, data, skel, segments, faces, world, rotations):
+    """Add every other expression to *scene* as an alternate of the face primitive.
+
+    The model ships wearing expression 0.  The rest are attached as variant primitives, which
+    the exporter writes as their own nodes and the Blender add-on turns into one keyframeable
+    integer per face part - so an animator scrubs between eye states the way they would a
+    shape key.  A shape key itself cannot do this: the expressions are texture swaps, and
+    nothing about the geometry changes between them.
+    """
+    import numpy as np
+
+    count = max(len(faces.eyes), len(faces.mouths))
+    if count < 2:
+        return scene
+    base_mats = list(scene.materials)
+    base_triangles = scene.triangles  # fixed up front: `scene` grows as variants are added
+    scene.extras["base_triangles"] = base_triangles
+    for k in range(1, count):
+        bound = face_mod.segments_for(faces, data, k, k)
+        if not bound:
+            continue
+        segs = f3dex2.Segments({**segments.bases, **bound})
+        try:
+            alt = zobj.build(name, data, skel, segs, world=world, rotations=rotations)
+        except Exception:  # noqa: BLE001
+            continue
+        # the display lists are the same, so material i means the same tile in both builds;
+        # anything else and the two are not comparable and the variant is dropped
+        if len(alt.materials) != len(base_mats) or alt.triangles != base_triangles:
+            continue
+        for mi, (m0, mk) in enumerate(zip(base_mats, alt.materials)):
+            if not (m0.texture and mk.texture):
+                continue
+            a, b = scene.textures.get(m0.texture), alt.textures.get(mk.texture)
+            if a is None or b is None or (a.shape == b.shape and np.array_equal(a, b)):
+                continue  # this material is not part of the face
+            tex_name = f"{m0.texture}_expr{k}"
+            scene.textures[tex_name] = b
+            scene.materials.append(replace(mk, name=f"{m0.name}_expr{k}", texture=tex_name))
+            new_mat = len(scene.materials) - 1
+            for prim in alt.primitives:
+                if prim.material != mi:
+                    continue
+                scene.primitives.append(replace(
+                    prim, material=new_mat,
+                    variant_of=m0.name, variant_texture=f"expr_{k:02d}",
+                ))
+    return scene
+
+
 def _faces(scene, name, data, skel, segments, code, out_dir, world, rotations,
-           object_id=None):
+           object_id=None, overlays=None):
     """Bind a face and write every expression beside the model.
 
     A character's face is swapped at runtime through segments 8 and 9, so a static rip leaves
@@ -131,15 +501,19 @@ def _faces(scene, name, data, skel, segments, code, out_dir, world, rotations,
     unresolved = set(scene.extras.get("unresolved_segments") or ())
     if not (unresolved & {face_mod.EYE_SEGMENT, face_mod.MOUTH_SEGMENT}) or not code:
         return scene, []
-    # The table found in `code` is Link's - it is the longest run there, whichever actor we
-    # are looking at.  Binding his eye/mouth offsets into another character's object file
-    # decodes unrelated bytes as a face, which is what made 49 non-Link actors glitchy.  Only
-    # bind where the table can be attributed to this actor; otherwise leave the face blank,
-    # which is honest.
-    if object_id not in LINK_OBJECTS:
-        return scene, []
-    faces = face_mod.find_faces(code, len(data))
-    if not face_mod.owns_table(data, faces):
+    # Where the face textures come from depends on the actor.  Link keeps his in an evenly
+    # spaced array that a stride walk finds in `code`.  Almost no NPC does - theirs sit in
+    # their own actor overlay as a plain run of segmented pointers, which is readable because
+    # segmented addresses are never relocated.  Binding Link's offsets into someone else's
+    # object file is what made every other character glitchy, so each actor gets its own.
+    faces = None
+    if object_id in LINK_OBJECTS:
+        found = face_mod.find_faces(code, len(data))
+        if face_mod.owns_table(data, found):
+            faces = found
+    if faces is None:
+        faces = _overlay_faces(data, skel, segments, overlays, object_id)
+    if faces is None:
         return scene, []
     bound = face_mod.segments_for(faces, data, 0, 0)
     if not bound:
@@ -169,23 +543,28 @@ def _faces(scene, name, data, skel, segments, code, out_dir, world, rotations,
     if len(_unresolved(rebuilt)) > len(_unresolved(scene)):
         return scene, []
 
+    rebuilt = _expression_variants(rebuilt, name, data, skel, segments, faces, world, rotations)
     tlut = _face_tlut(data, skel, seg2)
     written: list[str] = []
-    if tlut is not None:
-        from PIL import Image
+    from PIL import Image
 
-        tex_dir = Path(out_dir) / f"{name}_tex"
+    tex_dir = Path(out_dir) / f"{name}_tex"
+    for kind, offs, (w, h), (fmt, size) in (
+        ("eye", faces.eyes, faces.eye_size, faces.eye_fmt),
+        ("mouth", faces.mouths, faces.mouth_size, faces.mouth_fmt),
+    ):
+        # only a colour-indexed table needs the head's palette; RGBA16 carries its own colour
+        if not offs or (fmt == tex_mod.FMT_CI and tlut is None):
+            continue
         tex_dir.mkdir(parents=True, exist_ok=True)
-        for kind, offs, (w, h) in (("eye", faces.eyes, faces.eye_size),
-                                   ("mouth", faces.mouths, faces.mouth_size)):
-            for k, off in enumerate(offs):
-                try:
-                    img = tex_mod.decode(tex_mod.FMT_CI, tex_mod.SIZE_8, w, h, data[off:], tlut, 0)
-                except tex_mod.TextureError:
-                    continue
-                fname = f"face_{kind}_{k}.png"
-                Image.fromarray(img).save(tex_dir / fname)
-                written.append(fname)
+        for k, off in enumerate(offs):
+            try:
+                img = tex_mod.decode(fmt, size, w, h, data[off:], tlut, 0)
+            except Exception:  # noqa: BLE001
+                continue
+            fname = f"face_{kind}_{k}.png"
+            Image.fromarray(img).save(tex_dir / fname)
+            written.append(fname)
     return rebuilt, written
 
 
@@ -212,6 +591,15 @@ def extract_rom(
     # Link keeps no animations in his object file - his live in their own uncompressed one,
     # so posing him needs a separate source from every other actor.
     code_file = None if table is None else rom.read(rom.files[table.file_index])
+    # object id -> the bytes of every actor overlay that uses it, for per-actor face textures
+    overlays: dict[int, list[bytes]] = {}
+    if code_file is not None:
+        for oid, files in obj_mod.find_actor_overlays(rom, code_file).items():
+            for fidx in files:
+                try:
+                    overlays.setdefault(oid, []).append(rom.read(rom.files[fidx]))
+                except Exception:  # noqa: BLE001
+                    pass
     link_anim = None
     for f in rom.live:
         if not f.compressed and 2_000_000 < f.size < 3_000_000:
@@ -262,7 +650,7 @@ def extract_rom(
                 continue
             scene, res.expressions = _faces(
                 scene, name, data, sk, segments, code_file, out_dir, world, rotations,
-                res.object_id,
+                res.object_id, overlays,
             )
             base = out_dir / name
             try:
@@ -274,7 +662,7 @@ def extract_rom(
                 continue
             res.out_rel = f"{name}.gltf"
             res.thumb = f"{name}_thumb.png" if thumb else ""
-            res.triangles = scene.triangles
+            res.triangles = scene.extras.get("base_triangles", scene.triangles)
             res.vertices = scene.vertices
             res.textures = len(scene.textures)
             res.textures_missing = int(scene.extras.get("textures_missing", 0))
