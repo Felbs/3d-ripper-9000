@@ -504,7 +504,7 @@ ROM ──rom.py──> dmadata ──> files (Yaz0-decompressed)
                    │
  per file ─ skeleton.find_skeletons ─┬─ zobj.build ─ f3dex2.run (per limb display list)
                                      │                  └─ texture.decode (TMEM tiles, TLUTs)
-                                     ├─ anim.find_animations ─ pose_matrices ─ stands_up?
+                                     ├─ anim.find_animations ─ pose_matrices ─ _pose_quality?
                                      └─ face tables ─ expression variants
                                                             │
                                     ripcore.scene.Scene ────┴──> ripcore/gltf.py ──> .gltf
@@ -517,7 +517,7 @@ shipped something wrong:
 
 | step | gate | what it caught |
 |---|---|---|
-| posing | the posed model must be **taller than it is wide** | frame 0 of an arbitrary animation is not a rest pose; without this, characters came out folded |
+| posing | **taller than it is wide**, or - for anything that is not a person - less degenerate without growing | frame 0 of an arbitrary animation is not a rest pose; without the first test characters came out folded, and without the second a crab, a fish or a Goron on all fours could never be posed at all |
 | face binding | the rebuild must keep the **same triangle count** and lose no textures | display lists that call through segments 8/9 execute face bytes as a display list - 95,023 junk triangles, ~65% of everything shipped |
 | face candidate | frame-to-frame byte agreement, plus a roughness ceiling | scoring by pixel variance selects noise, which has more of it than any real image - it put scrambled bytes on nineteen faces, all of which passed every numeric check |
 
