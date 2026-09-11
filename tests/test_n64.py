@@ -516,3 +516,19 @@ def test_expression_drivers_are_reparsed_after_their_variable_exists():
     assert "drv.expression = drv.expression" in body, "the parse must be forced after is_valid"
     # and it has to come after the flag is cleared, or the rebuild is thrown away again
     assert body.index("drv.is_valid = True") < body.index("drv.expression = drv.expression")
+
+def test_face_tlut_prefers_a_palette_from_a_face_tile():
+    """The PNGs written beside a model must use the face's palette, not the model's first one.
+
+    `zobj` decodes every tile with that tile's own palette, so the model itself was always
+    right; only the exported expression images came out in somebody else's colours - which
+    made real eyes look like noise and had several of them rejected as junk.
+    """
+    import inspect
+
+    from n64rip.extract import _face_tlut
+
+    src = inspect.getsource(_face_tlut)
+    assert "EYE_SEGMENT" in src and "MOUTH_SEGMENT" in src, "must prefer a face-segment tile"
+    assert "fallback" in src, "and still return something when no face tile resolves"
+    assert "prefer_face" in inspect.signature(_face_tlut).parameters

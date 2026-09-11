@@ -417,26 +417,43 @@ def _grey_tlut():
     return np.stack([ramp, ramp, ramp, np.full(256, 255, np.uint8)], axis=-1)
 
 
-def _face_tlut(data, skel, segments):
-    """The palette the face textures share, read from a CI tile the head actually requests.
+def _face_tlut(data, skel, segments, prefer_face=True):
+    """The palette the face textures are drawn with.
 
-    The face is CI8, so it needs a TLUT, and it shares the head's - so rather than guessing
-    where the palette lives, take the one the display list already pointed at.
+    A colour-indexed face needs a TLUT, and the display list already names it - so rather than
+    guessing where the palette lives, take the one the head pointed at.
+
+    **Which tile is asked matters.** Taking the first colour-indexed tile in limb order
+    returns a body or hair palette, and the model itself does not use it - `zobj` decodes each
+    tile with that tile's own palette - so only the PNGs written beside the model came out
+    wrong, in somebody else's colours. With segments 8 and 9 bound, the face tiles resolve
+    like any other, so the face's palette is simply the one on a face tile.
     """
+    fallback = None
     for i in skel.order():
         limb = skel.limbs[i]
         if not limb.dlist:
             continue
-        res = f3dex2.run(limb.dlist, segments)
+        try:
+            res = f3dex2.run(limb.dlist, segments)
+        except Exception:  # noqa: BLE001
+            continue
         for b in res.batches:
             tile = b.tile
-            if tile.fmt != tex_mod.FMT_CI or tile.pal_addr is None:
+            if tile.fmt != tex_mod.FMT_CI or tile.pal_addr is None or tile.addr is None:
                 continue
             got = segments.resolve(tile.pal_addr)
-            if got:
-                buf, off = got
-                return tex_mod.decode_tlut(buf[off:], 256)
-    return None
+            if not got:
+                continue
+            buf, off = got
+            tlut = tex_mod.decode_tlut(buf[off:], 256)
+            on_face = ((tile.addr >> 24) & 0x0F) in (face_mod.EYE_SEGMENT,
+                                                     face_mod.MOUTH_SEGMENT)
+            if on_face or not prefer_face:
+                return tlut
+            if fallback is None:
+                fallback = tlut
+    return fallback
 
 
 def _expression_variants(scene, name, data, skel, segments, faces, world, rotations):
