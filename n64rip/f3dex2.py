@@ -18,6 +18,7 @@ tile and palette); state that only affects shading is decoded far enough to name
 
 from __future__ import annotations
 
+import copy
 import struct
 from dataclasses import dataclass, field
 
@@ -86,15 +87,42 @@ class TileState:
     addr: int | None = None  # segmented address of the texel data
     pal_addr: int | None = None  # segmented address of the TLUT, for CI formats
     palette: int = 0  # CI4 sub-palette index
-    clamp_s: bool = False
-    clamp_t: bool = False
-    mirror_s: bool = False
-    mirror_t: bool = False
+    #: raw clamp/mirror mode per axis.  gbi packs these as G_TX_MIRROR = 1 (low bit) and
+    #: G_TX_CLAMP = 2 (high bit); reading bit 8 as clamp and bit 9 as mirror swaps them,
+    #: which turns a clamped face tile into a mirrored one - a second pair of eyes on the jaw.
+    cm_s: int = 0
+    cm_t: int = 0
+    mask_s: int = 0
+    mask_t: int = 0
     line: int = 0
+    tex_on: bool = True  # G_TEXTURE's enable bit; an off run is not sampled at all
+
+    @property
+    def clamp_s(self) -> bool:
+        return self._clamped(self.cm_s, self.mask_s, self.width)
+
+    @property
+    def clamp_t(self) -> bool:
+        return self._clamped(self.cm_t, self.mask_t, self.height)
+
+    @property
+    def mirror_s(self) -> bool:
+        return bool(self.cm_s & 1) and not self.clamp_s
+
+    @property
+    def mirror_t(self) -> bool:
+        return bool(self.cm_t & 1) and not self.clamp_t
+
+    @staticmethod
+    def _clamped(cm: int, mask: int, rect: int) -> bool:
+        """A tile clamps when it says so, and also when it has no mask to wrap around."""
+        return mask == 0 or bool(cm & 2)
 
     def key(self) -> tuple:
-        return (self.addr, self.pal_addr, self.fmt, self.size,
-                self.width, self.height, self.palette)
+        # a run with texturing disabled is not the same material as one with it on, even
+        # when every other field matches
+        return (self.addr if self.tex_on else None, self.pal_addr, self.fmt, self.size,
+                self.width, self.height, self.palette, self.cm_s, self.cm_t, self.tex_on)
 
 
 @dataclass
@@ -318,6 +346,12 @@ class Interpreter:
             if op == G_SETTILESIZE:
                 self._op_settilesize(w0, w1)
                 continue
+            if op == G_TEXTURE:
+                # Only the enable bit is honoured.  The S/T scale is NOT applied: every
+                # scale-zero command in this ROM is gsSPTexture(..., G_OFF), and applying
+                # the scale unconditionally collapses geometry onto a single texel.
+                self.tile.tex_on = bool((w0 >> 1) & 0x7F)
+                continue
             if op == G_SETPRIMCOLOR:
                 self.prim = ((w1 >> 24) & 0xFF, (w1 >> 16) & 0xFF, (w1 >> 8) & 0xFF, w1 & 0xFF)
                 continue
@@ -382,7 +416,7 @@ class Interpreter:
     def _op_tri1(self, w0: int) -> None:
         if self._tile_changed():
             self._flush()
-            self._batch_tile = TileState(**vars(self.tile))
+            self._batch_tile = copy.copy(self.tile)
             self._batch_prim = self.prim
         a = ((w0 >> 16) & 0xFF) // 2
         b = ((w0 >> 8) & 0xFF) // 2
@@ -392,7 +426,7 @@ class Interpreter:
     def _op_tri2(self, w0: int, w1: int) -> None:
         if self._tile_changed():
             self._flush()
-            self._batch_tile = TileState(**vars(self.tile))
+            self._batch_tile = copy.copy(self.tile)
             self._batch_prim = self.prim
         self._emit(((w0 >> 16) & 0xFF) // 2, ((w0 >> 8) & 0xFF) // 2, (w0 & 0xFF) // 2)
         self._emit(((w1 >> 16) & 0xFF) // 2, ((w1 >> 8) & 0xFF) // 2, (w1 & 0xFF) // 2)
@@ -412,10 +446,10 @@ class Interpreter:
             t.size = (w0 >> 19) & 0x03
             t.line = (w0 >> 9) & 0x1FF
             t.palette = (w1 >> 20) & 0x0F
-            t.clamp_t = bool((w1 >> 18) & 1)
-            t.mirror_t = bool((w1 >> 19) & 1)
-            t.clamp_s = bool((w1 >> 8) & 1)
-            t.mirror_s = bool((w1 >> 9) & 1)
+            t.cm_t = (w1 >> 18) & 0x03
+            t.mask_t = (w1 >> 14) & 0x0F
+            t.cm_s = (w1 >> 8) & 0x03
+            t.mask_s = (w1 >> 4) & 0x0F
 
     def _op_settilesize(self, w0: int, w1: int) -> None:
         if ((w1 >> 24) & 0x07) != 0:

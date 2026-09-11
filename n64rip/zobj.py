@@ -34,6 +34,8 @@ def _translate(x: float, y: float, z: float) -> np.ndarray:
 
 def _decode_tile(tile: f3dex2.TileState, segments: f3dex2.Segments) -> np.ndarray | None:
     """RGBA for a tile, or None when its texels are not reachable in a static rip."""
+    if not tile.tex_on:
+        return None  # G_TEXTURE turned sampling off; this run is shaded, not textured
     if tile.addr is None or tile.width <= 0 or tile.height <= 0:
         return None
     found = segments.resolve(tile.addr)

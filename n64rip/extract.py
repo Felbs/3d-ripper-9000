@@ -139,7 +139,24 @@ def _faces(scene, name, data, skel, segments, code, out_dir, world, rotations):
         rebuilt = zobj.build(name, data, skel, seg2, world=world, rotations=rotations)
     except Exception:  # noqa: BLE001
         return scene, []
+    # A face binding is a TEXTURE binding: it must never change geometry or lose textures.
+    # Without this gate the rebuild was accepted whenever it had any primitives at all, and
+    # display lists that call through segments 8/9 then execute face-texture bytes as a
+    # display list - injecting 95,005 junk triangles across the ROM, about 65% of everything
+    # we were shipping, and costing 8 models textures they already had.
+    def _textured(sc):
+        return sum(1 for m in sc.materials if m.texture)
+
+    def _unresolved(sc):
+        return set(sc.extras.get("unresolved_segments") or ())
+
     if not rebuilt.primitives:
+        return scene, []
+    if rebuilt.triangles != scene.triangles:
+        return scene, []
+    if _textured(rebuilt) < _textured(scene):
+        return scene, []
+    if len(_unresolved(rebuilt)) > len(_unresolved(scene)):
         return scene, []
 
     tlut = _face_tlut(data, skel, seg2)

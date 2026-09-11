@@ -120,6 +120,11 @@ def read_skeleton(data: bytes, offset: int, segment: int = 6, lod: bool = False)
             return None
         if limb.sibling != NO_LIMB and limb.sibling >= count:
             return None
+        # limb 0 is the root, so it can never be another limb's child or sibling - a real
+        # table writes 0xFF for "none".  This rejects exactly one data table in the ROM that
+        # otherwise reads as a 14-limb skeleton.
+        if limb.child == 0 or limb.sibling == 0:
+            return None
         limbs.append(limb)
     skel = Skeleton(offset=offset, limbs=limbs)
     _assign_parents(skel)

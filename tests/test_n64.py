@@ -358,3 +358,28 @@ def test_object_table_found_by_validating_against_the_dma_table():
     assert table.file_for(objects.GAMEPLAY_KEEP) is not None
     seg = objects.keep_segments(rom, table)
     assert set(seg) == {4}
+
+
+def test_clamp_and_mirror_bits_are_not_swapped():
+    """gbi packs the wrap mode as G_TX_MIRROR = 1 (low bit) and G_TX_CLAMP = 2 (high bit).
+
+    Reading bit 8 as clamp and bit 9 as mirror swaps them, so a clamped face tile exports as
+    MIRRORED_REPEAT - which paints a second, mirrored pair of eyes along the jaw.
+    """
+    t = f3dex2.TileState(width=32, height=32, mask_s=5, mask_t=5)
+    t.cm_s = 2  # G_TX_CLAMP
+    t.cm_t = 1  # G_TX_MIRROR
+    assert t.clamp_s and not t.mirror_s
+    assert t.mirror_t and not t.clamp_t
+    # a tile with no mask has nothing to wrap around, so it clamps whatever the bits say
+    bare = f3dex2.TileState(width=16, height=16, mask_s=0, mask_t=0)
+    assert bare.clamp_s and bare.clamp_t and not bare.mirror_s
+
+
+def test_texture_disabled_runs_are_not_textured():
+    """G_TEXTURE's enable bit is honoured - an 'off' run must not inherit the live tile -
+    but its S/T scale is deliberately NOT applied: every scale-zero command in this ROM is
+    gsSPTexture(..., G_OFF), and applying the scale collapses geometry onto one texel."""
+    on = f3dex2.TileState(addr=0x06001000, width=8, height=8)
+    off = f3dex2.TileState(addr=0x06001000, width=8, height=8, tex_on=False)
+    assert on.key() != off.key()
