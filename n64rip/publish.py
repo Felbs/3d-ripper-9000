@@ -35,7 +35,7 @@ def _display_path(report: dict, m: dict) -> str:
     oid = m.get("object_id")
     if oid is None:
         return f"{report['code']}/{m['name']}"
-    who = names.name_for(oid)
+    who = names.name_for(oid, model=m["name"])
     # The character's name leads, because that is what someone is reading the list for.  The
     # object id and the file name follow it: names are not unique (four Deku Scrubs, several
     # Gorons and Poes all share one), and the id is the only identity the ROM actually gives

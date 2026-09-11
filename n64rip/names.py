@@ -158,8 +158,28 @@ OOT: dict[int, str] = {
 }
 
 
-def name_for(object_id: int | None, game: str = "oot") -> str | None:
-    """The English name for an object id, or None when it is not one we have identified."""
+#: model file name -> English name, for the objects that hold more than one *different* thing.
+#:
+#: A name keyed on the object id is wrong whenever an object's skeletons are not the same
+#: character.  Object 386 is the case that forced this: its 15-limb skeleton is a row of six
+#: robed onlookers and its 20-limb one is the couple embracing, so labelling both from the
+#: object id calls the crowd a couple.  Consulted before :data:`OOT`.
+OOT_MODELS: dict[str, str] = {
+    "file_0862_skel0": "wedding_crowd",   # six small figures in white robes, different hair
+    "file_0862_skel1": "kissing_couple",  # two figures embracing, one brown-haired, one red
+}
+
+
+def name_for(object_id: int | None, game: str = "oot", model: str | None = None) -> str | None:
+    """The English name for a model, or None when it is not one we have identified.
+
+    *model* is the model's own file name, which wins over the object id: an object can hold
+    two skeletons that are different things.
+    """
+    if game != "oot":
+        return None
+    if model and model in OOT_MODELS:
+        return OOT_MODELS[model]
     if object_id is None:
         return None
-    return OOT.get(object_id) if game == "oot" else None
+    return OOT.get(object_id)

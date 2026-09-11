@@ -1012,3 +1012,22 @@ def test_every_rest_pose_row_records_what_was_rendered():
         assert off > 0 and limbs > 1
         assert rp.bank > 0 and rp.offset > 0
         assert len(rp.seen) > 40, f"({off:#x}, {limbs}) must describe the render"
+
+
+def test_a_model_name_beats_the_object_id():
+    """One object can hold two skeletons that are different things.
+
+    Object 386's 15-limb skeleton is a crowd of onlookers and its 20-limb one is the couple
+    embracing; naming both from the object id calls the crowd a couple.
+    """
+    from n64rip.names import name_for
+    from n64rip.publish import _display_path
+
+    assert name_for(386, model="file_0862_skel0") == "wedding_crowd"
+    assert name_for(386, model="file_0862_skel1") == "kissing_couple"
+    # an object without a per-model entry still answers from the id
+    assert name_for(255, model="file_0731") == "king_zora"
+    assert name_for(None, model="nope") is None
+
+    rep = {"code": "N64_CZLE"}
+    assert _display_path(rep, {"object_id": 386, "name": "file_0862_skel0"}) ==         "N64_CZLE/wedding_crowd_obj_386_file_0862_skel0"
