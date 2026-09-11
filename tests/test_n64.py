@@ -720,3 +720,34 @@ def test_names_are_path_safe():
 
     for oid, nm in OOT.items():
         assert re.fullmatch(r"[a-z0-9_]+", nm), (oid, nm)
+
+def test_attested_tables_short_circuit_the_search():
+    """The few actors no rule reaches take their offsets from data, not from a heuristic.
+
+    The frames that were beating the right ones on these files are real artwork, not noise -
+    object 357's wrong frames measure smoother than several correct ones - so no threshold
+    separates them and the search has to be bypassed rather than tuned.
+    """
+    from n64rip import attested
+    from n64rip.extract import _attested_faces
+
+    att = attested.for_object(357)
+    assert att and "eyes" in att
+    faces = _attested_faces(att, (8,), ())
+    assert faces.eyes == [0x3928, 0x3D28, 0x4128]
+    assert faces.eye_size == (32, 32)
+    assert faces.eye_segments == (8,)
+    assert attested.for_object(None) == {}
+    assert attested.for_object(20) == {}, "Link is found by rule and must not be attested"
+
+
+def test_every_attested_row_records_what_was_seen():
+    """These are claims about pictures, so each has to say what the picture was."""
+    from n64rip.attested import NOTES, OOT
+
+    for oid, tables in OOT.items():
+        assert oid in NOTES, f"object {oid} must say why a rule could not reach it"
+        for role, tb in tables.items():
+            assert len(tb.seen) > 20, f"object {oid} {role} must describe what was seen"
+            assert len(tb.offsets) >= 2
+            assert tb.width > 0 and tb.height > 0

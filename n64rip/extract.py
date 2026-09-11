@@ -20,6 +20,7 @@ from pathlib import Path
 
 from n64rip import (
     actor_code as actor_mod,
+    attested,
     anim as anim_mod,
     f3dex2,
     face as face_mod,
@@ -626,6 +627,27 @@ def _seeded_runs(data, skel, segments, segment, tiles):
     return runs
 
 
+def _attested_faces(att, eye_segs, mouth_segs):
+    """Build a FaceSet from offsets that were established by hand.
+
+    Used for the few actors no rule reaches - see :mod:`n64rip.attested` for why each one is
+    there.  It short-circuits the search entirely rather than competing with it, because the
+    frames that were beating the right ones are real artwork and win on every measure.
+    """
+    eye = att.get("eyes")
+    mouth = att.get("mouths")
+    return face_mod.FaceSet(
+        eyes=list(eye.offsets) if eye else [],
+        mouths=list(mouth.offsets) if mouth else [],
+        eye_size=(eye.width, eye.height) if eye else (32, 32),
+        mouth_size=(mouth.width, mouth.height) if mouth else (32, 32),
+        eye_fmt=(eye.fmt, eye.size) if eye else (tex_mod.FMT_CI, tex_mod.SIZE_8),
+        mouth_fmt=(mouth.fmt, mouth.size) if mouth else (tex_mod.FMT_CI, tex_mod.SIZE_8),
+        eye_segments=eye_segs or (face_mod.EYE_SEGMENT,),
+        mouth_segments=mouth_segs or (face_mod.MOUTH_SEGMENT,),
+    )
+
+
 def _overlay_faces(data, skel, segments, overlays, object_id):
     """This actor's own eye and mouth tables, read from its overlay's pointer runs.
 
@@ -636,9 +658,12 @@ def _overlay_faces(data, skel, segments, overlays, object_id):
     packed.  Finally the winning table is cut where it stops correlating, which is where the
     eyes end and the mouths begin.
     """
+    eye_segs, mouth_segs, eye_tiles, mouth_tiles = _face_roles(data, skel, segments)
+    att = attested.for_object(object_id)
+    if att:
+        return _attested_faces(att, eye_segs, mouth_segs)
     if not overlays or object_id is None:
         return None
-    eye_segs, mouth_segs, eye_tiles, mouth_tiles = _face_roles(data, skel, segments)
     if not eye_tiles and not mouth_tiles:
         return None
     runs = []
