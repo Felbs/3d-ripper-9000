@@ -65,8 +65,10 @@ def find_faces(code: bytes, object_size: int,
                mouth_size: tuple[int, int] = (32, 32)) -> FaceSet:
     """Eye and mouth texture offsets for an actor whose object file is *object_size* bytes.
 
-    Sizes come from the tile the head's display list requests, so this works for any actor
-    that swaps a face, not only for Link - pass the sizes the interpreter reported.
+    **This finds one table - the longest run in whatever buffer it is given.**  Searching
+    ``code`` therefore returns *Link's* table for every actor, and binding his offsets into
+    another character's object file decodes unrelated bytes as a face.  Callers must only use
+    a table they can attribute to the actor in hand; :func:`owns_table` is that check.
     """
     n = len(code) // 4
     if n < 4:
@@ -96,3 +98,19 @@ def segments_for(faces: FaceSet, obj: bytes, eye: int = 0, mouth: int = 0) -> di
     if faces.mouths:
         out[MOUTH_SEGMENT] = obj[faces.mouths[min(mouth, len(faces.mouths) - 1)]:]
     return out
+
+
+def owns_table(obj: bytes, faces: FaceSet) -> bool:
+    """Do these offsets plausibly name face textures inside *this* actor's object file?
+
+    A table found in ``code`` belongs to whichever actor ``code`` was talking about.  Before
+    binding it into a different object the offsets must at least fit, and the bytes there must
+    not be obviously something else.  This is deliberately a weak test used only to *reject*:
+    a face we cannot attribute is left blank, because a blank face is honest and a face
+    decoded out of a neighbouring mesh is not.
+    """
+    if not faces.eyes or not faces.mouths:
+        return False
+    need = max(faces.eyes[-1] + faces.eye_size[0] * faces.eye_size[1],
+               faces.mouths[-1] + faces.mouth_size[0] * faces.mouth_size[1])
+    return need <= len(obj)

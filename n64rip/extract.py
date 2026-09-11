@@ -119,7 +119,8 @@ def _face_tlut(data, skel, segments):
     return None
 
 
-def _faces(scene, name, data, skel, segments, code, out_dir, world, rotations):
+def _faces(scene, name, data, skel, segments, code, out_dir, world, rotations,
+           object_id=None):
     """Bind a face and write every expression beside the model.
 
     A character's face is swapped at runtime through segments 8 and 9, so a static rip leaves
@@ -130,7 +131,16 @@ def _faces(scene, name, data, skel, segments, code, out_dir, world, rotations):
     unresolved = set(scene.extras.get("unresolved_segments") or ())
     if not (unresolved & {face_mod.EYE_SEGMENT, face_mod.MOUTH_SEGMENT}) or not code:
         return scene, []
+    # The table found in `code` is Link's - it is the longest run there, whichever actor we
+    # are looking at.  Binding his eye/mouth offsets into another character's object file
+    # decodes unrelated bytes as a face, which is what made 49 non-Link actors glitchy.  Only
+    # bind where the table can be attributed to this actor; otherwise leave the face blank,
+    # which is honest.
+    if object_id not in LINK_OBJECTS:
+        return scene, []
     faces = face_mod.find_faces(code, len(data))
+    if not face_mod.owns_table(data, faces):
+        return scene, []
     bound = face_mod.segments_for(faces, data, 0, 0)
     if not bound:
         return scene, []
@@ -251,7 +261,8 @@ def extract_rom(
             if scene.triangles < MIN_TRIANGLES:
                 continue
             scene, res.expressions = _faces(
-                scene, name, data, sk, segments, code_file, out_dir, world, rotations
+                scene, name, data, sk, segments, code_file, out_dir, world, rotations,
+                res.object_id,
             )
             base = out_dir / name
             try:
