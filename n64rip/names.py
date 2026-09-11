@@ -22,8 +22,10 @@ object 155 is Ganondorf squatting (the checker had read the same), 188 is Saria,
 from 155.
 
 Still unnamed, and honestly so:
-  158 (both skeletons)  an enemy nobody has placed; an earlier low-confidence lead was
-                        flare_dancer, on the grounds that it loads only in the Fire Temple
+  110                   no actor in `gActorOverlayTable` declares it at all and four of its
+                        segments are written by actor code at draw time, so its textures are
+                        not diagnostic.  The composer-brother lead is dead: Sharp and Flat are
+                        gravestones in this game, not models
   172                   42 triangles that render as a cube; a lead calls it a collapsed
                         parasitic tentacle from Jabu-Jabu, which would explain the shape
   398                   a flat plane with no animations at all - a runtime-textured strip the
@@ -64,8 +66,18 @@ OOT: dict[int, str] = {
      50: "stalfos",               # skeleton warrior, bare skull, ribcage, teal skirt and boots, round studded shield
      51: "kokiri_boy",            # the user
      53: "kokiri_boy",            # same rig and build as 51/76/195/196; the user did not name this one
-     55: "ganondorf_kneeling",    # the user: Ganondorf kneeling. Distinct from 155, which is his squat
+     55: "phantom_ganon",          # crouched rider on Ganondorf's own 25-limb rig, 8 of its 17
+                                   # textures byte-identical to 155's, carrying a trident-headed
+                                   # lance with a glowing gem in the shaft - a weapon Ganondorf
+                                   # never has; its one scene is the eighth boss room. The user
+                                   # read this as Ganondorf kneeling and the SKIN is Ganondorf's,
+                                   # so that reading was right; the character wearing it is the
+                                   # phantom
      56: "armos",                 # grey stone statue on a plinth, horned helmet, mask face, arms folded (see note)
+     57: "deku_baba",              # blue-purple bulb that splits into a hinged jaw over a red-pink
+                                   # mouth, two green leaf blades; its two actors cover the Deku
+                                   # Tree, Kokiri Forest, Forest Temple and Bottom of the Well -
+                                   # the Deku Baba / withered Deku Baba pair sharing one object
      60: "hylian_townsperson",    # slim adult, dark bowl cut, red flat cap, pale tunic, purple sash (unused NPC set)
      61: "hylian_townswoman",     # adult in lavender striped robes with a flaring skirt, made-up face (unused NPC set)
      62: "hylian_townsman",       # man in a blue-white doublet and cape, orange breeches, stockings (unused NPC set)
@@ -87,7 +99,12 @@ OOT: dict[int, str] = {
     109: "poe",                   # tattered shroud panels and a cone hood carrying a skull texture, flame sheets
     118: "flag",                  # bent wooden stake with a red binding and two long cloth streamers, 20-limb chain
     119: "bird",                  # 26-triangle flier, swept feathered wings, forked tail, yellow raptor beak
-    135: "gerudo",                # slim woman, purple crop top and trousers, gold bracers, white head wrap
+    135: "impa",                   # slim woman, white-silver hair under a pale head wrap, red
+                                   # eyes, purple-and-gold over a white breastplate, dagger at the
+                                   # hip - Sheikah, not Gerudo (the three gerudo objects,
+                                   # 278/359/361, are dark-skinned redheads). Placed in the Chamber
+                                   # of Sages, a Ganon's Castle trial room, and the castle
+                                   # courtyard
     136: "talon",                 # short barrel-chested man, red headband, big pale moustache, blue tunic, blink set
     137: "goron",                 # squat rock-skinned figure, wide flat head, stubby ball-handed arms
     138: "sheik",                 # slim figure, dark blue bodysuit, white cowl, red eye emblem, hair over one eye
@@ -99,13 +116,28 @@ OOT: dict[int, str] = {
     155: "ganondorf",             # the user: Ganondorf in a squat pose - and the checker read the same
     156: "volvagia",              # lava-skinned head mass and fiery limbs of the Fire Temple dragon (4 skeletons)
     157: "goron",                 # muscular biped, olive pebbled skin, rock spike crown, purple orb eyes, square grin
+    158: "flare_dancer",           # skel0 a black mask with four red brow curls inside a mass of
+                                   # pale flame petals on three thin blue legs; skel1 the
+                                   # lava-cracked core it drops. Its placed actor is only in the
+                                   # Fire Temple, and a second actor shares the object and is
+                                   # placed in no room at all - the fire it spawns. (An earlier
+                                   # low-confidence lead was struck; this is new evidence, a 900px
+                                   # render plus the scene walk, and it stands)
     163: "ruto",                  # small pale-blue Zora child, fin head-crest, fin forearms, webbed feet
     165: "volvagia",              # very long segmented lava-textured body plus fiery head pieces with a bone jaw
     166: "dead_hand",             # long pale arms ending in splayed hands, white-grey skin smeared with blood
     167: "rauru",                 # the user: the king of Hyrule or a sage; Rauru is the Sage of Light
     179: "nabooru",               # Gerudo woman, tall red ponytail, gold headpiece, jewelled bandeau, white harem trousers
-    181: "water_monster",         # the user: a water monster. Provisional - the species is not settled
+    181: "spike",                  # mossy domed shell with long grey spikes radiating from it and
+                                   # a ring of teeth below; placed in the Water Temple and the
+                                   # Gerudo Training Ground and nowhere else. The user called it a
+                                   # water monster, which it is - this is its name
     188: "saria",                 # the user: a Kokiri who becomes a sage, green shirt - the checker agreed
+    192: "ingo",                   # thin man, moustache, two spiky hair tufts, white shirt and
+                                   # shorts with green shoulders, mid-stride; his actor is placed
+                                   # only in the three Lon Lon Ranch scenes and every other ranch
+                                   # NPC is already assigned (136 talon, 208/224 malon, 395 cow, 19
+                                   # cucco). 236, the other candidate, is placed only in Kakariko
     193: "twinrova",              # hunched hags on brooms in striped hats and patterned cloaks; blue gem / red gem pair
     195: "kokiri_boy",            # the user
     196: "kokiri_boy",            # the user
@@ -168,7 +200,10 @@ OOT: dict[int, str] = {
     386: "kissing_couple",        # two figures in one model, cheek to cheek in an embrace (both skeletons)
     387: "wolfos",                # bipedal wolf beast, long snout, orange eyes, red-lined jaws; pale and dark variants
     388: "dead_hand",             # hunched khaki humanoid, huge blocky head, oversized blood-stained claws, red eye disc
-    393: "bed",                   # four-poster bed with canopy, white bedding and a shape lying under the blanket
+    393: "bed",                    # four-poster bed with canopy and white bedding; a purple-hooded
+                                   # figure with a staff sits on the EDGE of the mattress. The old
+                                   # note said 'a shape lying under the blanket' - that described
+                                   # the broken pose, now fixed
     395: "cow",                   # white-and-brown patched cow with horns and hooves; skel1 is its tail
     396: "hylian_townswoman",     # the user: a woman, maybe a townswoman
     401: "zelda_child_alt",       # child Zelda, purple and white dress, violet-and-gold headdress, white wimple

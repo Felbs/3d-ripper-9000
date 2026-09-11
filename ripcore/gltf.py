@@ -209,6 +209,18 @@ def export(scene: Scene, out_base: Path, *, thumbnail: bool = True) -> ExportSta
                 mat["alphaCutoff"] = float(getattr(m, "alpha_cutoff", 0.5))
         if m.unlit:
             mat["extensions"] = {"KHR_materials_unlit": {}}
+        # The N64's second combiner cycle samples a second tile.  glTF's metallic-roughness
+        # model has nowhere to put it, so it is written as an extra image and named in
+        # `extras` - nothing in the render path changes, and the art is not lost.
+        detail = getattr(m, "detail_texture", None)
+        if detail and detail in tex_slot:
+            dt = {"sampler": sampler(m), "source": tex_slot[detail]}
+            if dt not in textures:
+                textures.append(dt)
+            mat.setdefault("extras", {})["gcrip_detail_texture"] = textures.index(dt)
+            blend = getattr(m, "detail_blend", None)
+            if blend:
+                mat["extras"]["gcrip_detail_blend"] = blend
         gltf["materials"].append(mat)
     st.materials = len(scene.materials)
     if images:

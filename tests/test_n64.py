@@ -734,7 +734,9 @@ def test_attested_tables_short_circuit_the_search():
     att = attested.for_object(357)
     assert att and "eyes" in att
     faces = _attested_faces(att, (8,), ())
-    assert faces.eyes == [0x3928, 0x3D28, 0x4128]
+    # Corrected by 0x40 in the final audit: the old offsets started inside the 0x800 static
+    # at 0x3168 and every frame had the bandage ring cut by the bottom edge of the tile.
+    assert faces.eyes == [0x3968, 0x3D68, 0x4168]
     assert faces.eye_size == (32, 32)
     assert faces.eye_segments == (8,)
     assert attested.for_object(None) == {}
@@ -1031,3 +1033,220 @@ def test_a_model_name_beats_the_object_id():
 
     rep = {"code": "N64_CZLE"}
     assert _display_path(rep, {"object_id": 386, "name": "file_0862_skel0"}) ==         "N64_CZLE/wedding_crowd_obj_386_file_0862_skel0"
+
+
+# -- the colour combiner, and everything that hangs off reading it correctly ----------------
+
+
+def test_the_combiner_field_layout_is_pinned_by_adult_link():
+    """gbi packs sixteen multiplexer selects across two words with no regular stride.
+
+    Adult Link is the control.  He is drawn by two combiners that differ only in bits 5-8 of
+    w0 - 0xfc127e60 on his 389 skin-and-boot triangles and 0xfc127ea0 on his 206 tunic
+    triangles.  Read at the ``a1`` position those are PRIMITIVE and ENVIRONMENT, which is
+    exactly the difference between a constant the object list sets and one the actor sets, and
+    it is why the tunic is the piece that used to lose its colour.  Any other reading of this
+    field makes those two words differ in something that is not a colour source.
+    """
+    from n64rip.render_mode import MUX_ENVIRONMENT, MUX_PRIMITIVE, combine_fields
+
+    skin = combine_fields(0xFC127E60, 0xFFFD76FB)
+    tunic = combine_fields(0xFC127EA0, 0xFFFD76FB)
+    assert skin["a1"] == MUX_PRIMITIVE
+    assert tunic["a1"] == MUX_ENVIRONMENT
+    assert {k: v for k, v in skin.items() if k != "a1"} == {
+        k: v for k, v in tunic.items() if k != "a1"
+    }, "only a1 may differ"
+
+
+def test_the_alpha_mux_is_read_from_the_right_bits():
+    """This decides OPAQUE against MASK against BLEND on every material in the rip.
+
+    An earlier version read four of the eight alpha selects out of w0 at shifts 21, 3, 18 and
+    0, which overlap the command byte, the RGB c1 field and each other.  The four alpha fields
+    that live in w1 are the ones that were being missed, so the test puts a texel in each of
+    them in turn and asserts it is seen.
+    """
+    from n64rip.render_mode import COMBINE_FIELDS, combine_reads_texel_alpha
+
+    for name in ("Aa0", "Ab0", "Ac0", "Ad0", "Aa1", "Ab1", "Ac1", "Ad1"):
+        word, shift, _mask = COMBINE_FIELDS[name]
+        words = [0, 0]
+        words[word] = 1 << shift  # TEXEL0
+        assert combine_reads_texel_alpha(*words), f"{name} must be read"
+    # a combiner naming no texel anywhere in its alpha equation is opaque
+    assert not combine_reads_texel_alpha(0, 0)
+
+
+def test_the_constant_colour_comes_from_the_register_the_combiner_names():
+    from n64rip.render_mode import combine_constant
+
+    assert combine_constant(0xFC127E60, 0xFFFD76FB) == "prim"
+    assert combine_constant(0xFC127EA0, 0xFFFD76FB) == "env"
+    assert combine_constant(0, 0) is None
+
+
+def test_an_unwritten_colour_register_falls_back_to_the_one_that_was_written():
+    """A register the object's display lists never write is unknown, not white.
+
+    Link's combiner names ENVIRONMENT, but his object file contains no G_SETENVCOLOR at all -
+    the actor sets it at draw time.  Reading env literally returns white and discards the
+    Kokiri tunic constant (30, 105, 27) that the object list parked in prim; measured against
+    the real rip, that emptied all eight of his tinted materials.
+    """
+    import numpy as np
+
+    from n64rip import f3dex2
+    from n64rip.zobj import _const_color
+
+    def batch(**kw):
+        base = dict(positions=np.zeros((0, 3), np.float32), uvs=np.zeros((0, 2), np.float32),
+                    colors=np.zeros((0, 4), np.uint8), normals=None,
+                    indices=np.zeros((0,), np.uint32), tile=f3dex2.TileState(), lit=True)
+        base.update(kw)
+        return f3dex2.Batch(**base)
+
+    green = (30, 105, 27, 255)
+    # the combiner says env, but only prim was ever written: take prim
+    b = batch(const_source="env", prim=green, prim_set=True, env_set=False)
+    assert _const_color(b)[:3] == tuple(c / 255.0 for c in green[:3])
+    # both written: the named one wins
+    b = batch(const_source="env", prim=green, prim_set=True,
+              env=(10, 20, 30, 255), env_set=True)
+    assert _const_color(b)[:3] == (10 / 255.0, 20 / 255.0, 30 / 255.0)
+    # the combiner names no constant at all: untinted
+    untinted = _const_color(batch(const_source=None, prim=green, prim_set=True))
+    assert untinted == (1.0, 1.0, 1.0, 1.0)
+
+
+def test_texgen_replaces_the_dead_uvs_in_the_vertex():
+    """With texgen on the RSP overwrites s/t from the normal, so the file's bytes are dead.
+
+    The map is the LINEAR one, acos(-n)/pi, and it spans a fixed 32 texels whatever the tile
+    size - all 1,449 texgen triangles in this ROM set G_TEXTURE_GEN_LINEAR.  The sphere map
+    (n * 0.5 + 0.5) erases dark Link's blade, and 473 of his 475 triangles are texgen.
+    """
+    import math
+
+    import numpy as np
+
+    from n64rip import f3dex2
+
+    interp = f3dex2.Interpreter(f3dex2.Segments({}))
+    rot = np.eye(3)
+    # a normal straight down +X maps to acos(-1)/pi = 1.0 of the 32-texel span
+    assert interp._texgen_uv(rot, 127, 0, 0)[0] == 32.0
+    # and straight down -X to acos(1)/pi = 0
+    assert interp._texgen_uv(rot, -128, 0, 0)[0] == 0.0
+    # a normal at 45 degrees lands where acos says, not where a sphere map would
+    s = int(127 / math.sqrt(2))
+    got = interp._texgen_uv(rot, s, s, 0)[0]
+    assert abs(got - math.acos(-1 / math.sqrt(2)) / math.pi * 32.0) < 0.2
+    assert abs(got - ((1 / math.sqrt(2)) * 0.5 + 0.5) * 32.0) > 1.0, "not the sphere map"
+
+
+def test_a_limb_that_sets_no_texture_state_is_flagged_so_it_can_inherit_one():
+    """The game appends every limb to ONE command buffer; we run one interpreter per limb.
+
+    Volvagia's limb 1 is VTX/TRI2/.../MTX/ENDDL with no SETTIMG, SETTILE, LOADBLOCK or
+    G_TEXTURE at all, and is meant to draw on limb 0's lava tile.  Only that exact case may
+    inherit: carrying unconditionally makes twelve other models change and at least two worse.
+    """
+    import struct
+
+    from n64rip import f3dex2
+
+    def dl(*cmds):
+        body = b"".join(struct.pack(">II", a, b) for a, b in cmds)
+        return body + struct.pack(">II", 0xDF000000, 0)
+
+    bare = f3dex2.run(0x06000000, f3dex2.Segments({6: dl((0xDB000000, 0))}))
+    assert not bare.touched_texture
+
+    for op in (0xFD, 0xF5, 0xF3, 0xF4, 0xF2, 0xD7):
+        res = f3dex2.run(0x06000000, f3dex2.Segments({6: dl((op << 24, 0))}))
+        assert res.touched_texture, f"opcode {op:#x} sets texture state"
+
+
+def test_the_second_cycle_tile_is_kept_rather_than_dropped():
+    """1,051 triangles over 11 models sample TEXEL1 and the art is real, not a mip level.
+
+    The blend weight is recorded by name and never baked: it is ENV_ALPHA on 843 of those
+    triangles and PRIM_LOD_FRAC on 208, and where the object list sets neither, the actor
+    writes it at draw time.
+    """
+    from n64rip.render_mode import combine_blend_register, combine_uses_texel1
+
+    assert combine_uses_texel1(2 << 15, 0)   # c0 = TEXEL1
+    assert combine_uses_texel1(2 << 20, 0)   # a0 = TEXEL1
+    assert not combine_uses_texel1(0, 0)
+
+    assert combine_blend_register(12 << 15, 0) == "env_alpha"
+    assert combine_blend_register(14 << 15, 0) == "prim_lod_frac"
+    assert combine_blend_register(0, 0) is None
+
+
+def test_an_untextured_run_is_not_a_missing_texture():
+    """gsSPTexture(..., G_OFF) means the game draws this shaded, and it is complete.
+
+    Counting those put 74 of the rip's 87 "missing textures" on models that were missing
+    nothing - 48 of them had no unresolved segment at all, so the field could not be used as a
+    work list.  Only a tile that asks for texels we cannot reach is missing.
+    """
+    from n64rip import f3dex2
+
+    off = f3dex2.TileState(tex_on=False, addr=0x06000100)
+    assert not (off.tex_on and off.addr is not None)
+    never = f3dex2.TileState(addr=None)
+    assert not (never.tex_on and never.addr is not None)
+    real = f3dex2.TileState(addr=0x09000000)  # a segment a static rip cannot bind
+    assert real.tex_on and real.addr is not None
+
+
+def test_an_object_keyed_rest_pose_beats_the_rig_keyed_one():
+    """One rig, eighteen models, and their limb translations are not shared - only the tree.
+
+    Object 67's skirt is one tier mesh drawn eight times down two leg chains, so any pose that
+    keeps her legs apart splits the hem.  The family row is still right for the other
+    seventeen and must not move.
+    """
+    from n64rip import attested
+
+    family = attested.rest_pose(0x260, 38)
+    assert family is not None and family.bank == 41
+    override = attested.rest_pose(0x260, 38, object_id=67)
+    assert override is not None and override.bank == 52 and override.offset == 0x242C
+    for oid in (51, 53, 61, 68, 69, 75, 76, 78):
+        assert attested.rest_pose(0x260, 38, object_id=oid) == family
+
+
+def test_the_object_keyed_banks_are_loaded_too():
+    """An override naming a bank the rip never loads is a silent no-op."""
+    import re
+    from pathlib import Path
+
+    src = Path("n64rip/extract.py").read_text(encoding="utf-8")
+    loop = re.search(r"for bank_oid in \((.*?)\):", src, re.S)
+    assert loop, "extract_rom must still gather the rest-pose banks"
+    assert "REST_POSES.values()" in loop.group(1)
+    assert "REST_POSES_BY_OBJECT.values()" in loop.group(1)
+
+
+def test_object_316s_attested_row_is_the_whole_face():
+    """His head samples exactly one face segment, so the role test calls his mouths eyes.
+
+    Without EXCLUSIVE the short-circuit never fires and the carpenter ships the mouth twice -
+    once mislabelled as his eyes, once bound to segment 9, which he never samples.
+    """
+    from n64rip import attested
+    from n64rip.extract import _attested_faces
+
+    att = attested.for_object(316)
+    assert att and "mouths" in att and "eyes" not in att
+    assert 316 in attested.EXCLUSIVE
+
+    faces = _attested_faces(att, (8,), ())
+    assert faces.mouths == [0xC30, 0xE30]
+    assert faces.eyes == []
+    # the mouth binds to the segment the head actually samples, not the default 9
+    assert faces.mouth_segments == (8,)

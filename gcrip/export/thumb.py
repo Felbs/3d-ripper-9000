@@ -107,7 +107,10 @@ def render(
             tx = np.floor(puv[sel, 0] * tw).astype(np.int64) % tw
             ty = np.floor(puv[sel, 1] * th).astype(np.int64) % th
             texel = tex[ty, tx]
-            pcol[sel] = texel[:, :3] / 255.0
+            # The combiner multiplies the texture by the constant colour it names - the
+            # glTF says so in baseColorFactor, and `base` already holds it per triangle.
+            # Overwriting instead of multiplying is why Link's thumbnail was a white tunic.
+            pcol[sel] = texel[:, :3] / 255.0 * base[tri_ids][sel]
             # transparent texels don't occlude (approximates alpha test / blending)
             keep[np.flatnonzero(sel)[texel[:, 3] < 96]] = False
     x, y, z, tri_ids, pcol = x[keep], y[keep], z[keep], tri_ids[keep], pcol[keep]

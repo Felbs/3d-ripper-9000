@@ -35,6 +35,14 @@ class MaterialDef:
     mirror_u: bool = False
     mirror_v: bool = False
     unlit: bool = False
+    #: The second cycle's tile, when the colour combiner samples TEXEL1 - a key into
+    #: Scene.textures, like `texture`.  glTF's metallic-roughness model has nowhere to put a
+    #: second diffuse tile, so it rides along as an extra image and an `extras` entry rather
+    #: than being blended away or dropped.  See n64rip/zobj.py.
+    detail_texture: str | None = None
+    #: which register weights the blend between the two, by name, or None when the object's
+    #: own display list never says - the actor writes it at draw time.
+    detail_blend: str | None = None
 
 
 @dataclass

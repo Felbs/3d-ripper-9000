@@ -32,6 +32,41 @@ def _translate(x: float, y: float, z: float) -> np.ndarray:
     return m
 
 
+def _material_key(b: f3dex2.Batch) -> tuple:
+    """What makes two runs the same material.
+
+    The constant colour is part of it, and so is which register it came from: two runs sharing
+    a tile but tinted from different registers are two materials, which is exactly the split
+    between Link's skin and his tunic.
+    """
+    return (b.tile.key(), b.prim, b.env, b.const_source, b.other_low, b.reads_texel_alpha,
+            b.tile1.key() if b.tile1 is not None else None)
+
+
+def _const_color(b: f3dex2.Batch) -> tuple[float, float, float, float]:
+    """The constant colour the combiner multiplies this batch's texture by.
+
+    Which register it comes from is read from the combiner rather than assumed: 731 of this
+    ROM's 3,309 tinted textured triangles take it from ENVIRONMENT - every one of adult Link's
+    tunic triangles, every one of child Link's, and every one of the frog's.
+
+    But a register the object's own display lists never WRITE is not white, it is unknown: the
+    actor sets it at draw time, and Link is exactly that case.  Reading his env literally gives
+    white and throws away the Kokiri tunic constant (30, 105, 27) that the object list parked
+    in prim - measured, it emptied all eight of his tinted materials.  So an unwritten register
+    falls back to the one the object did write, and only when neither was written is the batch
+    genuinely untinted.
+    """
+    order = ("env", "prim") if b.const_source == "env" else ("prim", "env")
+    if b.const_source is None:
+        return (1.0, 1.0, 1.0, 1.0)
+    for which in order:
+        if (b.env_set if which == "env" else b.prim_set):
+            src = b.env if which == "env" else b.prim
+            return tuple(c / 255.0 for c in src)
+    return (1.0, 1.0, 1.0, 1.0)
+
+
 def _decode_tile(tile: f3dex2.TileState, segments: f3dex2.Segments) -> np.ndarray | None:
     """RGBA for a tile, or None when its texels are not reachable in a static rip."""
     if not tile.tex_on:
@@ -161,11 +196,26 @@ def build(
     # -- geometry, one interpreter run per limb that draws
     batches: list[f3dex2.Batch] = []
     unresolved: set[int] = set()
+    # The RDP does not reset between limbs - the game appends every limb's list to one
+    # command buffer - but we run one interpreter per limb, so texture state is lost at each
+    # boundary.  That is right almost everywhere and wrong where a limb sets NO texture state
+    # of its own: Volvagia's limb 1 is VTX/TRI2/.../MTX/ENDDL with no SETTIMG, SETTILE,
+    # LOADBLOCK or G_TEXTURE, and is meant to draw on limb 0's lava tile.
+    #
+    # The gate is that exact condition, and nothing wider.  Carrying unconditionally changes
+    # twelve other models and makes at least two worse - object 196 loses its tunic detail and
+    # flattens to plain white, object 51 goes from pink-cheeked tan to dull olive-grey - and
+    # both were already right.  So: run the limb, and only if it turns out to have set no
+    # texture state at all, run it again on the previous limb's registers.
+    carry: dict | None = None
     for i in order:
         limb = skel.limbs[i]
         if not limb.dlist:
             continue
-        res = f3dex2.run(limb.dlist, segments, world[i])
+        res, interp = f3dex2.run_stateful(limb.dlist, segments, world[i])
+        if not res.touched_texture and carry is not None:
+            res, interp = f3dex2.run_stateful(limb.dlist, segments, world[i], carry)
+        carry = f3dex2.texture_state(interp)
         unresolved |= res.unresolved
         for b in res.batches:
             b.limb = i
@@ -194,16 +244,22 @@ def build(
     by_tile: dict[tuple, int] = {}
     missing = 0
     for b in batches:
-        key = (b.tile.key(), b.prim, b.other_low, b.reads_texel_alpha)
+        key = _material_key(b)
         if key in by_tile:
             continue
         rgba = _decode_tile(b.tile, segments)
         idx = len(scene.materials)
         if rgba is None:
-            missing += 1
+            # A run drawn with gsSPTexture(..., G_OFF), or one that never set a texture up at
+            # all, is untextured BY THE GAME.  It carries its prim colour and shade and is
+            # complete.  Counting it missing is what put 74 of the rip's 87 "missing textures"
+            # on models that are not missing anything - 48 of them have no unresolved segment
+            # at all.  Only a tile that asks for texels we cannot reach is missing.
+            if b.tile.tex_on and b.tile.addr is not None:
+                missing += 1
             scene.materials.append(
                 MaterialDef(name=f"mat_{idx:02d}", texture=None, unlit=not b.lit,
-                            base_color=tuple(c / 255.0 for c in b.prim),
+                            base_color=_const_color(b),
                             alpha_mode=_alpha_mode(b))
             )
         else:
@@ -219,17 +275,30 @@ def build(
                     mirror_v=b.tile.mirror_t,
                     double_sided=not b.cull_back,
                     unlit=not b.lit,
-                    # the combiner multiplies the texture by the primitive colour
-                    base_color=tuple(c / 255.0 for c in b.prim),
+                    # the combiner multiplies the texture by the constant colour it
+                    # NAMES - PRIMITIVE or ENVIRONMENT; see _const_color
+                    base_color=_const_color(b),
                     alpha_mode=_alpha_mode(b),
                 )
             )
+            # The second cycle's tile is real art, not a mip level - Volvagia's are an orange
+            # flame sheet and a dark molten-rock sheet, both 32x32 RGBA16.  Keep it and the
+            # name of the register that weights it; do NOT bake a blend, because where the
+            # weight is absent from the object list the actor supplies it at draw time.
+            if b.tile1 is not None:
+                detail = _decode_tile(b.tile1, segments)
+                if detail is not None:
+                    d_name = (f"tex_{idx:02d}_detail_"
+                              f"{tex_mod.format_name(b.tile1.fmt, b.tile1.size)}")
+                    scene.textures[d_name] = detail
+                    scene.materials[idx].detail_texture = d_name
+                    scene.materials[idx].detail_blend = b.blend_register
         by_tile[key] = idx
 
     # -- primitives, merged per material so one bone-weighted mesh comes out
     for key, mat in by_tile.items():
         group = [b for b in batches
-                 if (b.tile.key(), b.prim, b.other_low, b.reads_texel_alpha) == key]
+                 if _material_key(b) == key]
         pos = np.concatenate([b.positions for b in group]) * SCALE
         uvs = np.concatenate([b.uvs for b in group])
         cols = np.concatenate([b.colors for b in group])

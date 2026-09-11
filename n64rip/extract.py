@@ -133,7 +133,7 @@ def _pose(scene, name, data, skel, segments, link_anim, object_id, attachments=N
     # An attested rest pose comes first and is taken on sight: it was chosen by rendering,
     # which is the only thing that has ever settled this, and the gates below cannot tell a
     # correct rest pose from a wrong one that merely happens to be compact.
-    rest = attested.rest_pose(skel.offset, skel.count)
+    rest = attested.rest_pose(skel.offset, skel.count, object_id)
     if rest is not None and rest_banks:
         bank = rest_banks.get(rest.bank)
         if bank:
@@ -743,7 +743,12 @@ def _attested_faces(att, eye_segs, mouth_segs):
         eye_fmt=(eye.fmt, eye.size) if eye else (tex_mod.FMT_CI, tex_mod.SIZE_8),
         mouth_fmt=(mouth.fmt, mouth.size) if mouth else (tex_mod.FMT_CI, tex_mod.SIZE_8),
         eye_segments=eye_segs or (face_mod.EYE_SEGMENT,),
-        mouth_segments=mouth_segs or (face_mod.MOUTH_SEGMENT,),
+        # A mouths-only attested row belongs on whatever segment the head actually
+        # samples.  Object 316 samples one face segment and it is 8; defaulting to 9 binds
+        # his mouth to a segment he never reads, and the face goes blank.
+        mouth_segments=(mouth_segs
+                        or (eye_segs if (mouth and not eye) else ())
+                        or (face_mod.MOUTH_SEGMENT,)),
         eye_tlut=eye.tlut if eye else None,
         mouth_tlut=mouth.tlut if mouth else None,
     )
@@ -864,7 +869,7 @@ def _overlay_faces(data, skel, segments, overlays, object_id):
     """
     eye_segs, mouth_segs, eye_tiles, mouth_tiles = _face_roles(data, skel, segments)
     att = attested.for_object(object_id)
-    if att and "eyes" in att and "mouths" in att:
+    if att and ("eyes" in att and "mouths" in att or object_id in attested.EXCLUSIVE):
         return _attested_faces(att, eye_segs, mouth_segs)  # nothing left for the routes to add
     if not overlays or object_id is None:
         return _attested_faces(att, eye_segs, mouth_segs) if att else None
@@ -1210,7 +1215,10 @@ def extract_rom(
 
     # the shared objects an attested rest pose reads its animation from
     rest_banks: dict[int, bytes] = {}
-    for bank_oid in {rp.bank for rp in attested.REST_POSES.values()}:
+    # Both tables, or an object-keyed override names a bank that is never loaded and the
+    # override is a silent no-op.
+    for bank_oid in ({rp.bank for rp in attested.REST_POSES.values()}
+                     | {rp.bank for rp in attested.REST_POSES_BY_OBJECT.values()}):
         bfi = table.file_for(bank_oid) if table is not None else None
         if bfi is not None:
             try:

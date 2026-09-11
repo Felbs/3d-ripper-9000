@@ -19,6 +19,7 @@ tile and palette); state that only affects shading is decoded far enough to name
 from __future__ import annotations
 
 import copy
+import math
 import struct
 from dataclasses import dataclass, field
 
@@ -58,6 +59,10 @@ G_RDPPIPESYNC = 0xE7
 
 #: the geometry-mode bit that decides whether a vertex's last 4 bytes are a normal or a colour
 G_LIGHTING = 0x00020000
+#: With texgen on, the RSP OVERWRITES the s/t bytes in each vertex from the vertex normal, so
+#: the bytes sitting in the file are dead and reading them gives an arbitrary slice of the tile.
+G_TEXTURE_GEN = 0x00040000
+G_TEXTURE_GEN_LINEAR = 0x00080000
 G_CULL_FRONT = 0x00000200
 G_CULL_BACK = 0x00000400
 
@@ -147,10 +152,23 @@ class Batch:
     #: texture is pale cloth: its green comes from here, not from the image, so dropping it
     #: leaves him in a white tunic.
     prim: tuple[int, int, int, int] = (255, 255, 255, 255)
+    #: G_SETENVCOLOR.  Adult Link's tunic is tinted from here, not from prim.
+    env: tuple[int, int, int, int] = (255, 255, 255, 255)
+    #: whether each register was actually WRITTEN by this object's own display lists.  An
+    #: unwritten register is not "white", it is unknown - the actor fills it at draw time.
+    prim_set: bool = False
+    env_set: bool = False
+    #: which of the two the combiner's RGB equation actually names - "prim", "env" or None.
+    #: See render_mode.combine_constant; assuming prim is what ships Link in a white tunic.
+    const_source: str | None = "prim"
     #: the render mode in force, and whether the combiner's alpha comes from a texel - the
     #: pair that decides opaque vs alpha-tested vs blended
     other_low: int = 0
     reads_texel_alpha: bool = False
+    #: the SECOND tile, when the combiner samples TEXEL1, and the register that weights the
+    #: blend between them.  See render_mode.combine_uses_texel1.
+    tile1: TileState | None = None
+    blend_register: str | None = None
     limb: int | None = None  # set by the skeleton walker, not by the interpreter
 
 
@@ -161,6 +179,11 @@ class Result:
     warnings: list[str] = field(default_factory=list)
     commands: int = 0
     calls: int = 0
+    #: did this list set any texture state of its own - SETTIMG, SETTILE, a load, or
+    #: G_TEXTURE?  A limb list that sets none of them draws on the tile the PREVIOUS limb
+    #: left in the RDP, because the game appends every limb to one command buffer while we
+    #: run one interpreter per limb.  See zobj.build.
+    touched_texture: bool = False
 
     @property
     def triangles(self) -> int:
@@ -272,6 +295,12 @@ class Interpreter:
         self.tmem: dict[int, tuple] = {}    # TMEM address -> (source, size, bytes loaded)
         self.geometry_mode = 0
         self.prim = (255, 255, 255, 255)
+        self.env = (255, 255, 255, 255)
+        self.prim_set = False
+        self.env_set = False
+        self.const_source: str | None = "prim"
+        self.uses_texel1 = False
+        self.blend_register: str | None = None
         self.other_low = 0          # G_SETOTHERMODE_L: the render mode
         self.reads_texel_alpha = False  # G_SETCOMBINE: does the alpha equation sample a texel
         self._cache: list[tuple | None] = [None] * VTX_CACHE
@@ -279,6 +308,12 @@ class Interpreter:
         self._tris: list[tuple[int, int, int]] = []
         self._batch_tile = TileState()
         self._batch_prim = (255, 255, 255, 255)
+        self._batch_env = (255, 255, 255, 255)
+        self._batch_prim_set = False
+        self._batch_env_set = False
+        self._batch_const_source: str | None = "prim"
+        self._batch_tile1: TileState | None = None
+        self._batch_blend: str | None = None
         self._batch_other = 0
         self._batch_texel_alpha = False
         self._steps = 0
@@ -305,6 +340,12 @@ class Interpreter:
                 tile=self._batch_tile,
                 lit=lit,
                 prim=self._batch_prim,
+                env=self._batch_env,
+                prim_set=self._batch_prim_set,
+                env_set=self._batch_env_set,
+                const_source=self._batch_const_source,
+                tile1=self._batch_tile1,
+                blend_register=self._batch_blend,
                 other_low=self._batch_other,
                 reads_texel_alpha=self._batch_texel_alpha,
                 cull_back=bool(self.geometry_mode & G_CULL_BACK),
@@ -329,6 +370,9 @@ class Interpreter:
         them together, so a run sharing one but not the other is not one material."""
         return (self.tile.key() != self._batch_tile.key()
                 or self.prim != self._batch_prim
+                or self.env != self._batch_env
+                or self.const_source != self._batch_const_source
+                or self.uses_texel1 != (self._batch_tile1 is not None)
                 or self.other_low != self._batch_other
                 or self.reads_texel_alpha != self._batch_texel_alpha)
 
@@ -380,6 +424,9 @@ class Interpreter:
             if op == G_QUAD:
                 self._op_tri2(w0, w1)
                 continue
+            if op in (G_SETTIMG, G_SETTILE, G_LOADBLOCK, G_LOADTILE, G_SETTILESIZE,
+                      G_TEXTURE):
+                self.result.touched_texture = True
             if op == G_SETTIMG:
                 self._op_settimg(w0, w1)
                 continue
@@ -400,9 +447,17 @@ class Interpreter:
                 self.other_low = (self.other_low & ~mask) | (w1 & mask)
                 continue
             if op == G_SETCOMBINE:
-                from n64rip.render_mode import combine_reads_texel_alpha
+                from n64rip.render_mode import (
+                    combine_blend_register,
+                    combine_constant,
+                    combine_reads_texel_alpha,
+                    combine_uses_texel1,
+                )
 
                 self.reads_texel_alpha = combine_reads_texel_alpha(w0, w1)
+                self.const_source = combine_constant(w0, w1)
+                self.uses_texel1 = combine_uses_texel1(w0, w1)
+                self.blend_register = combine_blend_register(w0, w1)
                 continue
             if op == G_TEXTURE:
                 # Only the enable bit is honoured.  The S/T scale is NOT applied: every
@@ -412,6 +467,11 @@ class Interpreter:
                 continue
             if op == G_SETPRIMCOLOR:
                 self.prim = ((w1 >> 24) & 0xFF, (w1 >> 16) & 0xFF, (w1 >> 8) & 0xFF, w1 & 0xFF)
+                self.prim_set = True
+                continue
+            if op == G_SETENVCOLOR:
+                self.env = ((w1 >> 24) & 0xFF, (w1 >> 16) & 0xFF, (w1 >> 8) & 0xFF, w1 & 0xFF)
+                self.env_set = True
                 continue
             if op == G_LOADTLUT:
                 self._op_loadtlut(w1)
@@ -459,7 +519,10 @@ class Interpreter:
                 continue
             x, y, z, _flag, u, v, a, b, c, d = VERTEX.unpack_from(data, off + i * VERTEX_SIZE)
             p = self.mtx @ np.array([x, y, z, 1.0])
-            uv = (u / 32.0, v / 32.0)
+            if lit and (self.geometry_mode & G_TEXTURE_GEN):
+                uv = self._texgen_uv(rot, a, b, c)
+            else:
+                uv = (u / 32.0, v / 32.0)
             if lit:
                 n = rot @ np.array([_s8(a), _s8(b), _s8(c)], dtype=np.float64)
                 norm = float(np.linalg.norm(n)) or 1.0
@@ -471,11 +534,41 @@ class Interpreter:
                     (p[0], p[1], p[2]), uv, (a, b, c, d), (0.0, 0.0, 0.0)
                 )
 
+    def _texgen_uv(self, rot, a: int, b: int, c: int) -> tuple[float, float]:
+        """Texture coordinates the RSP derives from the vertex normal.
+
+        Every texgen batch in this ROM - 1,449 triangles over 17 models - sets
+        ``G_TEXTURE_GEN_LINEAR`` as well as ``G_TEXTURE_GEN``, and the linear map is
+        ``acos(-n)/pi``, not the ``(n * 0.5 + 0.5)`` sphere map.  That distinction is not
+        cosmetic: the sphere map erases dark Link's blade entirely, and 473 of his 475
+        triangles are texgen, so he is the model that decides it.
+
+        The hardware coordinate spans a fixed 1024 in S10.5 - 32 texels - whatever the tile
+        size, so this must NOT be scaled by tile width or height; 320 of these triangles are
+        on 32x64 tiles and scaling shears them.
+
+        ``rot`` is ``self.mtx[:3, :3]``, so the normal is in the limb's world space, and the
+        lookat is the default axis pair because a static rip has no camera.  That is a
+        stand-in for the in-game reflection orientation, and it is a judgement, not a
+        derivation.
+        """
+        n = rot @ np.array([_s8(a), _s8(b), _s8(c)], dtype=np.float64)
+        norm = float(np.linalg.norm(n)) or 1.0
+        n = n / norm
+        return (math.acos(-min(1.0, max(-1.0, n[0]))) / math.pi * 32.0,
+                math.acos(-min(1.0, max(-1.0, n[1]))) / math.pi * 32.0)
+
     def _op_tri1(self, w0: int) -> None:
         if self._tile_changed():
             self._flush()
             self._batch_tile = copy.copy(self.tile)
             self._batch_prim = self.prim
+            self._batch_env = self.env
+            self._batch_prim_set = self.prim_set
+            self._batch_env_set = self.env_set
+            self._batch_const_source = self.const_source
+            self._batch_tile1 = copy.copy(self.tiles.get(1)) if self.uses_texel1 else None
+            self._batch_blend = self.blend_register if self.uses_texel1 else None
             self._batch_other = self.other_low
             self._batch_texel_alpha = self.reads_texel_alpha
         a = ((w0 >> 16) & 0xFF) // 2
@@ -488,6 +581,12 @@ class Interpreter:
             self._flush()
             self._batch_tile = copy.copy(self.tile)
             self._batch_prim = self.prim
+            self._batch_env = self.env
+            self._batch_prim_set = self.prim_set
+            self._batch_env_set = self.env_set
+            self._batch_const_source = self.const_source
+            self._batch_tile1 = copy.copy(self.tiles.get(1)) if self.uses_texel1 else None
+            self._batch_blend = self.blend_register if self.uses_texel1 else None
             self._batch_other = self.other_low
             self._batch_texel_alpha = self.reads_texel_alpha
         self._emit(((w0 >> 16) & 0xFF) // 2, ((w0 >> 8) & 0xFF) // 2, (w0 & 0xFF) // 2)
@@ -589,6 +688,41 @@ class Interpreter:
         self.mtx = m if load else self.mtx @ m
 
 
-def run(addr: int, segments: Segments, matrix: np.ndarray | None = None) -> Result:
-    """Interpret the display list at a segmented address."""
-    return Interpreter(segments, matrix).run(addr)
+#: the RDP texture registers, and the only state one limb list may leave for the next.
+#:
+#: Carrying anything else is not a refinement, it is a bug: carrying the vertex cache, the
+#: matrix stack or the geometry mode moves triangle counts on five models in this ROM
+#: (file_0543 369->383, file_0545 352->368, file_0566 403->419, file_0567 337->353,
+#: file_0569 346->368), which means it draws geometry the game does not.
+TEXTURE_STATE = ("tile", "tiles", "tmem", "timg", "timg_size")
+
+
+def texture_state(interp: "Interpreter") -> dict:
+    """A snapshot of just the texture registers, for carrying across a limb boundary."""
+    return {k: copy.copy(getattr(interp, k)) for k in TEXTURE_STATE}
+
+
+def run(addr: int, segments: Segments, matrix: np.ndarray | None = None,
+        carry: dict | None = None) -> Result:
+    """Interpret the display list at a segmented address.
+
+    *carry* seeds the RDP texture registers from a previous list - see :func:`run_stateful`.
+    """
+    return run_stateful(addr, segments, matrix, carry)[0]
+
+
+def run_stateful(addr: int, segments: Segments, matrix: np.ndarray | None = None,
+                 carry: dict | None = None) -> tuple[Result, "Interpreter"]:
+    """:func:`run`, but hands back the interpreter so its end state can be carried forward.
+
+    The game appends every limb's display list to ONE command buffer, so a limb that sets no
+    texture state of its own draws on whatever the previous limb left in the RDP.  We run one
+    interpreter per limb, which resets that state at every boundary - correct for almost every
+    model, and wrong for Volvagia, whose limb 1 has no SETTIMG, SETTILE, LOADBLOCK or
+    G_TEXTURE at all and is meant to draw on limb 0's lava tile.
+    """
+    interp = Interpreter(segments, matrix)
+    if carry:
+        for k, v in carry.items():
+            setattr(interp, k, copy.copy(v))
+    return interp.run(addr), interp
