@@ -106,3 +106,41 @@ def for_object(object_id: int | None, game: str = "oot") -> dict[str, Table]:
     if object_id is None or game != "oot":
         return {}
     return OOT.get(object_id, {})
+
+
+class RestPose(NamedTuple):
+    """The animation whose frame 0 is a skeleton's authored rest pose."""
+
+    bank: int        # object id of the file holding the animation
+    offset: int      # the AnimationHeader's offset inside that file
+    seen: str
+
+
+#: ``(skeleton header offset, limb count) -> RestPose``
+#:
+#: Some models carry no animation at all: the actor loads a second object for them, and which
+#: one is not recoverable from the model.  The actor that draws them *is* findable - its code
+#: builds the model's skeleton-header address, which is unique enough to attribute it - and
+#: from there the animation is one of a few dozen in a shared bank.
+#:
+#: Selecting among those few dozen automatically does not work.  Three different measures
+#: (compactness, the standing gate, and a consensus vote across every model on the skeleton)
+#: each chose an animation that scored best and was wrong on sight.  So the choice is made by
+#: rendering and recorded here, keyed on the skeleton rather than the object, because that is
+#: what the models actually share.
+REST_POSES: dict[tuple[int, int], RestPose] = {
+    (0x0F0, 15): RestPose(
+        197, 0x7D0,
+        "the Hylian townsfolk idle: all eleven models on this skeleton stand upright with "
+        "their arms at their sides - villagers, women in dresses, the running man",
+    ),
+    (0x10D70, 14): RestPose(
+        335, 0x499C,
+        "adult Zelda standing, hands clasped in front of her",
+    ),
+}
+
+
+def rest_pose(skeleton_offset: int, limb_count: int) -> RestPose | None:
+    """The attested rest pose for a skeleton, or None."""
+    return REST_POSES.get((skeleton_offset, limb_count))

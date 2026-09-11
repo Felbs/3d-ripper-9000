@@ -99,7 +99,8 @@ def _pose_quality(ext_before, ext_after):
     return stands, better
 
 
-def _pose(scene, name, data, skel, segments, link_anim, object_id, attachments=None):
+def _pose(scene, name, data, skel, segments, link_anim, object_id, attachments=None,
+          rest_banks=None):
     """A posed rebuild of *scene*, or None if no rest pose improved it.
 
     A skeleton stores only limb offsets, so an un-posed model has every chain extended along
@@ -118,6 +119,25 @@ def _pose(scene, name, data, skel, segments, link_anim, object_id, attachments=N
         return None
     before = np.concatenate([p.positions for p in scene.primitives])
     ext_before = before.max(0) - before.min(0)
+
+    # An attested rest pose comes first and is taken on sight: it was chosen by rendering,
+    # which is the only thing that has ever settled this, and the gates below cannot tell a
+    # correct rest pose from a wrong one that merely happens to be compact.
+    rest = attested.rest_pose(skel.offset, skel.count)
+    if rest is not None and rest_banks:
+        bank = rest_banks.get(rest.bank)
+        if bank:
+            a = anim_mod.read_animation(bank, rest.offset)
+            if a is not None:
+                try:
+                    root, rots = anim_mod.frame_values(bank, a, skel.count, 0)
+                    world = anim_mod.pose_matrices(skel, rots, root, "zyx")
+                    cand = zobj.build(name, data, skel, segments, world=world,
+                                      rotations=rots, attachments=attachments)
+                except Exception:  # noqa: BLE001
+                    cand = None
+                if cand is not None and cand.primitives:
+                    return cand, world, rots
 
     sources = []
     if object_id in LINK_OBJECTS and link_anim:
@@ -1177,6 +1197,17 @@ def extract_rom(
                 except Exception:  # noqa: BLE001
                     pass
         overlays[None] = unclaimed_pool
+
+    # the shared objects an attested rest pose reads its animation from
+    rest_banks: dict[int, bytes] = {}
+    for bank_oid in {rp.bank for rp in attested.REST_POSES.values()}:
+        bfi = table.file_for(bank_oid) if table is not None else None
+        if bfi is not None:
+            try:
+                rest_banks[bank_oid] = rom.read(rom.files[bfi])
+            except Exception:  # noqa: BLE001
+                pass
+
     link_anim = None
     for f in rom.live:
         if not f.compressed and 2_000_000 < f.size < 3_000_000:
@@ -1230,7 +1261,8 @@ def extract_rom(
             # axis - Link comes out 45.9 wide and 23.3 tall.  Frame 0 of a rest animation is
             # the pose the model was authored in.  Applying it is gated on the result actually
             # standing up, because not every animation in a file is a rest pose.
-            posed = _pose(scene, name, data, sk, segments, link_anim, res.object_id, attach)
+            posed = _pose(scene, name, data, sk, segments, link_anim, res.object_id, attach,
+                          rest_banks)
             world = rotations = None
             if posed is not None:
                 scene, world, rotations = posed

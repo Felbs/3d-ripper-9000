@@ -958,3 +958,26 @@ def test_every_animation_is_tried():
     from n64rip.extract import MAX_POSE_ANIMS
 
     assert MAX_POSE_ANIMS >= 32
+
+def test_rest_poses_are_keyed_on_the_skeleton_not_the_object():
+    """Eleven models share one skeleton and therefore one rest pose - key on what they share."""
+    from n64rip.attested import REST_POSES, rest_pose
+
+    assert rest_pose(0x0F0, 15) is not None
+    assert rest_pose(0x0F0, 14) is None, "a different limb count is a different rig"
+    assert rest_pose(0x999, 15) is None
+    for (off, limbs), rp in REST_POSES.items():
+        assert off > 0 and limbs > 1
+        assert rp.bank > 0 and rp.offset > 0
+        assert len(rp.seen) > 20, "every row must say what was rendered"
+
+
+def test_an_attested_rest_pose_is_taken_before_the_gates():
+    """It was chosen by rendering; the gates cannot tell a right rest pose from a compact one."""
+    import inspect
+
+    from n64rip import extract
+
+    src = inspect.getsource(extract._pose)
+    body = src[src.index('"""', src.index('"""') + 3):]   # past the docstring
+    assert body.index("attested.rest_pose") < body.index("for root, rots in sources")
