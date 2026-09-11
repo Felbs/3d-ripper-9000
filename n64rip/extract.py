@@ -65,12 +65,52 @@ class ModelResult:
 LINK_OBJECTS = (20, 21)
 
 
+#: How many of a file's animations to try when looking for a rest pose.  It used to be four,
+#: which is fewer than most characters ship: the one that poses object 359 correctly is its
+#: eighth, and object 211 carries thirty.
+MAX_POSE_ANIMS = 64
+
+
+def _pose_quality(ext_before, ext_after):
+    """Is this posed extent a better resting shape than the un-posed one?
+
+    Returns ``(stands, better)``.
+
+    ``stands`` is the original gate - a standing character is tallest in Y - which has posed
+    a hundred models correctly and is left in charge wherever it fires.
+
+    ``better`` is the weaker fallback, for the creatures that gate cannot speak for: a crab is
+    not tallest in Y and never will be.  An un-posed rig is *degenerate* - its chains run
+    along one axis, so its smallest dimension is tiny next to its largest - while a rest pose
+    occupies three dimensions.  So: the thinnest axis must grow relative to the longest, and
+    the longest must not grow at all.  That second half matters; without it the measure
+    rewards a pose that simply inflates the model.
+    """
+    import numpy as np
+
+    a = np.asarray(ext_before, dtype=float)
+    b = np.asarray(ext_after, dtype=float)
+    stands = anim_mod.stands_up(a, b)
+    if float(a.max()) < 1e-6 or float(b.max()) < 1e-6:
+        return stands, False
+    aspect_before = float(a.min()) / float(a.max())
+    aspect_after = float(b.min()) / float(b.max())
+    better = aspect_after > aspect_before + 0.02 and float(b.max()) <= float(a.max()) * 1.001
+    return stands, better
+
+
 def _pose(scene, name, data, skel, segments, link_anim, object_id, attachments=None):
     """A posed rebuild of *scene*, or None if no rest pose improved it.
 
-    The gate is deliberately blunt: a standing character is tallest in Y, and an un-posed rig
-    is not.  Anything that fails it keeps the un-posed build, because a wrong pose is worse
-    than none.
+    A skeleton stores only limb offsets, so an un-posed model has every chain extended along
+    one axis - arms several times longer than the torso.  Frame 0 of one of the actor's own
+    animations is the pose it was authored in.
+
+    Which one is not recorded anywhere we can read: the actor picks it at runtime.  So every
+    animation in the file is tried and the result judged.  A pose that makes the character
+    stand is taken at once.  Failing that, the most compact frame 0 is taken **if** it makes
+    the model less degenerate - see :func:`_pose_quality` - which is how the crab-shaped and
+    four-legged characters get a rest pose at all.
     """
     import numpy as np
 
@@ -82,9 +122,10 @@ def _pose(scene, name, data, skel, segments, link_anim, object_id, attachments=N
     sources = []
     if object_id in LINK_OBJECTS and link_anim:
         sources.append(anim_mod.link_frame(link_anim, skel.count, 0))
-    for a in anim_mod.find_animations(data)[:4]:
+    for a in anim_mod.find_animations(data)[:MAX_POSE_ANIMS]:
         sources.append(anim_mod.frame_values(data, a, skel.count, 0))
 
+    fallback = None
     for root, rots in sources:
         try:
             world = anim_mod.pose_matrices(skel, rots, root, "zyx")
@@ -95,8 +136,17 @@ def _pose(scene, name, data, skel, segments, link_anim, object_id, attachments=N
         if not cand.primitives:
             continue
         after = np.concatenate([p.positions for p in cand.primitives])
-        if anim_mod.stands_up(ext_before, after.max(0) - after.min(0)):
+        ext_after = after.max(0) - after.min(0)
+        stands, better = _pose_quality(ext_before, ext_after)
+        if stands:
             return cand, world, rots
+        if better:
+            # among the candidates that qualify, the one that occupies the least space
+            score = float(np.prod(np.maximum(ext_after, 1.0)))
+            if fallback is None or score < fallback[0]:
+                fallback = (score, cand, world, rots)
+    if fallback is not None:
+        return fallback[1], fallback[2], fallback[3]
     return None
 
 

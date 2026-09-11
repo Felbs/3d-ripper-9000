@@ -926,3 +926,35 @@ def test_attachments_ignores_a_list_with_no_limb_guard():
         _lui(A0, 0x0600), _addiu(A0, A0, 0x1300), _sw(A0, 4, V0),
     )
     assert attachments(code, 0x80A00000, 0x4000) == []
+
+def test_pose_quality_keeps_the_standing_gate_in_charge():
+    """Where the original gate fires it decides, unchanged - it has posed a hundred models."""
+    from n64rip.extract import _pose_quality
+
+    # Link: 45.9 x 23.3 x 21.8 un-posed becomes 33.4 x 62.2 x 21.2
+    stands, _better = _pose_quality([45.9, 23.3, 21.8], [33.4, 62.2, 21.2])
+    assert stands
+
+
+def test_pose_quality_fallback_wants_three_dimensions_without_inflation():
+    """For creatures the standing gate cannot speak for: less degenerate, and no bigger."""
+    from n64rip.extract import _pose_quality
+
+    # a Tektite: flat and splayed un-posed, three-dimensional posed, and no longer
+    stands, better = _pose_quality([67, 17, 30], [66, 30, 59])
+    assert not stands and better
+
+    # a pose that merely inflates the model is not a rest pose
+    _s, better = _pose_quality([67, 17, 30], [140, 60, 90])
+    assert not better
+
+    # and neither is one that changes nothing
+    _s, better = _pose_quality([148, 60, 86], [148, 60, 86])
+    assert not better
+
+
+def test_every_animation_is_tried():
+    """The rest pose is often not among the first few - object 359's is its eighth."""
+    from n64rip.extract import MAX_POSE_ANIMS
+
+    assert MAX_POSE_ANIMS >= 32
