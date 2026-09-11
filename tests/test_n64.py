@@ -310,3 +310,51 @@ def test_vertex_colours_export_normalised():
         # bytes go out as normalized UNSIGNED_BYTE, never as raw floats of 255
         assert acc["componentType"] == 5121
         assert acc.get("normalized") is True
+
+
+def test_object_table_found_by_validating_against_the_dma_table():
+    """The object table is an array of {vromStart, vromEnd} pairs in `code`, one per object
+    id.  It is findable without any outside data because every pair must name a real DMA
+    entry - a long run that all match cannot be coincidence.  Object 1 is gameplay_keep,
+    which is the segment-4 bank actors borrow textures from."""
+    from n64rip import objects
+
+    table_at = 0x2000
+    n_objects = 30
+    # above 0x10000: find_object_table ignores low addresses so a field of small
+    # integers cannot masquerade as a table
+    files = [(0x20000 + i * 0x1000, 0x20800 + i * 0x1000) for i in range(n_objects)]
+    entries = [
+        (0, 0x1060, 0, 0),
+        (0x1060, table_at, 0x1060, 0),
+        (table_at, table_at + 16 * (3 + n_objects + 1), table_at, 0),
+    ]
+    entries += [(vs, ve, vs, 0) for vs, ve in files]
+    # the file holding the table ("code") must itself be a ROM file we can read
+    code_vs = 0x100000
+    code = bytearray(0x40000)  # find_object_table only scans code-sized files
+    # real `code` holds instructions either side of the table; without something non-zero
+    # there the walk would absorb the zero padding as empty object slots
+    code[:0x100] = bytes(range(1, 256)) + b""
+    struct.pack_into(">2I", code, 0x100, 0, 0)  # object 0 is the empty slot
+    for i, (vs, ve) in enumerate(files):
+        struct.pack_into(">2I", code, 0x108 + i * 8, vs, ve)
+    entries.append((code_vs, code_vs + len(code), code_vs, 0))
+
+    size = 0x400000
+    buf = bytearray(size)
+    buf[0:4] = b"\x80\x37\x12\x40"
+    for i, e in enumerate(entries):
+        buf[table_at + i * 16 : table_at + (i + 1) * 16] = _entry(*e)
+    buf[code_vs : code_vs + len(code)] = code
+
+    rom = Rom(bytes(buf))
+    table = objects.find_object_table(rom)
+    assert table is not None
+    assert len(table.entries) == n_objects + 1
+    assert table.entries[0] is None  # object 0 is an empty slot and must keep its place:
+    # dropping it shifts every id by one, which silently renames gameplay_keep
+    # object 1 is the first real object, and keep_segments binds it to segment 4
+    assert table.file_for(objects.GAMEPLAY_KEEP) is not None
+    seg = objects.keep_segments(rom, table)
+    assert set(seg) == {4}

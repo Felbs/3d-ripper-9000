@@ -29,8 +29,14 @@ def _model_rows(report: dict) -> list[dict]:
             continue
         out.append(
             {
-                # the UI names a model from its source path, so give it the file it came from
-                "path": f"{report['code']}/{m['name']}",
+                # the UI names a model from its source path.  An object id is the one real
+                # identity the ROM gives us (its slot in the game's own object table), so it
+                # goes in the name - obj_017 is findable, file_0501 is not.
+                "path": (
+                    f"{report['code']}/obj_{m['object_id']:03d}_{m['name']}"
+                    if m.get("object_id") is not None
+                    else f"{report['code']}/{m['name']}"
+                ),
                 "out_rel": m["out_rel"],
                 "thumb": m.get("thumb") or "",
                 "triangles": int(m.get("triangles") or 0),

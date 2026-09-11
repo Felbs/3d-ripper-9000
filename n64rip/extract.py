@@ -18,7 +18,7 @@ import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-from n64rip import f3dex2, skeleton as skel_mod, zobj
+from n64rip import f3dex2, objects as obj_mod, skeleton as skel_mod, zobj
 from n64rip.rom import Rom, RomFile
 from ripcore import gltf
 
@@ -40,17 +40,12 @@ class ModelResult:
     drawn_limbs: int = 0
     skinned: bool = True
     unresolved_segments: list[int] = field(default_factory=list)
+    object_id: int | None = None  # its slot in the game's object table, when it has one
     error: str = ""
     warnings: list[str] = field(default_factory=list)
 
 
-def _keep_file(rom: Rom) -> bytes | None:
-    """``gameplay_keep`` - segment 4 - identified by being the biggest early raw-ish file.
-
-    Not name-driven, because the ROM carries no filenames.  Left unbound when unsure: a wrong
-    segment 4 would decode noise as textures, which is worse than a missing texture.
-    """
-    return None  # binding this needs the name join; deliberately not guessed at
+# segment binding now comes from the game's own object table; see n64rip.objects
 
 
 def extract_rom(
@@ -64,7 +59,15 @@ def extract_rom(
     out_dir.mkdir(parents=True, exist_ok=True)
     t0 = time.time()
     models: list[ModelResult] = []
-    keep = _keep_file(rom)
+    # The game's object table says which files are objects and which is gameplay_keep, and it
+    # validates against the DMA table, so nothing outside the ROM is needed to find it.
+    table = obj_mod.find_object_table(rom)
+    shared = obj_mod.keep_segments(rom, table)
+    object_ids: dict[int, int] = {}
+    if table is not None:
+        for oid, fidx in enumerate(table.entries):
+            if fidx is not None:
+                object_ids.setdefault(fidx, oid)
     files = rom.live[:limit] if limit else rom.live
     for n, f in enumerate(files):
         if progress and n % 50 == 0:
@@ -83,12 +86,11 @@ def extract_rom(
             continue
         if not skels:
             continue
-        segments = f3dex2.Segments({6: data})
-        if keep:
-            segments.set(4, keep)
+        segments = f3dex2.Segments({6: data, **shared})
         for si, sk in enumerate(skels):
             name = f.label if len(skels) == 1 else f"{f.label}_skel{si}"
             res = ModelResult(name, f.index, f"{f.vrom_start:#x}", limbs=sk.count)
+            res.object_id = object_ids.get(f.index)
             try:
                 scene = zobj.build(name, data, sk, segments)
             except Exception as exc:  # noqa: BLE001
@@ -123,6 +125,13 @@ def extract_rom(
         "crc": f"{rom.crc1:08x}/{rom.crc2:08x}",
         "seconds": round(time.time() - t0),
         "files": len(rom.files),
+        "object_table": None if table is None else {
+            "offset": table.offset,
+            "in_file": table.file_index,
+            "slots": len(table.entries),
+            "object_files": len(table.object_files),
+            "gameplay_keep": table.file_for(obj_mod.GAMEPLAY_KEEP),
+        },
         "models": [asdict(m) for m in models],
         "totals": {
             "exported": len(ok),
