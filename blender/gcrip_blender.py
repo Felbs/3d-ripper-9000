@@ -481,7 +481,15 @@ def add_expression_controls(objects):
                 v.targets[0].id = host
                 v.targets[0].data_path = f'["{prop}"]'
                 drv.expression = f"ex != {i}"
-                drv.is_valid = True  # clear the "invalid" flag from the pre-variable evaluation
+                # `driver_add` evaluates once before the variable exists, which flags the
+                # driver invalid - and an invalid driver is never evaluated again, so the
+                # expression control silently does nothing.  Clearing the flag by hand is not
+                # enough: the parsed expression still has to be rebuilt, and only assigning
+                # `expression` does that.  It matters because "ex != i" is a *simple*
+                # expression, which Blender can evaluate with "Auto Run Python Scripts" off -
+                # its default - but only once it has actually been parsed.
+                drv.is_valid = True
+                drv.expression = drv.expression
             with contextlib.suppress(RuntimeError):
                 o.hide_set(False)  # the eye icon must not fight the driven monitor icon
         n += 1

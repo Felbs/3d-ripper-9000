@@ -499,3 +499,20 @@ def test_structure_ratio_sees_through_a_low_contrast_palette():
     art[:16] = 200
     art[16:] = 40
     assert _structure_ratio([art]) < MAX_STRUCTURE_RATIO
+
+def test_expression_drivers_are_reparsed_after_their_variable_exists():
+    """An invalid driver is never evaluated again, so the expression control does nothing.
+
+    `driver_add` evaluates once before the variable is created and flags the driver invalid.
+    Clearing the flag by hand does not rebuild the parsed expression - only assigning
+    `expression` does - and without that rebuild every faced character imported with a dead
+    control: the default face stayed visible at every setting.
+    """
+    import pathlib
+
+    src = pathlib.Path(__file__).resolve().parents[1] / "blender" / "gcrip_blender.py"
+    src = src.read_text(encoding="utf-8")
+    body = src[src.index("def add_expression_controls"):src.index("def set_expression")]
+    assert "drv.expression = drv.expression" in body, "the parse must be forced after is_valid"
+    # and it has to come after the flag is cleared, or the rebuild is thrown away again
+    assert body.index("drv.is_valid = True") < body.index("drv.expression = drv.expression")

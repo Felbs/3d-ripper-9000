@@ -292,8 +292,19 @@ def export(scene: Scene, out_base: Path, *, thumbnail: bool = True) -> ExportSta
     # them by showing one object and hiding the others - which needs them to be separate
     # objects once imported, not extra primitives inside one.
     variants = [(i, p) for i, p in enumerate(scene.primitives) if p.variant_of]
-    base_prims = [pr for i, pr in enumerate(prims) if not scene.primitives[i].variant_of]
-    gltf["meshes"].append({"name": scene.name, "primitives": base_prims or prims})
+    # The primitive the alternates replace has to leave the main mesh as well.  Left inside
+    # it, it cannot be hidden on its own, so selecting an expression draws the chosen
+    # alternate on top of the default one instead of in place of it.
+    replaced = {p.variant_of for _i, p in variants}
+    bases, kept = [], []
+    for i, pr in enumerate(prims):
+        src = scene.primitives[i]
+        if src.variant_of:
+            continue
+        mat_name = (scene.materials[src.material].name
+                    if 0 <= src.material < len(scene.materials) else "")
+        (bases if mat_name in replaced else kept).append((mat_name, pr))
+    gltf["meshes"].append({"name": scene.name, "primitives": [pr for _n, pr in kept] or prims})
     mesh_node = {"name": scene.name, "mesh": 0}
     if scene.joints:
         ibm = np.array([_safe_inv(m).T for m in rest], np.float32)  # column-major
@@ -308,6 +319,14 @@ def export(scene: Scene, out_base: Path, *, thumbnail: bool = True) -> ExportSta
         mesh_node["skin"] = 0
     gltf["nodes"].append(mesh_node)
     scene_nodes = [*roots, len(gltf["nodes"]) - 1]
+    # the default state, named after its material so the alternates group onto it
+    for mat_name, pr in bases:
+        gltf["meshes"].append({"name": mat_name, "primitives": [pr]})
+        node = {"name": mat_name, "mesh": len(gltf["meshes"]) - 1}
+        if "skin" in mesh_node:
+            node["skin"] = mesh_node["skin"]
+        gltf["nodes"].append(node)
+        scene_nodes.append(len(gltf["nodes"]) - 1)
     for i, src in variants:
         gltf["meshes"].append({"name": f"{scene.name}_{src.variant_texture}",
                                "primitives": [prims[i]]})
