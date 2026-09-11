@@ -113,13 +113,19 @@ def _face_batches(data, skel, segments):
 
     Returns ``[(segment, tile spec, centroid, x span, triangles, limb triangles)]``.
     """
+    # The mirror test compares centroids across the head's centre line, so the geometry has
+    # to be in the head's own space.  zobj binds the limb matrices on segment 0x0D in place,
+    # and once a model has been posed those matrices carry the pose: the two eyes are then
+    # mirrored about wherever the head is looking, not about z=0, the test fails, the right
+    # eye is read as the mouth and the real mouth is dropped.  Run without the matrices.
+    local = f3dex2.Segments({k: v for k, v in segments.bases.items() if k != 0x0D})
     out = []
     for i in skel.order():
         limb = skel.limbs[i]
         if not limb.dlist:
             continue
         try:
-            res = f3dex2.run(limb.dlist, segments)
+            res = f3dex2.run(limb.dlist, local)
         except Exception:  # noqa: BLE001
             continue
         total = sum(len(b.indices) // 3 for b in res.batches if b.indices is not None)
@@ -681,8 +687,14 @@ def _attribute_from_pool(data, pool, eye_segs, eye_tiles, skel, segments):
     best = (0.0, {})
     for ov, vram in pool:
         try:
-            got = actor_mod.gsp_segments(ov, vram, len(data))
+            # unbounded on purpose: an actor that really draws this object never points past
+            # its end, so a candidate with ANY binding outside the file is somebody else's -
+            # even when the bindings that do fit decode as pictures.  That is how a Zelda
+            # actor's table was pasted onto object 345 and read as its eyes.
+            got = actor_mod.gsp_segments(ov, vram, 1 << 24)
         except Exception:  # noqa: BLE001
+            continue
+        if not got or any(o >= len(data) for offs_ in got.values() for o in offs_):
             continue
         offs: list[int] = []
         for s in eye_segs:
@@ -706,6 +718,51 @@ def _attribute_from_pool(data, pool, eye_segs, eye_tiles, skel, segments):
     return best[1]
 
 
+def _coded_single(data, coded, segs, tiles, tlut, exclude):
+    """A one-frame table, accepted only because the actor's code names it outright.
+
+    Child Zelda has a single mouth texture: her Update stores `sMouthTextures[0]` and her Draw
+    binds it, and the array has one entry.  Every other route needs two frames to compare, so
+    a genuine one-frame table can never pass - but here the code has stated the binding, so
+    the picture gates alone decide.
+    """
+    offs = [o for s in segs for o in coded.get(s, ()) if o not in exclude]
+    if len(offs) != 1:
+        return None
+    for fmt, size, w, h in sorted(tiles):
+        nbytes = w * h * BITS.get(size, 8) // 8
+        if offs[0] + nbytes > len(data):
+            continue
+        imgs = _decode_table(data, offs, fmt, size, (w, h), tlut)
+        if not imgs:
+            continue
+        if _roughness(imgs) > MAX_ROUGHNESS or _structure_ratio(imgs) > MAX_STRUCTURE_RATIO:
+            continue
+        if _one_dimensional(imgs[0]):
+            continue  # a colour ramp is smooth enough to pass every gate, and it is not a mouth
+        return (offs, (w, h), (fmt, size), imgs)
+    return None
+
+
+def _one_dimensional(img) -> bool:
+    """Does this vary along only one axis?
+
+    A drawn face varies in both directions.  A palette or a shading ramp varies in one, and
+    is smooth enough to pass the roughness and structure gates - which is how two characters
+    picked up a band of yellow-to-red as a single-frame mouth.  With one frame there is no
+    neighbour to compare against, so the picture itself has to carry the evidence.
+    """
+    import numpy as np
+
+    a = img[..., :3].astype(np.float64)
+    if a.shape[0] < 2 or a.shape[1] < 2:
+        return True
+    dx = float(np.abs(np.diff(a, axis=1)).mean())
+    dy = float(np.abs(np.diff(a, axis=0)).mean())
+    hi = max(dx, dy)
+    return hi < 1e-6 or min(dx, dy) < 0.05 * hi
+
+
 def _overlay_faces(data, skel, segments, overlays, object_id):
     """This actor's own eye and mouth tables, read from its overlay's pointer runs.
 
@@ -726,10 +783,10 @@ def _overlay_faces(data, skel, segments, overlays, object_id):
     """
     eye_segs, mouth_segs, eye_tiles, mouth_tiles = _face_roles(data, skel, segments)
     att = attested.for_object(object_id)
-    if att:
-        return _attested_faces(att, eye_segs, mouth_segs)
+    if att and "eyes" in att and "mouths" in att:
+        return _attested_faces(att, eye_segs, mouth_segs)  # nothing left for the routes to add
     if not overlays or object_id is None:
-        return None
+        return _attested_faces(att, eye_segs, mouth_segs) if att else None
     if not eye_tiles and not mouth_tiles:
         return None
     own = overlays.get(object_id, ())
@@ -794,6 +851,8 @@ def _overlay_faces(data, skel, segments, overlays, object_id):
                             exclude=set(eyes))
     if mouth is None and mouth_tiles:
         mouth = _best_table(data, runs, mouth_tiles, mouth_tlut, exclude=set(eyes))
+    if mouth is None and mouth_tiles and coded:
+        mouth = _coded_single(data, coded, mouth_segs, mouth_tiles, mouth_tlut, set(eyes))
     if mouth is None and mouth_tiles and mouth_segs and seeded:
         mouth = _best_table(data, _seeded_runs(data, skel, segments, mouth_segs[0], mouth_tiles),
                             mouth_tiles, mouth_tlut, exclude=set(eyes), spans=True)
@@ -811,6 +870,14 @@ def _overlay_faces(data, skel, segments, overlays, object_id):
     else:
         mouths, mouth_dims, mouth_fmt = [], (32, 32), (tex_mod.FMT_CI, tex_mod.SIZE_8)
 
+    # An attested table overrides its own role only, so a character whose eyes the code
+    # finds can still carry mouths that were established by hand, and vice versa.
+    if att.get("eyes"):
+        a = att["eyes"]
+        eyes, eye_dims, eye_fmt, eye_pal = list(a.offsets), (a.width, a.height), (a.fmt, a.size), a.tlut
+    if att.get("mouths"):
+        a = att["mouths"]
+        mouths, mouth_dims, mouth_fmt, mouth_pal = list(a.offsets), (a.width, a.height), (a.fmt, a.size), a.tlut
     if not eyes and not mouths:
         return None
     return face_mod.FaceSet(

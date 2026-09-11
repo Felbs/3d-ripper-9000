@@ -21,20 +21,27 @@ from __future__ import annotations
 #: object id -> English name, lower_snake_case so it is safe in a path.
 #: Every entry below was confirmed against the model's own render.
 OOT: dict[int, str] = {
-    20: "link_adult",       # confirmed: his face table is the one in `code`, 8 eyes / 4 mouths
+    20: "link_adult",        # confirmed: his face table is the one in `code`, 8 eyes / 4 mouths
     21: "link_child",
-    29: "zelda_child",      # white and pink royal dress; the blink table is in overlay 446
-    36: "skulltula",        # the spider
-    202: "ruto",            # Zora princess: pale blue skin, fins, the purple eye set
-    225: "ganondorf",       # dark armour, red hair
-    251: "mido",            # Kokiri boy, green cap, hands on hips
-    255: "king_zora",       # Zora blue with the red cape; eyes in overlay 353
+    29: "zelda_child",       # white and pink royal dress; the blink table is in overlay 446
+    36: "skulltula",         # the spider
+    135: "gerudo",           # purple guard's outfit, red iris under a white brow
+    137: "goron",            # brown, thick-set, the round eyeball texture
+    138: "sheik",            # blue wrap, blond, red eyes
+    152: "gibdo",            # the bandaged mummy
+    163: "ruto",             # Zora with six eye states including a blush - the one who proposes
+    202: "zora",             # Zora, three eye states, no blush
+    225: "ganondorf",        # dark armour, red hair
+    251: "mido",             # Kokiri boy, green cap, hands on hips
+    255: "king_zora",        # Zora blue with the red cape; eyes in overlay 353
     339: "deku_scrub",
     356: "deku_scrub",
-    357: "poe",             # hooded, carries the lantern
+    357: "poe",              # hooded, carries the lantern
     369: "deku_scrub",
     370: "deku_scrub",
-    387: "wolfos",          # the wolf
+    387: "wolfos",           # the wolf
+    395: "cow",
+    401: "zelda_child_alt",  # the other child Zelda: purple and white dress; drawn by overlay 449
 }
 
 

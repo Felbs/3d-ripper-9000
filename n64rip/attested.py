@@ -47,6 +47,16 @@ OOT: dict[int, dict[str, Table]] = {
             "a closed lip line; a dark open mouth",
         ),
     },
+    29: {
+        # Her eyes come from the code route (the array her Update indexes).  These mouths are
+        # in her object on the same 0x400 grid as the eyes but only one of them is in that
+        # array - the others are reached by states this actor does not own.  The user wants
+        # every expression, and these are unmistakably hers.
+        "mouths": Table(
+            (0x7608, 0x9048, 0xA448), 2, 1, 32, 32, 0x6ED0,
+            "a closed lip line; a small closed smile; a wide open shout with the tongue",
+        ),
+    },
     155: {
         "eyes": Table(
             (0xF178, 0xF378, 0xF578, 0xF778), 2, 1, 32, 16, 0xECB8,
@@ -71,10 +81,18 @@ OOT: dict[int, dict[str, Table]] = {
             "a bandaged face: open with a white highlight / half / closed",
         )
     },
+    195: {
+        "eyes": Table(
+            (0x478, 0x15F8, 0x1C78), 2, 1, 32, 32, 0x1A8,
+            "blue eye under a brown brow on yellow skin: open / half / closed",
+        )
+    },
 }
 
 #: Why each of these needed attesting, kept so the next person does not redo the search.
 NOTES = {
+    29: "the code names one mouth; the other two exist on her grid but no state of this actor binds them",
+    195: "the palette-seeded walk starts 0xD0 short of the table; its frame 0 is byte-identical to object 51's",
     75: "its pointer run lists the closed eye first, and two of its mouth entries are not mouths",
     155: "the palette-seeded walk starts at 0xEEB8, 0x2C0 short of the table",
     261: "its face is RGBA16 and needs no palette, so the seed had no anchor at all",
