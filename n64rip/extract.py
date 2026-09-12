@@ -1314,6 +1314,11 @@ def extract_rom(
             res.warnings = list(scene.warnings)
             models.append(res)
     ok = [m for m in models if m.out_rel]
+    # The levels.  Every scene of the game, one glTF each, rooms as nodes, collision and
+    # placements riding along.  A separate route because a room has no skeleton to hang on.
+    from n64rip import level as level_mod
+
+    level_rows = level_mod.extract_levels(rom, table, out_dir, progress=None)
     report = {
         "rom": rom.name,
         "title": rom.title,
@@ -1328,14 +1333,17 @@ def extract_rom(
             "object_files": len(table.object_files),
             "gameplay_keep": table.file_for(obj_mod.GAMEPLAY_KEEP),
         },
-        "models": [asdict(m) for m in models],
+        "models": [asdict(m) for m in models] + level_rows,
         "totals": {
             "exported": len(ok),
             "triangles": sum(m.triangles for m in ok),
             "textures": sum(m.textures for m in ok),
             "textures_missing": sum(m.textures_missing for m in ok),
             "rigged": sum(1 for m in ok if m.limbs > 1),
-            "failed": sum(1 for m in models if m.error),
+            "failed": sum(1 for m in models if m.error) + sum(1 for r in level_rows if r["error"]),
+            "levels": sum(1 for r in level_rows if r["out_rel"]),
+            "level_triangles": sum(r["triangles"] for r in level_rows),
+            "collision_polygons": sum(r["collision_polygons"] for r in level_rows),
         },
     }
     (out_dir / "rip_results.json").write_text(json.dumps(report, indent=1), encoding="utf-8")

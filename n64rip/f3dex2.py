@@ -107,6 +107,19 @@ class TileState:
     img_w: int = 0
     img_h: int = 0
     tex_on: bool = True  # G_TEXTURE's enable bit; an off run is not sampled at all
+    #: G_SETTILE's shift fields.  The RDP shifts the S10.5 texture coordinate by this before
+    #: the tile lookup - 0..10 is a right shift (divide), 11..15 a LEFT shift by 16-n.  Ignoring
+    #: it scales every UV by 2^n: 11,802 of this ROM's 137,400 textured level triangles and 863
+    #: skeleton triangles are drawn from a shifted tile, and room file 1107 at 0x5270 reads
+    #: ``f5 10 10 00 00 01 50 53`` - shift_s 3, shift_t 4, so S is S/8 and T is T/16.
+    shift_s: int = 0
+    shift_t: int = 0
+
+    def uv_scale(self) -> tuple[float, float]:
+        """The factor the tile's shift applies to texel coordinates, per axis."""
+        def one(n: int) -> float:
+            return 1.0 / (1 << n) if n <= 10 else float(1 << (16 - n))
+        return one(self.shift_s), one(self.shift_t)
 
     @property
     def clamp_s(self) -> bool:
@@ -326,6 +339,15 @@ class Interpreter:
             return
         pos = np.array([v[0] for v in self._verts], dtype=np.float32)
         uv = np.array([v[1] for v in self._verts], dtype=np.float32)
+        sx, sy = self._batch_tile.uv_scale()
+        # Texgen coordinates are NOT shifted here.  The 32-texel span _texgen_uv produces was
+        # measured with the blade on dark Link's sword rendering correctly, i.e. it is already
+        # the coordinate as it reaches the tile; applying his (3, 4) shift on top of it packs
+        # every UV into a 4x2 texel corner and he disappears entirely.  Vertex UVs are the
+        # raw S10.5 bytes and do need it.
+        texgen = bool(self.geometry_mode & G_TEXTURE_GEN) and bool(self.geometry_mode & G_LIGHTING)
+        if (sx, sy) != (1.0, 1.0) and len(uv) and not texgen:
+            uv = uv * np.array([sx, sy], dtype=np.float32)
         col = np.array([v[2] for v in self._verts], dtype=np.uint8)
         lit = bool(self.geometry_mode & G_LIGHTING)
         nrm = np.array([v[3] for v in self._verts], dtype=np.float32) if lit else None
@@ -347,7 +369,8 @@ class Interpreter:
                 tile1=self._batch_tile1,
                 blend_register=self._batch_blend,
                 other_low=self._batch_other,
-                reads_texel_alpha=self._batch_texel_alpha,
+                # a combiner that names a texel reads nothing when G_TEXTURE is off
+                reads_texel_alpha=self._batch_texel_alpha and self._batch_tile.tex_on,
                 cull_back=bool(self.geometry_mode & G_CULL_BACK),
             )
         )
@@ -639,6 +662,8 @@ class Interpreter:
         t.mask_t = (w1 >> 14) & 0x0F
         t.cm_s = (w1 >> 8) & 0x03
         t.mask_s = (w1 >> 4) & 0x0F
+        t.shift_s = w1 & 0x0F
+        t.shift_t = (w1 >> 10) & 0x0F
         loaded = self.tmem.get(t.tmem)
         if loaded is not None:
             t.addr, _src_size, nbytes = loaded
@@ -678,6 +703,19 @@ class Interpreter:
         found = self.seg.resolve(w1)
         if found is None:
             self.result.unresolved.add((w1 >> 24) & 0x0F)
+            # A LOAD we cannot resolve still REPLACES the matrix in force.  Seven rooms of
+            # Ocarina (files 1040, 1046-1050, 1359) run the triple LOAD <placement in seg 3>,
+            # MUL 0x0D000000, LOAD 0x800FE2A0 - and the last is the identity, sitting in
+            # code's data at 0x800FE2A0.  Returning early here left the placement in force
+            # for everything drawn afterwards: 2,176 triangles under a stale matrix, and
+            # scene 1037 the only scene whose rooms overflow their own collision box.
+            # The absolute RAM address is checked against the identity by test; a load of
+            # anything else we cannot see is still better modelled as identity than as
+            # "keep whatever was there", which is never what a LOAD means.
+            if load:
+                self.mtx = np.eye(4)
+                if push:
+                    self._mtx_stack.append(self.mtx.copy())
             return
         data, off = found
         if off + 64 > len(data):

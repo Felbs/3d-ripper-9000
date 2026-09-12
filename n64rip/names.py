@@ -235,3 +235,88 @@ def name_for(object_id: int | None, game: str = "oot", model: str | None = None)
     if object_id is None:
         return None
     return OOT.get(object_id)
+
+
+#: scene index -> English name, READ OFF THE SCENE'S OWN TITLE CARD.
+#:
+#: Unlike the character names, these are in the ROM: ``gSceneTable``'s second column is the
+#: title card the game fades in when you enter the place - 144x48 IA8, the Japanese line over
+#: the English one.  65 of the 101 scenes carry one; all 65 were rendered and transcribed
+#: (scratchpad ``title_cards.png``), so every entry here is what the cartridge itself says.
+#: The other 36 - boss arenas, cutscene stages, the houses, Ganon's Tower - have no card and
+#: keep their index.  Several places share a card (three Markets: child day, child night, the
+#: adult ruins; three Potion Shops; three Castle Courtyards), so the index stays in the
+#: published name to keep them apart.
+OOT_SCENES: dict[int, str] = {
+    0: "inside_the_deku_tree",
+    1: "dodongos_cavern",
+    2: "inside_jabu_jabus_belly",
+    3: "forest_temple",
+    4: "fire_temple",
+    5: "water_temple",
+    6: "spirit_temple",
+    7: "shadow_temple",
+    8: "bottom_of_the_well",
+    9: "ice_cavern",
+    11: "gerudo_training_ground",
+    12: "thieves_hideout",
+    13: "inside_ganons_castle",
+    16: "treasure_box_shop",
+    30: "back_alley",
+    31: "back_alley",
+    32: "market",
+    33: "market",
+    34: "market",
+    44: "bazaar",
+    45: "kokiri_shop",
+    46: "goron_shop",
+    47: "zora_shop",
+    48: "potion_shop",
+    49: "potion_shop",
+    50: "bombchu_shop",
+    51: "happy_mask_shop",
+    54: "stable",
+    56: "lakeside_laboratory",
+    58: "gravekeepers_hut",
+    59: "great_fairys_fountain",
+    60: "fairys_fountain",
+    61: "great_fairys_fountain",
+    65: "royal_familys_tomb",
+    66: "shooting_gallery",
+    67: "temple_of_time",
+    68: "chamber_of_the_sages",
+    69: "castle_courtyard",
+    70: "castle_courtyard",
+    72: "unknown_place",           # its card is literally a question mark
+    73: "fishing_pond",
+    74: "castle_courtyard",
+    75: "bombchu_bowling_alley",
+    78: "potion_shop",
+    80: "house_of_skulltula",
+    81: "hyrule_field",
+    82: "kakariko_village",
+    83: "graveyard",
+    84: "zoras_river",
+    85: "kokiri_forest",
+    86: "sacred_forest_meadow",
+    87: "lake_hylia",
+    88: "zoras_domain",
+    89: "zoras_fountain",
+    90: "gerudo_valley",
+    91: "lost_woods",
+    92: "desert_colossus",
+    93: "gerudos_fortress",
+    94: "haunted_wasteland",
+    95: "hyrule_castle",
+    96: "death_mountain_trail",
+    97: "death_mountain_crater",
+    98: "goron_city",
+    99: "lon_lon_ranch",
+    100: "ganons_castle",
+}
+
+
+def scene_name(index: int, game: str = "oot") -> str:
+    """The published name of a level: the title card's words, then the index, always."""
+    base = OOT_SCENES.get(index) if game == "oot" else None
+    return f"{base}_scene_{index:03d}" if base else f"scene_{index:03d}"

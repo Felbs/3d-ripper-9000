@@ -296,7 +296,9 @@ def export(scene: Scene, out_base: Path, *, thumbnail: bool = True) -> ExportSta
         # Expression alternates are coincident with the primitive they replace, so drawing
         # them all would z-fight the thumbnail exactly as it did the in-page viewer.  The
         # thumbnail shows the model wearing its default expression.
-        if not p.variant_of:
+        # the collision mesh is a translucent overlay; drawn into the thumbnail it hides
+        # the level under a blue speckle
+        if not p.variant_of and p.group != "collision":
             all_pos.append(p.positions)
             all_tri.append(tri + vbase)
             all_mat.append(np.full(len(tri), p.material, np.int32))
@@ -314,16 +316,31 @@ def export(scene: Scene, out_base: Path, *, thumbnail: bool = True) -> ExportSta
     # alternate on top of the default one instead of in place of it.
     replaced = {p.variant_of for _i, p in variants}
     bases, kept = [], []
+    # A primitive with a `group` belongs to a node of its own - a level's rooms, its
+    # collision - so a Blender user can hide one without vertex-group surgery.  Groups keep
+    # their first-seen order, which for a level is room order.
+    grouped: dict[str, list] = {}
     for i, pr in enumerate(prims):
         src = scene.primitives[i]
         if src.variant_of:
             continue
+        if src.group:
+            grouped.setdefault(src.group, []).append(pr)
+            continue
         mat_name = (scene.materials[src.material].name
                     if 0 <= src.material < len(scene.materials) else "")
         (bases if mat_name in replaced else kept).append((mat_name, pr))
-    gltf["meshes"].append({"name": scene.name, "primitives": [pr for _n, pr in kept] or prims})
-    mesh_node = {"name": scene.name, "mesh": 0}
-    if scene.joints:
+    main_prims = [pr for _n, pr in kept]
+    if not main_prims and not grouped:
+        main_prims = prims
+    if main_prims:
+        gltf["meshes"].append({"name": scene.name, "primitives": main_prims})
+        mesh_node = {"name": scene.name, "mesh": 0}
+    else:
+        # everything is in groups (a level: rooms + collision) - the root is a plain node,
+        # because a mesh with no primitives is not valid glTF
+        mesh_node = {"name": scene.name}
+    if scene.joints and "mesh" in mesh_node:
         ibm = np.array([_safe_inv(m).T for m in rest], np.float32)  # column-major
         gltf["skins"] = [
             {
@@ -336,6 +353,14 @@ def export(scene: Scene, out_base: Path, *, thumbnail: bool = True) -> ExportSta
         mesh_node["skin"] = 0
     gltf["nodes"].append(mesh_node)
     scene_nodes = [*roots, len(gltf["nodes"]) - 1]
+    for gname, gprims in grouped.items():
+        gltf["meshes"].append({"name": gname, "primitives": gprims})
+        node = {"name": gname, "mesh": len(gltf["meshes"]) - 1,
+                "extras": {"gcrip_group": gname}}
+        if "skin" in mesh_node:
+            node["skin"] = mesh_node["skin"]
+        gltf["nodes"].append(node)
+        scene_nodes.append(len(gltf["nodes"]) - 1)
     # the default state, named after its material so the alternates group onto it
     for mat_name, pr in bases:
         gltf["meshes"].append({"name": mat_name, "primitives": [pr]})
@@ -365,6 +390,15 @@ def export(scene: Scene, out_base: Path, *, thumbnail: bool = True) -> ExportSta
         # collection in the same scene, so the add-on finds it and wires the controls as
         # before.  A viewer that only reads the scene graph sees the character wearing its
         # default expression, which is the right default in both places.
+    # placements: nodes with a transform and no mesh, so they import as Blender empties
+    for e in getattr(scene, "empties", ()):
+        node = {"name": e.name,
+                "translation": [float(v) for v in e.translation],
+                "rotation": [float(v) for v in e.rotation]}
+        if e.extras:
+            node["extras"] = e.extras
+        gltf["nodes"].append(node)
+        scene_nodes.append(len(gltf["nodes"]) - 1)
     gltf["scenes"][0]["nodes"] = scene_nodes
 
     # animations

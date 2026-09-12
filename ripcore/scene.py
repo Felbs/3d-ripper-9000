@@ -60,6 +60,24 @@ class Primitive:
     #: the material it stands in for, which is what the Blender add-on groups on.
     variant_of: str | None = None
     variant_texture: str | None = None
+    #: Primitives sharing a group become one mesh on one node of their own, named after it.
+    #: A level's rooms are groups: a Blender user hides a room by hiding an object, and vertex
+    #: groups are a poor substitute for that.  None means the main mesh.
+    group: str | None = None
+
+
+@dataclass
+class Empty:
+    """A named node with a transform and no mesh - an actor placement, a spawn, a door.
+
+    A placement on the cartridge never disappears because we lack a model for it: the
+    empty carries the id and parameters, and a model can be instanced onto it later.
+    """
+
+    name: str
+    translation: tuple[float, float, float]
+    rotation: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0)  # quaternion x y z w
+    extras: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -82,6 +100,7 @@ class Scene:
     primitives: list[Primitive] = field(default_factory=list)
     textures: dict[str, np.ndarray] = field(default_factory=dict)  # name -> (h,w,4) u8
     clips: list[Clip] = field(default_factory=list)
+    empties: list[Empty] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     extras: dict = field(default_factory=dict)
 

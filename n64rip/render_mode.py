@@ -167,3 +167,28 @@ def combine_blend_register(w0: int, w1: int) -> str | None:
         if c == CC_C_LOD_FRACTION:
             return "lod_fraction"
     return None
+
+
+def exported_alpha(other_low: int, reads_texel_alpha: bool) -> tuple[str, bool]:
+    """``(glTF alphaMode, force the texture's alpha channel to 255)``.
+
+    The second half is the one that was missing.  The RDP only ever reaches a texel's alpha
+    through the colour combiner, so when the combiner's alpha equation names no texel, the
+    alpha bytes we decoded are not opacity at all: for I4/I8 they are a byte-identical copy of
+    the intensity (alpha == R == G == B on 132 of 132 published I-format textures), and for CI
+    they are whatever bit 0 of the palette entry happened to be.  glTF ignores the channel
+    under OPAQUE, but Blender's importer and most DCCs wire it up, and armour turns to lace.
+    134 shipped actor textures and 293 level materials carried such a channel.
+
+    BLEND keeps its channel only when a texel actually feeds the alpha equation; a prim- or
+    env-alpha translucent surface is uniformly translucent and its texture's alpha is noise.
+
+    ``AC_THRESHOLD`` is dead in this ROM - 0 of 3,861 room ``G_SETOTHERMODE_L`` commands
+    touch bits 0-2 (the written mask is 0xFFFFFFF8 throughout) - and the real alpha-compare
+    value lives in the 71-entry setup-display-list table in ``code``, none of whose level-mode
+    entries sets it.  Every MASK here comes from CVG_X_ALPHA alone.  The branch stays for
+    other ROMs.
+    """
+    mode = alpha_mode(other_low, reads_texel_alpha)
+    force_255 = mode == "OPAQUE" or (mode == "BLEND" and not reads_texel_alpha)
+    return mode, force_255

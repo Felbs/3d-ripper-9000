@@ -137,3 +137,19 @@ def decode(
         v = np.frombuffer(buf, np.uint8, n)
         return np.stack([v, v, v, v], -1).reshape(height, width, 4)
     raise TextureError(f"unsupported texture format {format_name(fmt, size)}")
+
+
+def opaque(rgba: np.ndarray) -> np.ndarray:
+    """A COPY of *rgba* with the alpha channel filled, for a surface the RDP drew without
+    ever reading it.  A copy, never in place: the same decoded array is shared between
+    materials, and one of them may be drawn under a mode that does read it.
+
+    Note for anyone histogramming alpha: :func:`_rgba5551` computes ``a = 255 if bit0 else 0``,
+    so an RGBA16 texture *cannot* have more than two alpha levels by construction - a count
+    of "binary" RGBA16 textures measures the decoder, not the ROM.  And "mixed RGBA16 means
+    cut-out" is false: of 153 mixed actor RGBA16 textures, 2 (adult Zelda, mats 34 and 36)
+    are drawn under a mode that never tests alpha, and that shortcut would put holes in her.
+    """
+    out = rgba.copy()
+    out[:, :, 3] = 255
+    return out

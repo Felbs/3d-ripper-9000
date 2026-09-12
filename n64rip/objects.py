@@ -275,3 +275,74 @@ def find_actor_overlays(rom, code: bytes) -> dict[int, list[int]]:
             if fidx not in bucket:
                 bucket.append(fidx)
     return out
+
+
+def actor_objects(rom, code: bytes) -> dict[int, int]:
+    """``{actor id: object id}`` for every resolvable row of ``gActorOverlayTable``.
+
+    The actor id is the table ROW.  ``ActorInit.id`` inside the overlay agrees with the row
+    for 420 of the 426 resolvable rows on Ocarina and disagrees on 39, 43, 48, 109, 143 and
+    173 - so the row is the key and the init's id is never trusted as one.  Rows whose
+    overlay cannot be read, or whose init points outside it, are simply absent.
+
+    A room's actor list names actors by this id; joined through the object table it says
+    which model stands at each placement.
+    """
+    import struct as _struct
+
+    n = len(code) // 4
+    if n < ACTOR_ENTRY_WORDS:
+        return {}
+    words = _struct.unpack_from(f">{n}I", code, 0)
+    pairs = {(f.vrom_start, f.vrom_end): f.index for f in rom.files if f.vrom_start > 0x10000}
+
+    def entry_ok(b: int) -> bool:
+        if b + ACTOR_ENTRY_WORDS > n:
+            return False
+        vs, ve = words[b], words[b + 1]
+        if vs == 0 and ve == 0:
+            return True
+        return (vs, ve) in pairs and _is_vram(words[b + 2])
+
+    best = (0, -1)
+    i = 0
+    while i < n - ACTOR_ENTRY_WORDS:
+        if (words[i], words[i + 1]) in pairs and _is_vram(words[i + 2]) and _is_vram(words[i + 3]):
+            k = 0
+            while entry_ok(i + ACTOR_ENTRY_WORDS * k):
+                k += 1
+            if k > best[0]:
+                best = (k, i)
+            i += max(1, ACTOR_ENTRY_WORDS * k)
+        else:
+            i += 1
+    if best[1] < 0:
+        return {}
+    lo = best[1]
+    while lo - ACTOR_ENTRY_WORDS >= 0 and entry_ok(lo - ACTOR_ENTRY_WORDS):
+        lo -= ACTOR_ENTRY_WORDS
+
+    out: dict[int, int] = {}
+    cache: dict[int, bytes] = {}
+    b, row = lo, 0
+    while entry_ok(b):
+        vs, ve = words[b], words[b + 1]
+        fidx = pairs.get((vs, ve))
+        init, base = words[b + 5], words[b + 2]
+        b += ACTOR_ENTRY_WORDS
+        row += 1
+        if fidx is None or not _is_vram(init):
+            continue
+        ov = cache.get(fidx)
+        if ov is None:
+            try:
+                ov = cache[fidx] = rom.read(rom.files[fidx])
+            except Exception:  # noqa: BLE001
+                continue
+        off = init - base
+        if not 0 <= off + 12 <= len(ov):
+            continue
+        object_id = _struct.unpack_from(">h", ov, off + 8)[0]
+        if 0 <= object_id < 512:
+            out[row - 1] = object_id
+    return out

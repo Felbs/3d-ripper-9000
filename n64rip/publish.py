@@ -32,6 +32,10 @@ def _display_path(report: dict, m: dict) -> str:
     someone is actually looking for.  The file name stays on the end so a row can always be
     traced back to what is on disk.
     """
+    if m.get("kind") == "level":
+        # the level's name already carries the title card's words and the scene index, and
+        # the "level_" prefix is what the library's classifier keys on
+        return f"{report['code']}/level_{m['name']}"
     oid = m.get("object_id")
     if oid is None:
         return f"{report['code']}/{m['name']}"
@@ -68,6 +72,10 @@ def _model_rows(report: dict) -> list[dict]:
                 "error": m.get("error") or "",
                 "extras": {
                     "console": "n64",
+                    "kind": m.get("kind"),
+                    "rooms": m.get("rooms"),
+                    "collision_polygons": m.get("collision_polygons"),
+                    "actors": m.get("actors"),
                     "drawn_limbs": m.get("drawn_limbs"),
                     "textures_missing": m.get("textures_missing"),
                     "unresolved_segments": m.get("unresolved_segments"),

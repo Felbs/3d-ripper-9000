@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from n64rip import f3dex2, skeleton as skel_mod, texture as tex_mod
+from n64rip import f3dex2, render_mode, skeleton as skel_mod, texture as tex_mod
 from ripcore.scene import Clip, Joint, MaterialDef, Primitive, Scene
 
 #: N64 world units are large; glTF is metres.  Link is ~60 units tall, so this puts a
@@ -124,6 +124,130 @@ def _quat_from_euler(xyz, order: str = "zyx") -> tuple[float, float, float, floa
         s = np.sqrt(1.0 + m[2, 2] - m[0, 0] - m[1, 1]) * 2
         w, x, y, z = (m[1, 0] - m[0, 1]) / s, (m[0, 2] + m[2, 0]) / s, (m[1, 2] + m[2, 1]) / s, 0.25 * s
     return (float(x), float(y), float(z), float(w))
+
+
+def assemble(
+    scene: Scene,
+    batches: list[f3dex2.Batch],
+    segments: f3dex2.Segments,
+    *,
+    group: str | None = None,
+    prefix: str = "",
+    skinned: bool = True,
+) -> int:
+    """Turn interpreter batches into materials, textures and primitives on *scene*.
+
+    Shared by the skeleton route and the level route: a room is batches too, it just has no
+    limbs.  Returns the number of materials whose texels could not be reached.
+
+    *group* names the node the primitives go into (a room), *prefix* keeps material and
+    texture names unique across the rooms of one level, and *skinned* says whether each
+    vertex is weighted to the limb that drew it.
+    """
+    node_name = group  # the loop below reuses `group` for a batch list
+    # -- materials, one per distinct tile
+    by_tile: dict[tuple, int] = {}
+    missing = 0
+    for b in batches:
+        key = _material_key(b)
+        if key in by_tile:
+            continue
+        mode, force_255 = render_mode.exported_alpha(b.other_low, b.reads_texel_alpha)
+        rgba = _decode_tile(b.tile, segments)
+        # The alpha the hardware never read is not opacity - see render_mode.exported_alpha.
+        if rgba is not None and force_255:
+            rgba = tex_mod.opaque(rgba)
+        idx = len(scene.materials)
+        if rgba is None:
+            # A run drawn with gsSPTexture(..., G_OFF), or one that never set a texture up at
+            # all, is untextured BY THE GAME.  It carries its prim colour and shade and is
+            # complete.  Counting it missing is what put 74 of the rip's 87 "missing textures"
+            # on models that are not missing anything - 48 of them have no unresolved segment
+            # at all.  Only a tile that asks for texels we cannot reach is missing.
+            if b.tile.tex_on and b.tile.addr is not None:
+                missing += 1
+            scene.materials.append(
+                MaterialDef(name=f"{prefix}mat_{idx:02d}", texture=None, unlit=not b.lit,
+                            base_color=_const_color(b),
+                            alpha_mode=mode)
+            )
+        else:
+            tex_name = f"{prefix}tex_{idx:02d}_{tex_mod.format_name(b.tile.fmt, b.tile.size)}"
+            scene.textures[tex_name] = rgba
+            scene.materials.append(
+                MaterialDef(
+                    name=f"{prefix}mat_{idx:02d}",
+                    texture=tex_name,
+                    clamp_u=b.tile.clamp_s,
+                    clamp_v=b.tile.clamp_t,
+                    mirror_u=b.tile.mirror_s,
+                    mirror_v=b.tile.mirror_t,
+                    double_sided=not b.cull_back,
+                    unlit=not b.lit,
+                    # the combiner multiplies the texture by the constant colour it
+                    # NAMES - PRIMITIVE or ENVIRONMENT; see _const_color
+                    base_color=_const_color(b),
+                    alpha_mode=mode,
+                )
+            )
+            # The second cycle's tile is real art, not a mip level - Volvagia's are an orange
+            # flame sheet and a dark molten-rock sheet, both 32x32 RGBA16.  Keep it and the
+            # name of the register that weights it; do NOT bake a blend, because where the
+            # weight is absent from the object list the actor supplies it at draw time.
+            if b.tile1 is not None:
+                detail = _decode_tile(b.tile1, segments)
+                if detail is not None and force_255:
+                    detail = tex_mod.opaque(detail)
+                if detail is not None:
+                    d_name = (f"{prefix}tex_{idx:02d}_detail_"
+                              f"{tex_mod.format_name(b.tile1.fmt, b.tile1.size)}")
+                    scene.textures[d_name] = detail
+                    scene.materials[idx].detail_texture = d_name
+                    scene.materials[idx].detail_blend = b.blend_register
+        by_tile[key] = idx
+
+    # -- primitives, merged per material so one bone-weighted mesh comes out
+    for key, mat in by_tile.items():
+        group = [b for b in batches
+                 if _material_key(b) == key]
+        pos = np.concatenate([b.positions for b in group]) * SCALE
+        uvs = np.concatenate([b.uvs for b in group])
+        cols = np.concatenate([b.colors for b in group])
+        has_normals = all(b.normals is not None for b in group)
+        nrm = np.concatenate([b.normals for b in group]) if has_normals else None
+        # every vertex is fully weighted to the limb whose display list drew it
+        joints = np.zeros((len(pos), 4), dtype=np.uint16) if skinned else None
+        weights = np.zeros((len(pos), 4), dtype=np.float32) if skinned else None
+        idx_parts, base = [], 0
+        for b in group:
+            n = len(b.positions)
+            if skinned:
+                joints[base : base + n, 0] = b.limb or 0
+                weights[base : base + n, 0] = 1.0
+            idx_parts.append(b.indices + base)
+            base += n
+        # texel coordinates to normalised UVs, using the tile the group shares
+        tile = group[0].tile
+        # normalise against the image that was loaded, not the clamp rectangle
+        tw = tile.img_w or tile.width
+        th = tile.img_h or tile.height
+        if tw > 0 and th > 0:
+            uvs = uvs / np.array([tw, th], dtype=np.float32)
+        scene.primitives.append(
+            Primitive(
+                material=mat,
+                positions=pos.astype(np.float32),
+                indices=np.concatenate(idx_parts).astype(np.uint32),
+                normals=None if nrm is None else nrm.astype(np.float32),
+                uvs=uvs.astype(np.float32),
+                colors=cols.astype(np.uint8),
+                joints=joints,
+                weights=weights,
+                group=node_name,
+            )
+        )
+    return missing
+
 
 
 def build(
@@ -246,99 +370,7 @@ def build(
         scene.extras = {"format": "n64_zobj", "limbs": skel.count, "reason": "no geometry"}
         return scene
 
-    # -- materials, one per distinct tile
-    by_tile: dict[tuple, int] = {}
-    missing = 0
-    for b in batches:
-        key = _material_key(b)
-        if key in by_tile:
-            continue
-        rgba = _decode_tile(b.tile, segments)
-        idx = len(scene.materials)
-        if rgba is None:
-            # A run drawn with gsSPTexture(..., G_OFF), or one that never set a texture up at
-            # all, is untextured BY THE GAME.  It carries its prim colour and shade and is
-            # complete.  Counting it missing is what put 74 of the rip's 87 "missing textures"
-            # on models that are not missing anything - 48 of them have no unresolved segment
-            # at all.  Only a tile that asks for texels we cannot reach is missing.
-            if b.tile.tex_on and b.tile.addr is not None:
-                missing += 1
-            scene.materials.append(
-                MaterialDef(name=f"mat_{idx:02d}", texture=None, unlit=not b.lit,
-                            base_color=_const_color(b),
-                            alpha_mode=_alpha_mode(b))
-            )
-        else:
-            tex_name = f"tex_{idx:02d}_{tex_mod.format_name(b.tile.fmt, b.tile.size)}"
-            scene.textures[tex_name] = rgba
-            scene.materials.append(
-                MaterialDef(
-                    name=f"mat_{idx:02d}",
-                    texture=tex_name,
-                    clamp_u=b.tile.clamp_s,
-                    clamp_v=b.tile.clamp_t,
-                    mirror_u=b.tile.mirror_s,
-                    mirror_v=b.tile.mirror_t,
-                    double_sided=not b.cull_back,
-                    unlit=not b.lit,
-                    # the combiner multiplies the texture by the constant colour it
-                    # NAMES - PRIMITIVE or ENVIRONMENT; see _const_color
-                    base_color=_const_color(b),
-                    alpha_mode=_alpha_mode(b),
-                )
-            )
-            # The second cycle's tile is real art, not a mip level - Volvagia's are an orange
-            # flame sheet and a dark molten-rock sheet, both 32x32 RGBA16.  Keep it and the
-            # name of the register that weights it; do NOT bake a blend, because where the
-            # weight is absent from the object list the actor supplies it at draw time.
-            if b.tile1 is not None:
-                detail = _decode_tile(b.tile1, segments)
-                if detail is not None:
-                    d_name = (f"tex_{idx:02d}_detail_"
-                              f"{tex_mod.format_name(b.tile1.fmt, b.tile1.size)}")
-                    scene.textures[d_name] = detail
-                    scene.materials[idx].detail_texture = d_name
-                    scene.materials[idx].detail_blend = b.blend_register
-        by_tile[key] = idx
-
-    # -- primitives, merged per material so one bone-weighted mesh comes out
-    for key, mat in by_tile.items():
-        group = [b for b in batches
-                 if _material_key(b) == key]
-        pos = np.concatenate([b.positions for b in group]) * SCALE
-        uvs = np.concatenate([b.uvs for b in group])
-        cols = np.concatenate([b.colors for b in group])
-        has_normals = all(b.normals is not None for b in group)
-        nrm = np.concatenate([b.normals for b in group]) if has_normals else None
-        # every vertex is fully weighted to the limb whose display list drew it
-        joints = np.zeros((len(pos), 4), dtype=np.uint16)
-        weights = np.zeros((len(pos), 4), dtype=np.float32)
-        idx_parts, base = [], 0
-        for b in group:
-            n = len(b.positions)
-            joints[base : base + n, 0] = b.limb or 0
-            weights[base : base + n, 0] = 1.0
-            idx_parts.append(b.indices + base)
-            base += n
-        # texel coordinates to normalised UVs, using the tile the group shares
-        tile = group[0].tile
-        # normalise against the image that was loaded, not the clamp rectangle
-        tw = tile.img_w or tile.width
-        th = tile.img_h or tile.height
-        if tw > 0 and th > 0:
-            uvs = uvs / np.array([tw, th], dtype=np.float32)
-        scene.primitives.append(
-            Primitive(
-                material=mat,
-                positions=pos.astype(np.float32),
-                indices=np.concatenate(idx_parts).astype(np.uint32),
-                normals=None if nrm is None else nrm.astype(np.float32),
-                uvs=uvs.astype(np.float32),
-                colors=cols.astype(np.uint8),
-                joints=joints,
-                weights=weights,
-            )
-        )
+    missing = assemble(scene, batches, segments)
 
     scene.clips = list(clips or [])
     scene.extras = {
