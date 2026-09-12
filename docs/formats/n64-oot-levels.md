@@ -208,6 +208,35 @@ places share one (three Markets, three Potion Shops, three Castle Courtyards), s
 index stays in the published name. The 36 without a card — boss arenas, cutscene stages,
 houses — keep their index. Scene 91 (Lost Woods) is title file **914**; 921 is Ganon's Castle.
 
+## The props — geometry that hangs on no skeleton
+
+230 of the 380 object files have no skeleton and 8 more (503, 517, 531, 537, 561, 581, 639,
+689) return one whose limb pointers are raw small integers, so the skeleton route exports
+nothing for them — and 161 of the 282 object ids that rooms request are among them: chests,
+doors, signs, pots, tents, the drawbridge. `n64rip/static.py` finds them with a **gate**, not
+a guess:
+
+* candidates: every stored `0x06XXXXXX` word on an 8-byte boundary that is not a command
+  operand (the second word of `G_DL`/`G_VTX`/`G_SETTIMG`/`G_MTX` is a pointer too, and a `G_DL`
+  operand is precisely the interior case), plus every start `scan.display_lists` accepts. Never
+  a bare "offset 0" or "after every `G_ENDDL`": a run of zero words is a run of `G_NOOP`s and
+  the interpreter walks it into the next real list and claims its geometry — a fixture caught
+  this fabricating a root out of vertex data.
+* the gate: the list draws, and **every vertex load resolved from the file's own segment**.
+  Over all 2,368 limb lists in the ROM that is literally `{6: everything}`; on random starts
+  in non-exporting files only 8.7% pass. Textures on runtime segments are *not* a reason to
+  reject — that rule alone hid a third of the geometry (file 767's slab, file 503).
+* roots: a list another kept list calls is interior, unless a table (not an operand) names it.
+* the keep banks live on segments **4** (`gameplay_keep`, object 1) and **5** (field and dungeon
+  keeps); bound at 6 they yield nothing. File 497 at segment 4 gives 68 roots / 1,093
+  triangles; the investigation's two pipelines gave 72 / 1,106 and a band of 18,000–28,500
+  for the whole set. This gate lands inside it.
+
+Each root is its own node (`dl_XXXXXX`) in the object's own space, so a chest and its lid come
+out as two objects. What the route cannot do: a root made only of `G_DL` calls draws nothing
+itself, so the scan never proposes it; if no table names it, its callees are exported
+individually and the grouping is lost, not the geometry.
+
 ## What is still open
 
 * Which of a scene's 4–26 light settings is active in fixed-light mode — chosen at runtime

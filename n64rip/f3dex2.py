@@ -192,6 +192,12 @@ class Result:
     warnings: list[str] = field(default_factory=list)
     commands: int = 0
     calls: int = 0
+    #: which segment every G_VTX read from, and how many vertices; the static-prop gate
+    #: keeps a candidate list only when every load resolved AND came from the file's own
+    #: segment.  Over all 2,368 limb lists in the ROM that is literally {6: everything}.
+    vtx_segments: dict[int, int] = field(default_factory=dict)
+    #: every G_DL target reached, for reducing candidate lists to roots
+    calls_to: set[int] = field(default_factory=set)
     #: did this list set any texture state of its own - SETTIMG, SETTILE, a load, or
     #: G_TEXTURE?  A limb list that sets none of them draws on the tile the PREVIOUS limb
     #: left in the RDP, because the game appends every limb to one command buffer while we
@@ -424,6 +430,7 @@ class Interpreter:
                 break
             if op == G_DL:
                 self.result.calls += 1
+                self.result.calls_to.add(w1)
                 # bit 0 of the store flag: branch (do not return) rather than call
                 branch = (w0 >> 16) & 0xFF
                 if branch:
@@ -527,6 +534,8 @@ class Interpreter:
         end = (w0 >> 1) & 0x7F  # index one past the last slot written
         start = end - count
         found = self.seg.resolve(w1)
+        seg = (w1 >> 24) & 0x0F
+        self.result.vtx_segments[seg] = self.result.vtx_segments.get(seg, 0) + count
         if found is None:
             self.result.unresolved.add((w1 >> 24) & 0x0F)
             return

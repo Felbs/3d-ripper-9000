@@ -1314,6 +1314,50 @@ def extract_rom(
             res.warnings = list(scene.warnings)
             models.append(res)
     ok = [m for m in models if m.out_rel]
+    # The props: every object file that exported no skeleton model - chests, doors, signs,
+    # pots, tents - found by the vertex-load gate in n64rip.static.  This includes the eight
+    # files whose "skeleton" is a false positive (limb pointers that are raw small integers).
+    from n64rip import static as static_mod
+
+    exported_files = {m.file_index for m in ok}
+    prop_rows: list[dict] = []
+    if table is not None:
+        for fidx in sorted(table.object_files - exported_files):
+            f = rom.files[fidx]
+            if f.size < 128:
+                continue
+            oid = object_ids.get(fidx)
+            seg = static_mod.home_segment(oid)
+            name = f"{f.label}_static"
+            row = {"name": name, "file_index": fidx, "vrom": f"{f.vrom_start:#x}", "kind": "prop",
+                   "object_id": oid, "limbs": 0, "posed": False, "expressions": [], "out_rel": "",
+                   "thumb": "", "triangles": 0, "vertices": 0, "textures": 0,
+                   "textures_missing": 0, "drawn_limbs": 0, "unresolved_segments": [],
+                   "warnings": [], "error": "", "roots": 0}
+            try:
+                data = rom.read(f)
+                segs = f3dex2.Segments({seg: data, **{k: v for k, v in shared.items() if k != seg}})
+                sc, roots = static_mod.build(name, data, segs, seg)
+            except Exception as exc:  # noqa: BLE001
+                row["error"] = f"{type(exc).__name__}: {exc}"
+                prop_rows.append(row)
+                continue
+            if sc.triangles < MIN_TRIANGLES:
+                continue
+            base = out_dir / name
+            try:
+                st = gltf.export(sc, base, thumbnail=True)
+                thumb = gltf.thumbnail(st, base, size=256)
+            except Exception as exc:  # noqa: BLE001
+                row["error"] = f"export: {type(exc).__name__}: {exc}"
+                prop_rows.append(row)
+                continue
+            row.update({"out_rel": f"{name}.gltf", "thumb": f"{name}_thumb.png" if thumb else "",
+                        "triangles": sc.triangles, "vertices": sc.vertices,
+                        "textures": len(sc.textures),
+                        "textures_missing": int(sc.extras.get("textures_missing", 0)),
+                        "roots": len(roots), "warnings": list(sc.warnings)})
+            prop_rows.append(row)
     # The levels.  Every scene of the game, one glTF each, rooms as nodes, collision and
     # placements riding along.  A separate route because a room has no skeleton to hang on.
     from n64rip import level as level_mod
@@ -1333,7 +1377,7 @@ def extract_rom(
             "object_files": len(table.object_files),
             "gameplay_keep": table.file_for(obj_mod.GAMEPLAY_KEEP),
         },
-        "models": [asdict(m) for m in models] + level_rows,
+        "models": [asdict(m) for m in models] + prop_rows + level_rows,
         "totals": {
             "exported": len(ok),
             "triangles": sum(m.triangles for m in ok),
@@ -1341,6 +1385,8 @@ def extract_rom(
             "textures_missing": sum(m.textures_missing for m in ok),
             "rigged": sum(1 for m in ok if m.limbs > 1),
             "failed": sum(1 for m in models if m.error) + sum(1 for r in level_rows if r["error"]),
+            "props": sum(1 for r in prop_rows if r["out_rel"]),
+            "prop_triangles": sum(r["triangles"] for r in prop_rows),
             "levels": sum(1 for r in level_rows if r["out_rel"]),
             "level_triangles": sum(r["triangles"] for r in level_rows),
             "collision_polygons": sum(r["collision_polygons"] for r in level_rows),

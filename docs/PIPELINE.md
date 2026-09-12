@@ -539,6 +539,16 @@ code ──level.find_scene_table──> gSceneTable (101)  ──> scene file �
                                                                          the collision node, empties
 ```
 
+Props take a third route, for every object file the skeleton route left empty:
+
+```
+ object file ─ static.candidates ─ stored 0x06 words (not command operands) + scan starts
+             └─ f3dex2.run each ─ GATE: draws, and every G_VTX resolved from the file's own
+                                  segment (all 2,368 limb lists do; 8.7% of random starts do)
+             └─ roots: drop lists another kept list calls, unless a table names them
+             └─ zobj.assemble(group="dl_XXXXXX") ─ one node per display list
+```
+
 No matrix and no per-room offset: rooms are already in the scene's world space.  Alternate
 headers are walked for actors, objects and lighting only - none of 385 changes geometry.
 Segments 8-0xD are skipped on purpose (draw-time tile-state lists, 0 triangles).

@@ -32,6 +32,11 @@ def _display_path(report: dict, m: dict) -> str:
     someone is actually looking for.  The file name stays on the end so a row can always be
     traced back to what is on disk.
     """
+    if m.get("kind") == "prop":
+        oid = m.get("object_id")
+        who = names.name_for(oid, model=m["name"]) if oid is not None else None
+        tag = f"obj_{oid:03d}" if oid is not None else "noobj"
+        return f"{report['code']}/prop_{who + '_' if who else ''}{tag}_{m['name']}"
     if m.get("kind") == "level":
         # the level's name already carries the title card's words and the scene index, and
         # the "level_" prefix is what the library's classifier keys on
