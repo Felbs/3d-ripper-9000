@@ -19,6 +19,7 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 from n64rip import (
+    collision as col_mod,
     actor_code as actor_mod,
     attested,
     anim as anim_mod,
@@ -1172,6 +1173,12 @@ def _faces(scene, name, data, skel, segments, code, out_dir, world, rotations,
 MAX_CLIPS = 600
 
 
+def _geometry_triangles(scene) -> int:
+    """Drawn triangles only - a collision node is not part of the model's count."""
+    return sum(len(p.indices) // 3 for p in scene.primitives
+               if not (p.group or "").startswith("collision") and not p.variant_of)
+
+
 def _clips(data, skel, object_id, link_anim, code_file):
     """The clips for one rig - see the note at the call site."""
     out = []
@@ -1324,6 +1331,12 @@ def extract_rom(
             # not its own.  Link's live in link_animetion through the table in code.
             scene.clips = _clips(data, sk, res.object_id, link_anim, code_file)
             res.animations = [c.name for c in scene.clips]
+            # The dyna-poly collision that lives in this file - a door's, a platform's -
+            # rides on the file's first model, in the same object space.
+            if si == 0:
+                dyna = col_mod.attach_object_collision(scene, data, 6, zobj.SCALE)
+                if dyna:
+                    scene.extras["collision"] = dyna
             base = out_dir / name
             try:
                 st = gltf.export(scene, base, thumbnail=True)
@@ -1334,7 +1347,7 @@ def extract_rom(
                 continue
             res.out_rel = f"{name}.gltf"
             res.thumb = f"{name}_thumb.png" if thumb else ""
-            res.triangles = scene.extras.get("base_triangles", scene.triangles)
+            res.triangles = scene.extras.get("base_triangles", _geometry_triangles(scene))
             res.vertices = scene.vertices
             res.textures = len(scene.textures)
             res.textures_missing = int(scene.extras.get("textures_missing", 0))
@@ -1373,6 +1386,9 @@ def extract_rom(
                 continue
             if sc.triangles < MIN_TRIANGLES:
                 continue
+            dyna = col_mod.attach_object_collision(sc, data, seg, zobj.SCALE)
+            if dyna:
+                sc.extras["collision"] = dyna
             base = out_dir / name
             try:
                 st = gltf.export(sc, base, thumbnail=True)
@@ -1382,7 +1398,7 @@ def extract_rom(
                 prop_rows.append(row)
                 continue
             row.update({"out_rel": f"{name}.gltf", "thumb": f"{name}_thumb.png" if thumb else "",
-                        "triangles": sc.triangles, "vertices": sc.vertices,
+                        "triangles": _geometry_triangles(sc), "vertices": sc.vertices,
                         "textures": len(sc.textures),
                         "textures_missing": int(sc.extras.get("textures_missing", 0)),
                         "roots": len(roots), "warnings": list(sc.warnings)})

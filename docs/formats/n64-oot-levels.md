@@ -196,8 +196,12 @@ Vec3s block's meaning is **per setting**: setting 0x1E is the only one with coun
 block is a six-point polyline, not two cameras. Carry it raw.
 
 The same struct, minus water boxes, appears inside object files — the dyna-poly meshes for
-doors, drawbridges and platforms; ~201 headers in 74 files. `collision.find_headers` finds
-them by the strict parse.
+doors, drawbridges and platforms. `collision.find_headers` finds them by the strict parse plus
+the per-polygon plane check: **203 headers in 75 files, 5,062 vertices, 6,125 polygons**
+(the investigation's single-sourced census said 201/74 — two more survive the same filter).
+File 607 at 0xC0 is the control, byte for byte. Each rides on the model that lives in the same
+file as a `collision_XXXXXX` node, in the same object space; a scene file scanned as an object
+yields none, because its header is on segment 2.
 
 ## Names
 

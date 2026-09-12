@@ -224,3 +224,45 @@ def find_headers(data: bytes, segment: int = 6) -> list[int]:
             continue
         out.append(off)
     return out
+
+
+def add_to_scene(scene, c: Collision, scale: float, group: str = "collision") -> int:
+    """Put a collision mesh on *scene* as one primitive per surface type, all on one shared
+    translucent material, in the node named *group*.  Returns the polygon count."""
+    from ripcore.scene import MaterialDef, Primitive
+
+    mat = next((i for i, m in enumerate(scene.materials) if m.name == group), None)
+    if mat is None:
+        mat = len(scene.materials)
+        scene.materials.append(MaterialDef(name=group, texture=None,
+                                           base_color=(0.35, 0.75, 1.0, 0.35), alpha_mode="BLEND",
+                                           double_sided=True, unlit=True))
+    verts = c.vertices.astype(np.float32) * scale
+    for st in np.unique(c.poly_types):
+        sel = c.poly_types == st
+        tri = c.polygons[sel]
+        used, inv = np.unique(tri.ravel(), return_inverse=True)
+        scene.primitives.append(Primitive(
+            material=mat, positions=verts[used], indices=inv.astype(np.uint32),
+            normals=None, uvs=None, colors=None, group=group,
+        ))
+    return int(len(c.polygons))
+
+
+def attach_object_collision(scene, data: bytes, segment: int, scale: float) -> list[dict]:
+    """Every dyna-poly header in an object file, as ``collision_XXXXXX`` nodes on its model.
+
+    The same 0x2C struct as a scene's, minus the water boxes: doors, drawbridges, elevators,
+    platforms, gates.  203 headers in 75 of Ocarina's object files, 6,125 polygons.  Attached
+    to the model that lives in the same file, in the same object space.
+    """
+    out = []
+    for off in find_headers(data, segment):
+        try:
+            c = parse(data, off, segment)
+        except ValueError:
+            continue
+        n = add_to_scene(scene, c, scale, group=f"collision_{off:06x}")
+        out.append({"offset": off, "polygons": n, "vertices": int(len(c.vertices)),
+                    "bounds": [[int(v) for v in c.bounds[0]], [int(v) for v in c.bounds[1]]]})
+    return out

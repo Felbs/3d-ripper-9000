@@ -306,3 +306,69 @@ def test_the_whole_game_census(oot):
     # 607 and X 2588 against 1971; after it, every scene's rooms sit inside the declared
     # collision box to within 100 units.
     assert outside == []
+
+
+# -- dyna-poly collision in object files -------------------------------------------------
+
+
+def test_object_607s_collision_header_parses_from_its_documented_bytes():
+    """The same 0x2C struct as a scene's, at segment 6, water boxes NULL."""
+    from n64rip import collision
+
+    hdr = bytes.fromhex("fe700000fe7001904e200190000800000600009000080000060000100600000806000000"
+                        "0000000000000000")
+    data = bytearray(0x100)
+    data[0xC0:0xC0 + len(hdr)] = hdr
+    # one surface type at 0x08, eight polygons at 0x10, eight vertices at 0x90 (as in the file)
+    struct.pack_into(">II", data, 0x08, 0, 0)
+    # the first three sit on the x = +400 face, so a +X normal with dist -400 is their plane
+    verts = [(400, 0, -400), (400, 0, 400), (400, 20000, 400), (400, 20000, -400),
+             (-400, 0, -400), (-400, 0, 400), (-400, 20000, 400), (-400, 20000, -400)]
+    for i, v in enumerate(verts):
+        struct.pack_into(">3h", data, 0x90 + i * 6, *v)
+    # poly 0 as documented: type 0, verts (0,1,2) with flag bit 13 on vA, normal +X, dist -400
+    data[0x10:0x20] = bytes.fromhex("000020000001000 27fff00000000fe70".replace(" ", ""))
+    for k in range(1, 8):
+        struct.pack_into(">4H3hh", data, 0x10 + 16 * k, 0, 0, 1, 2, 0x7FFF, 0, 0, -400)
+    c = collision.parse(bytes(data), 0xC0, 6)
+    assert (len(c.vertices), len(c.polygons), len(c.surface_types)) == (8, 8, 1)
+    assert c.bounds_declared == ((-400, 0, -400), (400, 20000, 400))
+    assert c.polygons[0].tolist() == [0, 1, 2] and c.poly_flags[0].tolist() == [1, 0, 0]
+    assert int(c.dist[0]) == -400 and c.offsets["water_boxes"] == -1
+    assert collision.find_headers(bytes(data), 6) == [0xC0]
+
+
+@rom_only
+def test_the_dyna_poly_census(oot):
+    from n64rip import collision, static
+
+    rom, tbl, code = oot
+    d = rom.read(rom.files[607])
+    assert d[0xC0:0xEC] == bytes.fromhex(
+        "fe700000fe7001904e200190000800000600009000080000060000100600000806000000"
+        "0000000000000000")
+    c = collision.parse(d, 0xC0, 6)
+    assert (len(c.vertices), len(c.polygons)) == (8, 8) and collision.plane_residual(c) < 0.1
+    c = collision.parse(rom.read(rom.files[583]), 0x54B8, 6)
+    assert (len(c.vertices), len(c.polygons)) == (185, 201)
+    obj_of = {}
+    for oid, fi in enumerate(tbl.entries):
+        if fi is not None:
+            obj_of.setdefault(fi, oid)
+    headers = files = polys = 0
+    top = {}
+    for fi in sorted(tbl.object_files):
+        f = rom.files[fi]
+        if f.size < 0x40:
+            continue
+        data = rom.read(f)
+        hs = collision.find_headers(data, static.home_segment(obj_of.get(fi)))
+        if hs:
+            files += 1
+            headers += len(hs)
+            polys += sum(len(collision.parse(data, h, static.home_segment(obj_of.get(fi))).polygons) for h in hs)
+            top[fi] = len(hs)
+    assert headers >= 200 and files >= 74 and polys >= 6_100
+    assert top[596] >= 20 and top[536] >= 20 and top[580] >= 11
+    # a scene's own header is on segment 2 - scanned as an object it yields nothing
+    assert collision.find_headers(rom.read(rom.files[1006]), 6) == []

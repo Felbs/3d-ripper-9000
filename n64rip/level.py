@@ -616,25 +616,8 @@ def decode(rom, table, code: bytes, entry: SceneEntry, *, geometry: bool = True,
 
 
 def _add_collision(scene: Scene, c: col_mod.Collision) -> None:
-    """One primitive per surface type on a single shared material, in its own node."""
-    mat = len(scene.materials)
-    scene.materials.append(MaterialDef(name="collision", texture=None,
-                                       base_color=(0.35, 0.75, 1.0, 0.35), alpha_mode="BLEND",
-                                       double_sided=True, unlit=True))
-    verts = c.vertices.astype(np.float32) * zobj.SCALE
-    for st in np.unique(c.poly_types):
-        sel = c.poly_types == st
-        tri = c.polygons[sel]
-        used, inv = np.unique(tri.ravel(), return_inverse=True)
-        scene.primitives.append(Primitive(
-            material=mat,
-            positions=verts[used],
-            indices=inv.astype(np.uint32),
-            normals=None,
-            uvs=None,
-            colors=None,
-            group="collision",
-        ))
+    """The scene's collision on its own node - see collision.add_to_scene."""
+    col_mod.add_to_scene(scene, c, zobj.SCALE)
 
 
 def _add_empties(scene: Scene, lvl: Level, code: bytes) -> None:
