@@ -712,8 +712,14 @@ def _extras(lvl: Level, code: bytes, missing: int) -> dict:
 # -- the whole game -----------------------------------------------------------------------
 
 
-def extract_levels(rom, table, out_dir: Path, *, progress=None) -> list[dict]:
-    """Export every scene in *rom* as one glTF, plus its backgrounds.  Returns rip rows."""
+def extract_levels(rom, table, out_dir: Path, *, progress=None,
+                   models_by_object: dict[int, str] | None = None) -> list[dict]:
+    """Export every scene in *rom* as one glTF, plus its backgrounds.  Returns rip rows.
+
+    *models_by_object* maps an object id to the rip's model for it (a character's or a prop's
+    glTF name), so every actor empty says which model stands there.
+    """
+    models_by_object = models_by_object or {}
     from n64rip import names
     from ripcore import gltf
 
@@ -756,6 +762,12 @@ def extract_levels(rom, table, out_dir: Path, *, progress=None) -> list[dict]:
         for r in sc.extras["rooms"]:
             for a in r["actors"]:
                 a["object_id"] = actor_obj.get(a["id"])
+                a["model"] = models_by_object.get(a["object_id"])
+        for emp in sc.empties:
+            aid = emp.extras.get("actor_id")
+            if aid is not None:
+                emp.extras["object_id"] = actor_obj.get(aid)
+                emp.extras["model"] = models_by_object.get(actor_obj.get(aid))
         base = out_dir / name
         for slot, k, jpeg in lvl.backgrounds:
             bg = out_dir / f"{name}_bg_room{slot:02d}_{k}.jpg"

@@ -1391,7 +1391,16 @@ def extract_rom(
     # placements riding along.  A separate route because a room has no skeleton to hang on.
     from n64rip import level as level_mod
 
-    level_rows = level_mod.extract_levels(rom, table, out_dir, progress=None)
+    # object id -> the model that stands for it, so a level's actor empties name their model
+    by_object: dict[int, str] = {}
+    for r in prop_rows:
+        if r["out_rel"] and r.get("object_id") is not None:
+            by_object.setdefault(r["object_id"], r["name"])
+    for m in ok:
+        if m.object_id is not None:
+            by_object.setdefault(m.object_id, m.name)
+    level_rows = level_mod.extract_levels(rom, table, out_dir, progress=None,
+                                          models_by_object=by_object)
     report = {
         "rom": rom.name,
         "title": rom.title,
