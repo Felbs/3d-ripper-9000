@@ -237,6 +237,27 @@ out as two objects. What the route cannot do: a root made only of `G_DL` calls d
 itself, so the scan never proposes it; if no table names it, its callees are exported
 individually and the grouping is lost, not the geometry.
 
+## Animations as clips
+
+Every `AnimationHeader` in an object file is now a glTF clip on that file's rig(s): frame *f*
+gives `(root translation, per-limb ZYX rotations)` through the same `frame_values` that
+produces the rest pose, joint 0's translation is the animation's root translation (the same
+substitution `pose_matrices` makes, so a walk cycle walks), and rotations become quaternions
+via the same `rotation_matrix`. 20 fps. Checked in Blender: the Zora imports with 22 actions
+and its bones move between frames.
+
+Two honest limits. A file with several rigs gets every clip on each rig — which animation
+drives which rig is in the actor's code, not the file. And **Link's clips are not shipped**:
+`link_animetion` (DMA file 7, 2.5 MB, 18,760 frames of 134 bytes) is a bare run of frames, and
+the table in `code` that says where each animation starts has not been decoded — the one
+contiguous run of segment-7 records (1,391 at `code+0xFD0EC`) has a first halfword that counts
+up by one per record and segment offsets eight bytes apart, an index of something else. Cutting
+clips at guessed boundaries would be the rest-pose mistake again. Open.
+
+`anim.plausible` gates a header before it becomes a clip: the joint-index block must lie in the
+file and every animated track must have *frames* shorts of room — the check `read_animation`
+lacks, which let a run of limb pointers pose object 393 into a lump.
+
 ## What is still open
 
 * Which of a scene's 4–26 light settings is active in fixed-light mode — chosen at runtime

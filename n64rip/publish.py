@@ -72,7 +72,7 @@ def _model_rows(report: dict) -> list[dict]:
                 "textures": int(m.get("textures") or 0),
                 "skinned": bool(m.get("limbs", 0) > 1),
                 "joints": int(m.get("limbs") or 0),
-                "animations": [],
+                "animations": list(m.get("animations") or []),
                 "warnings": list(m.get("warnings") or []),
                 "error": m.get("error") or "",
                 "extras": {

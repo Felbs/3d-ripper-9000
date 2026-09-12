@@ -1303,3 +1303,71 @@ def test_the_gibdo_and_the_redead_stand_up():
         assert (rp.bank, rp.offset) == (152, 0x87D0)
     assert "Gibdo" in attested.rest_pose(0x3DD8, 25).seen
     assert "ReDead" in attested.rest_pose(0xE778, 25).seen
+
+
+# -- animations as clips ---------------------------------------------------------------------
+
+
+def _anim_file(limbs: int, frames: int, static_max: int = 4) -> bytes:
+    """An object file with one animation: root translation static, limb 0 rotating about Y."""
+    import struct
+
+    data = bytearray(0x400)
+    # frame data at 0x100: statics [tx, ty, tz, 0] then an animated track of `frames` shorts
+    fd = 0x100
+    struct.pack_into(">4h", data, fd, 10, 20, 30, 0)
+    for f in range(frames):
+        struct.pack_into(">H", data, fd + 8 + 2 * f, (f * 0x1000) & 0xFFFF)
+    # joint indices at 0x200: root -> 0,1,2 ; limb 0 -> (static 3, animated 4, static 3) ;
+    # the others hold the zero static on every axis
+    ji = 0x200
+    struct.pack_into(">3H", data, ji, 0, 1, 2)
+    struct.pack_into(">3H", data, ji + 6, 3, 4, 3)
+    for i in range(1, limbs):
+        struct.pack_into(">3H", data, ji + 6 * (i + 1), 3, 3, 3)
+    # header at 0x300
+    struct.pack_into(">hhIIhh", data, 0x300, frames, 0, 0x06000000 | fd, 0x06000000 | ji, static_max, 0)
+    return bytes(data)
+
+
+def test_a_clip_carries_every_frame_with_the_root_translation_on_joint_0():
+    from n64rip import anim
+
+    data = _anim_file(limbs=3, frames=4)
+    a = anim.read_animation(data, 0x300)
+    assert a is not None and anim.plausible(data, a, 3)
+    c = anim.clip(data, a, 3, "walk", scale=0.5)
+    assert c is not None and c.frames == 4 and c.fps == 20.0
+    assert c.translation[0].shape == (4, 3)
+    assert c.translation[0][0].tolist() == pytest.approx([5.0, 10.0, 15.0])
+    assert set(c.rotation) == {0, 1, 2}
+    # limb 0 turns about Y by 0x1000 binang (22.5 degrees) a frame; the others hold still
+    q = c.rotation[0]
+    assert q[0].tolist() == pytest.approx([0, 0, 0, 1], abs=1e-6)
+    assert q[1].tolist() == pytest.approx(anim.quaternion([0, 0x1000 * anim.BINANG, 0]), abs=1e-6)
+    assert all(c.rotation[1][f].tolist() == pytest.approx([0, 0, 0, 1], abs=1e-6) for f in range(4))
+
+
+def test_an_animation_that_does_not_fit_the_rig_is_not_a_clip():
+    """read_animation's validator accepts a run of limb pointers as a header (object 393);
+    plausible() demands the joint-index block and every animated track lie in the file."""
+    from n64rip import anim
+
+    data = _anim_file(limbs=3, frames=4)
+    a = anim.read_animation(data, 0x300)
+    assert anim.plausible(data, a, 3)
+    assert not anim.plausible(data, a, 200), "200 limbs of joint indices do not fit"
+    big = anim.Animation(0x300, 2000, a.frame_data, a.joint_indices, a.static_max)
+    assert not anim.plausible(data, big, 3), "2000 frames of track do not fit"
+    assert anim.clip(data, big, 3, "x") is None
+
+
+def test_links_clips_are_held_back_until_his_table_is_decoded():
+    """The 1,391-record run at code+0xFD0EC is an index (first halfword +1 per record,
+    segment offsets 8 apart), not {frameCount, segment}; nothing is cut at a guessed edge."""
+    from n64rip import extract, skeleton
+
+    class Sk:
+        count = 21
+
+    assert extract._clips(b"", Sk(), 20, b"\\0" * 1000, b"\\0" * 100) == []

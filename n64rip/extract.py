@@ -53,6 +53,7 @@ class ModelResult:
     posed: bool = False  # a rest pose was applied and it stood the model up
     expressions: list[str] = field(default_factory=list)  # face textures written beside it
     object_id: int | None = None  # its slot in the game's object table, when it has one
+    animations: list[str] = field(default_factory=list)  # clip names written into the glTF
     error: str = ""
     warnings: list[str] = field(default_factory=list)
 
@@ -1167,6 +1168,28 @@ def _faces(scene, name, data, skel, segments, code, out_dir, world, rotations,
     return rebuilt, written
 
 
+#: the most clips written onto one rig; Link has ~500 and every one is wanted
+MAX_CLIPS = 600
+
+
+def _clips(data, skel, object_id, link_anim, code_file):
+    """The clips for one rig - see the note at the call site."""
+    out = []
+    if object_id in LINK_ANIM_OBJECTS:
+        # Link's animations are a bare run of frames in link_animetion, and the table that
+        # says where each starts is NOT yet decoded: the one contiguous run of segment-7
+        # records in code (1,391 of them at code+0xFD0EC) has a first halfword that counts
+        # up by one per record and segment offsets eight bytes apart - an index of something,
+        # not {frameCount, segment}.  Shipping clips cut at guessed boundaries would be the
+        # rest-pose mistake all over again; his rest pose stands, his clips wait.
+        return out
+    for a in anim_mod.find_animations(data)[:MAX_CLIPS]:
+        c = anim_mod.clip(data, a, skel.count, f"anim_{a.offset:06x}", zobj.SCALE)
+        if c is not None:
+            out.append(c)
+    return out
+
+
 def extract_rom(
     rom: Rom,
     out_dir: Path,
@@ -1295,6 +1318,12 @@ def extract_rom(
                 scene, name, data, sk, segments, code_file, out_dir, world, rotations,
                 res.object_id, overlays, attach,
             )
+            # Every animation in the file, as a clip on this rig.  A file with several rigs
+            # gets every clip on each of them - which animation drives which rig is in the
+            # actor's code, not the file - so a multi-rig object carries some clips that are
+            # not its own.  Link's live in link_animetion through the table in code.
+            scene.clips = _clips(data, sk, res.object_id, link_anim, code_file)
+            res.animations = [c.name for c in scene.clips]
             base = out_dir / name
             try:
                 st = gltf.export(scene, base, thumbnail=True)

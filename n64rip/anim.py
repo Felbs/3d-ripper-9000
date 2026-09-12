@@ -222,3 +222,141 @@ def stands_up(unposed: np.ndarray, posed: np.ndarray) -> bool:
     trusting that any given animation is the rest pose.
     """
     return float(posed[1]) > float(unposed[1]) and float(posed[1]) >= float(posed.max()) * 0.95
+
+
+# -- clips: whole animations, not just frame 0 ---------------------------------------------
+
+#: the game advances animations at 20 frames a second
+FPS = 20.0
+LINK_FRAME_BYTES = LINK_STRIDE * 2
+
+
+def plausible(data: bytes, anim: Animation, limb_count: int) -> bool:
+    """Does this header's data actually fit the file for a rig of *limb_count* limbs?
+
+    :func:`read_animation` checks only the first pad, the two segment bytes and a non-negative
+    ``staticIndexMax``, which a run of ``0x0600xxxx`` limb pointers satisfies - object 393's
+    "third animation" was exactly that, and it collapsed the figure into a lump.  For a clip
+    the joint-index block must lie in the file and every animated track must have *frames*
+    shorts of room after its index.
+    """
+    fd = anim.frame_data & 0xFFFFFF
+    ji = anim.joint_indices & 0xFFFFFF
+    need = (limb_count + 1) * JOINT_INDEX_SIZE
+    if ji + need > len(data):
+        return False
+    idx = np.frombuffer(data, dtype=">u2", count=(limb_count + 1) * 3, offset=ji)
+    animated = idx[idx >= anim.static_max]
+    top = int(idx.max()) if len(idx) else 0
+    if animated.size:
+        top = max(top, int(animated.max()) + anim.frames - 1)
+    return fd + 2 * (top + 1) <= len(data)
+
+
+def quaternion(xyz, order: str = "zyx") -> tuple[float, float, float, float]:
+    """``(x, y, z, w)`` for a limb rotation, matching :func:`rotation_matrix`."""
+    m = rotation_matrix(np.asarray(xyz, dtype=np.float64), order)[:3, :3]
+    tr = m.trace()
+    if tr > 0:
+        s = np.sqrt(tr + 1.0) * 2
+        w, x, y, z = 0.25 * s, (m[2, 1] - m[1, 2]) / s, (m[0, 2] - m[2, 0]) / s, (m[1, 0] - m[0, 1]) / s
+    elif m[0, 0] > m[1, 1] and m[0, 0] > m[2, 2]:
+        s = np.sqrt(1.0 + m[0, 0] - m[1, 1] - m[2, 2]) * 2
+        w, x, y, z = (m[2, 1] - m[1, 2]) / s, 0.25 * s, (m[0, 1] + m[1, 0]) / s, (m[0, 2] + m[2, 0]) / s
+    elif m[1, 1] > m[2, 2]:
+        s = np.sqrt(1.0 + m[1, 1] - m[0, 0] - m[2, 2]) * 2
+        w, x, y, z = (m[0, 2] - m[2, 0]) / s, (m[0, 1] + m[1, 0]) / s, 0.25 * s, (m[1, 2] + m[2, 1]) / s
+    else:
+        s = np.sqrt(1.0 + m[2, 2] - m[0, 0] - m[1, 1]) * 2
+        w, x, y, z = (m[1, 0] - m[0, 1]) / s, (m[0, 2] + m[2, 0]) / s, (m[1, 2] + m[2, 1]) / s, 0.25 * s
+    return float(x), float(y), float(z), float(w)
+
+
+def _clip_from_frames(name: str, frames, scale: float, root_offset, order: str = "zyx"):
+    """Build a Clip from an iterable of (root translation, per-limb rotations) frames.
+
+    Joint 0's translation is the animation's root translation - the same substitution
+    :func:`pose_matrices` makes - so a walk cycle actually walks.
+    """
+    from ripcore.scene import Clip
+
+    roots, rots = [], []
+    for root, r in frames:
+        roots.append(root)
+        rots.append(r)
+    if not rots:
+        return None
+    rots = np.stack(rots)                       # (F, limbs, 3)
+    roots = np.stack(roots) * scale             # (F, 3)
+    clip = Clip(name=name, frames=len(rots), fps=FPS)
+    clip.translation[0] = roots.astype(np.float32)
+    for j in range(rots.shape[1]):
+        clip.rotation[j] = np.array([quaternion(rots[f, j], order) for f in range(len(rots))],
+                                    dtype=np.float32)
+    return clip
+
+
+def clip(data: bytes, anim: Animation, limb_count: int, name: str, scale: float = 1.0):
+    """One object-file animation as a Clip, or None if it does not fit the rig."""
+    if not plausible(data, anim, limb_count):
+        return None
+    return _clip_from_frames(
+        name, (frame_values(data, anim, limb_count, f) for f in range(anim.frames)),
+        scale, None,
+    )
+
+
+def find_link_animations(code: bytes, link_size: int) -> list[tuple[int, int, int]]:
+    """``[(code offset, frame count, byte offset into link_animetion)]`` from the header
+    table in ``code``.
+
+    Link's animations have no headers of their own: ``link_animetion`` is a bare run of
+    frames, and somewhere in ``code`` is what says where each one starts and how long it runs.
+
+    **This finder has NOT found it.**  The one contiguous run of segment-7 records - 1,391 of
+    them at ``code+0xFD0EC`` - has a first halfword that counts up by one per record (301,
+    302, 303 ...) and segment offsets eight bytes apart, which is an index of something, not
+    ``{frameCount, segment}``.  It is kept as the starting point for the investigation that
+    settles it; :func:`extract._clips` does not use it.
+    """
+    out = []
+    n = len(code) - 8
+    for off in range(0, n, 4):
+        if code[off + 4] != 7:
+            continue
+        # the two bytes after frameCount are NOT zero padding - they carry data (768, 8192,
+        # 8960 ...), and requiring them zero cut the table from 1,391 records to 11
+        frames = struct.unpack_from(">h", code, off)[0]
+        start = struct.unpack_from(">I", code, off + 4)[0] & 0xFFFFFF
+        if frames < 1 or start % 2 or start + frames * LINK_FRAME_BYTES > link_size:
+            continue
+        out.append((off, frames, start))
+    # the real table is one contiguous run of such records; keep the longest run
+    best, run = [], []
+    for rec in out:
+        if run and rec[0] != run[-1][0] + 8:
+            if len(run) > len(best):
+                best = run
+            run = []
+        run.append(rec)
+    if len(run) > len(best):
+        best = run
+    return best
+
+
+def link_clip(raw: bytes, start: int, frames: int, limb_count: int, name: str,
+              scale: float = 1.0):
+    """One of Link's animations as a Clip: *frames* consecutive frames from byte *start*."""
+    def gen():
+        for f in range(frames):
+            off = start + f * LINK_FRAME_BYTES
+            if off + LINK_FRAME_BYTES > len(raw):
+                return
+            signed = np.frombuffer(raw, ">h", LINK_STRIDE, off)
+            unsigned = np.frombuffer(raw, ">H", LINK_STRIDE, off)
+            want = limb_count * 3
+            vals = unsigned[3:3 + want].astype(np.float64)
+            if len(vals) < want:
+                vals = np.pad(vals, (0, want - len(vals)))
+            yield signed[:3].astype(np.float64), (vals * BINANG).reshape(limb_count, 3)
+    return _clip_from_frames(name, gen(), scale, None)
