@@ -1330,8 +1330,8 @@ def extract_rom(
             # gets every clip on each of them - which animation drives which rig is in the
             # actor's code, not the file - so a multi-rig object carries some clips that are
             # not its own.  Link's live in link_animetion through the table in code.
-            scene.clips = _clips(data, sk, res.object_id, link_anim, code_file,
-                                 keep=shared.get(4))
+            scene.clips = scene.clips + _clips(data, sk, res.object_id, link_anim, code_file,
+                                               keep=shared.get(4))
             res.animations = [c.name for c in scene.clips]
             # The dyna-poly collision that lives in this file - a door's, a platform's -
             # rides on the file's first model, in the same object space.

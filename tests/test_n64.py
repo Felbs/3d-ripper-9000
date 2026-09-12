@@ -1425,3 +1425,122 @@ def test_the_573_headers_tile_link_animetion_exactly():
     q = c.rotation[5]
     assert float(np.abs(q[0] - q[28]).max()) < 0.02
     assert float(np.abs(q[0] - q[14]).max()) > 0.03  # limb 5 swings ~8 degrees mid-stride
+
+
+# -- the generated T-pose ------------------------------------------------------------------
+
+
+def _biped():
+    """A 12-limb stick figure standing in a stance: root, pelvis, two legs of three, a spine,
+    a head, two arms of two - built directly as Limb records with world positions."""
+    from n64rip import skeleton as S
+
+    limbs = []
+
+    def limb(i, parent, xyz, child=S.NO_LIMB, sib=S.NO_LIMB):
+        limbs.append(S.Limb(index=i, x=xyz[0], y=xyz[1], z=xyz[2], child=child, sibling=sib,
+                            dlist=0x06000000 + i * 8, parent=parent))
+
+    # tree: 0 hips -> 1 pelvis -> {2 L thigh -> 3 L shin -> 4 L foot ; 5 R thigh -> 6 -> 7}
+    #                 -> 8 chest -> {9 head ; 10 L arm -> 11 L hand ; 12 R arm -> 13 R hand}
+    limb(0, None, (0, 3000, 0), child=1)
+    limb(1, 0, (0, -200, 0), child=2, sib=8)
+    limb(2, 1, (300, 0, 0), child=3, sib=5)
+    limb(3, 2, (50, -1200, 100), child=4)
+    limb(4, 3, (0, -1200, -100))
+    limb(5, 1, (-300, 0, 0), child=6)
+    limb(6, 5, (-50, -1200, 100), child=7)
+    limb(7, 6, (0, -1200, -100))
+    limb(8, 1, (0, 1400, 0), child=9)
+    limb(9, 8, (0, 600, 0), sib=10)
+    limb(10, 8, (400, -200, 0), child=11, sib=12)
+    limb(11, 10, (100, -900, 0))
+    limb(12, 8, (-400, -200, 0), child=13)
+    limb(13, 12, (-100, -900, 0))
+    sk = S.Skeleton(offset=0x100, limbs=limbs)
+    return sk
+
+
+def _world_from_offsets(sk):
+    """World matrices with identity rotations: positions are cumulative offsets."""
+    import numpy as np
+
+    world = {}
+    for i in sk.order():
+        limb = sk.limbs[i]
+        m = np.eye(4)
+        m[:3, 3] = limb.translation
+        world[i] = m if limb.parent is None else world[limb.parent] @ m
+    return world
+
+
+def test_a_stance_is_read_as_a_biped_and_named():
+    from n64rip import tpose
+
+    sk = _biped()
+    h = tpose.classify(sk, _world_from_offsets(sk))
+    assert h is not None, tpose.LAST_REASON
+    assert h.roles[0] == "Hips" and h.roles[9] == "Head" and h.roles[8] in ("Spine1", "Spine", "Spine2")
+    assert h.legs["Left"] == [2, 3, 4] and h.legs["Right"] == [5, 6, 7]
+    assert h.arms["Left"] == [10, 11] and h.arms["Right"] == [12, 13]
+    assert h.roles[4] == "LeftFoot" and h.roles[11] == "LeftHand" and h.roles[12] == "RightArm"
+    assert h.side_axis == 0
+    names = tpose.joint_names(h, sk.count)
+    assert names[0] == "mixamorig:Hips" and names[13] == "mixamorig:RightHand"
+
+
+def test_the_t_pose_puts_arms_out_legs_down_and_keeps_the_feet_level():
+    import numpy as np
+
+    from n64rip import tpose
+
+    sk = _biped()
+    world = _world_from_offsets(sk)
+    h = tpose.classify(sk, world)
+    rots, new = tpose.t_pose(sk, world, h, world[0][:3, 3])
+    p = {i: new[i][:3, 3] for i in new}
+    # arms run along +/-X
+    la = p[11] - p[10]
+    ra = p[13] - p[12]
+    assert la[0] > 0 and abs(la[1]) < 1e-6 * 1000 and abs(la[2]) < 1e-3 * 1000
+    assert ra[0] < 0 and abs(ra[1]) < 1e-3 * 1000
+    # legs straight down
+    for a, b in ((2, 3), (3, 4), (5, 6), (6, 7)):
+        d = p[b] - p[a]
+        assert d[1] < 0 and abs(d[0]) < 1e-3 * 1000 and abs(d[2]) < 1e-3 * 1000
+    # the head is above the chest, the feet keep their world orientation (identity here)
+    assert p[9][1] > p[8][1]
+    assert np.allclose(new[4][:3, :3], np.eye(3), atol=1e-6)
+    # every rotation triple round-trips through the ZYX matrix
+    from n64rip.anim import rotation_matrix
+
+    for i in range(sk.count):
+        m = rotation_matrix(rots[i], "zyx")[:3, :3]
+        assert np.allclose(tpose.euler_zyx(m), rots[i], atol=1e-6) or \
+            np.allclose(rotation_matrix(tpose.euler_zyx(m), "zyx")[:3, :3], m, atol=1e-6)
+
+
+def test_a_quadruped_is_refused():
+    """Four feet on the floor and no arm span: the game pose stays."""
+    from n64rip import skeleton as S
+    from n64rip import tpose
+
+    limbs = []
+
+    def limb(i, parent, xyz, child=S.NO_LIMB, sib=S.NO_LIMB):
+        limbs.append(S.Limb(index=i, x=xyz[0], y=xyz[1], z=xyz[2], child=child, sibling=sib,
+                            dlist=0x06000000 + i * 8, parent=parent))
+
+    limb(0, None, (0, 1000, 0), child=1)
+    limb(1, 0, (300, 0, 400), child=2, sib=3)
+    limb(2, 1, (0, -1000, 0))
+    limb(3, 0, (-300, 0, 400), child=4, sib=5)
+    limb(4, 3, (0, -1000, 0))
+    limb(5, 0, (300, 0, -400), child=6, sib=7)
+    limb(6, 5, (0, -1000, 0))
+    limb(7, 0, (-300, 0, -400), child=8, sib=9)
+    limb(8, 7, (0, -1000, 0))
+    limb(9, 0, (0, 200, 600), child=10)
+    limb(10, 9, (0, 100, 300))
+    sk = S.Skeleton(offset=0x100, limbs=limbs)
+    assert tpose.classify(sk, _world_from_offsets(sk)) is None
