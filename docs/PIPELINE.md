@@ -523,6 +523,26 @@ shipped something wrong:
 | limb texture inherit | **only** a limb whose display list contains no `SETTIMG`/`SETTILE`/`LOADBLOCK`/`G_TEXTURE` at all | the game appends every limb to one command buffer, so a limb setting no texture state draws on the previous one's tile - Volvagia's body was a white bar with one orange patch.  Carrying unconditionally changes twelve other models and makes at least two worse |
 | rest pose | attested data, keyed on the **rig**, with an object-keyed override | **eight** automatic selection measures have each picked a best-scoring wrong answer - bounding volume, the standing gate, a consensus vote, "prefer short animations", "prefer first in file", compactness, stands_up-count per rotation order.  The gates reject nonsense; they do not select |
 
+Levels take a second route beside the skeleton one, sharing everything from the interpreter on:
+
+```
+code ──level.find_scene_table──> gSceneTable (101)  ──> scene file ─ commands() ─┬─ 0x04 room list
+                                                                                 ├─ 0x03 collision.parse
+                                                                                 ├─ 0x0F lights, 0x00 spawns,
+                                                                                 │  0x06 entrances, 0x0E doors,
+                                                                                 │  0x13 exits -> gEntranceTable
+ per room ─ commands() ─ 0x0A mesh_header ─ f3dex2.run(dl, {2: scene, 3: room, 4/5: keep})
+                       │                        └─ zobj.assemble(group="room_NN")  (no limbs)
+                       └─ 0x01 actors (+ every 0x18 alternate) ──> Scene.empties
+                                                                     │
+                                          one Scene per level ───────┴──> gltf: a node per room,
+                                                                         the collision node, empties
+```
+
+No matrix and no per-room offset: rooms are already in the scene's world space.  Alternate
+headers are walked for actors, objects and lighting only - none of 385 changes geometry.
+Segments 8-0xD are skipped on purpose (draw-time tile-state lists, 0 triangles).
+
 Expressions are **texture** swaps, so they are exported as variant primitives (one node each,
 tagged `gcrip_variant_of` / `gcrip_texture`) rather than shape keys - see section 5; the
 add-on drives them from one keyframeable integer per face part.
