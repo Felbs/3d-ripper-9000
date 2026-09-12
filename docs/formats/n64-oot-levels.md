@@ -250,13 +250,27 @@ substitution `pose_matrices` makes, so a walk cycle walks), and rotations become
 via the same `rotation_matrix`. 20 fps. Checked in Blender: the Zora imports with 22 actions
 and its bones move between frames.
 
-Two honest limits. A file with several rigs gets every clip on each rig — which animation
-drives which rig is in the actor's code, not the file. And **Link's clips are not shipped**:
-`link_animetion` (DMA file 7, 2.5 MB, 18,760 frames of 134 bytes) is a bare run of frames, and
-the table in `code` that says where each animation starts has not been decoded — the one
-contiguous run of segment-7 records (1,391 at `code+0xFD0EC`) has a first halfword that counts
-up by one per record and segment offsets eight bytes apart, an index of something else. Cutting
-clips at guessed boundaries would be the rest-pose mistake again. Open.
+One honest limit: a file with several rigs gets every clip on each rig — which animation drives
+which rig is in the actor's code, not the file.
+
+**Link's clips — settled by an 11-agent investigation.** `link_animetion` (DMA 7, 2,513,968 B)
+is a bare run of frames, and the headers that cut it into animations are **not in `code`**: they
+are 573 eight-byte `{s16 frameCount; s16 0; u32 0x07000000 | byteOffset}` records in
+**`gameplay_keep`** (object 1, DMA 497) at `keep+0x2310..0x34F8`, addressed as segment-4
+pointers `0x04002310 + 8i`. `LinkAnimation_Load` (code VRAM `0x8008B23C`) reads `lw 4(hdr)` and
+DMAs one 134-byte frame from VROM `0x556000 + offset + frame*134` — the only construction of
+`0x556000` in `code`; `Animation_GetLength` (`0x80089EC0`) reads `lh 0(hdr)`. Segment 7 is
+never bound. Sorted by start the 573 tile the file exactly: `next = align16(start + frames*134)`
+for all 572 pairs, **18,733 frames + 3,744 bytes of zero padding + 2 tail bytes** — so "18,760
+frames" was a division artefact and a global 134-byte grid is valid only inside the clip at
+byte 0. Table order is not file order (the byte-0 clip's header is at `keep+0x3470`). The player
+overlay names 405 of the 573; 49 are named by nothing found. Four independent renderers agree:
+`0x04003268` (record 491, 29 frames at `0x1F76C0`) is a walk with frame 0 == frame 28, `0x04003140`
+a run, `0x04003240` an 89-frame idle.
+
+The trap, recorded so nobody walks into it again: the 1,391-record run at `code+0xFD0EC` whose
+second words are also `0x07xxxxxx` is the game's **message table** — `{u16 textId; u8 type<<4|pos;
+u8 0; u32 offset into nes_message_data_static}` — which is why its first halfword counts up.
 
 `anim.plausible` gates a header before it becomes a clip: the joint-index block must lie in the
 file and every animated track must have *frames* shorts of room — the check `read_animation`

@@ -8,6 +8,7 @@ each test, because the expensive mistakes here are the ones that look plausible.
 from __future__ import annotations
 
 import struct
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -1362,12 +1363,65 @@ def test_an_animation_that_does_not_fit_the_rig_is_not_a_clip():
     assert anim.clip(data, big, 3, "x") is None
 
 
-def test_links_clips_are_held_back_until_his_table_is_decoded():
-    """The 1,391-record run at code+0xFD0EC is an index (first halfword +1 per record,
-    segment offsets 8 apart), not {frameCount, segment}; nothing is cut at a guessed edge."""
-    from n64rip import extract, skeleton
+# -- Link's animation table ------------------------------------------------------------------
 
-    class Sk:
-        count = 21
 
-    assert extract._clips(b"", Sk(), 20, b"\\0" * 1000, b"\\0" * 100) == []
+def test_links_headers_are_found_in_gameplay_keep_not_code():
+    """573 {s16 frameCount; s16 0; u32 0x07|offset} records; the offsets are 16-aligned."""
+    from n64rip import anim
+
+    keep = bytearray(0x200)
+    recs = [(51, 0xD710), (133, 0xF1D0), (33, 0x13770)]
+    for i, (fr, st) in enumerate(recs):
+        struct.pack_into(">hhI", keep, 0x100 + 8 * i, fr, 0, 0x07000000 | st)
+    # a look-alike with an odd offset and one with a non-zero pad must not extend the run
+    struct.pack_into(">hhI", keep, 0x118, 5, 0, 0x07000003)
+    struct.pack_into(">hhI", keep, 0x120, 5, 1, 0x07001000)
+    found = anim.find_link_animations(bytes(keep), 0x30000)
+    assert [(a.index, a.offset, a.frames, a.start) for a in found] == [
+        (0, 0x100, 51, 0xD710), (1, 0x108, 133, 0xF1D0), (2, 0x110, 33, 0x13770)]
+    # a frame count that runs past the file is not a record either
+    assert anim.find_link_animations(bytes(keep), 0x14000) [-1].start == 0xF1D0
+
+
+@pytest.mark.skipif(not (Path(r"C:/Users/emane/AppData/Local/Temp/claude/Z--3d-ripper/"
+                         r"edbdc273-f8f2-4975-b5df-bb6e79cb36f0/scratchpad/n64/collectors_zle_f.n64")
+                         .exists()), reason="needs the Ocarina ROM")
+def test_the_573_headers_tile_link_animetion_exactly():
+    """Every quoted byte reproduced under independent decode; the loader disassembled.
+
+    The 1,391-record run at code+0xFD0EC that an earlier finder returned is the MESSAGE
+    table - its segment 7 is nes_message_data_static and its first halfword is a text id.
+    """
+    from n64rip import anim
+    from n64rip import objects as O
+    from n64rip.rom import Rom
+
+    rom = Rom.open(r"C:/Users/emane/AppData/Local/Temp/claude/Z--3d-ripper/"
+                   r"edbdc273-f8f2-4975-b5df-bb6e79cb36f0/scratchpad/n64/collectors_zle_f.n64")
+    tbl = O.find_object_table(rom)
+    keep = rom.read(rom.files[tbl.file_for(1)])
+    link = rom.read(rom.files[7])
+    assert len(link) == 2_513_968
+    assert keep[0x2310:0x2318] == bytes.fromhex("0033000007 00d710".replace(" ", ""))
+    assert keep[0x34F0:0x34F8] == bytes.fromhex("0028000007 00c220".replace(" ", ""))
+    t = anim.find_link_animations(keep, len(link))
+    assert len(t) == 573 and t[0].offset == 0x2310 and t[-1].offset == 0x34F0
+    assert (t[0].frames, t[0].start) == (51, 0xD710)
+    assert sum(a.frames for a in t) == 18_733
+    assert all(a.start % 16 == 0 for a in t) and len({a.start for a in t}) == 573
+    s = sorted(t, key=lambda a: a.start)
+    assert s[0].start == 0 and s[0].frames == 20
+    assert all(b.start == (a.start + a.frames * anim.LINK_FRAME_BYTES + 15) // 16 * 16
+               for a, b in zip(s, s[1:]))
+    assert s[-1].start + s[-1].frames * anim.LINK_FRAME_BYTES == len(link) - 2
+    # the walk at header 0x04003268 (record 491): 29 frames, and frame 0 equals frame 28
+    walk = next(a for a in t if a.offset == 0x3268)
+    assert (walk.frames, walk.start) == (29, 0x1F5050)  # the ROM says 0x1F5050; a report quoted 0x1F76C0
+    c = anim.link_clip(link, walk.start, walk.frames, 21, "walk")
+    assert c.frames == 29
+    # a walk cycle returns close to where it began, and is far from it half way through
+    import numpy as np
+    q = c.rotation[5]
+    assert float(np.abs(q[0] - q[28]).max()) < 0.02
+    assert float(np.abs(q[0] - q[14]).max()) > 0.03  # limb 5 swings ~8 degrees mid-stride

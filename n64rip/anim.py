@@ -306,41 +306,62 @@ def clip(data: bytes, anim: Animation, limb_count: int, name: str, scale: float 
     )
 
 
-def find_link_animations(code: bytes, link_size: int) -> list[tuple[int, int, int]]:
-    """``[(code offset, frame count, byte offset into link_animetion)]`` from the header
-    table in ``code``.
+@dataclass(frozen=True)
+class LinkAnimation:
+    index: int      # record number; its segment-4 address on Ocarina is 0x04002310 + 8*index
+    offset: int     # byte offset of the 8-byte header inside gameplay_keep
+    frames: int
+    start: int      # byte offset of frame 0 inside link_animetion
 
-    Link's animations have no headers of their own: ``link_animetion`` is a bare run of
-    frames, and somewhere in ``code`` is what says where each one starts and how long it runs.
 
-    **This finder has NOT found it.**  The one contiguous run of segment-7 records - 1,391 of
-    them at ``code+0xFD0EC`` - has a first halfword that counts up by one per record (301,
-    302, 303 ...) and segment offsets eight bytes apart, which is an index of something, not
-    ``{frameCount, segment}``.  It is kept as the starting point for the investigation that
-    settles it; :func:`extract._clips` does not use it.
+LINK_DATA_SEGMENT = 7
+
+
+def find_link_animations(keep: bytes, link_size: int) -> list[LinkAnimation]:
+    """Link's animation headers - in **gameplay_keep** (object 1), not in ``code``.
+
+    ``link_animetion`` is a bare run of frames; the headers that cut it into animations are
+    573 eight-byte ``{s16 frameCount; s16 0; u32 0x07000000 | byteOffset}`` records at
+    ``keep+0x2310..0x34F8``, addressed by the game as segment-4 pointers.  Read by
+    ``LinkAnimation_Load`` (code VRAM 0x8008B23C: ``lw 4(hdr)``, then VROM 0x556000 + offset +
+    frame*134 through the DMA manager - the only construction of 0x556000 in ``code``) and
+    ``Animation_GetLength`` (0x80089EC0: ``lh 0(hdr)``).  Segment 7 is never bound; the frames
+    are DMA'd one at a time.
+
+    The offsets are all 16-aligned and, sorted, tile the file exactly: ``next_start ==
+    align16(start + frames*134)`` for all 572 adjacent pairs, 18,733 frames, 3,744 bytes of
+    zero padding, 2 tail bytes.  So "18,760 frames of 134 bytes" was a division artefact - a
+    global 134-byte grid is valid only inside the clip at byte 0.
+
+    An earlier finder looked in ``code`` and found a 1,391-record run at code+0xFD0EC whose
+    second words are also ``0x07xxxxxx``: that is the game's MESSAGE table (segment 7 there
+    is ``nes_message_data_static``), and its first halfword counts up because it is a text id.
     """
-    out = []
-    n = len(code) - 8
-    for off in range(0, n, 4):
-        if code[off + 4] != 7:
+    def rec(off):
+        if off + 8 > len(keep):
+            return None
+        frames, pad, seg = struct.unpack_from(">hhI", keep, off)
+        if pad or frames < 1 or (seg >> 24) != LINK_DATA_SEGMENT:
+            return None
+        start = seg & 0xFFFFFF
+        if start % 16 or start + frames * LINK_FRAME_BYTES > link_size:
+            return None
+        return frames, start
+
+    best: list[LinkAnimation] = []
+    off = 0
+    while off + 8 <= len(keep):
+        r = rec(off)
+        if r is None:
+            off += 4
             continue
-        # the two bytes after frameCount are NOT zero padding - they carry data (768, 8192,
-        # 8960 ...), and requiring them zero cut the table from 1,391 records to 11
-        frames = struct.unpack_from(">h", code, off)[0]
-        start = struct.unpack_from(">I", code, off + 4)[0] & 0xFFFFFF
-        if frames < 1 or start % 2 or start + frames * LINK_FRAME_BYTES > link_size:
-            continue
-        out.append((off, frames, start))
-    # the real table is one contiguous run of such records; keep the longest run
-    best, run = [], []
-    for rec in out:
-        if run and rec[0] != run[-1][0] + 8:
-            if len(run) > len(best):
-                best = run
-            run = []
-        run.append(rec)
-    if len(run) > len(best):
-        best = run
+        run, k = [], off
+        while (r := rec(k)) is not None:
+            run.append(LinkAnimation(len(run), k, r[0], r[1]))
+            k += 8
+        if len(run) > len(best):
+            best = run
+        off = k + 4
     return best
 
 

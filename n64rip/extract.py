@@ -1179,16 +1179,17 @@ def _geometry_triangles(scene) -> int:
                if not (p.group or "").startswith("collision") and not p.variant_of)
 
 
-def _clips(data, skel, object_id, link_anim, code_file):
+def _clips(data, skel, object_id, link_anim, code_file, keep=None):
     """The clips for one rig - see the note at the call site."""
     out = []
     if object_id in LINK_ANIM_OBJECTS:
-        # Link's animations are a bare run of frames in link_animetion, and the table that
-        # says where each starts is NOT yet decoded: the one contiguous run of segment-7
-        # records in code (1,391 of them at code+0xFD0EC) has a first halfword that counts
-        # up by one per record and segment offsets eight bytes apart - an index of something,
-        # not {frameCount, segment}.  Shipping clips cut at guessed boundaries would be the
-        # rest-pose mistake all over again; his rest pose stands, his clips wait.
+        # Link's headers are in gameplay_keep (segment 4), his frames in link_animetion.
+        if link_anim and keep:
+            for la in anim_mod.find_link_animations(keep, len(link_anim))[:MAX_CLIPS]:
+                c = anim_mod.link_clip(link_anim, la.start, la.frames, skel.count,
+                                       f"link_{la.index:03d}_{la.start:06x}", zobj.SCALE)
+                if c is not None:
+                    out.append(c)
         return out
     for a in anim_mod.find_animations(data)[:MAX_CLIPS]:
         c = anim_mod.clip(data, a, skel.count, f"anim_{a.offset:06x}", zobj.SCALE)
@@ -1329,7 +1330,8 @@ def extract_rom(
             # gets every clip on each of them - which animation drives which rig is in the
             # actor's code, not the file - so a multi-rig object carries some clips that are
             # not its own.  Link's live in link_animetion through the table in code.
-            scene.clips = _clips(data, sk, res.object_id, link_anim, code_file)
+            scene.clips = _clips(data, sk, res.object_id, link_anim, code_file,
+                                 keep=shared.get(4))
             res.animations = [c.name for c in scene.clips]
             # The dyna-poly collision that lives in this file - a door's, a platform's -
             # rides on the file's first model, in the same object space.
