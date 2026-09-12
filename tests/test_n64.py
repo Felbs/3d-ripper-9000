@@ -1250,3 +1250,56 @@ def test_object_316s_attested_row_is_the_whole_face():
     assert faces.eyes == []
     # the mouth binds to the segment the head actually samples, not the default 9
     assert faces.mouth_segments == (8,)
+
+
+def test_a_pad_limb_does_not_draw_another_limbs_geometry():
+    """Object 67 lands eight limbs on one body through a run of G_RDPPIPESYNC.
+
+    The limbs are the two feet and the spine, so the model shipped with its chest drawn eight
+    times, once on each foot.  Limb 37 owns the body - its parent is in the spine chain and its
+    pointer is the last pad slot, one command before the body starts - and across the rest of
+    this rig limb 37 is always the torso.
+    """
+    from n64rip import attested
+
+    nulls = attested.null_limbs(67)
+    assert nulls == frozenset({8, 9, 10, 15, 16, 17, 18})
+    assert 37 not in nulls, "limb 37 owns the body and must still draw"
+    assert attested.null_limbs(68) == frozenset()
+    assert attested.null_limbs(None) == frozenset()
+
+
+def test_a_null_limb_keeps_its_matrix_slot():
+    """Its display-list pointer is non-NULL, so the game allocates it a matrix too.
+
+    The 0x0D limb-matrix array is indexed over every limb that has a pointer, in draw order.
+    Dropping a null limb from that array shifts every index after it, which moves other limbs'
+    geometry into the wrong space - so the limb is skipped for DRAWING only.
+    """
+    import re
+    from pathlib import Path
+
+    src = Path("n64rip/zobj.py").read_text(encoding="utf-8")
+    line = re.search(r"^\s*drawing = \[.*\]$", src, re.M)
+    assert line, "zobj must still build the matrix array"
+    assert "null_limbs" not in line.group(0), (
+        "the matrix array is counted over every limb with a pointer, null ones included"
+    )
+    assert "i in null_limbs" in src, "but the draw loop must skip them"
+
+
+def test_the_gibdo_and_the_redead_stand_up():
+    """One creature in two skins, and the actor names the animation outright.
+
+    Overlay ROM file 390's SkelAnime_InitFlex passes $a2 = 0xe778 and $a3 = 0x87d0.  The other
+    rig in the file is the same 25 limbs and the same creature, so it takes the same animation
+    - checked by rendering both.  Before this they were two identical crumpled zigzags.
+    """
+    from n64rip import attested
+
+    for off in (0x3DD8, 0xE778):
+        rp = attested.rest_pose(off, 25)
+        assert rp is not None, f"{off:#x} must be attested"
+        assert (rp.bank, rp.offset) == (152, 0x87D0)
+    assert "Gibdo" in attested.rest_pose(0x3DD8, 25).seen
+    assert "ReDead" in attested.rest_pose(0xE778, 25).seen

@@ -135,6 +135,7 @@ def build(
     world: dict[int, np.ndarray] | None = None,
     rotations: np.ndarray | None = None,
     attachments=None,
+    null_limbs: frozenset[int] = frozenset(),
 ) -> Scene:
     """Walk *skel*'s limbs, interpret each limb's display list, and assemble one Scene.
 
@@ -189,6 +190,9 @@ def build(
     # A limb's list selects a matrix per vertex group with G_MTX 0x0d0000N0, where N indexes
     # the limbs that actually draw, in draw order.  The game fills this at draw time; leaving
     # it unbound is what made one limb's geometry arrive in two different spaces at once.
+    # NOTE: a null limb stays in this list.  Its pointer is non-NULL, so the game allocates
+    # it a matrix slot too, and the 0x0D indices the display lists use are counted over every
+    # limb with a pointer.  Dropping it here would shift every index after it.
     drawing = [i for i in order if skel.limbs[i].dlist]
     matrix_index = {limb: n for n, limb in enumerate(drawing)}
     segments.set(0x0D, f3dex2.matrix_segment([world[i] for i in drawing]))
@@ -210,7 +214,9 @@ def build(
     carry: dict | None = None
     for i in order:
         limb = skel.limbs[i]
-        if not limb.dlist:
+        # A limb listed in attested.NULL_LIMBS has a display-list pointer that is padding,
+        # and following it draws another limb's geometry in this limb's place.
+        if not limb.dlist or i in null_limbs:
             continue
         res, interp = f3dex2.run_stateful(limb.dlist, segments, world[i])
         if not res.touched_texture and carry is not None:

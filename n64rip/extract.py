@@ -130,6 +130,8 @@ def _pose(scene, name, data, skel, segments, link_anim, object_id, attachments=N
     before = np.concatenate([p.positions for p in scene.primitives])
     ext_before = before.max(0) - before.min(0)
 
+    nulls = attested.null_limbs(object_id)
+
     # An attested rest pose comes first and is taken on sight: it was chosen by rendering,
     # which is the only thing that has ever settled this, and the gates below cannot tell a
     # correct rest pose from a wrong one that merely happens to be compact.
@@ -143,7 +145,8 @@ def _pose(scene, name, data, skel, segments, link_anim, object_id, attachments=N
                     root, rots = anim_mod.frame_values(bank, a, skel.count, 0)
                     world = anim_mod.pose_matrices(skel, rots, root, "zyx")
                     cand = zobj.build(name, data, skel, segments, world=world,
-                                      rotations=rots, attachments=attachments)
+                                      rotations=rots, attachments=attachments,
+                                      null_limbs=nulls)
                 except Exception:  # noqa: BLE001
                     cand = None
                 if cand is not None and cand.primitives:
@@ -160,7 +163,7 @@ def _pose(scene, name, data, skel, segments, link_anim, object_id, attachments=N
         try:
             world = anim_mod.pose_matrices(skel, rots, root, "zyx")
             cand = zobj.build(name, data, skel, segments, world=world, rotations=rots,
-                              attachments=attachments)
+                              attachments=attachments, null_limbs=nulls)
         except Exception:  # noqa: BLE001
             continue
         if not cand.primitives:
@@ -1270,7 +1273,8 @@ def extract_rom(
                 except Exception:  # noqa: BLE001
                     pass
             try:
-                scene = zobj.build(name, data, sk, segments, attachments=attach)
+                scene = zobj.build(name, data, sk, segments, attachments=attach,
+                                   null_limbs=attested.null_limbs(res.object_id))
             except Exception as exc:  # noqa: BLE001
                 res.error = f"{type(exc).__name__}: {exc}"
                 models.append(res)

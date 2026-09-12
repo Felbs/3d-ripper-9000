@@ -303,6 +303,24 @@ class RestPose(NamedTuple):
 #: Keyed on the skeleton, not the object, because that is what the models share - one key here
 #: poses eighteen of them.
 REST_POSES: dict[tuple[int, int], RestPose] = {
+    (0x3dd8, 25): RestPose(
+        152, 0x87d0,
+        "the Gibdo standing: an upright mummy wrapped head to foot in grey-white bandages, on "
+        "both legs, arms hanging at its sides and the head tipped slightly forward - its idle. "
+        "The animation the rip picked before this (taken by the compactness fallback) folded it "
+        "into a flat zigzag of bandage slabs with no legs and no head, which is what the user "
+        "reported. Overlay ROM file 390 passes this offset as $a3 at 0x128; the call names the "
+        "OTHER skeleton in the file, but both rigs are 25 limbs and this is one creature in two "
+        "skins, so the same animation drives both and was rendered on both to check",
+    ),
+    (0xe778, 25): RestPose(
+        152, 0x87d0,
+        "the ReDead standing: the same rig as 0x3dd8 in brown desiccated skin instead of "
+        "bandages, clawed hands and splayed toes, upright on both legs with the arms down. This "
+        "is the skeleton overlay ROM file 390 names outright - SkelAnime_InitFlex at overlay "
+        "0x128 with $a2 = 0xe778 and $a3 = 0x87d0, so nothing had to be chosen. Shipped before "
+        "this as the same crumpled zigzag as its sibling",
+    ),
     (0xf0, 15): RestPose(
         197, 0x7d0,
         "the Hylian townsfolk idle: all eleven models on this skeleton stand upright with "
@@ -535,6 +553,41 @@ REST_POSES: dict[tuple[int, int], RestPose] = {
         "(with 211@0x6f28) and 0xec8, and this offset must not be given to either",
     ),
 }
+
+#: object id -> limbs whose display list is a pad entry, not geometry of their own.
+#:
+#: A limb list that does not end in ``G_ENDDL`` falls through into whatever follows it, and
+#: object 67 is built so that eight limbs do exactly that.  At 0x1f68 there is a run of eight
+#: ``G_RDPPIPESYNC`` commands, eight bytes apart, and limbs 8, 9, 10, 15, 16, 17, 18 and 37
+#: point at one each - in scrambled order, so this is real limb-table data and not a misread.
+#: All eight then fall into the same 46-triangle body at 0x1fa8, which is the torso.  Limbs 8
+#: through 17 are the two feet (the tree runs 4-5-6-{7,10}, 7-{8,9} and the mirror at 11), so
+#: the model ships with its chest drawn eight times, once on each foot - which is exactly how
+#: the user described it before any of this was decoded.
+#:
+#: **Limb 37 is the owner.**  Its parent is limb 20, which is in the spine chain, and its
+#: pointer 0x1fa0 is the LAST pad slot, one command before the body.  Across the other
+#: seventeen models on this rig limb 37 is always the torso (object 51 draws 64 triangles
+#: there, object 68 draws 26), so keeping 37 and dropping the rest is the reading that agrees
+#: with the family.  Rendered, it gives a woman in a lilac bodice and a green patterned skirt
+#: instead of a stack of eight identical tiers.
+#:
+#: This is data and not a rule because it is a population of one.  Sweeping every skeleton in
+#: the ROM finds eight bodies reached by more than two limbs; seven of them - on objects 26,
+#: 39, 45, 70, 90, 160 and 210 - resolve to offsets 0x5 and 0xb and produce ZERO triangles,
+#: which is the ordinary way this game spells "this limb draws nothing".  Object 67 is the only
+#: one anywhere that lands more than two limbs on a body with geometry in it.  Two limbs
+#: sharing a body is normal and is left alone: objects 62 and 63 do it for mirrored hands and
+#: feet, and that is a mesh deliberately reused.
+NULL_LIMBS: dict[int, frozenset[int]] = {
+    67: frozenset({8, 9, 10, 15, 16, 17, 18}),
+}
+
+
+def null_limbs(object_id: int | None) -> frozenset[int]:
+    """Limbs this object must not draw, because their pointer is pad, not geometry."""
+    return NULL_LIMBS.get(object_id, frozenset()) if object_id is not None else frozenset()
+
 
 #: object id -> RestPose, consulted BEFORE the skeleton key.
 #:
